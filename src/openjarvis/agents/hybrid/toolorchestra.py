@@ -220,6 +220,135 @@ def _default_pool(local_model: Optional[str], local_endpoint: Optional[str]) -> 
     return pool
 
 
+# Worker types toolorchestra's `_call_worker` actually dispatches.
+_TOOLORCH_VALID_TYPES = ("vllm", "openai", "anthropic", "anthropic-web-search")
+
+# Default model used when an `anthropic-web-search` entry omits `model`.
+_DEFAULT_WEB_SEARCH_MODEL = "claude-haiku-4-5"
+
+
+def _resolve_worker_pool(
+    cfg: Dict[str, Any],
+    local_model: Optional[str],
+    local_endpoint: Optional[str],
+    cloud_model: str,
+) -> List[Dict[str, Any]]:
+    """Return the worker pool for this run.
+
+    Strict replace, not merge: if ``cfg["worker_pool"]`` is set, the
+    default pool is ignored entirely. Falls back to ``_default_pool`` when
+    the override is absent.
+
+    Each user-supplied entry must be a dict with keys ``id``, ``name``,
+    ``type``, and (for non-search types) ``model``. ``type`` must be one
+    of ``vllm`` / ``openai`` / ``anthropic`` / ``anthropic-web-search``.
+    ``anthropic-web-search`` entries may omit ``model`` — it defaults to
+    ``claude-haiku-4-5``.
+
+    Substitution: ``model = "$local"`` (or ``"<local>"``) resolves to
+    ``local_model``; ``model = "$cloud"`` / ``"<cloud>"`` to ``cloud_model``.
+
+    On any validation failure, raises ``ValueError`` with the message
+    ``"Invalid worker_pool entry [<id>]: <reason>"``. Fails fast at agent
+    init rather than mid-task.
+    """
+    override = cfg.get("worker_pool")
+    if override is None:
+        return _default_pool(local_model, local_endpoint)
+    if not isinstance(override, list) or not override:
+        raise ValueError(
+            "Invalid worker_pool entry [-]: worker_pool must be a non-empty list"
+        )
+
+    resolved: List[Dict[str, Any]] = []
+    seen_ids: set = set()
+    has_non_search = False
+    for raw in override:
+        wid_repr = raw.get("id", "?") if isinstance(raw, dict) else "?"
+        if not isinstance(raw, dict):
+            raise ValueError(
+                f"Invalid worker_pool entry [{wid_repr}]: entry must be a dict"
+            )
+        entry = dict(raw)
+        wid = entry.get("id")
+        if not isinstance(wid, int):
+            raise ValueError(
+                f"Invalid worker_pool entry [{wid_repr}]: 'id' must be an int"
+            )
+        if wid in seen_ids:
+            raise ValueError(
+                f"Invalid worker_pool entry [{wid}]: duplicate id"
+            )
+        seen_ids.add(wid)
+        if not entry.get("name") or not isinstance(entry["name"], str):
+            raise ValueError(
+                f"Invalid worker_pool entry [{wid}]: 'name' must be a non-empty string"
+            )
+        wtype = entry.get("type") or entry.get("endpoint")
+        if not isinstance(wtype, str) or wtype.lower() not in _TOOLORCH_VALID_TYPES:
+            raise ValueError(
+                f"Invalid worker_pool entry [{wid}]: 'type' must be one of "
+                f"{_TOOLORCH_VALID_TYPES} (got {wtype!r})"
+            )
+        wtype = wtype.lower()
+        entry["type"] = wtype
+        # Substitute $local / $cloud placeholders (before any model check).
+        model = entry.get("model")
+        if isinstance(model, str) and model in ("$local", "<local>"):
+            if not local_model:
+                raise ValueError(
+                    f"Invalid worker_pool entry [{wid}]: model='{model}' "
+                    "requires a local_model to be configured for this cell"
+                )
+            model = local_model
+            entry["model"] = model
+        elif isinstance(model, str) and model in ("$cloud", "<cloud>"):
+            model = cloud_model
+            entry["model"] = model
+        if wtype == "anthropic-web-search":
+            if model in (None, ""):
+                model = _DEFAULT_WEB_SEARCH_MODEL
+                entry["model"] = model
+            elif not isinstance(model, str):
+                raise ValueError(
+                    f"Invalid worker_pool entry [{wid}]: 'model' must be a string when set"
+                )
+            # Search workers don't satisfy the "needs a solver" requirement.
+        else:
+            if not isinstance(model, str) or not model:
+                raise ValueError(
+                    f"Invalid worker_pool entry [{wid}]: 'model' must be a non-empty string"
+                )
+            if wtype == "vllm":
+                if not entry.get("base_url"):
+                    if not local_endpoint:
+                        raise ValueError(
+                            f"Invalid worker_pool entry [{wid}]: vllm worker needs "
+                            "'base_url' (or a configured local_endpoint to fall back to)"
+                        )
+                    entry["base_url"] = local_endpoint
+                entry.setdefault("api_key", "EMPTY")
+            else:
+                if model not in PRICES:
+                    raise ValueError(
+                        f"Invalid worker_pool entry [{wid}]: model {model!r} "
+                        f"is not in PRICES (known: {sorted(PRICES)})"
+                    )
+            has_non_search = True
+        entry.setdefault(
+            "description",
+            f"User-supplied {wtype} worker ({model}).",
+        )
+        resolved.append(entry)
+
+    if not has_non_search:
+        raise ValueError(
+            "Invalid worker_pool entry [-]: worker_pool must contain at least "
+            "one non-search worker (vllm / openai / anthropic)"
+        )
+    return resolved
+
+
 def _call_worker(
     worker: Dict[str, Any], prompt: str, cfg: Dict[str, Any]
 ) -> Tuple[str, int, int, bool, float, int]:
@@ -327,6 +456,19 @@ class ToolOrchestraAgent(LocalCloudAgent):
 
     agent_id = "toolorchestra"
 
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        # Validate `method_cfg.worker_pool` early — surfaces config errors
+        # at agent construction rather than on the first task. No-op when
+        # the override is absent.
+        if self._cfg.get("worker_pool") is not None:
+            _resolve_worker_pool(
+                self._cfg,
+                self._local_model,
+                self._local_endpoint,
+                self._cloud_model,
+            )
+
     def _run_paradigm(
         self,
         input: str,
@@ -335,9 +477,20 @@ class ToolOrchestraAgent(LocalCloudAgent):
     ) -> Tuple[str, Dict[str, Any]]:
         cfg = self._cfg
         question = input
-        workers = cfg.get("workers") or _default_pool(
-            self._local_model, self._local_endpoint
-        )
+        # Resolution order (strict replace, no merge):
+        #   1. `cfg["workers"]` — legacy direct override, used by tests.
+        #   2. `cfg["worker_pool"]` — cell-config override; validated +
+        #      $local/$cloud substituted.
+        #   3. `_default_pool(...)` — heterogeneous default.
+        if cfg.get("workers"):
+            workers = cfg["workers"]
+        else:
+            workers = _resolve_worker_pool(
+                cfg,
+                self._local_model,
+                self._local_endpoint,
+                self._cloud_model,
+            )
         if not workers:
             raise RuntimeError("toolorchestra: empty worker pool")
 
@@ -377,6 +530,7 @@ class ToolOrchestraAgent(LocalCloudAgent):
             tokens_local = 0
             tokens_cloud = 0
             cost = 0.0
+            n_web_searches_total = 0
             final_answer: Optional[str] = None
             forced_final = False
             parse_failures = 0
@@ -445,6 +599,7 @@ class ToolOrchestraAgent(LocalCloudAgent):
                     else:
                         tokens_cloud += w_in + w_out
                         cost += self.cost_usd(worker["model"], w_in, w_out) + extra_cost
+                    n_web_searches_total += n_searches
                     history.append({
                         "role": "worker",
                         "turn": turn,
@@ -515,11 +670,13 @@ class ToolOrchestraAgent(LocalCloudAgent):
                 "tokens_cloud": tokens_cloud,
                 "cost_usd": cost,
                 "turns": len([h for h in history if h["role"] == "orchestrator"]),
+                "web_search_uses": n_web_searches_total,
                 "traces": {
                     "history": history,
                     "forced_final": forced_final,
                     "parse_failures": parse_failures,
                     "workers": workers,
+                    "n_web_searches": n_web_searches_total,
                     "note": (
                         "inference-only port; the RL-trained Nemotron-Orchestrator-8B "
                         "is NOT in the loop. Results are preliminary."

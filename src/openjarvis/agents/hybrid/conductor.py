@@ -41,6 +41,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from openjarvis.agents._stubs import AgentContext
 from openjarvis.agents.hybrid._base import LocalCloudAgent
 from openjarvis.agents.hybrid._prices import (
+    PRICES,
     is_gpt5_family,
     supports_temperature,
 )
@@ -215,6 +216,130 @@ def _default_pool(local_model: Optional[str], local_endpoint: Optional[str]) -> 
     return pool
 
 
+# Endpoints conductor's `_call_worker` actually knows how to dispatch to.
+# Web-search and gemini are NOT supported here — toolorchestra has the
+# web-search dispatcher; gemini isn't wired into _call_worker.
+_CONDUCTOR_VALID_ENDPOINTS = ("vllm", "openai", "anthropic")
+
+
+def _resolve_worker_pool(
+    cfg: Dict[str, Any],
+    local_model: Optional[str],
+    local_endpoint: Optional[str],
+    cloud_model: str,
+) -> List[Dict[str, Any]]:
+    """Return the worker pool for this run.
+
+    Strict replace, not merge: if ``cfg["worker_pool"]`` is set, the
+    default pool is ignored entirely. Falls back to ``_default_pool`` when
+    the override is absent.
+
+    Each user-supplied entry must be a dict with keys ``id``, ``name``,
+    ``endpoint``, and ``model``. ``endpoint`` must be one of
+    ``vllm`` / ``openai`` / ``anthropic`` — conductor does not wire
+    web-search or gemini workers.
+
+    Substitution: ``model = "$local"`` (or ``"<local>"``) resolves to
+    ``local_model``; ``model = "$cloud"`` / ``"<cloud>"`` to ``cloud_model``.
+
+    On any validation failure, raises ``ValueError`` with the message
+    ``"Invalid worker_pool entry [<id>]: <reason>"``. Fails fast at agent
+    init rather than mid-task.
+    """
+    override = cfg.get("worker_pool")
+    if override is None:
+        return _default_pool(local_model, local_endpoint)
+    if not isinstance(override, list) or not override:
+        raise ValueError(
+            "Invalid worker_pool entry [-]: worker_pool must be a non-empty list"
+        )
+
+    resolved: List[Dict[str, Any]] = []
+    seen_ids: set = set()
+    has_non_search = False
+    for raw in override:
+        wid_repr = raw.get("id", "?") if isinstance(raw, dict) else "?"
+        if not isinstance(raw, dict):
+            raise ValueError(
+                f"Invalid worker_pool entry [{wid_repr}]: entry must be a dict"
+            )
+        entry = dict(raw)
+        wid = entry.get("id")
+        if not isinstance(wid, int):
+            raise ValueError(
+                f"Invalid worker_pool entry [{wid_repr}]: 'id' must be an int"
+            )
+        if wid in seen_ids:
+            raise ValueError(
+                f"Invalid worker_pool entry [{wid}]: duplicate id"
+            )
+        seen_ids.add(wid)
+        if not entry.get("name") or not isinstance(entry["name"], str):
+            raise ValueError(
+                f"Invalid worker_pool entry [{wid}]: 'name' must be a non-empty string"
+            )
+        endpoint = entry.get("endpoint") or entry.get("type")
+        if not isinstance(endpoint, str) or endpoint.lower() not in _CONDUCTOR_VALID_ENDPOINTS:
+            raise ValueError(
+                f"Invalid worker_pool entry [{wid}]: 'endpoint' must be one of "
+                f"{_CONDUCTOR_VALID_ENDPOINTS} (got {endpoint!r})"
+            )
+        endpoint = endpoint.lower()
+        entry["endpoint"] = endpoint
+        # Substitute $local / $cloud placeholders.
+        model = entry.get("model")
+        if isinstance(model, str) and model in ("$local", "<local>"):
+            if not local_model:
+                raise ValueError(
+                    f"Invalid worker_pool entry [{wid}]: model='{model}' "
+                    "requires a local_model to be configured for this cell"
+                )
+            model = local_model
+            entry["model"] = model
+        elif isinstance(model, str) and model in ("$cloud", "<cloud>"):
+            model = cloud_model
+            entry["model"] = model
+        if not isinstance(model, str) or not model:
+            raise ValueError(
+                f"Invalid worker_pool entry [{wid}]: 'model' must be a non-empty string"
+            )
+        if endpoint == "vllm":
+            if not entry.get("base_url"):
+                # Default to the local endpoint if not specified — matches
+                # how _default_pool wires it.
+                if not local_endpoint:
+                    raise ValueError(
+                        f"Invalid worker_pool entry [{wid}]: vllm worker needs "
+                        "'base_url' (or a configured local_endpoint to fall back to)"
+                    )
+                entry["base_url"] = local_endpoint
+            entry.setdefault("api_key", "EMPTY")
+            # Local also counts as a non-search worker for the
+            # "must have at least one solver" check.
+            has_non_search = True
+        else:
+            # Cloud workers: model must be priced (any unknown model would
+            # silently cost $0, which masks billing mistakes downstream).
+            if model not in PRICES:
+                raise ValueError(
+                    f"Invalid worker_pool entry [{wid}]: model {model!r} is "
+                    f"not in PRICES (known: {sorted(PRICES)})"
+                )
+            has_non_search = True
+        entry.setdefault(
+            "description",
+            f"User-supplied {endpoint} worker ({model}).",
+        )
+        resolved.append(entry)
+
+    if not has_non_search:
+        raise ValueError(
+            "Invalid worker_pool entry [-]: worker_pool must contain at least "
+            "one non-search worker (vllm / openai / anthropic)"
+        )
+    return resolved
+
+
 def _format_worker_pool(workers: List[Dict[str, Any]]) -> str:
     return "\n".join(
         f"Model {w['id']} ({w['name']}): {w['description']}" for w in workers
@@ -339,6 +464,20 @@ class ConductorAgent(LocalCloudAgent):
 
     agent_id = "conductor"
 
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        # Validate `method_cfg.worker_pool` early — surfaces config errors
+        # at agent construction rather than on the first task. No-op when
+        # the override is absent (default pool is built later, lazily,
+        # because `_vllm_alive` needs a live network probe).
+        if self._cfg.get("worker_pool") is not None:
+            _resolve_worker_pool(
+                self._cfg,
+                self._local_model,
+                self._local_endpoint,
+                self._cloud_model,
+            )
+
     def _run_paradigm(
         self,
         input: str,
@@ -347,9 +486,21 @@ class ConductorAgent(LocalCloudAgent):
     ) -> Tuple[str, Dict[str, Any]]:
         question = input
         cfg = self._cfg
-        workers = cfg.get("workers") or _default_pool(
-            self._local_model, self._local_endpoint
-        )
+        # Resolution order (strict replace, no merge):
+        #   1. `cfg["workers"]` — legacy direct override, used by tests.
+        #   2. `cfg["worker_pool"]` — cell-config override; validated +
+        #      $local/$cloud substituted.
+        #   3. `_default_pool(...)` — heterogeneous default (Opus +
+        #      gpt-5-mini + optional local Qwen).
+        if cfg.get("workers"):
+            workers = cfg["workers"]
+        else:
+            workers = _resolve_worker_pool(
+                cfg,
+                self._local_model,
+                self._local_endpoint,
+                self._cloud_model,
+            )
         if not workers:
             raise RuntimeError("conductor: empty worker pool")
 
