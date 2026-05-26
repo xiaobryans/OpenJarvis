@@ -406,6 +406,57 @@ async fn pull_model(model: &str) -> Result<(), String> {
 }
 
 // ---------------------------------------------------------------------------
+// uv sync error formatting (pure helpers — unit-tested, see #331)
+// ---------------------------------------------------------------------------
+
+/// Last `max_chars` characters of a `uv sync` stderr stream, trimmed.
+///
+/// uv's actionable diagnostic almost always lands at the tail of the
+/// stream, so when surfacing a failure to the user we show the end, not
+/// the (usually noisy progress-spinner) beginning. Operates on `char`
+/// boundaries so it never splits a multi-byte UTF-8 codepoint — important
+/// because Windows consoles emit non-ASCII (cp9xx) bytes.
+fn uv_sync_stderr_tail(stderr: &str, max_chars: usize) -> String {
+    let total = stderr.chars().count();
+    let skip = total.saturating_sub(max_chars);
+    stderr.chars().skip(skip).collect::<String>().trim().to_string()
+}
+
+/// Error message shown when `uv sync` runs but exits non-zero (#331).
+///
+/// `exit_code` is `None` when the process was terminated by a signal with
+/// no exit code (rendered as "unknown" rather than a misleading -1).
+fn format_uv_sync_failure(
+    root: &std::path::Path,
+    exit_code: Option<i32>,
+    stderr: &str,
+) -> String {
+    let code = exit_code
+        .map(|c| c.to_string())
+        .unwrap_or_else(|| "unknown".to_string());
+    format!(
+        "`uv sync` failed in {} (exit {}). Last output:\n\n{}\n\n\
+         Try opening a terminal in that directory and running \
+         `uv sync --extra server` manually for the full output.",
+        root.display(),
+        code,
+        uv_sync_stderr_tail(stderr, 800),
+    )
+}
+
+/// Error message shown when `uv sync` can't even be spawned (#331) —
+/// e.g. the resolved `uv` binary doesn't exist or isn't executable.
+fn format_uv_sync_spawn_error(root: &std::path::Path, uv_bin: &str, err: &str) -> String {
+    format!(
+        "Could not run `uv sync`: {}. Verify uv is installed at \
+         `{}` and the OpenJarvis repo is at `{}`.",
+        err,
+        uv_bin,
+        root.display(),
+    )
+}
+
+// ---------------------------------------------------------------------------
 // Backend boot sequence (runs in background after app launch)
 // ---------------------------------------------------------------------------
 
@@ -495,14 +546,33 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
 
     let uv_bin = resolve_bin("uv");
 
-    // Verify uv is actually installed
+    // Verify uv is actually installed. Concrete per-OS instructions —
+    // the generic "install it from astral.sh" was the #1 source of
+    // confusion on the Discord support thread; users couldn't tell whether
+    // to use winget, scoop, pip, or the official installer.
     if !std::path::Path::new(&uv_bin).exists() && uv_bin == "uv" {
         let mut s = status.lock().await;
-        s.error = Some(
-            "Could not find 'uv' (Python package manager). \
-             Install it from https://astral.sh/uv then relaunch."
-                .into(),
-        );
+        #[cfg(target_os = "windows")]
+        let msg = "Could not find 'uv' (Python package manager). \
+                   To install on Windows, open PowerShell and run:\n\n\
+                   powershell -ExecutionPolicy Bypass -c \"irm https://astral.sh/uv/install.ps1 | iex\"\n\n\
+                   Then close and relaunch this app. \
+                   (If the install completes but the app still can't find uv, \
+                   you may need to log out and back in so PATH refreshes.)";
+        #[cfg(target_os = "macos")]
+        let msg = "Could not find 'uv' (Python package manager). \
+                   To install on macOS, open Terminal and run:\n\n\
+                   curl -LsSf https://astral.sh/uv/install.sh | sh\n\n\
+                   Then relaunch this app.";
+        #[cfg(target_os = "linux")]
+        let msg = "Could not find 'uv' (Python package manager). \
+                   To install on Linux, open a terminal and run:\n\n\
+                   curl -LsSf https://astral.sh/uv/install.sh | sh\n\n\
+                   Then relaunch this app.";
+        #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+        let msg = "Could not find 'uv' (Python package manager). \
+                   Install it from https://astral.sh/uv then relaunch.";
+        s.error = Some(msg.into());
         return;
     }
 
@@ -643,12 +713,25 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
 
     let root = project_root.as_ref().unwrap();
 
-    // Install dependencies automatically (handles fresh clones)
+    // Install dependencies automatically (handles fresh clones).
+    //
+    // Previously we ran `uv sync` with both stdout AND stderr piped to
+    // /dev/null and discarded the exit code (`let _ = …`). When `uv sync`
+    // failed — Windows path issues, network problems, lockfile conflicts —
+    // the user saw no error, the boot continued, `uv run jarvis serve`
+    // then ran in an under-provisioned venv, and the user waited the full
+    // 600s health-check window before getting "Jarvis server did not
+    // become healthy in time" with no actionable detail (issue #331).
+    //
+    // Now: capture stderr, check the exit status, surface a useful error
+    // to the user BEFORE the long server-start wait. The status detail
+    // message also indicates this can take a couple of minutes on first
+    // boot so users don't restart the app thinking it's stuck.
     {
         let mut s = status.lock().await;
-        s.detail = "Installing dependencies...".into();
+        s.detail = "Installing dependencies (uv sync — may take 1-2 min on first boot)...".into();
     }
-    let _ = tokio::process::Command::new(&uv_bin)
+    let sync_output = tokio::process::Command::new(&uv_bin)
         .args([
             "sync",
             "--extra", "server",
@@ -656,10 +739,24 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
             "--extra", "inference-google",
         ])
         .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
         .current_dir(root)
-        .status()
+        .output()
         .await;
+    match sync_output {
+        Ok(out) if !out.status.success() => {
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            let mut s = status.lock().await;
+            s.error = Some(format_uv_sync_failure(root, out.status.code(), &stderr));
+            return;
+        }
+        Err(e) => {
+            let mut s = status.lock().await;
+            s.error = Some(format_uv_sync_spawn_error(root, &uv_bin, &e.to_string()));
+            return;
+        }
+        Ok(_) => {} // success — fall through
+    }
 
     {
         let mut s = status.lock().await;
@@ -1604,7 +1701,7 @@ pub fn run() {
             MacosLauncher::LaunchAgent,
             Some(vec!["--hidden"]),
         ))
-        // .plugin(tauri_plugin_updater::Builder::new().build()) // disabled for local dev
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
@@ -1718,4 +1815,77 @@ pub fn run() {
                 });
             }
         });
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::{format_uv_sync_failure, format_uv_sync_spawn_error, uv_sync_stderr_tail};
+    use std::path::Path;
+
+    #[test]
+    fn tail_returns_whole_string_when_shorter_than_limit() {
+        assert_eq!(uv_sync_stderr_tail("short error", 800), "short error");
+    }
+
+    #[test]
+    fn tail_keeps_the_end_not_the_beginning() {
+        // uv's actionable line is at the end; the spinner noise is at the start.
+        let s = format!("{}ACTUAL ERROR HERE", "spinner-noise ".repeat(200));
+        let tail = uv_sync_stderr_tail(&s, 40);
+        assert!(tail.ends_with("ACTUAL ERROR HERE"), "tail was: {tail:?}");
+        assert!(!tail.contains("spinner-noise spinner-noise spinner-noise"));
+        assert!(tail.chars().count() <= 40);
+    }
+
+    #[test]
+    fn tail_trims_surrounding_whitespace() {
+        assert_eq!(uv_sync_stderr_tail("  \n padded \n  ", 800), "padded");
+    }
+
+    #[test]
+    fn tail_never_splits_a_multibyte_codepoint() {
+        // Each "é" is 2 bytes / 1 char. A byte-based slice could panic or
+        // produce invalid UTF-8; the char-based tail must not.
+        let s = "é".repeat(500);
+        let tail = uv_sync_stderr_tail(&s, 100);
+        assert_eq!(tail.chars().count(), 100);
+        assert!(tail.chars().all(|c| c == 'é'));
+    }
+
+    #[test]
+    fn failure_message_includes_exit_code_and_tail_and_hint() {
+        let msg = format_uv_sync_failure(
+            Path::new("/home/u/.openjarvis/src"),
+            Some(2),
+            "error: failed to resolve numpy==2.1.3",
+        );
+        assert!(msg.contains("exit 2"));
+        assert!(msg.contains("/home/u/.openjarvis/src"));
+        assert!(msg.contains("failed to resolve numpy==2.1.3"));
+        assert!(msg.contains("uv sync --extra server")); // actionable next step
+    }
+
+    #[test]
+    fn failure_message_renders_missing_exit_code_as_unknown() {
+        // Process killed by signal → no exit code. Must not show a misleading -1.
+        let msg = format_uv_sync_failure(Path::new("/x"), None, "boom");
+        assert!(msg.contains("exit unknown"));
+        assert!(!msg.contains("exit -1"));
+    }
+
+    #[test]
+    fn spawn_error_names_the_binary_and_root() {
+        let msg = format_uv_sync_spawn_error(
+            Path::new("/repo"),
+            "C:\\Users\\me\\.local\\bin\\uv.exe",
+            "No such file or directory (os error 2)",
+        );
+        assert!(msg.contains("C:\\Users\\me\\.local\\bin\\uv.exe"));
+        assert!(msg.contains("/repo"));
+        assert!(msg.contains("No such file or directory"));
+    }
 }

@@ -1303,10 +1303,11 @@ async def _stream_managed_agent(
 
 def create_agent_manager_router(
     manager: AgentManager,
-) -> Tuple[APIRouter, APIRouter, APIRouter, APIRouter]:
+) -> Tuple[APIRouter, APIRouter, APIRouter, APIRouter, APIRouter]:
     """Create FastAPI routers with agent management endpoints.
 
-    Returns a 4-tuple: (agents_router, templates_router, global_router, tools_router).
+    Returns a 5-tuple:
+    ``(agents_router, templates_router, global_router, tools_router, sendblue_router)``.
     """
     agents_router = APIRouter(prefix="/v1/managed-agents", tags=["managed-agents"])
     templates_router = APIRouter(prefix="/v1/templates", tags=["templates"])
@@ -1420,7 +1421,11 @@ def create_agent_manager_router(
                     server_config,
                 )
                 executor.set_system(system)
-                executor.execute_tick(agent_id)
+                # The route handler above already called start_tick() to
+                # serialize concurrent POSTs; tell the executor not to
+                # re-acquire, otherwise it bails on its own guard and the
+                # tick never runs.
+                executor.execute_tick(agent_id, lock_already_held=True)
             except Exception as exc:
                 logger.error(
                     "Run-tick failed for agent %s: %s",

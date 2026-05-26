@@ -13,6 +13,7 @@ from typing import Any, Dict, Iterator, List, Optional
 import httpx
 
 from openjarvis.connectors._stubs import BaseConnector, Document, SyncStatus
+from openjarvis.connectors.google_auth import call_with_refresh
 from openjarvis.connectors.oauth import (
     GOOGLE_ALL_SCOPES,
     build_google_auth_url,
@@ -37,6 +38,48 @@ _DEFAULT_CREDENTIALS_PATH = str(DEFAULT_CONFIG_DIR / "connectors" / "gcalendar.j
 # ---------------------------------------------------------------------------
 # Module-level API functions (easy to patch in tests)
 # ---------------------------------------------------------------------------
+
+
+def _gcal_api_user_email(token: str) -> str:
+    """Return the authenticated user's email via the Google userinfo endpoint."""
+    try:
+        resp = httpx.get(
+            "https://www.googleapis.com/oauth2/v2/userinfo",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=10.0,
+        )
+        resp.raise_for_status()
+        return resp.json().get("email", "")
+    except Exception:
+        return ""
+
+
+def _gcal_api_event_get(token: str, calendar_id: str, event_id: str) -> Dict[str, Any]:
+    """Fetch a single calendar event resource."""
+    resp = httpx.get(
+        f"{_GCAL_API_BASE}/calendars/{calendar_id}/events/{event_id}",
+        headers={"Authorization": f"Bearer {token}"},
+        timeout=30.0,
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+def _gcal_api_event_patch(
+    token: str,
+    calendar_id: str,
+    event_id: str,
+    body: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Patch a calendar event with a partial update body."""
+    resp = httpx.patch(
+        f"{_GCAL_API_BASE}/calendars/{calendar_id}/events/{event_id}",
+        headers={"Authorization": f"Bearer {token}"},
+        json=body,
+        timeout=30.0,
+    )
+    resp.raise_for_status()
+    return resp.json()
 
 
 def _gcal_api_calendars_list(token: str) -> Dict[str, Any]:
@@ -302,13 +345,15 @@ class GCalendarConnector(BaseConnector):
         tokens = load_tokens(self._credentials_path)
         if not tokens:
             return
-
-        token: str = tokens.get("access_token", tokens.get("token", ""))
-        if not token:
+        if not tokens.get("access_token") and not tokens.get("token"):
             return
 
-        # Fetch list of calendars
-        calendars_resp = _gcal_api_calendars_list(token)
+        # Fetch list of calendars. call_with_refresh wraps the token read so
+        # an expired access_token triggers a one-shot refresh + retry instead
+        # of bubbling up a 401.
+        calendars_resp = call_with_refresh(
+            _gcal_api_calendars_list, self._credentials_path
+        )
         calendars: List[Dict[str, Any]] = calendars_resp.get("items", [])
 
         # Default to 24 hours ago so we don't dump the entire calendar history
@@ -327,8 +372,9 @@ class GCalendarConnector(BaseConnector):
 
             while True:
                 try:
-                    events_resp = _gcal_api_events_list(
-                        token,
+                    events_resp = call_with_refresh(
+                        _gcal_api_events_list,
+                        self._credentials_path,
                         calendar_id,
                         page_token=page_token,
                         time_min=time_min,
@@ -354,6 +400,13 @@ class GCalendarConnector(BaseConnector):
 
                     content = _format_event(event)
 
+                    # Find the self-attendee's response status
+                    self_status = ""
+                    for att in attendees:
+                        if att.get("self"):
+                            self_status = att.get("responseStatus", "")
+                            break
+
                     doc = Document(
                         doc_id=f"gcalendar:{evt_id}",
                         source="gcalendar",
@@ -367,6 +420,7 @@ class GCalendarConnector(BaseConnector):
                         metadata={
                             "calendar_id": calendar_id,
                             "event_id": evt_id,
+                            "response_status": self_status,
                         },
                     )
                     synced += 1
@@ -381,6 +435,49 @@ class GCalendarConnector(BaseConnector):
 
         self._items_synced = synced
         self._last_sync = datetime.now()
+
+    def _get_token(self) -> str:
+        tokens = load_tokens(self._credentials_path)
+        if not tokens:
+            raise RuntimeError("Google Calendar not authenticated")
+        token = tokens.get("access_token", tokens.get("token", ""))
+        if not token:
+            raise RuntimeError("Google Calendar token missing")
+        return token
+
+    def accept_event(self, event_id: str, calendar_id: str = "primary") -> None:
+        """Accept a calendar invite by setting responseStatus to 'accepted'."""
+        token = self._get_token()
+        user_email = _gcal_api_user_email(token)
+        event = _gcal_api_event_get(token, calendar_id, event_id)
+        attendees = event.get("attendees", [])
+        updated = []
+        found = False
+        for att in attendees:
+            if att.get("self") or (user_email and att.get("email") == user_email):
+                att = {**att, "responseStatus": "accepted"}
+                found = True
+            updated.append(att)
+        if not found and user_email:
+            updated.append({"email": user_email, "responseStatus": "accepted"})
+        _gcal_api_event_patch(token, calendar_id, event_id, {"attendees": updated})
+
+    def decline_event(self, event_id: str, calendar_id: str = "primary") -> None:
+        """Decline a calendar invite by setting responseStatus to 'declined'."""
+        token = self._get_token()
+        user_email = _gcal_api_user_email(token)
+        event = _gcal_api_event_get(token, calendar_id, event_id)
+        attendees = event.get("attendees", [])
+        updated = []
+        found = False
+        for att in attendees:
+            if att.get("self") or (user_email and att.get("email") == user_email):
+                att = {**att, "responseStatus": "declined"}
+                found = True
+            updated.append(att)
+        if not found and user_email:
+            updated.append({"email": user_email, "responseStatus": "declined"})
+        _gcal_api_event_patch(token, calendar_id, event_id, {"attendees": updated})
 
     def sync_status(self) -> SyncStatus:
         """Return sync progress from the most recent :meth:`sync` call."""

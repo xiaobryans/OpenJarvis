@@ -35,13 +35,13 @@ from openjarvis.cli.quickstart_cmd import quickstart
 from openjarvis.cli.registry_cmd import registry
 from openjarvis.cli.scan_cmd import scan
 from openjarvis.cli.scheduler_cmd import scheduler
+from openjarvis.cli.self_update_cmd import self_update
 from openjarvis.cli.serve import serve
 from openjarvis.cli.skill_cmd import skill
 from openjarvis.cli.telemetry_cmd import telemetry
 from openjarvis.cli.tool_cmd import tool
 from openjarvis.cli.vault_cmd import vault
 from openjarvis.cli.workflow_cmd import workflow
-from openjarvis.learning.distillation.cli import learning_group
 
 
 @click.group(
@@ -61,8 +61,14 @@ def cli(ctx: click.Context, verbose: bool, quiet: bool) -> None:
     ctx.obj["quiet"] = quiet
     setup_logging(verbose=verbose, quiet=quiet)
 
-    # Check for updates on interactive commands
-    if not quiet and ctx.invoked_subcommand:
+    # Check for updates on interactive commands. The banner is noise in
+    # demo recordings of ``jarvis ask --research``, so skip it whenever
+    # the research flag is in argv (cheap argv sniff — Click hasn't
+    # parsed the subcommand's args yet at this point).
+    import sys
+
+    research_mode_active = "--research" in sys.argv
+    if not quiet and ctx.invoked_subcommand and not research_mode_active:
         from openjarvis.cli._version_check import check_for_updates
 
         check_for_updates(ctx.invoked_subcommand)
@@ -113,7 +119,7 @@ cli.add_command(connect, "connect")
 cli.add_command(digest, "digest")
 cli.add_command(deep_research_setup, "deep-research-setup")
 cli.add_command(deep_research_setup, "research")
-cli.add_command(learning_group, "learning")
+cli.add_command(self_update, "self-update")
 cli.add_command(bootstrap_cmd, "_bootstrap")
 
 # Gateway CLI commands (lazy import to avoid pulling starlette)
@@ -134,6 +140,15 @@ except ImportError:
 
 def main() -> None:
     """Entry point registered as ``jarvis`` console script."""
+    import sys
+
+    if sys.platform == "win32":
+        for _stream in (sys.stdout, sys.stderr):
+            if hasattr(_stream, "reconfigure"):
+                try:
+                    _stream.reconfigure(encoding="utf-8", errors="replace")
+                except (AttributeError, OSError):
+                    pass
     cli()
 
 

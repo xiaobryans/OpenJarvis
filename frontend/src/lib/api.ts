@@ -192,12 +192,26 @@ export async function checkHealth(): Promise<boolean> {
       return false;
     }
   }
-  try {
-    const res = await fetch(`${getBase()}/health`);
-    return res.ok;
-  } catch {
-    return false;
-  }
+  // In the browser, hit /health relative to the page origin so the request
+  // flows through whatever path is already serving the SPA — the Vite
+  // proxy in dev, FastAPI's static mount in prod. This avoids the
+  // false-negative "Cannot reach backend" banner when getBase() points at
+  // an absolute URL the browser can't reach directly.
+  //
+  // If /health itself fails for any reason (proxy quirk, stale service
+  // worker, etc.) fall back to an arbitrary API endpoint we know the rest
+  // of the app polls successfully. If THAT also fails we genuinely can't
+  // reach the backend.
+  const probe = async (url: string): Promise<boolean> => {
+    try {
+      const res = await fetch(url, { cache: 'no-store' });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  };
+  if (await probe('/health')) return true;
+  return probe('/v1/connectors');
 }
 
 export async function fetchEnergy(): Promise<unknown> {
@@ -916,4 +930,37 @@ export async function getMemoryConfig(): Promise<MemoryConfig> {
   const res = await fetch(`${getBase()}/v1/memory/config`);
   if (!res.ok) throw new Error('Failed to fetch memory config');
   return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Approvals
+// ---------------------------------------------------------------------------
+
+export interface PendingApproval {
+  id: string;
+  action_type: string;
+  description: string;
+  payload: Record<string, unknown>;
+  permission_key: string;
+  tier: 'trivial' | 'low' | 'medium' | 'high';
+  status: string;
+  created_at: string;
+  expires_at: string;
+}
+
+export async function fetchPendingApprovals(): Promise<PendingApproval[]> {
+  const res = await fetch(`${getBase()}/v1/approvals/pending`);
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  const data = await res.json();
+  return data.actions || [];
+}
+
+export async function approveAction(actionId: string): Promise<void> {
+  const res = await fetch(`${getBase()}/v1/approvals/${actionId}/approve`, { method: 'POST' });
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+}
+
+export async function denyAction(actionId: string): Promise<void> {
+  const res = await fetch(`${getBase()}/v1/approvals/${actionId}/deny`, { method: 'POST' });
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
 }

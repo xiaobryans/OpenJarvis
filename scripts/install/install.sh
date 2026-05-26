@@ -2,7 +2,7 @@
 # install.sh — OpenJarvis curl-pipe-bash installer.
 #
 # Usage:
-#   curl -fsSL https://openjarvis.ai/install.sh | bash
+#   curl -fsSL https://open-jarvis.github.io/OpenJarvis/install.sh | bash
 #
 # Flags (only used in tests / power users):
 #   --no-bg-orchestrator   Skip the detached background orchestrator
@@ -28,6 +28,38 @@ for arg in "$@"; do
         *) echo "install.sh: unknown arg: $arg" >&2; exit 2 ;;
     esac
 done
+
+# ---- non-WSL Windows refusal ----
+# Running the installer in Git Bash / MSYS2 / Cygwin on native Windows
+# (i.e. NOT inside WSL2) gets the user into a confusing failure state:
+# uv/git tooling installs to Windows paths the rest of OpenJarvis can't
+# reach, and Ollama integration silently breaks. The supported Windows
+# path is WSL2. Bail early with a clear next step rather than letting
+# users discover this 3 minutes into a doomed install.
+case "$(uname -s 2>/dev/null)" in
+    MINGW*|MSYS*|CYGWIN*)
+        cat >&2 <<'EOF'
+install.sh: native Windows (Git Bash / MSYS2 / Cygwin) is not supported.
+
+OpenJarvis runs on Windows via WSL2. Two paths:
+
+  1. WSL2 (recommended for the CLI). One-time setup in an admin PowerShell:
+
+       wsl --install -d Ubuntu-24.04
+
+     Open the Ubuntu shell that gets installed, then re-run:
+
+       curl -fsSL https://open-jarvis.github.io/OpenJarvis/install.sh | bash
+
+  2. Desktop app — download the .exe from the Releases page:
+     https://github.com/open-jarvis/OpenJarvis/releases
+
+See the WSL2 install guide for the full walkthrough:
+  https://open-jarvis.github.io/OpenJarvis/getting-started/wsl2/
+EOF
+        exit 1
+        ;;
+esac
 
 # ---- root refusal ----
 if [[ "$(id -u)" -eq 0 ]]; then
@@ -77,6 +109,150 @@ elif [[ -f /proc/sys/kernel/osrelease ]] && grep -qi "microsoft" /proc/sys/kerne
     WSL=1
 fi
 
+# ---- analytics beacon (anonymized install funnel) ----
+#
+# Posts a small JSON event to PostHog at each install stage so the
+# OpenJarvis team can see where users drop off during install.
+# No content, no IPs (handled by PostHog disable_geoip on server),
+# no hardware identifiers — just OS, arch, elapsed time, and stage name.
+#
+ANALYTICS_HOST="${OPENJARVIS_ANALYTICS_HOST:-https://34.231.106.201.sslip.io}"
+ANALYTICS_KEY="${OPENJARVIS_ANALYTICS_KEY:-phc_ysKu72QaxzYNmDpHFcesD2ZZAe68zkdWJEKoYYkc5e3n}"
+ANON_ID_FILE="$OPENJARVIS_HOME/anon_id"
+INSTALL_START_EPOCH="$(date +%s)"
+CURRENT_STAGE=""
+
+analytics_enabled() {
+    # Honor the same opt-out env vars as the Python analytics module
+    # (``src/openjarvis/analytics/identity.py::is_analytics_enabled``).
+    # ``DO_NOT_TRACK`` is W3C convention; ``OPENJARVIS_NO_ANALYTICS`` is
+    # the project-specific override. Any truthy value disables.
+    for var in DO_NOT_TRACK OPENJARVIS_NO_ANALYTICS; do
+        val="${!var:-}"
+        case "$(printf '%s' "$val" | tr '[:upper:]' '[:lower:]' | xargs)" in
+            ""|0|false|no|off) ;;
+            *) return 1 ;;
+        esac
+    done
+    return 0
+}
+
+detect_os() {
+    case "$(uname -s)" in
+        Darwin) echo "darwin" ;;
+        Linux) [[ "$WSL" -eq 1 ]] && echo "wsl" || echo "linux" ;;
+        *) echo "unknown" ;;
+    esac
+}
+
+detect_arch() {
+    case "$(uname -m)" in
+        x86_64|amd64) echo "x86_64" ;;
+        arm64|aarch64) echo "arm64" ;;
+        *) echo "unknown" ;;
+    esac
+}
+
+get_anon_id() {
+    if [[ -f "$ANON_ID_FILE" ]]; then
+        cat "$ANON_ID_FILE"
+        return
+    fi
+    local new_id
+    new_id="$(python3 -c 'import uuid; print(uuid.uuid4())' 2>/dev/null || echo "")"
+    if [[ -z "$new_id" ]]; then
+        return
+    fi
+    echo "$new_id" > "$ANON_ID_FILE"
+    echo "$new_id"
+}
+
+stage_label() {
+    case "$1" in
+        install_uv) echo "uv" ;;
+        clone_repo|copy_scripts) echo "deps" ;;
+        create_venv) echo "venv" ;;
+        editable_install) echo "package" ;;
+        install_ollama|start_ollama) echo "ollama" ;;
+        pull_default_model) echo "model_download" ;;
+        write_config) echo "config" ;;
+        install_symlinks|ensure_path|detach_bg_orchestrator) echo "verify" ;;
+        *) echo "" ;;
+    esac
+}
+
+beacon() {
+    # Args: event_name stage_label elapsed_ms exit_code
+    local event="$1"
+    local stage="${2:-}"
+    local elapsed_ms="${3:-0}"
+    local exit_code="${4:-0}"
+
+    if ! analytics_enabled; then
+        return 0
+    fi
+
+    local anon_id os arch
+    anon_id="$(get_anon_id)"
+    if [[ -z "$anon_id" ]]; then
+        return 0
+    fi
+    os="$(detect_os)"
+    arch="$(detect_arch)"
+
+    python3 - "$ANALYTICS_HOST" "$ANALYTICS_KEY" "$event" "$anon_id" \
+        "$os" "$arch" "$stage" "$elapsed_ms" "$exit_code" \
+        >/dev/null 2>&1 <<'PYEOF' || true
+import json
+import sys
+import urllib.request
+
+host, key, event, distinct_id, os_val, arch, stage, elapsed_ms, exit_code = sys.argv[1:10]
+props = {
+    "os": os_val,
+    "arch": arch,
+    "installer_version": "0.1.1",
+}
+if stage:
+    props["stage"] = stage
+if elapsed_ms and elapsed_ms != "0":
+    try:
+        props["elapsed_ms"] = int(elapsed_ms)
+    except ValueError:
+        pass
+if exit_code and exit_code != "0":
+    try:
+        props["exit_code"] = int(exit_code)
+    except ValueError:
+        pass
+if event == "install_completed":
+    props["total_elapsed_ms"] = props.pop("elapsed_ms", 0)
+payload = {
+    "api_key": key,
+    "event": event,
+    "distinct_id": distinct_id,
+    "properties": props,
+}
+req = urllib.request.Request(
+    f"{host}/i/v0/e/",
+    data=json.dumps(payload).encode("utf-8"),
+    headers={"Content-Type": "application/json"},
+    method="POST",
+)
+try:
+    urllib.request.urlopen(req, timeout=5)
+except Exception:
+    pass
+PYEOF
+}
+
+_on_install_error() {
+    local exit_code=$?
+    beacon "install_failed" "$(stage_label "$CURRENT_STAGE")" 0 "$exit_code"
+    exit "$exit_code"
+}
+trap _on_install_error ERR
+
 # ---- helpers ----
 state_done() {
     [[ -f "$STATE_FILE" ]] && grep -q "\"$1\":[[:space:]]*true" "$STATE_FILE"
@@ -100,13 +276,18 @@ PYEOF
 
 step() {
     local name="$1" desc="$2"; shift 2
+    CURRENT_STAGE="$name"
     if [[ "$FORCE" -ne 1 ]] && state_done "$name"; then
         echo "[ok] $desc (already done)"
         return 0
     fi
     echo "[..] $desc"
+    local stage_start_epoch stage_elapsed_ms
+    stage_start_epoch="$(date +%s)"
     "$@"
     mark_done "$name"
+    stage_elapsed_ms=$(( ( $(date +%s) - stage_start_epoch ) * 1000 ))
+    beacon "install_stage_completed" "$(stage_label "$name")" "$stage_elapsed_ms"
     echo "[ok] $desc"
 }
 
@@ -240,6 +421,8 @@ echo "  install dir: $OPENJARVIS_HOME"
 echo "  WSL2:        $WSL"
 echo
 
+beacon "install_started"
+
 step install_uv         "Install uv"            install_uv
 step clone_repo         "Clone OpenJarvis repo" clone_repo
 step copy_scripts       "Copy install scripts"  copy_scripts
@@ -252,6 +435,12 @@ step write_config       "Write config.toml"     write_config
 step install_symlinks   "Install symlinks"      install_symlinks
 step ensure_path        "Ensure PATH"           ensure_path
 step detach_bg_orchestrator "Detach background work" detach_bg_orchestrator
+
+# Total install duration → install_completed event.
+INSTALL_TOTAL_MS=$(( ( $(date +%s) - INSTALL_START_EPOCH ) * 1000 ))
+beacon "install_completed" "" "$INSTALL_TOTAL_MS"
+# Clear ERR trap — we succeeded; any later non-zero exit shouldn't beacon a failure.
+trap - ERR
 
 cat <<EOF
 

@@ -3,8 +3,19 @@
 OpenJarvis ships a one-line installer for macOS, Linux, and WSL2.
 
 ```bash
-curl -fsSL https://openjarvis.ai/install.sh | bash
+curl -fsSL https://open-jarvis.github.io/OpenJarvis/install.sh | bash
 ```
+
+The installer downloads everything for you — including [uv](https://docs.astral.sh/uv/)
+(the Python package manager), the Python venv, Ollama, and a small starter
+model. **You don't need to install uv or any other prerequisite first.**
+
+!!! info "Install URL"
+    This script is served straight from the project's own GitHub Pages site,
+    so HTTPS always works. You may also see `https://openjarvis.ai/install.sh`
+    referenced in older docs — that domain is community-operated and has had
+    intermittent TLS issues ([#337](https://github.com/open-jarvis/OpenJarvis/issues/337)).
+    The `open-jarvis.github.io` URL above is the canonical one.
 
 About 3 minutes on a typical broadband connection. Type `jarvis` to start chatting.
 

@@ -14,10 +14,16 @@ import { Toaster } from './components/ui/sonner';
 import { useAppStore } from './lib/store';
 import { fetchModels, fetchServerInfo, fetchSavings, submitSavings, isTauri } from './lib/api';
 import { OptInModal } from './components/OptInModal';
+import { UpdateChecker } from './components/Desktop/UpdateChecker';
+import { track, hashId } from './lib/analytics';
 
 export default function App() {
   const [setupDone, setSetupDone] = useState(!isTauri());
-  const handleSetupReady = useCallback(() => setSetupDone(true), []);
+  const handleSetupReady = useCallback(() => {
+    setSetupDone(true);
+    track('setup_completed', { preset: 'default' });
+  }, []);
+  const prevModelRef = useRef<string>('');
   const setModels = useAppStore((s) => s.setModels);
   const setModelsLoading = useAppStore((s) => s.setModelsLoading);
   const setSelectedModel = useAppStore((s) => s.setSelectedModel);
@@ -116,6 +122,36 @@ export default function App() {
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Fire model_changed when the user switches models. First mount is
+  // not a "change" — only emit when both prev and current are real and
+  // differ.
+  useEffect(() => {
+    const prev = prevModelRef.current;
+    const curr = selectedModel || '';
+    prevModelRef.current = curr;
+    if (!prev || !curr || prev === curr) return;
+    void (async () => {
+      const [fromHash, toHash] = await Promise.all([
+        hashId(prev),
+        hashId(curr),
+      ]);
+      track('model_changed', {
+        from_model_hash: fromHash,
+        to_model_hash: toHash,
+      });
+    })();
+  }, [selectedModel]);
+
+  // app_opened — one-shot per app launch, fires after analytics has had
+  // a chance to initialize. platform + version are super-properties
+  // registered in analytics.ts initAnalytics, so no per-call props needed.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      track('app_opened', {});
+    }, 500);
+    return () => clearTimeout(t);
+  }, []);
+
   const toggleSystemPanel = useAppStore((s) => s.toggleSystemPanel);
 
   // Global keyboard shortcuts
@@ -134,34 +170,6 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [commandPaletteOpen, setCommandPaletteOpen, toggleSystemPanel]);
 
-  // Desktop auto-update check — disabled during local development.
-  // Re-enable for production releases by uncommenting below.
-  // const updateChecked = useRef(false);
-  // useEffect(() => {
-  //   if (!isTauri() || updateChecked.current) return;
-  //   updateChecked.current = true;
-  //   (async () => {
-  //     try {
-  //       const { check } = await import('@tauri-apps/plugin-updater');
-  //       const update = await check();
-  //       if (update) {
-  //         await update.downloadAndInstall();
-  //         const { toast } = await import('sonner');
-  //         toast.info('Update ready', {
-  //           description: 'A new version has been downloaded. Restart to apply.',
-  //           duration: Infinity,
-  //           action: {
-  //             label: 'Restart Now',
-  //             onClick: async () => {
-  //               const { relaunch } = await import('@tauri-apps/plugin-process');
-  //               await relaunch();
-  //             },
-  //           },
-  //         });
-  //       }
-  //     } catch {}
-  //   })();
-  // }, []);
 
   if (!setupDone) {
     return <SetupScreen onReady={handleSetupReady} />;
@@ -169,6 +177,7 @@ export default function App() {
 
   return (
     <>
+      <UpdateChecker />
       <Routes>
         <Route element={<Layout />}>
           <Route index element={<ChatPage />} />
