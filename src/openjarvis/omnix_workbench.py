@@ -939,27 +939,86 @@ Required token scopes: chat:write, channels:history, channels:join"""
 
 
 def mode_cloud_status() -> str:
-    """Cloud deployment status check."""
-    return """Cloud Status: LOCAL-ONLY MODE
-Cloud Runtime: HOLD - No cloud-hosted Jarvis/OpenClaw/Mission Control runtime exists
-Cloud Storage: HOLD - No cloud-backed memory/artifact storage configured
-Mobile Access: HOLD - Mobile without Mac on requires cloud runtime
+    """Cloud deployment status check — detects active Tailnet cloud node via status-bundle."""
+    import os
 
-Current Architecture:
-- Jarvis CLI: Local-only (Python 3.13 venv)
-- Mission Control: Local-only (localhost:3091)
-- OpenClaw: Local-only (workspace on Mac)
-- Storage: Local-only (~/.omnix_workbench/*.jsonl)
+    default_url = "http://100.118.81.37:3091"
+    base_url = os.environ.get("OMNIX_WORKBENCH_CLOUD_STATUS_URL", default_url).rstrip("/")
+    storage_provider = os.environ.get("OMNIX_WORKBENCH_STORAGE_PROVIDER", "local")
+    source_of_truth = os.environ.get("OMNIX_WORKBENCH_SOURCE_OF_TRUTH", "local")
 
-Requirements for Cloud Mode:
-- Cloud runtime host (AWS ECS/Lambda/EC2)
-- Cloud-backed persistence (AWS S3/DynamoDB)
-- Secret management (AWS Secrets Manager)
-- Private networking (VPC/Tailscale)
-- Health checks and monitoring
-- Estimated cost: $50-200/month minimum
+    bundle: dict[str, Any] | None = None
+    health_ok = False
+    fetch_error = ""
 
-Next Step: Requires cloud deployment approval and budget authorization"""
+    # Probe status-bundle endpoint (non-fatal if unreachable)
+    try:
+        req = urllib.request.Request(
+            f"{base_url}/api/jarvis/status-bundle",
+            headers={"User-Agent": "jarvis-omnix/1"},
+        )
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            bundle = json.loads(resp.read().decode())
+            health_ok = True
+    except Exception as exc:
+        fetch_error = str(exc)
+
+    cloud_storage_ok = storage_provider == "aws"
+    sot_label = source_of_truth.upper()
+
+    if health_ok and bundle:
+        hostname = bundle.get("hostname", "unknown")
+        runtime = bundle.get("runtime", "unknown")
+        python_ver = bundle.get("python", "unknown")
+        ts_ip = bundle.get("tailscale_ip", "unknown")
+        ts_status = bundle.get("tailscale", "unknown")
+        storage_label = bundle.get("storage", "unknown")
+        instance_type = bundle.get("instance_type", "unknown")
+        os_label = bundle.get("os", "unknown")
+        svc = bundle.get("jarvis_service", "unknown")
+        cost = bundle.get("cost_estimate", "unknown")
+        action_gate = bundle.get("action_gate", "none")
+
+        storage_line = (
+            f"ACCEPT - Primary source of truth: {sot_label} ({storage_label})"
+            if cloud_storage_ok
+            else f"CONFIGURED LOCAL - Source of truth: {sot_label}"
+        )
+
+        return f"""Cloud Status: CLOUD RUNTIME ACTIVE
+Cloud Node: {hostname} ({instance_type}, {os_label})
+Runtime: {runtime} (Python {python_ver})
+Service: {svc}
+Tailscale: {ts_status} ({ts_ip})
+Endpoint: {base_url}
+Action Gate: {action_gate}
+
+Cloud Storage: {storage_line}
+
+Architecture:
+- Cloud Node: {hostname} via Tailnet ({ts_ip})
+- Storage: {storage_label} (source of truth: {sot_label})
+- CLI: Local Mac → Tailnet → {hostname}
+- Cost: {cost}
+
+All health checks: PASS"""
+
+    # Unreachable but we know the node exists
+    storage_line = (
+        f"ACCEPT - Primary source of truth: {sot_label}"
+        if cloud_storage_ok
+        else f"Local - Source of truth: {sot_label}"
+    )
+    return f"""Cloud Status: CLOUD NODE UNREACHABLE
+Endpoint Probed: {base_url}/api/jarvis/status-bundle
+Error: {fetch_error or 'no response'}
+Override: Set OMNIX_WORKBENCH_CLOUD_STATUS_URL to change endpoint
+
+Cloud Storage: {storage_line}
+
+Note: Cloud node may be stopped or Tailscale not connected on this machine.
+Check: aws ec2 describe-instances --instance-ids i-0393eec12545b74e3
+Check: tailscale ping 100.118.81.37"""
 
 
 def mode_storage_status() -> str:

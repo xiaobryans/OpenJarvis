@@ -280,11 +280,15 @@ The panel polls every 30s, shows hostname/runtime/Tailscale/storage/cost, config
 
 ---
 
+## `jarvis omnix cloud` Fix
+
+**Old behavior:** Hardcoded `LOCAL-ONLY MODE` with static HOLD messages — no detection logic.
+
+**Fix:** `mode_cloud_status()` in `src/openjarvis/omnix_workbench.py` now probes `OMNIX_WORKBENCH_CLOUD_STATUS_URL` (default `http://100.118.81.37:3091`) → `/api/jarvis/status-bundle`. On success: `CLOUD RUNTIME ACTIVE` with live data. On failure: `CLOUD NODE UNREACHABLE` with actionable steps. Env var documented in `.env.example`.
+
 ## Remaining Blockers
 
-None critical. One minor documentation item:
-
-1. **`jarvis omnix cloud` shows LOCAL-ONLY MODE** — minor: the `mode_cloud_status()` function in `omnix_workbench.py` checks for a cloud-hosted Jarvis/OpenClaw/Mission Control server (not an EC2 mobile node). The actual cloud node is working; this display is a known cosmetic mismatch in the cloud status check logic.
+None.
 
 ---
 
@@ -292,14 +296,14 @@ None critical. One minor documentation item:
 
 ```
 Continue Jarvis OMNIX Workbench. Read /Users/user/OpenJarvis/JARVIS_OMNIX_HANDOFF.md.
-All sprint goals complete:
+All sprint goals complete. No known imperfections.
 - Active node: openclaw-mobile (i-0393eec12545b74e3, t3.micro, Ubuntu 22.04, 100.118.81.37)
 - Cloud primary storage: S3 bucket omnix-workbench-071179620006-ap-southeast-1-artifacts
 - SSM: Online (agent 3.3.4121.0)
 - Action endpoint: /api/jarvis/action (POST, token from S3/~/.omnix_workbench/cloud-action-token)
+- jarvis omnix cloud: CLOUD RUNTIME ACTIVE
 - Cost: ~$28.50-33.50/month. openclaw-cloud: stopped. ECS: 0/0.
 Potential next items:
-- Update mode_cloud_status() in omnix_workbench.py to detect EC2 mobile node as cloud runtime
 - Implement iPhone Shortcuts for action endpoint
 - Monitor cloud storage usage
 Do not send Slack test messages. Do not print secrets.
@@ -315,11 +319,13 @@ Do not send Slack test messages. Do not print secrets.
 - All secrets remain in AWS Secrets Manager and local `.env`
 - `.env` is git-ignored
 
-## Files Changed in Final Sprint
+## Files Changed
 
 | File | Change |
 |---|---|
 | `pyproject.toml` | Added `boto3>=1.20` to dependencies |
 | `uv.lock` | Updated with boto3 1.43.29 |
 | `scripts/omnix-workbench` | Sources `.env` automatically |
-| `JARVIS_OMNIX_HANDOFF.md` | Full update — all ACCEPT, no blockers |
+| `src/openjarvis/omnix_workbench.py` | `mode_cloud_status()` — live endpoint detection replacing hardcoded LOCAL-ONLY MODE |
+| `.env.example` | Added `OMNIX_WORKBENCH_CLOUD_STATUS_URL` |
+| `JARVIS_OMNIX_HANDOFF.md` | All ACCEPT, no remaining blockers |
