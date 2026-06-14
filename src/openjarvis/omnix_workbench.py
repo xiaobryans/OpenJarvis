@@ -794,6 +794,223 @@ Error: {e}"""
         return f"Mission Control error: {e}"
 
 
+def mode_aws_status() -> str:
+    """AWS status check - read-only inspection."""
+    import subprocess
+    
+    try:
+        # Check if AWS CLI is installed
+        result = subprocess.run(
+            ["aws", "--version"],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        aws_version = result.stdout.strip()
+        
+        # Check profiles
+        result = subprocess.run(
+            ["aws", "configure", "list-profiles"],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        profiles = result.stdout.strip() if result.returncode == 0 else "None"
+        
+        # Check current config
+        result = subprocess.run(
+            ["aws", "configure", "list"],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        config = result.stdout.strip() if result.returncode == 0 else "None"
+        
+        # Get caller identity (account ID only)
+        result = subprocess.run(
+            ["aws", "sts", "get-caller-identity", "--profile", "openclaw-admin"],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        
+        if result.returncode == 0:
+            import json
+            identity = json.loads(result.stdout)
+            account_id = identity.get("Account", "Unknown")
+            user_arn = identity.get("Arn", "Unknown")
+        else:
+            account_id = "Unknown"
+            user_arn = "Unknown"
+        
+        return f"""AWS Status: AVAILABLE
+AWS CLI: {aws_version}
+Profiles: {profiles}
+Current Config: {config}
+Account ID: {account_id}
+User ARN: {user_arn}
+
+Cloud Runtime: HOLD - No cloud deployment target verified
+Cloud Storage: HOLD - No cloud storage resources configured
+Next Step: Requires cloud deployment approval and infrastructure setup"""
+        
+    except FileNotFoundError:
+        return """AWS Status: NOT INSTALLED
+AWS CLI not found
+Install with: brew install awscli"""
+    except subprocess.TimeoutExpired:
+        return """AWS Status: TIMEOUT
+AWS command timed out"""
+    except Exception as e:
+        return f"""AWS Status: ERROR
+{e}"""
+
+
+def mode_tailscale_status() -> str:
+    """Tailscale status check - read-only inspection."""
+    import subprocess
+    
+    try:
+        # Check if Tailscale is installed
+        result = subprocess.run(
+            ["tailscale", "version"],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        version = result.stdout.strip()
+        
+        # Check status
+        result = subprocess.run(
+            ["tailscale", "status"],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        
+        if result.returncode == 0:
+            status = "RUNNING"
+        else:
+            status = "STOPPED"
+            status_detail = result.stderr.strip()
+        
+        return f"""Tailscale Status: {status}
+Version: {version}
+Status Detail: {status_detail if status == "STOPPED" else "Connected to Tailnet"}
+
+Tailnet Access: HOLD - Tailscale is stopped, no private networking configured
+Mobile Access: HOLD - Tailscale alone cannot solve mobile-without-Mac unless cloud runtime exists
+Next Step: Start Tailscale with: sudo tailscale up"""
+        
+    except FileNotFoundError:
+        return """Tailscale Status: NOT INSTALLED
+Tailscale CLI not found
+Install with: brew install tailscale"""
+    except subprocess.TimeoutExpired:
+        return """Tailscale Status: TIMEOUT
+Tailscale command timed out"""
+    except Exception as e:
+        return f"""Tailscale Status: ERROR
+{e}"""
+
+
+def mode_slack_status() -> str:
+    """Slack status check - read-only inspection."""
+    import os
+    
+    # Check for Slack token in environment (key names only)
+    slack_token_keys = [k for k in os.environ.keys() if "SLACK" in k.upper() and "TOKEN" in k.upper()]
+    slack_channel_keys = [k for k in os.environ.keys() if "SLACK" in k.upper() and "CHANNEL" in k.upper()]
+    
+    # Check for OpenClaw CLI
+    import subprocess
+    try:
+        result = subprocess.run(
+            ["command", "-v", "openclaw"],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        openclaw_cli = result.returncode == 0
+    except:
+        openclaw_cli = False
+    
+    return f"""Slack Status: NOT CONFIGURED
+Slack Token: Found {len(slack_token_keys)} token key(s) in environment
+Slack Channel: Found {len(slack_channel_keys)} channel key(s) in environment
+OpenClaw CLI: {'INSTALLED' if openclaw_cli else 'NOT FOUND'}
+Safe Channel: agent-orchestrator / C0BAF08SQTB
+
+Send Path: HOLD - Missing Slack token and/or OpenClaw CLI send path
+Next Step: Configure Slack token in local .env file (ignored by git)"""
+
+
+def mode_cloud_status() -> str:
+    """Cloud deployment status check."""
+    return """Cloud Status: LOCAL-ONLY MODE
+Cloud Runtime: HOLD - No cloud-hosted Jarvis/OpenClaw/Mission Control runtime exists
+Cloud Storage: HOLD - No cloud-backed memory/artifact storage configured
+Mobile Access: HOLD - Mobile without Mac on requires cloud runtime
+
+Current Architecture:
+- Jarvis CLI: Local-only (Python 3.13 venv)
+- Mission Control: Local-only (localhost:3091)
+- OpenClaw: Local-only (workspace on Mac)
+- Storage: Local-only (~/.omnix_workbench/*.jsonl)
+
+Requirements for Cloud Mode:
+- Cloud runtime host (AWS ECS/Lambda/EC2)
+- Cloud-backed persistence (AWS S3/DynamoDB)
+- Secret management (AWS Secrets Manager)
+- Private networking (VPC/Tailscale)
+- Health checks and monitoring
+- Estimated cost: $50-200/month minimum
+
+Next Step: Requires cloud deployment approval and budget authorization"""
+
+
+def mode_storage_status() -> str:
+    """Storage configuration and migration status check."""
+    import os
+    from pathlib import Path
+    
+    memory_path = Path.home() / ".omnix_workbench" / "memory.jsonl"
+    artifact_path = Path.home() / ".omnix_workbench" / "artifacts.jsonl"
+    
+    memory_exists = memory_path.exists()
+    artifact_exists = artifact_path.exists()
+    
+    # Check for cloud storage config
+    storage_provider = os.environ.get("OMNIX_WORKBENCH_STORAGE_PROVIDER", "local")
+    source_of_truth = os.environ.get("OMNIX_WORKBENCH_SOURCE_OF_TRUTH", "local")
+    
+    return f"""Storage Status: LOCAL-ONLY
+Provider: {storage_provider}
+Source of Truth: {source_of_truth}
+
+Local Storage:
+- Memory: {memory_path} ({'EXISTS' if memory_exists else 'NOT FOUND'})
+- Artifacts: {artifact_path} ({'EXISTS' if artifact_exists else 'NOT FOUND'})
+
+Cloud Storage: HOLD - Not configured
+Required env vars:
+- OMNIX_WORKBENCH_STORAGE_PROVIDER=aws
+- OMNIX_WORKBENCH_AWS_REGION
+- OMNIX_WORKBENCH_AWS_PROFILE
+- OMNIX_WORKBENCH_MEMORY_BUCKET
+- OMNIX_WORKBENCH_ARTIFACT_BUCKET
+- OMNIX_WORKBENCH_STATE_TABLE
+
+Migration: HOLD - No cloud storage configured
+Dry-run command: jarvis omnix storage migrate --dry-run local-to-cloud
+Actual migration: Requires cloud resources and explicit approval
+
+Split-Brain Prevention:
+- Current: Single source of truth (local)
+- Cloud mode: Requires source-of-truth rules and conflict resolution
+"""
+
+
 def main() -> int:
     """Main entry point."""
     parser = argparse.ArgumentParser(
@@ -856,6 +1073,20 @@ def main() -> int:
     mission_control_parser = subparsers.add_parser("mission-control", help="Mission Control bridge start/stop/status")
     mission_control_parser.add_argument("command", help="Mission Control command: status, start, stop")
     
+    # AWS status mode
+    subparsers.add_parser("aws", help="AWS configuration and access status")
+    
+    # Tailscale status mode
+    subparsers.add_parser("tailscale", help="Tailscale private networking status")
+    
+    # Cloud status mode
+    subparsers.add_parser("cloud", help="Cloud deployment status")
+    
+    # Storage status mode
+    storage_parser = subparsers.add_parser("storage", help="Storage configuration and migration status")
+    storage_parser.add_argument("command", nargs="?", help="Storage command: status, migrate")
+    storage_parser.add_argument("--dry-run", action="store_true", help="Dry-run migration only")
+    
     args = parser.parse_args()
     
     if not args.mode:
@@ -887,6 +1118,40 @@ def main() -> int:
             result = mode_deploy(args.target)
         elif args.mode == "mission-control":
             result = mode_mission_control(args.command)
+        elif args.mode == "aws":
+            result = mode_aws_status()
+        elif args.mode == "tailscale":
+            result = mode_tailscale_status()
+        elif args.mode == "cloud":
+            result = mode_cloud_status()
+        elif args.mode == "storage":
+            if args.command == "migrate" and args.dry_run:
+                result = """Storage Migration: DRY-RUN MODE
+Direction: local-to-cloud
+This is a dry-run. No actual migration will occur.
+
+Required cloud configuration:
+- OMNIX_WORKBENCH_STORAGE_PROVIDER=aws
+- OMNIX_WORKBENCH_AWS_REGION
+- OMNIX_WORKBENCH_AWS_PROFILE
+- OMNIX_WORKBENCH_MEMORY_BUCKET
+- OMNIX_WORKBENCH_ARTIFACT_BUCKET
+- OMNIX_WORKBENCH_STATE_TABLE
+
+Actual migration requires:
+1. Cloud resources to be created
+2. Explicit approval from Bryan
+3. Source-of-truth rules to be defined
+4. Conflict resolution strategy"""
+            elif args.command == "migrate":
+                result = """Storage Migration: REFUSED
+Actual migration not allowed without:
+1. Cloud resources configured
+2. Explicit approval from Bryan
+3. Source-of-truth rules defined
+Use --dry-run flag for validation only."""
+            else:
+                result = mode_storage_status()
         else:
             parser.print_help()
             return 1

@@ -106,6 +106,40 @@ def mission_control(command: str) -> None:
     _run_workbench(["mission-control", command])
 
 
+@omnix.command()
+def aws() -> None:
+    """AWS configuration and access status."""
+    _run_workbench(["aws"])
+
+
+@omnix.command()
+def tailscale() -> None:
+    """Tailscale private networking status."""
+    _run_workbench(["tailscale"])
+
+
+@omnix.command()
+def cloud() -> None:
+    """Cloud deployment status."""
+    _run_workbench(["cloud"])
+
+
+@omnix.command()
+@click.argument("command", nargs=-1, default=None)
+@click.option("--dry-run", is_flag=True, help="Dry-run migration only")
+def storage(command: tuple[str, ...] | None, dry_run: bool) -> None:
+    """Storage configuration and migration status."""
+    if command and "migrate" in command:
+        args = ["storage", "migrate"]
+        if dry_run:
+            args.append("--dry-run")
+    else:
+        args = ["storage"]
+        if command:
+            args.extend(command)
+    _run_workbench(args)
+
+
 def _run_workbench(args: list[str]) -> None:
     """Run the omnix workbench script with given arguments."""
     workbench_path = Path(__file__).parent.parent.parent.parent / "scripts" / "omnix-workbench"
