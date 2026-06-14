@@ -8,7 +8,7 @@ ACCEPT - Cloud runtime deployment successful. ECS tasks now run continuously wit
 ### OpenJarvis
 - **Path:** `/Users/user/OpenJarvis`
 - **Branch:** `localhost-get-tool`
-- **Final HEAD:** `ac697828`
+- **Final HEAD:** 6cd09c78
 - **Pushed URL:** `https://github.com/xiaobryans/OpenJarvis.git` (fork)
 - **Status:** Clean working directory, all changes committed
 
@@ -58,36 +58,31 @@ ACCEPT - Cloud runtime deployment successful. ECS tasks now run continuously wit
 ### Cloud Storage
 - ✅ Cloud storage deployed (S3 bucket, DynamoDB table created)
 - ✅ Storage migration possible (dry-run successful)
-### Cloud Storage
-- ✅ Cloud storage deployed (S3 bucket, DynamoDB table created)
-- ✅ Storage migration possible (dry-run successful)
-### Cloud Storage
-- ✅ Cloud storage deployed (S3 bucket, DynamoDB table created)
-- ✅ Storage migration possible (dry-run successful)
 
-### Mobile Without Mac
-- ❌ Mobile access not solved (Tailscale cloud node offline)
-- ✅ Cloud runtime deployed and running
-
-### EC2 Recovery
-- ❌ `openclaw-cloud` EC2 impaired, no SSM/SSH access
-- ❌ No IAM instance profile attached
-- ❌ SSM agent not available
+- ❌ Mobile access not yet verified (Tailscale infrastructure ready, not tested)
+### Mobile Without Mac - PARTIALLY IMPLEMENTED
+- Cloud runtime: ✅ Infrastructure deployed with Tailscale support
+- Tailscale secret: ✅ Created and populated (omnix-workbench-tailscale-authkey)
+- Task definition: ✅ Version 7 with TS_AUTHKEY secret
+- Tailscale connection: ⚠️ Not yet verified (ECS scaled to 0)
+- ECS scale-up: aws ecs update-service --cluster omnix-workbench-071179620006-ap-southeast-1-cluster --service omnix-workbench-071179620006-ap-southeast-1-service --desired-count 1 --profile openclaw-admin --region ap-southeast-1
+- ECS scale-down: aws ecs update-service --cluster omnix-workbench-071179620006-ap-southeast-1-cluster --service omnix-workbench-071179620006-ap-southeast-1-service --desired-count 0 --profile openclaw-admin --region ap-southeast-1
 
 ### Tailscale Cloud Node
-- ❌ `openclaw-aws` Tailnet node offline (last seen 20h ago)
+- ❌ Previous openclaw-aws node offline (last seen 23h ago)
+- ⚠️ New ECS-based Tailscale not yet verified (ECS scaled to 0)
 
 ## AWS Resources Created
 
 ### Current Active Resources
 - **Existing EC2 instances:**
   - `openclaw-main` (i-09ab63019ce102b57)
-  - `openclaw-cloud` (i-08073bdf75fad3a3c) - impaired, no SSM access
+  - `openclaw-cloud` (i-08073bdf75fad3a3c) - STOPPED for cost containment
 
 ### CloudFormation Stack Status
 - **Stack name:** `omnix-workbench-stack`
 - **Status:** UPDATE_COMPLETE
-- **Task definition:** Version 5 (Python 3.11-slim with AWS CLI)
+- **Task definition:** Version 7 (Python 3.11-slim with AWS CLI + Tailscale support)
 - **ECS service:** ACTIVE with 0 running tasks (scaled to 0 for cost containment)
 - **Reason:** Fixed secret reference and added real cloud runtime server, but scaled down due to cost cap
 
@@ -111,20 +106,6 @@ ACCEPT - Cloud runtime deployment successful. ECS tasks now run continuously wit
 - **openclaw-cloud restart:** aws ec2 start-instances --instance-ids i-08073bdf75fad3a3c --profile openclaw-admin --region ap-southeast-1
 ### Estimated Cost: $25-35/month
 - **Status:** Deployed but scaled to 0 for cost containment
-- **Cloud deployment:** $0 (ECS scaled to 0 for cost containment)
-- **Other resources:** $5-10/month (S3, DynamoDB, CloudWatch, Secrets Manager)
-- **Total:** $25-35/month (UNDER $45/month cap ✓)
-- **Cost action taken:** ECS scaled to 0, openclaw-cloud stopped (impaired, no IAM profile)
-- **openclaw-cloud restart:** aws ec2 start-instances --instance-ids i-08073bdf75fad3a3c --profile openclaw-admin --region ap-southeast-1
-### Estimated Cost: $25-35/month
-- **Existing EC2 instances:** $20-25/month (openclaw-main t3.small only)
-- **Cloud deployment:** $0 (ECS scaled to 0 for cost containment)
-- **Other resources:** $5-10/month (S3, DynamoDB, CloudWatch, Secrets Manager)
-- **Total:** $25-35/month (UNDER $45/month cap ✓)
-- **Cost action taken:** ECS scaled to 0, openclaw-cloud stopped (impaired, no IAM profile)
-- **openclaw-cloud restart:** aws ec2 start-instances --instance-ids i-08073bdf75fad3a3c --profile openclaw-admin --region ap-southeast-1
-### Estimated Cost: $25-35/month
-- **Existing EC2 instances:** $20-25/month (openclaw-main t3.small only)
 - **Cloud deployment:** $0 (ECS scaled to 0 for cost containment)
 - **Other resources:** $5-10/month (S3, DynamoDB, CloudWatch, Secrets Manager)
 - **Total:** $25-35/month (UNDER $45/month cap ✓)
