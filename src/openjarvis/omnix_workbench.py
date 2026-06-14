@@ -671,6 +671,129 @@ def mode_deploy(target: str) -> str:
     return result
 
 
+def mode_mission_control(command: str) -> str:
+    """Mission Control mode: start/stop/status for the user-facing bridge."""
+    import subprocess
+    import os
+    
+    dashboard_path = "/Users/user/CascadeProjects/omnix-command-center"
+    port = "3091"
+    workspace_dir = "/Users/user/CascadeProjects/openclaw-workspace-omnix"
+    
+    try:
+        if command == "status":
+            # Check if Mission Control bridge is running
+            try:
+                result = subprocess.run(
+                    ["lsof", "-ti", port],
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
+                
+                if result.stdout.strip():
+                    return f"""Mission Control Status: RUNNING
+Port: {port}
+Endpoint: http://127.0.0.1:{port}/api/jarvis/status-bundle
+Workspace: {workspace_dir}"""
+                else:
+                    return """Mission Control Status: STOPPED
+Port: 3091 is available
+Start with: jarvis-omnix mission-control start"""
+            
+            except Exception:
+                return """Mission Control Status: UNKNOWN
+Could not check port status"""
+        
+        elif command == "start":
+            # Check if already running
+            try:
+                result = subprocess.run(
+                    ["lsof", "-ti", port],
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
+                
+                if result.stdout.strip():
+                    return f"""Mission Control: Already running on port {port}
+Endpoint: http://127.0.0.1:{port}/api/jarvis/status-bundle"""
+            except Exception:
+                pass
+            
+            # Start Mission Control bridge
+            env = os.environ.copy()
+            env["OPENCLAW_WORKSPACE_DIR"] = workspace_dir
+            env["PORT"] = port
+            
+            try:
+                subprocess.Popen(
+                    ["node", "server.js"],
+                    cwd=dashboard_path,
+                    env=env,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL
+                )
+                
+                return f"""Mission Control: STARTING
+Port: {port}
+Endpoint: http://127.0.0.1:{port}/api/jarvis/status-bundle
+Workspace: {workspace_dir}
+
+Allow 2-3 seconds for startup, then check status with:
+  jarvis-omnix mission-control status"""
+            
+            except FileNotFoundError:
+                return """Mission Control: START FAILED
+Node.js not found or server.js not in expected location
+Expected: {dashboard_path}/server.js"""
+            
+            except Exception as e:
+                return f"""Mission Control: START FAILED
+Error: {e}"""
+        
+        elif command == "stop":
+            # Stop Mission Control bridge
+            try:
+                result = subprocess.run(
+                    ["lsof", "-ti", port],
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
+                
+                if result.stdout.strip():
+                    pids = result.stdout.strip().split()
+                    stopped = []
+                    for pid in pids:
+                        try:
+                            subprocess.run(["kill", "-9", pid], capture_output=True, timeout=5)
+                            stopped.append(pid)
+                        except Exception:
+                            pass
+                    
+                    if stopped:
+                        return f"""Mission Control: STOPPED
+Killed processes: {', '.join(stopped)}
+Port {port} is now available"""
+                    else:
+                        return """Mission Control: STOP FAILED
+Could not kill processes"""
+                else:
+                    return """Mission Control: NOT RUNNING
+Nothing to stop"""
+            
+            except Exception as e:
+                return f"""Mission Control: STOP FAILED
+Error: {e}"""
+        
+        else:
+            return "Mission Control commands: status, start, stop"
+    
+    except Exception as e:
+        return f"Mission Control error: {e}"
+
+
 def main() -> int:
     """Main entry point."""
     parser = argparse.ArgumentParser(
@@ -729,6 +852,10 @@ def main() -> int:
     deploy_parser = subparsers.add_parser("deploy", help="Deploy readiness check")
     deploy_parser.add_argument("target", nargs="?", help="Deploy target (optional)")
     
+    # Mission Control mode
+    mission_control_parser = subparsers.add_parser("mission-control", help="Mission Control bridge start/stop/status")
+    mission_control_parser.add_argument("command", help="Mission Control command: status, start, stop")
+    
     args = parser.parse_args()
     
     if not args.mode:
@@ -758,6 +885,8 @@ def main() -> int:
             result = mode_slack(args.command)
         elif args.mode == "deploy":
             result = mode_deploy(args.target)
+        elif args.mode == "mission-control":
+            result = mode_mission_control(args.command)
         else:
             parser.print_help()
             return 1

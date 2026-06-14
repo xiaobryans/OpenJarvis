@@ -2,12 +2,15 @@
 
 Functional local front door for OMNIX upgrade work using Jarvis agents.
 
-## Starting the Dashboard Bridge
+## Starting Mission Control
 
+**User-facing Mission Control bridge** (internal service):
 ```bash
 cd /Users/user/CascadeProjects/omnix-command-center
 OPENCLAW_WORKSPACE_DIR=/Users/user/CascadeProjects/openclaw-workspace-omnix PORT=3091 node server.js
 ```
+
+Mission Control provides the status bundle endpoint at `http://127.0.0.1:3091/api/jarvis/status-bundle`
 
 ## Running the Workbench
 
