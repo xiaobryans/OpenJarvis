@@ -27,6 +27,7 @@ from openjarvis.cli.init_cmd import init
 from openjarvis.cli.memory_cmd import memory
 from openjarvis.cli.mine_cmd import mine
 from openjarvis.cli.model import model
+from openjarvis.cli.omnix_cmd import omnix
 from openjarvis.cli.operators_cmd import operators
 from openjarvis.cli.optimize_cmd import optimize_group
 from openjarvis.cli.pearl_cmd import pearl
@@ -128,6 +129,7 @@ cli.add_command(config, "config")
 cli.add_command(scan, "scan")
 cli.add_command(connect, "connect")
 cli.add_command(digest, "digest")
+cli.add_command(omnix, "omnix")
 # deep-research setup pulls the ingestion pipeline (embeddings/numpy). Guard it
 # so a broken or slow numpy on Windows — which can raise at IMPORT time, not
 # just ImportError (#404) — can never take down the whole CLI, including

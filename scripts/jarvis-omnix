@@ -1,0 +1,16 @@
+#!/bin/bash
+# Jarvis OMNIX Workbench v1 - Visible launcher
+# Usage: jarvis-omnix <command> [args]
+
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+WORKBENCH_SCRIPT="$SCRIPT_DIR/omnix-workbench"
+
+if [ ! -f "$WORKBENCH_SCRIPT" ]; then
+    echo "Error: Workbench script not found at $WORKBENCH_SCRIPT" >&2
+    exit 1
+fi
+
+# Run the workbench with all arguments
+exec "$WORKBENCH_SCRIPT" "$@"
