@@ -347,7 +347,7 @@ Resources:
               Value: !Ref StateTable
           Secrets:
             - Name: SLACK_BOT_TOKEN
-              ValueFrom: !Sub 'arn:aws:secretsmanager:${AWSRegion}:${AccountId}:secret:${Environment}-${AccountId}-${AWSRegion}-secrets'
+              ValueFrom: !Ref SecretsManagerSecret
           LogConfiguration:
             LogDriver: awslogs
             Options:
