@@ -1,27 +1,27 @@
 # Jarvis OMNIX Workbench Handoff
 
 ## Final Verdict
-ACCEPT - Cloud runtime deployment successful. ECS tasks now run continuously with Python-based cloud runtime server providing health/status endpoints. Security maintained with no inbound access. Mobile without Mac remains HOLD due to Tailscale cloud node offline.
+ACCEPT - Mobile access without Mac achieved via Tailscale on EC2. Full OpenJarvis runtime installed and working on Ubuntu 22.04 with Python 3.10+. Mobile Mission Control endpoints working over Tailnet. Cloud sync HOLD due to AWS storage configuration incomplete on cloud node. Cost containment achieved ($34.50-44.50/month under $45/month cap).
 
 ## Current Repo Paths
 
 ### OpenJarvis
 - **Path:** `/Users/user/OpenJarvis`
 - **Branch:** `localhost-get-tool`
-- **Final HEAD:** 6cd09c78
+- **Final HEAD:** 92e6fab2
 - **Pushed URL:** `https://github.com/xiaobryans/OpenJarvis.git` (fork)
-- **Status:** Clean working directory, all changes committed
+- **Status:** Clean working directory
 
 ### Mission Control Bridge
 - **Path:** `/Users/user/CascadeProjects/omnix-command-center`
 - **Branch:** `jarvis-automation-foundation`
-- **Final HEAD:** `3e0b8da`
+- **Final HEAD:** 3e0b8da
 - **Status:** No uncommitted changes
 
 ### OpenClaw
 - **Path:** `/Users/user/CascadeProjects/openclaw-workspace-omnix`
 - **Branch:** `jarvis-automation-foundation`
-- **Final HEAD:** `3aaba34`
+- **Final HEAD:** 3aaba34
 - **Status:** No uncommitted changes
 
 ## What Works
@@ -38,46 +38,53 @@ ACCEPT - Cloud runtime deployment successful. ECS tasks now run continuously wit
 - ✅ Slack token configured in `.env`
 - ✅ Slack channel configured (C0BAF08SQTB)
 - ✅ Test message sent successfully to safe channel
-- ✅ Timestamp: 1781452057.539689
+- ✅ ACCEPT
 
-### Cloud Infrastructure (Template)
-- ✅ CloudFormation template redesigned for low-cost public-subnet architecture
-- ✅ NAT Gateway removed (saves ~$35/month)
-- ✅ Template validates successfully
+### Cloud Infrastructure
+- ✅ CloudFormation stack deployed (omnix-workbench-stack)
+- ✅ ECS cluster deployed
+- ✅ S3 bucket created (omnix-workbench-071179620006-ap-southeast-1-artifacts)
+- ✅ DynamoDB table created (omnix-workbench-071179620006-ap-southeast-1-state)
+- ✅ Secrets Manager secret created and populated
+- ✅ VPC/subnets created (public subnets, no NAT Gateway)
+- ✅ ECR repository created (omnix-workbench)
 - ✅ Security group has no inbound rules (secure)
-- ✅ Estimated cost: $20-30/month (ECS Fargate only)
-
-## What Remains HOLD
 
 ### Cloud Runtime
-- ✅ Cloud runtime deployed successfully (ECS task running with Python cloud runtime server)
+- ✅ ECS task definition deployed with Python 3.11-slim and AWS CLI
+- ✅ Cloud runtime server provides health/status endpoints on port 3091
 - ✅ ECS tasks can reach AWS Secrets Manager (fixed secret reference)
-- ✅ Cloud runtime provides health/status endpoints on port 3091
 - ✅ Security group has no inbound rules (safe)
 
-### Cloud Storage
-- ✅ Cloud storage deployed (S3 bucket, DynamoDB table created)
-- ✅ Storage migration possible (dry-run successful)
-
-- ❌ Mobile access not yet verified (Tailscale infrastructure ready, not tested)
-### Mobile Without Mac - PARTIALLY IMPLEMENTED
+### Mobile Without Mac - ACCEPT
 - Cloud runtime: ✅ Infrastructure deployed with Tailscale support
 - Tailscale secret: ✅ Created and populated (omnix-workbench-tailscale-authkey)
-- Task definition: ✅ Version 7 with TS_AUTHKEY secret
-- Tailscale connection: ⚠️ Not yet verified (ECS scaled to 0)
-- ECS scale-up: aws ecs update-service --cluster omnix-workbench-071179620006-ap-southeast-1-cluster --service omnix-workbench-071179620006-ap-southeast-1-service --desired-count 1 --profile openclaw-admin --region ap-southeast-1
-- ECS scale-down: aws ecs update-service --cluster omnix-workbench-071179620006-ap-southeast-1-cluster --service omnix-workbench-071179620006-ap-southeast-1-service --desired-count 0 --profile openclaw-admin --region ap-southeast-1
+- New EC2 mobile node: ✅ openclaw-mobile (i-0393eec12545b74e3)
+- Instance type: t3.micro ($9.50/month) - Ubuntu 22.04 with Python 3.10+
+- Tailnet hostname: openclaw-mobile-3
+- Tailscale IP: 100.118.81.37
+- DNS: openclaw-mobile-3.tail743cb8.ts.net
+- Health endpoint: ✅ http://100.118.81.37:3091/health
+- Status-bundle endpoint: ✅ http://100.118.81.37:3091/api/jarvis/status-bundle
+- Security: No inbound rules (private Tailnet access only)
+- Full OpenJarvis runtime: ✅ ACCEPT - Installed and working on Ubuntu 22.04
+- Python version: ✅ 3.10+ (Ubuntu 22.04 default)
+- ECS: Scaled to 0 (not needed for mobile access)
 
 ### Tailscale Cloud Node
-- ❌ Previous openclaw-aws node offline (last seen 23h ago)
-- ⚠️ New ECS-based Tailscale not yet verified (ECS scaled to 0)
+- ✅ openclaw-mobile-3 (i-0393eec12545b74e3) - Online and reachable via Tailnet
+- ❌ Previous nodes offline (openclaw-aws, old mobile instances)
+- ✅ Full OpenJarvis runtime: ACCEPT - Python 3.10+ on Ubuntu 22.04
 
 ## AWS Resources Created
 
 ### Current Active Resources
 - **Existing EC2 instances:**
-  - `openclaw-main` (i-09ab63019ce102b57)
+  - `openclaw-main` (i-09ab63019ce102b57) - Running, t3.small
   - `openclaw-cloud` (i-08073bdf75fad3a3c) - STOPPED for cost containment
+  - `openclaw-mobile` (i-0393eec12545b74e3) - Running, t3.micro, Ubuntu 22.04, OpenJarvis runtime
+- **IAM Role:** openclaw-mobile-role (Tailscale secret access + CloudWatch logs)
+- **Instance Profile:** openclaw-mobile-profile
 
 ### CloudFormation Stack Status
 - **Stack name:** `omnix-workbench-stack`
@@ -86,156 +93,46 @@ ACCEPT - Cloud runtime deployment successful. ECS tasks now run continuously wit
 - **ECS service:** ACTIVE with 0 running tasks (scaled to 0 for cost containment)
 - **Reason:** Fixed secret reference and added real cloud runtime server, but scaled down due to cost cap
 
-### Cloud Resources (Created)
-- ✅ ECS cluster deployed
-- ✅ ECS service deployed with 1 running task
-- ✅ S3 bucket created (omnix-workbench-071179620006-ap-southeast-1-artifacts)
-- ✅ DynamoDB table created (omnix-workbench-071179620006-ap-southeast-1-state)
-- ✅ Secrets Manager secret created and populated with SLACK_BOT_TOKEN
-- ✅ VPC/subnets created (public subnets, no NAT Gateway)
-- ✅ ECR repository created (omnix-workbench)
-
 ## Current Monthly Cost Exposure
 
-### Estimated Cost: $25-35/month
-- **Existing EC2 instances:** $20-25/month (openclaw-main t3.small only)
-- **Cloud deployment:** $0 (ECS scaled to 0 for cost containment)
+### Estimated Cost: $34.50-44.50/month
+- **Existing EC2 instances:** $20-25/month (openclaw-main t3.small)
+- **Mobile runtime:** $9.50/month (openclaw-mobile t3.micro)
+- **Cloud deployment:** $0 (ECS scaled to 0)
 - **Other resources:** $5-10/month (S3, DynamoDB, CloudWatch, Secrets Manager)
-- **Total:** $25-35/month (UNDER $45/month cap ✓)
-- **Cost action taken:** ECS scaled to 0, openclaw-cloud stopped (impaired, no IAM profile)
-- **openclaw-cloud restart:** aws ec2 start-instances --instance-ids i-08073bdf75fad3a3c --profile openclaw-admin --region ap-southeast-1
-### Estimated Cost: $25-35/month
-- **Status:** Deployed but scaled to 0 for cost containment
-- **Cloud deployment:** $0 (ECS scaled to 0 for cost containment)
-- **Other resources:** $5-10/month (S3, DynamoDB, CloudWatch, Secrets Manager)
-- **Total:** $25-35/month (UNDER $45/month cap ✓)
-- **Cost action taken:** ECS scaled to 0, openclaw-cloud stopped (impaired, no IAM profile)
-- **openclaw-cloud restart:** aws ec2 start-instances --instance-ids i-08073bdf75fad3a3c --profile openclaw-admin --region ap-southeast-1
-### Estimated Cost: $25-35/month
-- **Existing EC2 instances:** $20-25/month (openclaw-main t3.small only)
-- **Cloud deployment:** $0 (ECS scaled to 0 for cost containment)
-- **Other resources:** $5-10/month (S3, DynamoDB, CloudWatch, Secrets Manager)
-- **Total:** $25-35/month (UNDER $45/month cap ✓)
-- **Cost action taken:** ECS scaled to 0, openclaw-cloud stopped (impaired, no IAM profile)
-- **openclaw-cloud restart:** aws ec2 start-instances --instance-ids i-08073bdf75fad3a3c --profile openclaw-admin --region ap-southeast-1
-### Estimated Cost: $25-35/month
-- **Existing EC2 instances:** $20-25/month (openclaw-main t3.small only)
-- **Cloud deployment:** $0 (ECS scaled to 0 for cost containment)
-- **Other resources:** $5-10/month (S3, DynamoDB, CloudWatch, Secrets Manager)
-- **Total:** $25-35/month (UNDER $45/month cap ✓)
-- **Cost action taken:** ECS scaled to 0, openclaw-cloud stopped (impaired, no IAM profile)
-- **openclaw-cloud restart:** aws ec2 start-instances --instance-ids i-08073bdf75fad3a3c --profile openclaw-admin --region ap-southeast-1
-- **Status:** Deployed and running
-- **Access model:** Public-subnet ECS Fargate with no inbound access
-- **Security:** Security group blocks all inbound traffic, outbound only for AWS APIs
-- **Endpoints:** Health (/health), Status (/api/jarvis/status-bundle)
+- **Total:** $34.50-44.50/month (UNDER $45/month cap ✓)
+- **Cost action taken:** openclaw-cloud stopped, ECS scaled to 0
 
-## Tailnet Node Status
-
-### Online Nodes
-- ✅ Mac (ahs-macbook-pro) - Online
-- ✅ iPhone (iphone171) - Online
-
-### Offline Nodes
-- ❌ `openclaw-aws` - Offline (last seen 20h ago)
-
-## Slack Status
-
-### Configuration
-- ✅ Slack token: Configured in `.env` (OPENCLAW_SLACK_BOT_TOKEN)
-- ✅ Slack channel: C0BAF08SQTB (agent-orchestrator)
-- ✅ Test message: Sent successfully at timestamp 1781452057.539689
-
-### Integration
-- ✅ Slack integration module implemented (`omnix_slack.py`)
-- ✅ Token safely loaded from `.env`
-- ✅ Send path verified and working
-
-## Storage/Source-of-Truth Status
-
-### Local Storage
-- ✅ Memory: `/Users/user/.omnix_workbench/memory.jsonl` (2 items)
-- ✅ Artifacts: `/Users/user/.omnix_workbench/artifacts.jsonl` (2 items)
-- ✅ Source of truth: local
-- ✅ No conflicts detected
-
-### Cloud Storage
-- ❌ Not configured
-- ❌ No S3 bucket
-- ❌ No DynamoDB table
-- ❌ Migration not possible
-
-## Daily Commands
-
-### Status Checks
+### EC2 Management Commands
 ```bash
-jarvis omnix status
-jarvis omnix aws
-jarvis omnix cloud
-jarvis omnix storage
-jarvis omnix tailscale
-jarvis omnix slack status
-jarvis-omnix status
+# Stop openclaw-mobile
+aws ec2 stop-instances --instance-ids i-0393eec12545b74e3 --profile openclaw-admin --region ap-southeast-1
+
+# Start openclaw-mobile
+aws ec2 start-instances --instance-ids i-0393eec12545b74e3 --profile openclaw-admin --region ap-southeast-1
+
+# Terminate openclaw-mobile (if needed)
+aws ec2 terminate-instances --instance-ids i-0393eec12545b74e3 --profile openclaw-admin --region ap-southeast-1
+
+# Restart openclaw-cloud (if needed for recovery)
+aws ec2 start-instances --instance-ids i-08073bdf75fad3a3c --profile openclaw-admin --region ap-southeast-1
 ```
 
-### Storage Commands
-```bash
-jarvis omnix storage migrate --dry-run  # Check migration plan
-# Actual migration requires cloud resources
-```
+## Exact Remaining Blockers
 
-### AWS Commands
-```bash
-# Check CloudFormation stack
-aws cloudformation describe-stacks --stack-name omnix-workbench-stack --profile openclaw-admin --region ap-southeast-1
-
-# Delete stack (cleanup)
-aws cloudformation delete-stack --stack-name omnix-workbench-stack --profile openclaw-admin --region ap-southeast-1
-
-# Validate template
-aws cloudformation validate-template --template-body file:///Users/user/OpenJarvis/deploy/aws/template.yaml --profile openclaw-admin --region ap-southeast-1
-
-# Deploy stack
-aws cloudformation create-stack --stack-name omnix-workbench-stack --template-body file:///Users/user/OpenJarvis/deploy/aws/template.yaml --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM --profile openclaw-admin --region ap-southeast-1
-```
-
-### Tailscale Commands
-```bash
-# Check Tailscale status
-tailscale status
-
-# Start Tailscale (if needed)
-sudo tailscale up
-```
-
-## Validation Commands/Results
-
-### ✅ Validation Results
-- **jarvis omnix status:** Local mode working
-- **jarvis omnix aws:** AWS CLI configured, cloud resources not deployed
-- **jarvis omnix cloud:** Local-only mode, no cloud runtime
-- **jarvis omnix storage:** Local storage working, cloud not configured
-- **jarvis omnix storage migrate --dry-run:** Dry-run successful (2 memory, 2 artifact items)
-- **jarvis omnix tailscale:** Tailscale running, cloud node offline
-- **jarvis omnix slack status:** Configured and working
-### RTailscaleRElo d nodOL ❌DOfflineo(openclaw-kwslssn 23ho)
- Tailscalesvce o EC2nsan join cloudrntimt Tale
-1. **Cloud Runtime Deployment**
-   - ECS deployment stuck in CREATE_IN_PROGRESS
-   - Root cause: ECS tasks cannot reach AWS Secrets Manager
-   - Action: Fix networking architecture or use VPC endpoints (nuadr pacep`)
-   - Action: Fix Tailscale service on EC2 instance
-
-4. **Mobile Without Mac**
-   - Requires cloud runtime and Tailscale cloud node
-   - Action: Deploy cloud runtime and join to Tailnet
+1. **Cloud Memory/Source-of-Truth Sync** - HOLD
+   - AWS storage configuration incomplete on cloud node
+   - Cloud node needs proper AWS credentials and storage configuration
+   - Migration failed: "AWS storage configuration incomplete"
+   - Impact: Local-only memory/artifacts, no cloud sync
+   - Solution: Configure cloud node with proper AWS storage settings or run migration from local Mac with cloud storage configured
 
 ## Exact Next Prompt for New Windsurf Chat
 
 If continuing this work in a new Windsurf chat, use this prompt:
 
 ```
-Continue Jarvis OMNIX Workbench cloud deployment and recovery. Read the handoff file at /Users/user/OpenJarvis/JARVIS_OMNIX_HANDOFF.md for full context. The main blockers are: (1) Cloud runtime deployment stuck due to ECS networking issues, (2) openclaw-cloud EC2 impaired with no SSM/SSH access, (3) Tailscale cloud node offline, (4) Mobile without Mac not solved. Slack integration is working. Please focus on fixing the ECS networking architecture to allow tasks to reach AWS Secrets Manager, then redeploy the cloud stack under the $45/month cap.
+Continue Jarvis OMNIX Workbench cloud deployment and recovery. Read the handoff file at /Users/user/OpenJarvis/JARVIS_OMNIX_HANDOFF.md for full context. Mobile access without Mac is ACCEPT - full OpenJarvis runtime working via Tailscale on openclaw-mobile (i-0393eec12545b74e3, t3.micro, Ubuntu 22.04, 100.118.81.37). Cost is $34.50-44.50/month under $45/month cap. openclaw-cloud is stopped. ECS is scaled to 0. BLOCKER: Cloud sync HOLD due to AWS storage configuration incomplete on cloud node. Next action: Configure cloud node with proper AWS storage settings or enable cloud sync from local Mac. Do not send Slack test messages.
 ```
 
 ## Secret Safety
@@ -245,125 +142,11 @@ Continue Jarvis OMNIX Workbench cloud deployment and recovery. Read the handoff 
 - ✅ `.env` is ignored by git
 - ✅ All required keys present in `.env` (values redacted)
 
-## Production Safety
-
-- ✅ No OMNIX production deploy attempted
-- ✅ No changes pushed to upstream OpenJarvis
-- ✅ All changes pushed to fork only
-- ✅ No duplicate AWS stacks created
-- ✅ No NAT Gateway cost trap (removed from template)
-
-## Cleanup/Destroy Commands
-
-### CloudFormation Stack (if exists)
-```bash
-aws cloudformation delete-stack --stack-name omnix-workbench-stack --profile openclaw-admin --region ap-southeast-1
-```
-
-### Verify Cleanup
-```bash
-aws cloudformation describe-stacks --stack-name omnix-workbench-stack --profile openclaw-admin --region ap-southeast-1
-# Should return error if stack deleted
-```
-
-## Architecture Notes
-
-### CloudFormation Template
-- **File:** `/Users/user/OpenJarvis/deploy/aws/template.yaml`
-- **Architecture:** Public-subnet ECS Fargate without NAT Gateway
-- **Cost:** $20-30/month (ECS Fargate only)
-- **Security:** No inbound access, outbound only for AWS APIs
-- **Issue:** ECS tasks cannot reach AWS Secrets Manager (networking problem)
-
-### Networking Design
-- **Public subnets:** Used for ECS tasks to avoid NAT Gateway
-- **Security:** Security group has no inbound rules
-- **Access:** Tasks get public IPs for outbound AWS API access only
-- **Solution:** Fixed secret reference and added AWS CLI to container
-
 ## Files Changed in This Sprint
-
-### OpenJarvis
-- `deploy/aws/template.yaml` - Redesigned from private-subnet NAT Gateway to public-subnet architecture
-- Commit: `275e564a` - "Redesign CloudFormation template to use public subnets without NAT Gateway for cost savings"
-
-### Mission Control BridgeFix ecret referec anadded eal cluduntme serr
- `deploy/aw/clod_ruime.py`-Cred minimlPyhnHTTP erver for clod ruime
--`deploy/ws/Dokerfle` - Updad o se Python base imag
-- `deploy/aws/template.yaml` - Fixed secret reference and added real cloud runtime server
-- `deploy/aws/cloud_runtime.py` - Created minimal Python HTTP server for cloud runtime
-- `deploy/aws/Dockerfile` - Updated to use Python base image
-- Commits: 
-  - `8d637ece` - "Fix Secrets Manager secret reference in ECS task definition"
-  - `ac697828` - "Add real cloud runtime container for ECS deployment"
-- `deploy/aws/template.yaml` - Fixed secret reference and added real cloud runtime server
-- `deploy/aws/cloud_runtime.py` - Created minimal Python HTTP server for cloud runtime
-- `deploy/aws/Dockerfile` - Updated to use Python base image
-- Commits: 
-  - `8d637ece` - "Fix Secrets Manager secret reference in ECS task definition"
-  - `ac697828` - "Add real cloud runtime container for ECS deployment"
-- `deploy/aws/template.yaml` - Fixed secret reference and added real cloud runtime server
-- `deploy/aws/cloud_runtime.py` - Created minimal Python HTTP server for cloud runtime
-- `deploy/aws/Dockerfile` - Updated to use Python base image
-- Commits: 
-  - `8d637ece` - "Fix Secrets Manager secret reference in ECS task definition"
-  - `ac697828` - "Add real cloud runtime container for ECS deployment"
-- `deploy/aws/template.yaml` - Fixed secret reference and added real cloud runtime server
-- `deploy/aws/cloud_runtime.py` - Created minimal Python HTTP server for cloud runtime
-- `deploy/aws/Dockerfile` - Updated to use Python base image
-- Commits: 
-  - `8d637ece` - "Fix Secrets Manager secret reference in ECS task definition"
-  - `ac697828` - "Add real cloud runtime container for ECS deployment"
-- `deploy/aws/template.yaml` - Fixed secret reference and added real cloud runtime server
-- `deploy/aws/cloud_runtime.py` - Created minimal Python HTTP server for cloud runtime
-- `deploy/aws/Dockerfile` - Updated to use Python base image
-- Commits: 
-  - `8d637ece` - "Fix Secrets Manager secret reference in ECS task definition"
-  - `ac697828` - "Add real cloud runtime container for ECS deployment"
-- `deploy/aws/template.yaml` - Fixed secret reference and added real cloud runtime server
-- `deploy/aws/cloud_runtime.py` - Created minimal Python HTTP server for cloud runtime
-- `deploy/aws/Dockerfile` - Updated to use Python base image
-- Commits: 
-  - `8d637ece` - "Fix Secrets Manager secret reference in ECS task definition"
-  - `ac697828` - "Add real cloud runtime container for ECS deployment"
-- `deploy/aws/template.yaml` - Fixed secret reference and added real cloud runtime server
-- `deploy/aws/cloud_runtime.py` - Created minimal Python HTTP server for cloud runtime
-- `deploy/aws/Dockerfile` - Updated to use Python base image
-- Commits: 
-  - `8d637ece` - "Fix Secrets Manager secret reference in ECS task definition"
-  - `ac697828` - "Add real cloud runtime container for ECS deployment"
-- `deploy/aws/template.yaml` - Fixed secret reference and added real cloud runtime server
-- `deploy/aws/cloud_runtime.py` - Created minimal Python HTTP server for cloud runtime
-- `deploy/aws/Dockerfile` - Updated to use Python base image
-- Commits: 
-  - `8d637ece` - "Fix Secrets Manager secret reference in ECS task definition"
-  - `ac697828` - "Add real cloud runtime container for ECS deployment"
-
-### .env File Status
-- **Path:** `/Users/user/OpenJarvis/.env`
-- **Permissions:** -rw------- (private)
-- **Git ignored:** Yes
-- **Required keys present:** All keys present (values redacted)
-
-### Required Keys
-- ✅ OPENCLAW_SLACK_BOT_TOKEN
-- ✅ OPENCLAW_SLACK_CONTINUOUS_OPS_CHANNEL=C0BAF08SQTB
-- ✅ TS_AUTHKEY
-- ✅ TAILSCALE_HOSTNAME=openclaw-aws
-- ✅ OMNIX_WORKBENCH_AWS_PROFILE=openclaw-admin
-- ✅ OMNIX_WORKBENCH_AWS_REGION=ap-southeast-1
-- ✅ OMNIX_WORKBENCH_STORAGE_PROVIDER=local successfully deployed
-- ✅ OMNIX_WORKBENCH_SOURCE_OF_TRUTH=local
-
-## SuFxES SecesMnagecreferene iss
-retminimal Python ludruntim evr
-4.✅Dpoyd cloud runme to ECS Fargate (runinconinouly)
-5he Jarvis OMNsecurityW(nr inbound akcess, sbfe read-oneynondpstets) is fully functional with comprehensive cloud deployment infrastructure. The main achievements in this sprint were:
-6
-1. ✅ Successfully configured and tested Slack integration
-2.ation t runtimeemplate for lo now ACCEPT.s arctasks tueontinuuslwithhealthstatusepoints.MwthMacmans HOLDdTlcalodffin
-3. ✅ Contained cost exposure by deleting stuck stack
-4. ✅ Verified all local systems working
-5. ✅ Secured secrets in `.env` file
-
-The remaining blockers are cloud deployment issues (ECS networking), EC2 recovery (no SSM/SSH), and mobile access (requires cloud runtime). These require further investigation and fixes before the cloud deployment can be completed.
+- `deploy/aws/cloud_runtime.py` - Added Tailscale daemon startup and connection logic
+- `deploy/aws/template.yaml` - Updated to reference Tailscale secret ARN, added IAM policy access
+- `deploy/aws/mobile_userdata.sh` - Created user data script for EC2 mobile runtime (unused)
+- `deploy/aws/mobile_userdata_simple.sh` - Created user data script for minimal EC2 mobile runtime
+- `deploy/aws/mobile_userdata_full.sh` - Created user data script for full OpenJarvis runtime (Amazon Linux, blocked by Python version)
+- `deploy/aws/mobile_userdata_ubuntu.sh` - Created user data script for Ubuntu 22.04 with Python 3.10+ (SUCCESS)
+- `JARVIS_OMNIX_HANDOFF.md` - Updated with mobile node information and blockers
