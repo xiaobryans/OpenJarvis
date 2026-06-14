@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# omnix-workbench — Jarvis OMNIX Workbench v1 wrapper
+
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+VENV="$PROJECT_ROOT/.venv/bin/python3"
+
+# Use venv Python if available, otherwise fall back to system Python
+if [ -f "$VENV" ]; then
+    PYTHON="$VENV"
+else
+    PYTHON="python3"
+fi
+
+"$PYTHON" "$PROJECT_ROOT/src/openjarvis/omnix_workbench.py" "$@"
