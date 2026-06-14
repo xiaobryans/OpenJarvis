@@ -1,5 +1,16 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'Jarvis OMNIX Workbench Cloud Deployment - ECS Fargate, S3, DynamoDB, CloudWatch'
+Description: 'Jarvis OMNIX Workbench Cloud Deployment - ECS Fargate, S3, DynamoDB, CloudWatch (Public Subnet Architecture)'
+
+# ARCHITECTURE NOTES:
+# - This template uses PUBLIC SUBNETS for ECS Fargate tasks to avoid NAT Gateway costs (~$35/month savings)
+# - NAT Gateway was removed because ECS tasks in private subnets could not reach AWS Secrets Manager
+# - Public subnets allow tasks to reach AWS APIs (Secrets Manager, CloudWatch, S3, DynamoDB) directly
+# - Security group restricts inbound access - no public admin/control endpoints exposed
+# - ECS tasks get public IPs for outbound AWS API access only
+# - Cost target: <$45/month (ECS Fargate ~$20-30/month, S3 minimal, DynamoDB pay-per-request)
+#
+# ROLLBACK/DESTROY COMMAND:
+# aws cloudformation delete-stack --stack-name omnix-workbench-stack --profile openclaw-admin --region ap-southeast-1
 
 Parameters:
   Environment:
@@ -31,28 +42,30 @@ Resources:
         - Key: Environment
           Value: !Ref Environment
   
-  # Private Subnets
-  PrivateSubnet1:
+  # Public Subnets (for ECS Fargate tasks to reach AWS APIs without NAT Gateway)
+  PublicSubnet1:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref VPC
       CidrBlock: 10.0.0.0/24
       AvailabilityZone: !Select [0, !GetAZs '']
+      MapPublicIpOnLaunch: true
       Tags:
         - Key: Name
-          Value: !Sub '${Environment}-${AccountId}-${AWSRegion}-private-subnet-0'
+          Value: !Sub '${Environment}-${AccountId}-${AWSRegion}-public-subnet-0'
         - Key: Environment
           Value: !Ref Environment
   
-  PrivateSubnet2:
+  PublicSubnet2:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref VPC
       CidrBlock: 10.0.1.0/24
       AvailabilityZone: !Select [1, !GetAZs '']
+      MapPublicIpOnLaunch: true
       Tags:
         - Key: Name
-          Value: !Sub '${Environment}-${AccountId}-${AWSRegion}-private-subnet-1'
+          Value: !Sub '${Environment}-${AccountId}-${AWSRegion}-public-subnet-1'
         - Key: Environment
           Value: !Ref Environment
   
@@ -72,56 +85,35 @@ Resources:
       VpcId: !Ref VPC
       InternetGatewayId: !Ref InternetGateway
   
-  # NAT Gateway
-  NATGatewayEIP:
-    Type: AWS::EC2::EIP
-    DependsOn: VPCGatewayAttachment
-    Properties:
-      Domain: vpc
-      Tags:
-        - Key: Name
-          Value: !Sub '${Environment}-${AccountId}-${AWSRegion}-nat-eip'
-  
-  NATGateway:
-    Type: AWS::EC2::NatGateway
-    Properties:
-      AllocationId: !GetAtt NATGatewayEIP.AllocationId
-      SubnetId: !Ref PrivateSubnet1
-      Tags:
-        - Key: Name
-          Value: !Sub '${Environment}-${AccountId}-${AWSRegion}-nat'
-        - Key: Environment
-          Value: !Ref Environment
-  
-  # Route Tables
-  PrivateRouteTable:
+  # Public Route Table (for direct internet access to AWS APIs)
+  PublicRouteTable:
     Type: AWS::EC2::RouteTable
     Properties:
       VpcId: !Ref VPC
       Tags:
         - Key: Name
-          Value: !Sub '${Environment}-${AccountId}-${AWSRegion}-private-rt'
+          Value: !Sub '${Environment}-${AccountId}-${AWSRegion}-public-rt'
         - Key: Environment
           Value: !Ref Environment
   
-  PrivateRoute:
+  PublicRoute:
     Type: AWS::EC2::Route
     Properties:
-      RouteTableId: !Ref PrivateRouteTable
+      RouteTableId: !Ref PublicRouteTable
       DestinationCidrBlock: 0.0.0.0/0
-      NatGatewayId: !Ref NATGateway
+      GatewayId: !Ref InternetGateway
   
-  PrivateSubnet1RouteTableAssociation:
+  PublicSubnet1RouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
-      SubnetId: !Ref PrivateSubnet1
-      RouteTableId: !Ref PrivateRouteTable
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicRouteTable
   
-  PrivateSubnet2RouteTableAssociation:
+  PublicSubnet2RouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
-      SubnetId: !Ref PrivateSubnet2
-      RouteTableId: !Ref PrivateRouteTable
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref PublicRouteTable
   
   # S3 Bucket for Artifacts
   ArtifactsBucket:
@@ -299,17 +291,15 @@ Resources:
           Value: !Ref Environment
   
   # Security Group
+  # NOTE: No inbound rules - tasks only need outbound access to AWS APIs
+  # This prevents public access to admin/control endpoints
   ECSSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
       GroupName: !Sub '${Environment}-${AccountId}-${AWSRegion}-ecs-sg'
-      GroupDescription: Security group for ECS tasks
+      GroupDescription: Security group for ECS tasks - no inbound access for security
       VpcId: !Ref VPC
-      SecurityGroupIngress:
-        - IpProtocol: tcp
-          FromPort: 3091
-          ToPort: 3091
-          CidrIp: 10.0.0.0/16
+      SecurityGroupIngress: []
       SecurityGroupEgress:
         - IpProtocol: -1
           CidrIp: 0.0.0.0/0
@@ -383,11 +373,11 @@ Resources:
       NetworkConfiguration:
         AwsvpcConfiguration:
           Subnets:
-            - !Ref PrivateSubnet1
-            - !Ref PrivateSubnet2
+            - !Ref PublicSubnet1
+            - !Ref PublicSubnet2
           SecurityGroups:
             - !Ref ECSSecurityGroup
-          AssignPublicIp: DISABLED
+          AssignPublicIp: ENABLED
       Tags:
         - Key: Name
           Value: !Sub '${Environment}-${AccountId}-${AWSRegion}-service'
