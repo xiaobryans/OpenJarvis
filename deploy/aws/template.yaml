@@ -214,7 +214,9 @@ Resources:
           - Effect: Allow
             Action:
               - secretsmanager:GetSecretValue
-            Resource: !Ref SecretsManagerSecret
+            Resource:
+              - !Ref SecretsManagerSecret
+              - arn:aws:secretsmanager:ap-southeast-1:071179620006:secret:omnix-workbench-tailscale-authkey-SBot5Q
       Roles:
         - !Ref ECSTaskExecutionRole
   
@@ -262,7 +264,9 @@ Resources:
           - Effect: Allow
             Action:
               - secretsmanager:GetSecretValue
-            Resource: !Ref SecretsManagerSecret
+            Resource:
+              - !Ref SecretsManagerSecret
+              - arn:aws:secretsmanager:ap-southeast-1:071179620006:secret:omnix-workbench-tailscale-authkey-SBot5Q
       Roles:
         - !Ref ECSTaskRole
   
@@ -351,9 +355,13 @@ Resources:
               Value: !Ref ArtifactsBucket
             - Name: CLOUD_RUNTIME_S3_KEY
               Value: cloud_runtime.py
+            - Name: TS_HOSTNAME
+              Value: openclaw-aws
           Secrets:
             - Name: SLACK_BOT_TOKEN
               ValueFrom: !Ref SecretsManagerSecret
+            - Name: TS_AUTHKEY
+              ValueFrom: arn:aws:secretsmanager:ap-southeast-1:071179620006:secret:omnix-workbench-tailscale-authkey-SBot5Q
           Command:
             - /bin/sh
             - -c

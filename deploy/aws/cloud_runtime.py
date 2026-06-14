@@ -5,12 +5,15 @@ Jarvis OMNIX Workbench Cloud Runtime v1
 Minimal safe cloud runtime service for ECS Fargate deployment.
 Provides health checks and read-only status reporting without exposing
 unauthenticated command/control surfaces.
+Includes Tailscale for private networking.
 """
 
 import json
 import logging
 import os
+import subprocess
 import sys
+import time
 from datetime import datetime
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from typing import Any
@@ -29,6 +32,44 @@ HOST = os.environ.get('HOST', '0.0.0.0')
 STORAGE_PROVIDER = os.environ.get('OMNIX_WORKBENCH_STORAGE_PROVIDER', 'local')
 SOURCE_OF_TRUTH = os.environ.get('OMNIX_WORKBENCH_SOURCE_OF_TRUTH', 'local')
 AWS_REGION = os.environ.get('OMNIX_WORKBENCH_AWS_REGION', 'us-east-1')
+TS_AUTHKEY = os.environ.get('TS_AUTHKEY')
+TS_HOSTNAME = os.environ.get('TS_HOSTNAME', 'openclaw-aws')
+
+
+def start_tailscale() -> bool:
+    """Install and start Tailscale using TS_AUTHKEY."""
+    if not TS_AUTHKEY:
+        logger.warning("TS_AUTHKEY not set, skipping Tailscale setup")
+        return False
+
+    try:
+        logger.info("Installing Tailscale...")
+        # Install Tailscale
+        subprocess.run(
+            ["curl", "-fsSL", "https://tailscale.com/install.sh", "-o", "/tmp/install.sh"],
+            check=True
+        )
+        subprocess.run(["sh", "/tmp/install.sh"], check=True)
+
+        logger.info("Starting Tailscale daemon...")
+        # Start tailscaled daemon first
+        subprocess.run(["tailscaled", "--tun=userspace-networking"], check=True)
+
+        # Give daemon time to start
+        time.sleep(2)
+
+        logger.info("Connecting to Tailnet...")
+        # Connect to Tailnet with auth key
+        subprocess.run(
+            ["tailscale", "up", "--authkey", TS_AUTHKEY, "--hostname", TS_HOSTNAME],
+            check=True
+        )
+
+        logger.info("Tailscale started successfully")
+        return True
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Failed to start Tailscale: {e}")
+        return False
 
 
 class HealthHandler(BaseHTTPRequestHandler):
@@ -128,6 +169,16 @@ def main() -> None:
     logger.info(f"  STORAGE_PROVIDER: {STORAGE_PROVIDER}")
     logger.info(f"  SOURCE_OF_TRUTH: {SOURCE_OF_TRUTH}")
     logger.info(f"  AWS_REGION: {AWS_REGION}")
+    logger.info(f"  TS_HOSTNAME: {TS_HOSTNAME}")
+    logger.info(f"  TS_AUTHKEY: {'SET' if TS_AUTHKEY else 'NOT SET'}")
+
+    # Start Tailscale if auth key provided
+    if TS_AUTHKEY:
+        tailscale_started = start_tailscale()
+        if not tailscale_started:
+            logger.warning("Tailscale failed to start, continuing without it")
+    else:
+        logger.info("No TS_AUTHKEY, skipping Tailscale setup")
 
     # Validate configuration
     if STORAGE_PROVIDER == 'aws':
