@@ -77,36 +77,53 @@ def validate_schema(bundle: dict[str, Any]) -> None:
 
 
 def build_review_prompt(bundle: dict[str, Any]) -> str:
-    """Build a prompt for Jarvis to review the status bundle."""
+    """Build a compact prompt for Jarvis to review the status bundle."""
     runtime = bundle.get("runtime", {})
     slack = bundle.get("slack", {})
     health = bundle.get("health", {})
+    safety = bundle.get("safety", {})
     pending_approvals = runtime.get("pendingApprovals", [])
     missions = runtime.get("missions", [])
+    
+    # Extract critical information only
+    schema = bundle.get("schema", "unknown")
+    pending_count = len(pending_approvals)
+    mission_count = len(missions)
+    
+    # Safety flags
+    read_only = safety.get("readOnly", False)
+    no_writes = safety.get("noWrites", False)
+    no_secrets = safety.get("noSecrets", False)
+    
+    # Slack status
+    slack_installed = slack.get("installed", False)
+    slack_configured = slack.get("configured", False)
+    slack_running = slack.get("continuousOpsRunning", False)
+    
+    # Health status
+    dashboard_ok = health.get("commandCenter", {}).get("ok", False)
+    gateway_ok = health.get("localGateway", {}).get("ok", False)
+    
+    # Runtime health summary
+    runtime_health = runtime.get("health", {})
+    runtime_missions = runtime_health.get("missions", 0)
+    runtime_tasks = runtime_health.get("tasks", 0)
+    
+    # Build compact prompt
+    prompt = f"""Jarvis OMNIX status review for upgrade planning.
 
-    # Build a concise prompt with essential information only
-    prompt = f"""You are Jarvis reviewing OMNIX status for upgrade planning readiness.
+Schema: {schema}
+Safety: readOnly={read_only}, noWrites={no_writes}, noSecrets={no_secrets}
+Runtime: {mission_count} missions, {runtime_missions} active, {runtime_tasks} tasks
+Pending: {pending_count} approvals
+Slack: installed={slack_installed}, configured={slack_configured}, running={slack_running}
+Health: dashboard={dashboard_ok}, gateway={gateway_ok}
 
-Schema: {bundle.get('schema')}
-Pending Approvals: {len(pending_approvals)}
-Missions: {len(missions)}
-Slack Installed: {slack.get('installed')}
-Slack Configured: {slack.get('configured')}
-Slack Continuous Ops Running: {slack.get('continuousOpsRunning')}
-Dashboard Health: {health.get('commandCenter', {}).get('ok', False)}
-Local Gateway Health: {health.get('localGateway', {}).get('ok', False)}
+For branch-only planning, Slack not configured is a risk, not blocker.
+HOLD only for: invalid schema, unsafe flags, critical runtime failure, or blocking approvals.
 
-Review this status and determine if Jarvis can proceed with OMNIX upgrade planning.
-For branch-only planning, Slack configuration is a risk, not a blocker.
-HOLD only for: missing status bundle, invalid schema, unsafe flags, runtime critical failure, or pending approvals that block the objective.
-
-OUTPUT FORMAT (exact):
-JARVIS OMNIX FRONT-DOOR REVIEW ACCEPT or HOLD
-
-If ACCEPT, include: Status summary (1 line), whether Jarvis can proceed, shortest next action
-If HOLD, include: Status summary (1 line), specific blocker(s), shortest next action
-
-DO NOT include any other text before or after the decision line."""
+Output exactly: JARVIS OMNIX FRONT-DOOR REVIEW ACCEPT or HOLD
+Then include: status summary, whether Jarvis can proceed, shortest next action."""
 
     return prompt
 
@@ -114,49 +131,43 @@ DO NOT include any other text before or after the decision line."""
 def call_jarvis_llm(prompt: str) -> str:
     """Call Jarvis LLM with the review prompt using jarvis CLI."""
     import subprocess
-    import tempfile
-    import os
 
     try:
-        # Write prompt to temp file
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
-            f.write(prompt)
-            temp_file = f.name
+        # Use jarvis ask with the compact prompt as argument
+        # Use --no-stream to get non-blocking output
+        result = subprocess.run(
+            ["jarvis", "ask", "--no-stream", prompt],
+            capture_output=True,
+            text=True,
+            timeout=180,  # Increased to 180 seconds
+        )
         
-        try:
-            # Try using jarvis ask with the prompt as argument
-            # Use --no-stream to get non-blocking output
-            result = subprocess.run(
-                ["jarvis", "ask", "--no-stream", prompt],
-                capture_output=True,
-                text=True,
-                timeout=60,
-            )
+        if result.returncode == 0:
+            # Extract the actual response from jarvis ask output
+            # jarvis ask typically includes banner, we need to extract just the response
+            lines = result.stdout.strip().split('\n')
+            # Find the first non-banner line (skip banner lines)
+            response_lines = []
+            in_response = False
+            for line in lines:
+                # Skip banner lines (start with space, underscore, J, P, or are empty)
+                if in_response or (line and not line.startswith(' ') and not line.startswith('_') and not line.startswith('J') and not line.startswith('P')):
+                    in_response = True
+                    if line.strip():
+                        response_lines.append(line)
             
-            if result.returncode == 0:
-                # Extract the actual response from jarvis ask output
-                # jarvis ask typically includes banner, we need to extract just the response
-                lines = result.stdout.strip().split('\n')
-                # Find the first non-banner line
-                response_lines = []
-                in_response = False
-                for line in lines:
-                    if in_response or (line and not line.startswith(' ') and not line.startswith('_') and not line.startswith('J') and not line.startswith('P')):
-                        in_response = True
-                        if line.strip():
-                            response_lines.append(line)
-                
-                if response_lines:
-                    return '\n'.join(response_lines)
-                return result.stdout.strip()
-            else:
-                print(f"jarvis ask failed with return code {result.returncode}", file=sys.stderr)
-                print(f"stderr: {result.stderr}", file=sys.stderr)
-                return _fallback_rule_based_review(prompt)
-        finally:
-            os.unlink(temp_file)
+            if response_lines:
+                return '\n'.join(response_lines)
+            return result.stdout.strip()
+        else:
+            print(f"jarvis ask failed with return code {result.returncode}", file=sys.stderr)
+            print(f"stderr: {result.stderr}", file=sys.stderr)
+            return _fallback_rule_based_review(prompt)
             
-    except (subprocess.TimeoutExpired, FileNotFoundError, Exception) as e:
+    except subprocess.TimeoutExpired:
+        print(f"jarvis ask timed out after 180 seconds", file=sys.stderr)
+        return _fallback_rule_based_review(prompt)
+    except (FileNotFoundError, Exception) as e:
         print(f"jarvis ask exception: {e}", file=sys.stderr)
         return _fallback_rule_based_review(prompt)
 
