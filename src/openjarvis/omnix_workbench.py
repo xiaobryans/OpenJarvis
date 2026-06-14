@@ -522,29 +522,24 @@ Output: 2-3 sentence summary."""
 
 
 def mode_run(url: str, objective: str) -> str:
-    """Run mode: status → plan → prompt → gate summary."""
+    """Run mode: plan → prompt → gate summary (status included in plan)."""
     try:
         result = "=== JARVIS OMNIX RUN MODE ===\n\n"
         
-        # Step 1: Status
-        result += "Step 1: Status Check\n"
-        result += mode_status(url) + "\n\n"
-        
-        # Step 2: Plan
-        result += "Step 2: Upgrade Plan\n"
+        # Step 1: Plan (includes status fetch and validation)
+        result += "Step 1: Upgrade Plan (includes status)\n"
         plan_result = mode_plan(url, objective)
         result += plan_result + "\n\n"
         
-        # Step 3: Prompt
-        result += "Step 3: Coding Prompt\n"
+        # Step 2: Prompt
+        result += "Step 2: Coding Prompt\n"
         prompt_result = mode_prompt(url, objective)
         result += prompt_result + "\n\n"
         
-        # Step 4: Gate Summary
-        result += "Step 4: Gate Summary\n"
+        # Step 3: Gate Summary
+        result += "Step 3: Gate Summary\n"
         gate_summary = f"""Gate Summary for: {objective}
 
-Status: Validated
 Plan: Generated (see above)
 Prompt: Generated (see above)
 Branch-only: Yes
