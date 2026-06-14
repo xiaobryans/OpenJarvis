@@ -1,0 +1,432 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Jarvis OMNIX Workbench Cloud Deployment - ECS Fargate, S3, DynamoDB, CloudWatch'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: omnix-workbench
+    Description: Environment name
+  
+  AWSRegion:
+    Type: String
+    Default: ap-southeast-1
+    Description: AWS region
+  
+  AccountId:
+    Type: String
+    Default: 071179620006
+    Description: AWS account ID
+
+Resources:
+  # VPC
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-${AccountId}-${AWSRegion}-vpc'
+        - Key: Environment
+          Value: !Ref Environment
+  
+  # Private Subnets
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.0.0/24
+      AvailabilityZone: !Select [0, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-${AccountId}-${AWSRegion}-private-subnet-0'
+        - Key: Environment
+          Value: !Ref Environment
+  
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.1.0/24
+      AvailabilityZone: !Select [1, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-${AccountId}-${AWSRegion}-private-subnet-1'
+        - Key: Environment
+          Value: !Ref Environment
+  
+  # Internet Gateway
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-${AccountId}-${AWSRegion}-igw'
+        - Key: Environment
+          Value: !Ref Environment
+  
+  VPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+  
+  # NAT Gateway
+  NATGatewayEIP:
+    Type: AWS::EC2::EIP
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-${AccountId}-${AWSRegion}-nat-eip'
+  
+  NATGateway:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NATGatewayEIP.AllocationId
+      SubnetId: !Ref PrivateSubnet1
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-${AccountId}-${AWSRegion}-nat'
+        - Key: Environment
+          Value: !Ref Environment
+  
+  # Route Tables
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-${AccountId}-${AWSRegion}-private-rt'
+        - Key: Environment
+          Value: !Ref Environment
+  
+  PrivateRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NATGateway
+  
+  PrivateSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet1
+      RouteTableId: !Ref PrivateRouteTable
+  
+  PrivateSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet2
+      RouteTableId: !Ref PrivateRouteTable
+  
+  # S3 Bucket for Artifacts
+  ArtifactsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${Environment}-${AccountId}-${AWSRegion}-artifacts'
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-${AccountId}-${AWSRegion}-artifacts'
+        - Key: Environment
+          Value: !Ref Environment
+  
+  # DynamoDB Table for State
+  StateTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${Environment}-${AccountId}-${AWSRegion}-state'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+        - AttributeName: sk
+          AttributeType: S
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+        - AttributeName: sk
+          KeyType: RANGE
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-${AccountId}-${AWSRegion}-state'
+        - Key: Environment
+          Value: !Ref Environment
+  
+  # ECS Cluster
+  ECSCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub '${Environment}-${AccountId}-${AWSRegion}-cluster'
+      ClusterSettings:
+        - Name: containerInsights
+          Value: enabled
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-${AccountId}-${AWSRegion}-cluster'
+        - Key: Environment
+          Value: !Ref Environment
+  
+  # ECS Task Execution Role
+  ECSTaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${Environment}-${AccountId}-${AWSRegion}-ecs-execution-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-${AccountId}-${AWSRegion}-ecs-execution-role'
+        - Key: Environment
+          Value: !Ref Environment
+  
+  ECSTaskExecutionRolePolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: !Sub '${Environment}-ecs-execution-additional'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action:
+              - s3:GetObject
+              - s3:PutObject
+            Resource: !Sub '${ArtifactsBucket.Arn}/*'
+          - Effect: Allow
+            Action:
+              - dynamodb:GetItem
+              - dynamodb:PutItem
+              - dynamodb:UpdateItem
+            Resource: !GetAtt StateTable.Arn
+          - Effect: Allow
+            Action:
+              - secretsmanager:GetSecretValue
+            Resource: !Ref SecretsManagerSecret
+      Roles:
+        - !Ref ECSTaskExecutionRole
+  
+  # ECS Task Role
+  ECSTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${Environment}-${AccountId}-${AWSRegion}-ecs-task-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-${AccountId}-${AWSRegion}-ecs-task-role'
+        - Key: Environment
+          Value: !Ref Environment
+  
+  ECSTaskRolePolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: !Sub '${Environment}-ecs-task-policy'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action:
+              - s3:GetObject
+              - s3:PutObject
+              - s3:ListBucket
+            Resource:
+              - !GetAtt ArtifactsBucket.Arn
+              - !Sub '${ArtifactsBucket.Arn}/*'
+          - Effect: Allow
+            Action:
+              - dynamodb:GetItem
+              - dynamodb:PutItem
+              - dynamodb:UpdateItem
+              - dynamodb:Query
+              - dynamodb:Scan
+            Resource: !GetAtt StateTable.Arn
+          - Effect: Allow
+            Action:
+              - secretsmanager:GetSecretValue
+            Resource: !Ref SecretsManagerSecret
+      Roles:
+        - !Ref ECSTaskRole
+  
+  # Secrets Manager
+  SecretsManagerSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub '${Environment}-${AccountId}-${AWSRegion}-secrets'
+      Description: OMNIX Workbench secrets
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-${AccountId}-${AWSRegion}-secrets'
+        - Key: Environment
+          Value: !Ref Environment
+  
+  # CloudWatch Log Group
+  CloudWatchLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/ecs/${Environment}-${AccountId}-${AWSRegion}'
+      RetentionInDays: 7
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-${AccountId}-${AWSRegion}-logs'
+        - Key: Environment
+          Value: !Ref Environment
+  
+  # Security Group
+  ECSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${Environment}-${AccountId}-${AWSRegion}-ecs-sg'
+      GroupDescription: Security group for ECS tasks
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3091
+          ToPort: 3091
+          CidrIp: 10.0.0.0/16
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-${AccountId}-${AWSRegion}-ecs-sg'
+        - Key: Environment
+          Value: !Ref Environment
+  
+  # ECS Task Definition
+  ECSTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub '${Environment}-${AccountId}-${AWSRegion}-task'
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      Cpu: '512'
+      Memory: '1024'
+      ExecutionRoleArn: !GetAtt ECSTaskExecutionRole.Arn
+      TaskRoleArn: !GetAtt ECSTaskRole.Arn
+      ContainerDefinitions:
+        - Name: omnix-workbench
+          Image: public.ecr.aws/docker/library/node:20-alpine
+          Essential: true
+          PortMappings:
+            - ContainerPort: 3091
+              Protocol: tcp
+          Environment:
+            - Name: PORT
+              Value: '3091'
+            - Name: HOST
+              Value: '0.0.0.0'
+            - Name: OMNIX_WORKBENCH_STORAGE_PROVIDER
+              Value: aws
+            - Name: OMNIX_WORKBENCH_SOURCE_OF_TRUTH
+              Value: cloud
+            - Name: OMNIX_WORKBENCH_AWS_REGION
+              Value: !Ref AWSRegion
+            - Name: OMNIX_WORKBENCH_MEMORY_BUCKET
+              Value: !Ref ArtifactsBucket
+            - Name: OMNIX_WORKBENCH_ARTIFACT_BUCKET
+              Value: !Ref ArtifactsBucket
+            - Name: OMNIX_WORKBENCH_STATE_TABLE
+              Value: !Ref StateTable
+          Secrets:
+            - Name: SLACK_BOT_TOKEN
+              ValueFrom: !Sub '${SecretsManagerSecret.Arn}:slack_bot_token::'
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref CloudWatchLogGroup
+              awslogs-region: !Ref AWSRegion
+              awslogs-stream-prefix: ecs
+              awslogs-create-group: 'true'
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-${AccountId}-${AWSRegion}-task'
+        - Key: Environment
+          Value: !Ref Environment
+  
+  # ECS Service
+  ECSService:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: !Sub '${Environment}-${AccountId}-${AWSRegion}-service'
+      Cluster: !Ref ECSCluster
+      TaskDefinition: !Ref ECSTaskDefinition
+      DesiredCount: 1
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          Subnets:
+            - !Ref PrivateSubnet1
+            - !Ref PrivateSubnet2
+          SecurityGroups:
+            - !Ref ECSSecurityGroup
+          AssignPublicIp: DISABLED
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-${AccountId}-${AWSRegion}-service'
+        - Key: Environment
+          Value: !Ref Environment
+
+Outputs:
+  ClusterName:
+    Description: ECS cluster name
+    Value: !Ref ECSCluster
+  
+  ServiceName:
+    Description: ECS service name
+    Value: !Ref ECSService
+  
+  TaskDefinitionArn:
+    Description: ECS task definition ARN
+    Value: !Ref ECSTaskDefinition
+  
+  S3BucketName:
+    Description: S3 bucket name for artifacts
+    Value: !Ref ArtifactsBucket
+  
+  DynamoDBTableName:
+    Description: DynamoDB table name for state
+    Value: !Ref StateTable
+  
+  SecretsManagerSecretArn:
+    Description: Secrets Manager secret ARN
+    Value: !Ref SecretsManagerSecret
+  
+  CloudWatchLogGroup:
+    Description: CloudWatch log group name
+    Value: !Ref CloudWatchLogGroup
+  
+  VPCId:
+    Description: VPC ID
+    Value: !Ref VPC
+  
+  SecurityGroupId:
+    Description: Security group ID
+    Value: !Ref ECSSecurityGroup

@@ -22,6 +22,10 @@ _script_dir = Path(__file__).parent
 if str(_script_dir) not in sys.path:
     sys.path.insert(0, str(_script_dir))
 
+# Import storage and Slack modules
+from openjarvis.omnix_storage import StorageManager, get_storage_manager
+from openjarvis.omnix_slack import SlackIntegration, get_slack_integration
+
 
 # Expected schema
 _EXPECTED_SCHEMA = "omnix.jarvis.status_bundle.v1"
@@ -916,33 +920,22 @@ Tailscale command timed out"""
 
 def mode_slack_status() -> str:
     """Slack status check - read-only inspection."""
-    import os
-    
-    # Check for Slack token in environment (key names only)
-    slack_token_keys = [k for k in os.environ.keys() if "SLACK" in k.upper() and "TOKEN" in k.upper()]
-    slack_channel_keys = [k for k in os.environ.keys() if "SLACK" in k.upper() and "CHANNEL" in k.upper()]
-    
-    # Check for OpenClaw CLI
-    import subprocess
     try:
-        result = subprocess.run(
-            ["command", "-v", "openclaw"],
-            capture_output=True,
-            text=True,
-            timeout=5
-        )
-        openclaw_cli = result.returncode == 0
-    except:
-        openclaw_cli = False
-    
-    return f"""Slack Status: NOT CONFIGURED
-Slack Token: Found {len(slack_token_keys)} token key(s) in environment
-Slack Channel: Found {len(slack_channel_keys)} channel key(s) in environment
-OpenClaw CLI: {'INSTALLED' if openclaw_cli else 'NOT FOUND'}
-Safe Channel: agent-orchestrator / C0BAF08SQTB
+        slack_integration = get_slack_integration()
+        status = slack_integration.get_status()
+        
+        return f"""Slack Status: {'READY' if status['ready'] else 'NOT READY'}
+Slack Token: {'EXISTS' if status['token_exists'] else 'NOT FOUND'}
+Slack Channel: {'CONFIGURED' if status['channel_configured'] else 'NOT CONFIGURED'}
+OpenClaw CLI: {'INSTALLED' if status['send_path_exists'] else 'NOT FOUND'}
+Safe Channel: {status['safe_channel']}
+Configured Channel: {status['configured_channel']}
 
-Send Path: HOLD - Missing Slack token and/or OpenClaw CLI send path
-Next Step: Configure Slack token in local .env file (ignored by git)"""
+Send Path: {'AVAILABLE' if status['send_path_exists'] else 'MISSING'}
+Next Step: Configure Slack token in local .env file (ignored by git) or AWS Secrets Manager
+Required token scopes: chat:write, channels:history, channels:join"""
+    except Exception as e:
+        return f"Slack Status Error: {e}"
 
 
 def mode_cloud_status() -> str:
@@ -974,17 +967,24 @@ def mode_storage_status() -> str:
     import os
     from pathlib import Path
     
-    memory_path = Path.home() / ".omnix_workbench" / "memory.jsonl"
-    artifact_path = Path.home() / ".omnix_workbench" / "artifacts.jsonl"
-    
-    memory_exists = memory_path.exists()
-    artifact_exists = artifact_path.exists()
-    
-    # Check for cloud storage config
-    storage_provider = os.environ.get("OMNIX_WORKBENCH_STORAGE_PROVIDER", "local")
-    source_of_truth = os.environ.get("OMNIX_WORKBENCH_SOURCE_OF_TRUTH", "local")
-    
-    return f"""Storage Status: LOCAL-ONLY
+    try:
+        storage_manager = get_storage_manager()
+        provider = storage_manager.get_provider()
+        
+        memory_path = Path.home() / ".omnix_workbench" / "memory.jsonl"
+        artifact_path = Path.home() / ".omnix_workbench" / "artifacts.jsonl"
+        
+        memory_exists = memory_path.exists()
+        artifact_exists = artifact_path.exists()
+        
+        # Check for cloud storage config
+        storage_provider = os.environ.get("OMNIX_WORKBENCH_STORAGE_PROVIDER", "local")
+        source_of_truth = os.environ.get("OMNIX_WORKBENCH_SOURCE_OF_TRUTH", "local")
+        
+        # Get conflict status
+        conflicts = storage_manager.check_conflicts()
+        
+        return f"""Storage Status: {storage_provider.upper()}
 Provider: {storage_provider}
 Source of Truth: {source_of_truth}
 
@@ -992,7 +992,7 @@ Local Storage:
 - Memory: {memory_path} ({'EXISTS' if memory_exists else 'NOT FOUND'})
 - Artifacts: {artifact_path} ({'EXISTS' if artifact_exists else 'NOT FOUND'})
 
-Cloud Storage: HOLD - Not configured
+Cloud Storage: {'CONFIGURED' if storage_provider == 'aws' else 'NOT CONFIGURED'}
 Required env vars:
 - OMNIX_WORKBENCH_STORAGE_PROVIDER=aws
 - OMNIX_WORKBENCH_AWS_REGION
@@ -1001,14 +1001,23 @@ Required env vars:
 - OMNIX_WORKBENCH_ARTIFACT_BUCKET
 - OMNIX_WORKBENCH_STATE_TABLE
 
-Migration: HOLD - No cloud storage configured
+Conflict Status: {'CONFLICTS DETECTED' if conflicts['has_conflicts'] else 'NO CONFLICTS'}
+Local Memory Count: {conflicts['local_memory_count']}
+Cloud Memory Count: {conflicts['cloud_memory_count']}
+Local Artifact Count: {conflicts['local_artifact_count']}
+Cloud Artifact Count: {conflicts['cloud_artifact_count']}
+
+Migration: {'READY' if storage_provider == 'aws' else 'HOLD - No cloud storage configured'}
 Dry-run command: jarvis omnix storage migrate --dry-run local-to-cloud
 Actual migration: Requires cloud resources and explicit approval
 
 Split-Brain Prevention:
-- Current: Single source of truth (local)
+- Current: {source_of_truth} source of truth
 - Cloud mode: Requires source-of-truth rules and conflict resolution
+- Migration gate: Dry-run required before actual migration
 """
+    except Exception as e:
+        return f"Storage Status Error: {e}"
 
 
 def main() -> int:
@@ -1126,30 +1135,26 @@ def main() -> int:
             result = mode_cloud_status()
         elif args.mode == "storage":
             if args.command == "migrate" and args.dry_run:
-                result = """Storage Migration: DRY-RUN MODE
+                storage_manager = get_storage_manager()
+                result_dict = storage_manager.migrate_to_cloud(dry_run=True)
+                result = f"""Storage Migration: DRY-RUN MODE
 Direction: local-to-cloud
-This is a dry-run. No actual migration will occur.
-
-Required cloud configuration:
-- OMNIX_WORKBENCH_STORAGE_PROVIDER=aws
-- OMNIX_WORKBENCH_AWS_REGION
-- OMNIX_WORKBENCH_AWS_PROFILE
-- OMNIX_WORKBENCH_MEMORY_BUCKET
-- OMNIX_WORKBENCH_ARTIFACT_BUCKET
-- OMNIX_WORKBENCH_STATE_TABLE
-
-Actual migration requires:
-1. Cloud resources to be created
-2. Explicit approval from Bryan
-3. Source-of-truth rules to be defined
-4. Conflict resolution strategy"""
+Timestamp: {result_dict['timestamp']}
+Local Memory Count: {result_dict.get('local_memory_count', 0)}
+Local Artifact Count: {result_dict.get('local_artifact_count', 0)}
+{result_dict['message']}"""
             elif args.command == "migrate":
-                result = """Storage Migration: REFUSED
-Actual migration not allowed without:
-1. Cloud resources configured
-2. Explicit approval from Bryan
-3. Source-of-truth rules defined
-Use --dry-run flag for validation only."""
+                storage_manager = get_storage_manager()
+                result_dict = storage_manager.migrate_to_cloud(dry_run=False)
+                result = f"""Storage Migration: ACTUAL MODE
+Direction: local-to-cloud
+Timestamp: {result_dict['timestamp']}
+Memory Entries: {result_dict['memory_entries']}
+Artifact Entries: {result_dict['artifact_entries']}
+Memory Success: {result_dict.get('memory_success', False)}
+Artifact Success: {result_dict.get('artifact_success', False)}
+Overall Success: {result_dict['success']}
+{result_dict['message']}"""
             else:
                 result = mode_storage_status()
         else:
