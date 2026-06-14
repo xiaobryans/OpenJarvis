@@ -18,7 +18,7 @@ def omnix() -> None:
 @click.option("--url", default="http://127.0.0.1:3091/api/jarvis/status-bundle", help="Status bundle URL")
 def status(url: str) -> None:
     """Fetch and summarize the OMNIX status bundle."""
-    _run_workbench(["status", "--url", url])
+    _run_workbench(["--url", url, "status"])
 
 
 @omnix.command()
@@ -26,7 +26,7 @@ def status(url: str) -> None:
 @click.option("--url", default="http://127.0.0.1:3091/api/jarvis/status-bundle", help="Status bundle URL")
 def plan(objective: str, url: str) -> None:
     """Produce a Jarvis-led OMNIX upgrade plan."""
-    _run_workbench(["plan", "--url", url, objective])
+    _run_workbench(["--url", url, "plan", objective])
 
 
 @omnix.command()
@@ -34,7 +34,7 @@ def plan(objective: str, url: str) -> None:
 @click.option("--url", default="http://127.0.0.1:3091/api/jarvis/status-bundle", help="Status bundle URL")
 def prompt(objective: str, url: str) -> None:
     """Generate a branch-only coding-agent prompt."""
-    _run_workbench(["prompt", "--url", url, objective])
+    _run_workbench(["--url", url, "prompt", objective])
 
 
 @omnix.command()
@@ -79,7 +79,7 @@ def artifact(command: str, args: tuple[str, ...]) -> None:
 @click.option("--url", default="http://127.0.0.1:3091/api/jarvis/status-bundle", help="Status bundle URL")
 def run(objective: str, url: str) -> None:
     """Orchestrate status→plan→prompt→gate workflow."""
-    _run_workbench(["run", "--url", url, objective])
+    _run_workbench(["--url", url, "run", objective])
 
 
 @omnix.command()
@@ -99,9 +99,16 @@ def deploy(target: tuple[str, ...] | None) -> None:
     _run_workbench(args)
 
 
+@omnix.command()
+@click.argument("command")
+def mission_control(command: str) -> None:
+    """Mission Control bridge start/stop/status."""
+    _run_workbench(["mission-control", command])
+
+
 def _run_workbench(args: list[str]) -> None:
     """Run the omnix workbench script with given arguments."""
-    workbench_path = Path(__file__).parent.parent.parent / "scripts" / "omnix-workbench"
+    workbench_path = Path(__file__).parent.parent.parent.parent / "scripts" / "omnix-workbench"
     
     if not workbench_path.exists():
         click.echo(f"Error: Workbench script not found at {workbench_path}", err=True)
