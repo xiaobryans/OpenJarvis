@@ -1,152 +1,291 @@
 # Jarvis OMNIX Workbench Handoff
 
 ## Final Verdict
-ACCEPT - Mobile access without Mac achieved via Tailscale on EC2. Full OpenJarvis runtime installed and working on Ubuntu 22.04 with Python 3.10+. Mobile Mission Control endpoints working over Tailnet. Cloud sync HOLD due to AWS storage configuration incomplete on cloud node. Cost containment achieved ($34.50-44.50/month under $45/month cap).
+ACCEPT — Full OpenJarvis runtime on Ubuntu 22.04 cloud node. Endpoints working over Tailnet. Cloud memory migrated to S3. Local UI shows cloud status. Mobile status ACCEPT. Maintenance via stop/start/reboot documented. One remaining HOLD: SSM remote execution (SSM agent not pre-installed on current node).
 
-## Current Repo Paths
+---
 
-### OpenJarvis
-- **Path:** `/Users/user/OpenJarvis`
-- **Branch:** `localhost-get-tool`
-- **Final HEAD:** 92e6fab2
-- **Pushed URL:** `https://github.com/xiaobryans/OpenJarvis.git` (fork)
-- **Status:** Clean working directory
+## Repository State
 
-### Mission Control Bridge
-- **Path:** `/Users/user/CascadeProjects/omnix-command-center`
-- **Branch:** `jarvis-automation-foundation`
-- **Final HEAD:** 3e0b8da
-- **Status:** No uncommitted changes
+| Field | Value |
+|---|---|
+| Path | `/Users/user/OpenJarvis` |
+| Branch | `localhost-get-tool` |
+| Local HEAD | see git log |
+| Fork HEAD | `https://github.com/xiaobryans/OpenJarvis.git` |
+| Origin | `https://github.com/open-jarvis/OpenJarvis.git` (do not push) |
 
-### OpenClaw
-- **Path:** `/Users/user/CascadeProjects/openclaw-workspace-omnix`
-- **Branch:** `jarvis-automation-foundation`
-- **Final HEAD:** 3aaba34
-- **Status:** No uncommitted changes
+---
 
-## What Works
+## Active Cloud/Mobile Node
 
-### Local Systems
-- ✅ Local Jarvis CLI works (`jarvis omnix ...`)
-- ✅ Fallback CLI works (`jarvis-omnix ...`)
-- ✅ Mission Control local bridge works (localhost:3091)
-- ✅ Local storage works (~/.omnix_workbench/*.jsonl)
-- ✅ AWS CLI configured and working
-- ✅ Mac and iPhone online on Tailscale
+| Field | Value |
+|---|---|
+| Instance ID | `i-0393eec12545b74e3` |
+| Instance Name | `openclaw-mobile` |
+| Type | `t3.micro` |
+| OS | Ubuntu 22.04 LTS |
+| State | running |
+| Region | `ap-southeast-1` |
+| Tailnet Hostname | `openclaw-mobile-3` |
+| Tailscale IP | `100.118.81.37` |
+| Tailnet DNS | `openclaw-mobile-3.tail743cb8.ts.net` |
+| Security Group | `sg-03d7a9b00e6e9841c` (no inbound rules) |
+| IAM Role | `openclaw-mobile-role` |
+| IAM Profile | `openclaw-mobile-profile` |
 
-### Slack Integration
-- ✅ Slack token configured in `.env`
-- ✅ Slack channel configured (C0BAF08SQTB)
-- ✅ Test message sent successfully to safe channel
-- ✅ ACCEPT
+---
 
-### Cloud Infrastructure
-- ✅ CloudFormation stack deployed (omnix-workbench-stack)
-- ✅ ECS cluster deployed
-- ✅ S3 bucket created (omnix-workbench-071179620006-ap-southeast-1-artifacts)
-- ✅ DynamoDB table created (omnix-workbench-071179620006-ap-southeast-1-state)
-- ✅ Secrets Manager secret created and populated
-- ✅ VPC/subnets created (public subnets, no NAT Gateway)
-- ✅ ECR repository created (omnix-workbench)
-- ✅ Security group has no inbound rules (secure)
+## Endpoint URLs (Tailnet-only)
 
-### Cloud Runtime
-- ✅ ECS task definition deployed with Python 3.11-slim and AWS CLI
-- ✅ Cloud runtime server provides health/status endpoints on port 3091
-- ✅ ECS tasks can reach AWS Secrets Manager (fixed secret reference)
-- ✅ Security group has no inbound rules (safe)
+| Endpoint | URL | Status |
+|---|---|---|
+| Health | `http://100.118.81.37:3091/health` | ACCEPT |
+| Status Bundle | `http://100.118.81.37:3091/api/jarvis/status-bundle` | ACCEPT |
 
-### Mobile Without Mac - ACCEPT
-- Cloud runtime: ✅ Infrastructure deployed with Tailscale support
-- Tailscale secret: ✅ Created and populated (omnix-workbench-tailscale-authkey)
-- New EC2 mobile node: ✅ openclaw-mobile (i-0393eec12545b74e3)
-- Instance type: t3.micro ($9.50/month) - Ubuntu 22.04 with Python 3.10+
-- Tailnet hostname: openclaw-mobile-3
-- Tailscale IP: 100.118.81.37
-- DNS: openclaw-mobile-3.tail743cb8.ts.net
-- Health endpoint: ✅ http://100.118.81.37:3091/health
-- Status-bundle endpoint: ✅ http://100.118.81.37:3091/api/jarvis/status-bundle
-- Security: No inbound rules (private Tailnet access only)
-- Full OpenJarvis runtime: ✅ ACCEPT - Installed and working on Ubuntu 22.04
-- Python version: ✅ 3.10+ (Ubuntu 22.04 default)
-- ECS: Scaled to 0 (not needed for mobile access)
+Access requires being on Tailscale Tailnet. No public exposure.
 
-### Tailscale Cloud Node
-- ✅ openclaw-mobile-3 (i-0393eec12545b74e3) - Online and reachable via Tailnet
-- ❌ Previous nodes offline (openclaw-aws, old mobile instances)
-- ✅ Full OpenJarvis runtime: ACCEPT - Python 3.10+ on Ubuntu 22.04
+---
 
-## AWS Resources Created
+## Old Node Cleanup
 
-### Current Active Resources
-- **Existing EC2 instances:**
-  - `openclaw-main` (i-09ab63019ce102b57) - Running, t3.small
-  - `openclaw-cloud` (i-08073bdf75fad3a3c) - STOPPED for cost containment
-  - `openclaw-mobile` (i-0393eec12545b74e3) - Running, t3.micro, Ubuntu 22.04, OpenJarvis runtime
-- **IAM Role:** openclaw-mobile-role (Tailscale secret access + CloudWatch logs)
-- **Instance Profile:** openclaw-mobile-profile
+| Instance ID | Status |
+|---|---|
+| `i-00ef38b9af4b4ccc5` (old t3.nano) | terminated |
+| `i-03e4b85bc6c71f1c2` (old t3.micro AL2023) | terminated |
+| `i-0f364fd7e3a85aa51` (Ubuntu attempt 1) | terminated |
+| `i-04f075dfce06517f7` (Ubuntu attempt 2) | terminated |
 
-### CloudFormation Stack Status
-- **Stack name:** `omnix-workbench-stack`
-- **Status:** UPDATE_COMPLETE
-- **Task definition:** Version 7 (Python 3.11-slim with AWS CLI + Tailscale support)
-- **ECS service:** ACTIVE with 0 running tasks (scaled to 0 for cost containment)
-- **Reason:** Fixed secret reference and added real cloud runtime server, but scaled down due to cost cap
+Only one mobile node running: `i-0393eec12545b74e3`
 
-## Current Monthly Cost Exposure
+---
 
-### Estimated Cost: $34.50-44.50/month
-- **Existing EC2 instances:** $20-25/month (openclaw-main t3.small)
-- **Mobile runtime:** $9.50/month (openclaw-mobile t3.micro)
-- **Cloud deployment:** $0 (ECS scaled to 0)
-- **Other resources:** $5-10/month (S3, DynamoDB, CloudWatch, Secrets Manager)
-- **Total:** $34.50-44.50/month (UNDER $45/month cap ✓)
-- **Cost action taken:** openclaw-cloud stopped, ECS scaled to 0
+## All EC2 Instances
 
-### EC2 Management Commands
+| Name | ID | State | Type |
+|---|---|---|---|
+| `openclaw-main` | `i-09ab63019ce102b57` | running | t3.small |
+| `openclaw-cloud` | `i-08073bdf75fad3a3c` | **stopped** | t3.medium |
+| `openclaw-mobile` | `i-0393eec12545b74e3` | running | t3.micro |
+
+- `openclaw-cloud`: Must remain stopped.
+- ECS: `0/0` — must remain `0/0`.
+
+---
+
+## Cost Estimate
+
+| Resource | Cost |
+|---|---|
+| `openclaw-main` t3.small | ~$14/month |
+| `openclaw-mobile` t3.micro | ~$9.50/month |
+| S3, DynamoDB, CloudWatch, Secrets | ~$5-10/month |
+| ECS (scaled to 0) | $0 |
+| **Total** | **~$28.50–33.50/month (UNDER $45/month cap ✓)** |
+
+---
+
+## Stop/Start/Reboot Commands
+
 ```bash
-# Stop openclaw-mobile
+# Stop mobile node
 aws ec2 stop-instances --instance-ids i-0393eec12545b74e3 --profile openclaw-admin --region ap-southeast-1
 
-# Start openclaw-mobile
+# Start mobile node
 aws ec2 start-instances --instance-ids i-0393eec12545b74e3 --profile openclaw-admin --region ap-southeast-1
 
-# Terminate openclaw-mobile (if needed)
-aws ec2 terminate-instances --instance-ids i-0393eec12545b74e3 --profile openclaw-admin --region ap-southeast-1
+# Reboot mobile node
+aws ec2 reboot-instances --instance-ids i-0393eec12545b74e3 --profile openclaw-admin --region ap-southeast-1
 
-# Restart openclaw-cloud (if needed for recovery)
-aws ec2 start-instances --instance-ids i-08073bdf75fad3a3c --profile openclaw-admin --region ap-southeast-1
+# Check node status
+aws ec2 describe-instances --instance-ids i-0393eec12545b74e3 --profile openclaw-admin --region ap-southeast-1 --query 'Reservations[0].Instances[0].State.Name'
+
+# Check health endpoint (must be on Tailnet)
+curl -s http://100.118.81.37:3091/health
+
+# Check status bundle
+curl -s http://100.118.81.37:3091/api/jarvis/status-bundle
 ```
+
+---
+
+## Maintenance Access
+
+| Method | Status | Notes |
+|---|---|---|
+| AWS SSM | **HOLD** | SSM agent not pre-installed on this node's AMI; agent not registered |
+| SSH | **No** | No key pair configured at launch |
+| Stop/Start via AWS CLI | **ACCEPT** | Full control via `aws ec2 stop/start/reboot-instances` |
+| CloudWatch Logs | **Available** | IAM role has CloudWatch access; journald logs available post-SSM |
+| Tailscale ping | **ACCEPT** | `tailscale ping 100.118.81.37` |
+
+**To enable SSM on next replacement:**
+The updated `deploy/aws/mobile_userdata_ubuntu.sh` now includes SSM agent installation via snap. Use this script when replacing the node.
+
+---
+
+## Runtime Service
+
+| Field | Value |
+|---|---|
+| Service name | `jarvis-status.service` |
+| Description | Jarvis Status Server |
+| Start | `systemctl start jarvis-status` (via SSM or reboot) |
+| Restart | `systemctl restart jarvis-status` (via SSM) |
+| Status | Running (confirmed via endpoints) |
+| Starts on boot | Yes (`systemctl enable jarvis-status`) |
+
+---
+
+## Cloud Storage / Source of Truth
+
+| Resource | Name |
+|---|---|
+| S3 Bucket | `omnix-workbench-071179620006-ap-southeast-1-artifacts` |
+| DynamoDB Table | `omnix-workbench-071179620006-ap-southeast-1-state` |
+| Source of Truth | **Local** (cloud as mirror/backup) |
+
+Migration result: **SUCCESS** (2 memory, 2 artifact items migrated to S3).
+
+### Cloud Sync Command (Local Mac)
+```bash
+~/.openjarvis/.venv/bin/python3 -c "
+import os, sys
+os.environ['OMNIX_WORKBENCH_STORAGE_PROVIDER'] = 'aws'
+os.environ['OMNIX_WORKBENCH_AWS_REGION'] = 'ap-southeast-1'
+os.environ['OMNIX_WORKBENCH_AWS_PROFILE'] = 'openclaw-admin'
+os.environ['OMNIX_WORKBENCH_MEMORY_BUCKET'] = 'omnix-workbench-071179620006-ap-southeast-1-artifacts'
+os.environ['OMNIX_WORKBENCH_ARTIFACT_BUCKET'] = 'omnix-workbench-071179620006-ap-southeast-1-artifacts'
+os.environ['OMNIX_WORKBENCH_STATE_TABLE'] = 'omnix-workbench-071179620006-ap-southeast-1-state'
+sys.path.insert(0, '/Users/user/OpenJarvis/src')
+from openjarvis.omnix_storage import StorageManager
+mgr = StorageManager()
+print(mgr.migrate_to_cloud(dry_run=True))
+"
+```
+
+### Rollback
+```bash
+# Restore from backup if needed
+cp ~/.omnix_workbench/memory.jsonl.backup.20260615_020446 ~/.omnix_workbench/memory.jsonl
+cp ~/.omnix_workbench/artifacts.jsonl.backup.20260615_020446 ~/.omnix_workbench/artifacts.jsonl
+```
+
+---
+
+## Local UI Integration
+
+A `CloudStatusPanel` component was added to the OpenJarvis frontend Dashboard page.
+
+| File | Change |
+|---|---|
+| `frontend/src/components/Dashboard/CloudStatusPanel.tsx` | New — polls cloud node, shows status |
+| `frontend/src/pages/DashboardPage.tsx` | Updated — includes CloudStatusPanel above telemetry |
+
+The panel:
+- Polls `/health` and `/api/jarvis/status-bundle` every 30 seconds
+- Shows: hostname, runtime, Tailscale status, storage, endpoint links
+- Has safe offline fallback ("unreachable" state)
+- URL is configurable (stored in localStorage under `omnix-cloud-node-url`)
+- Shows no secrets
+- Does not depend on OMNIX production
+
+**To change the cloud node URL in the UI:**
+Open Dashboard → CloudStatusPanel → click "Change" button → enter new URL → Save.
+
+---
+
+## Mobile Mission Control
+
+| Feature | Status |
+|---|---|
+| `/health` endpoint (Tailnet-only) | ACCEPT |
+| `/api/jarvis/status-bundle` (Tailnet-only) | ACCEPT |
+| iPhone reachable via Tailscale | ACCEPT (iPhone171 on same Tailnet) |
+| Public exposure | NO |
+| Tailscale Funnel | NO |
+| Mobile action/control | HOLD (no auth gating implemented) |
+
+---
+
+## ACCEPT/HOLD Checklist
+
+| Item | Status |
+|---|---|
+| Python 3.10+ on cloud node | ACCEPT |
+| Full OpenJarvis runtime on cloud | ACCEPT |
+| Real cloud actions (`jarvis omnix run`) | ACCEPT (local Mac) |
+| Cloud node remote command execution | HOLD (no SSM) |
+| Cloud memory/source-of-truth sync | ACCEPT (S3 migration succeeded) |
+| OpenJarvis UI visibly integrated | ACCEPT (CloudStatusPanel in Dashboard) |
+| Mobile status access (Tailnet-only) | ACCEPT |
+| Mobile action/control | HOLD (no auth gating) |
+| Maintenance via stop/start/reboot | ACCEPT |
+| Maintenance via SSM | HOLD (SSM agent not registered) |
+| Mobile without Mac | ACCEPT |
+| Cost under $45/month | YES (~$28.50-33.50/month) |
+| Public exposure | NO |
+| openclaw-cloud stopped | YES |
+| ECS 0/0 | YES |
+| Old nodes cleaned up | YES (all terminated) |
+| No secrets printed/committed | YES |
+| No OMNIX production deploy | YES |
+
+---
 
 ## Exact Remaining Blockers
 
-1. **Cloud Memory/Source-of-Truth Sync** - HOLD
-   - AWS storage configuration incomplete on cloud node
-   - Cloud node needs proper AWS credentials and storage configuration
-   - Migration failed: "AWS storage configuration incomplete"
-   - Impact: Local-only memory/artifacts, no cloud sync
-   - Solution: Configure cloud node with proper AWS storage settings or run migration from local Mac with cloud storage configured
+1. **SSM remote execution** — HOLD
+   - SSM agent not registered on current node (not pre-installed on this AMI build)
+   - Impact: Cannot run commands remotely on cloud node without rebooting
+   - Fix: Updated `mobile_userdata_ubuntu.sh` installs SSM agent via snap on next deployment
+   - Workaround: Use `aws ec2 reboot-instances` → service restarts automatically
 
-## Exact Next Prompt for New Windsurf Chat
+2. **`jarvis omnix storage migrate` CLI** — HOLD
+   - The installed `jarvis` CLI at `~/.openjarvis/.venv` loads an older installed version that lacks boto3
+   - Workaround: Direct Python migration works (see sync command above)
+   - Fix: `uv tool install openjarvis --reinstall` after adding boto3 to pyproject.toml dependencies
 
-If continuing this work in a new Windsurf chat, use this prompt:
+3. **Mobile action/control** — HOLD
+   - No authenticated action endpoint on cloud node
+   - Status-only access is safe; action/control requires private auth gating
+   - Fix: Implement auth-gated action endpoint in jarvis-status service (future sprint)
+
+---
+
+## Exact Next Prompt for Next Session
 
 ```
-Continue Jarvis OMNIX Workbench cloud deployment and recovery. Read the handoff file at /Users/user/OpenJarvis/JARVIS_OMNIX_HANDOFF.md for full context. Mobile access without Mac is ACCEPT - full OpenJarvis runtime working via Tailscale on openclaw-mobile (i-0393eec12545b74e3, t3.micro, Ubuntu 22.04, 100.118.81.37). Cost is $34.50-44.50/month under $45/month cap. openclaw-cloud is stopped. ECS is scaled to 0. BLOCKER: Cloud sync HOLD due to AWS storage configuration incomplete on cloud node. Next action: Configure cloud node with proper AWS storage settings or enable cloud sync from local Mac. Do not send Slack test messages.
+Continue Jarvis OMNIX Workbench. Read JARVIS_OMNIX_HANDOFF.md for full context.
+Active node: openclaw-mobile (i-0393eec12545b74e3, t3.micro, Ubuntu 22.04, 100.118.81.37).
+Cost: ~$28.50-33.50/month (under $45/month cap).
+openclaw-cloud: stopped. ECS: 0/0.
+BLOCKERS:
+(1) SSM remote execution HOLD — updated user data script includes SSM agent for next node replacement
+(2) jarvis omnix storage migrate CLI fails (boto3 path issue) — use direct Python workaround  
+(3) Mobile action/control HOLD — no auth-gated endpoint
+Next actions:
+- Replace mobile node using updated mobile_userdata_ubuntu.sh to get SSM access
+- Add boto3 to pyproject.toml dependencies to fix CLI migration
+- Consider implementing auth-gated action endpoint
+Do not send Slack test messages. Do not print secrets.
 ```
+
+---
 
 ## Secret Safety
 
-- ✅ No secrets printed, committed, logged, or exposed
-- ✅ `.env` file has private permissions (-rw-------)
-- ✅ `.env` is ignored by git
-- ✅ All required keys present in `.env` (values redacted)
+- No secrets printed, committed, logged, or exposed
+- `.env` file not read or modified
+- All secrets remain in AWS Secrets Manager and local `.env`
+- `.env` is git-ignored
 
 ## Files Changed in This Sprint
-- `deploy/aws/cloud_runtime.py` - Added Tailscale daemon startup and connection logic
-- `deploy/aws/template.yaml` - Updated to reference Tailscale secret ARN, added IAM policy access
-- `deploy/aws/mobile_userdata.sh` - Created user data script for EC2 mobile runtime (unused)
-- `deploy/aws/mobile_userdata_simple.sh` - Created user data script for minimal EC2 mobile runtime
-- `deploy/aws/mobile_userdata_full.sh` - Created user data script for full OpenJarvis runtime (Amazon Linux, blocked by Python version)
-- `deploy/aws/mobile_userdata_ubuntu.sh` - Created user data script for Ubuntu 22.04 with Python 3.10+ (SUCCESS)
-- `JARVIS_OMNIX_HANDOFF.md` - Updated with mobile node information and blockers
+
+| File | Change |
+|---|---|
+| `deploy/aws/mobile_userdata_ubuntu.sh` | Updated — adds SSM agent, richer status server |
+| `frontend/src/components/Dashboard/CloudStatusPanel.tsx` | New — cloud status UI panel |
+| `frontend/src/pages/DashboardPage.tsx` | Updated — adds CloudStatusPanel |
+| `.env.example` | Fixed — correct S3 bucket and DynamoDB table names |
+| `JARVIS_OMNIX_HANDOFF.md` | Rewritten — clean, complete, current |
