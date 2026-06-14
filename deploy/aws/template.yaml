@@ -323,7 +323,7 @@ Resources:
       TaskRoleArn: !GetAtt ECSTaskRole.Arn
       ContainerDefinitions:
         - Name: omnix-workbench
-          Image: public.ecr.aws/docker/library/node:20-alpine
+          Image: public.ecr.aws/docker/library/python:3.11-slim
           Essential: true
           PortMappings:
             - ContainerPort: 3091
@@ -333,6 +333,8 @@ Resources:
               Value: '3091'
             - Name: HOST
               Value: '0.0.0.0'
+            - Name: PYTHONUNBUFFERED
+              Value: '1'
             - Name: OMNIX_WORKBENCH_STORAGE_PROVIDER
               Value: aws
             - Name: OMNIX_WORKBENCH_SOURCE_OF_TRUTH
@@ -345,9 +347,21 @@ Resources:
               Value: !Ref ArtifactsBucket
             - Name: OMNIX_WORKBENCH_STATE_TABLE
               Value: !Ref StateTable
+            - Name: CLOUD_RUNTIME_S3_BUCKET
+              Value: !Ref ArtifactsBucket
+            - Name: CLOUD_RUNTIME_S3_KEY
+              Value: cloud_runtime.py
           Secrets:
             - Name: SLACK_BOT_TOKEN
               ValueFrom: !Ref SecretsManagerSecret
+          Command:
+            - /bin/sh
+            - -c
+            - !Sub |
+              apt-get update && apt-get install -y --no-install-recommends curl python3-pip && \
+              pip3 install --no-cache-dir awscli && \
+              aws s3 cp s3://${ArtifactsBucket}/cloud_runtime.py /app/cloud_runtime.py && \
+              python3 /app/cloud_runtime.py
           LogConfiguration:
             LogDriver: awslogs
             Options:

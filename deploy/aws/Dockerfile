@@ -1,37 +1,27 @@
 # Dockerfile for Jarvis OMNIX Workbench Cloud Runtime
-# This container runs the Mission Control bridge and OMNIX Workbench
+# Minimal Python HTTP server for health checks and status reporting
 
-FROM public.ecr.aws/docker/library/node:20-alpine
+FROM python:3.11-slim
 
-# Install dependencies
-RUN apk add --no-cache \
-    python3 \
-    py3-pip \
-    git \
-    curl
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
 
 # Set working directory
 WORKDIR /app
 
-# Copy Mission Control bridge files
-COPY package*.json ./
-RUN npm ci --only=production
+# Copy cloud runtime script
+COPY deploy/aws/cloud_runtime.py /app/cloud_runtime.py
 
-COPY . .
-
-# Copy OpenJarvis workbench
-COPY /Users/user/OpenJarvis /opt/openjarvis
-RUN pip3 install -e /opt/openjarvis
-
-# Create workspace directory
-RUN mkdir -p /app/openclaw-workspace/state/omnix
+# Create non-root user
+RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
+USER appuser
 
 # Environment variables
 ENV PORT=3091
 ENV HOST=0.0.0.0
-ENV OMNIX_WORKBENCH_STORAGE_PROVIDER=aws
-ENV OMNIX_WORKBENCH_SOURCE_OF_TRUTH=cloud
-ENV OPENCLAW_WORKSPACE_DIR=/app/openclaw-workspace
+ENV PYTHONUNBUFFERED=1
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
@@ -40,5 +30,5 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
 # Expose port
 EXPOSE 3091
 
-# Run Mission Control bridge
-CMD ["node", "server.js"]
+# Run cloud runtime
+CMD ["python3", "/app/cloud_runtime.py"]
