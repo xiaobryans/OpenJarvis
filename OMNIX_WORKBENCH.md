@@ -1,4 +1,4 @@
-# Jarvis OMNIX Workbench v1 Scaffold
+# Jarvis OMNIX Workbench v1
 
 Functional local front door for OMNIX upgrade work using Jarvis agents.
 
@@ -55,15 +55,41 @@ bash scripts/omnix-workbench gate "<pasted report>"
 ```
 
 ### Memory
-Memory/continuity placeholder (not yet implemented).
+Real local memory system for continuity and decisions.
 ```bash
-bash scripts/omnix-workbench memory "query"
+bash scripts/omnix-workbench memory add "decision made"
+bash scripts/omnix-workbench memory list
+bash scripts/omnix-workbench memory search "query"
+bash scripts/omnix-workbench memory show 1
 ```
 
 ### Artifact
-Document/artifact context placeholder (not yet implemented).
+Real local artifact context for documents.
 ```bash
-bash scripts/omnix-workbench artifact "context"
+bash scripts/omnix-workbench artifact add /path/to/file.txt
+bash scripts/omnix-workbench artifact list
+bash scripts/omnix-workbench artifact show 1
+bash scripts/omnix-workbench artifact summarize 1
+```
+
+### Run
+Orchestrate status→plan→prompt→gate workflow.
+```bash
+bash scripts/omnix-workbench run "Improve OMNIX tester onboarding"
+```
+
+### Slack
+Slack status and test-send using existing OpenClaw infrastructure.
+```bash
+bash scripts/omnix-workbench slack status
+bash scripts/omnix-workbench slack test-send
+```
+
+### Deploy
+Deploy readiness check only (no actual deployment).
+```bash
+bash scripts/omnix-workbench deploy
+bash scripts/omnix-workbench deploy vercel
 ```
 
 ## Agent Routing
@@ -75,23 +101,39 @@ Custom agent names are mapped to available Jarvis agents for compatibility.
 
 - Workbench rejects non-localhost status URLs
 - Prompts are compact to avoid timeout
-- Output is labeled as [JARVIS LLM] or [FALLBACK]
+- Output is labeled as [JARVIS LLM] or [FALLBACK - LLM unavailable]
 - Never marks deployment/production ready unless explicitly asked
 - Slack not configured = risk, not blocker for branch-only planning
 - No secrets, no Slack sends, no OMNIX/OpenClaw writes
+- Memory/artifact systems reject content with potential secrets
+- Deploy mode only checks readiness, does not perform deployment
 
-## OpenClaw Parity Contract
+## OpenClaw/Jarvis Parity Contract
 
-Future OpenClaw workflow features must be surfaced in Jarvis or marked backend-only.
+**Jarvis is the primary front door** for Bryan's OMNIX/OpenClaw work:
+- Jarvis Workbench provides unified interface for planning, coding prompts, review, QA, gates
+- Jarvis agents execute decision-making and coordination workflows
+- OpenClaw is backend/runtime status source where useful
+- Dashboard is observability/status bridge
+- OMNIX is product surface
+
+**OpenClaw workflow features** must be surfaced in Jarvis or marked backend-only:
 - OpenClaw runtime status: Available via status bundle
 - OpenClaw mission engine: Accessible via dashboard bridge only
 - OpenClaw workflows: To be integrated via Jarvis agents or marked backend-only
 - OpenClaw actions: Jarvis can read but not execute without approval
 
+**Slack sends/deployments/writes require explicit mode and gate**:
+- Slack sends: Use `slack test-send` mode with explicit confirmation
+- Deployments: Use `deploy` mode for readiness check only, manual deployment required
+- OMNIX/OpenClaw writes: Not performed by Jarvis Workbench (read-only operations only)
+
 ## Current Limitations
 
-- Requires local dashboard bridge running on port 3091
+- Requires local dashboard bridge running on port 3091 for status-dependent modes
 - Agent routing depends on available Jarvis agents
 - Some modes may fallback to deterministic logic if Jarvis LLM unavailable
-- Memory and artifact modes are placeholders (no persistence/indexing yet)
-- No persistent state or memory across sessions
+- Memory system is local-only (no cloud sync)
+- Artifact system supports limited file types (.txt, .md, .json, .log) with size cap
+- Slack integration requires existing OpenClaw configuration
+- Deploy mode only validates readiness, does not deploy
