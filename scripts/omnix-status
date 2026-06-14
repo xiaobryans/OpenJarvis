@@ -5,5 +5,13 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+VENV="$PROJECT_ROOT/.venv/bin/python3"
 
-python3 "$PROJECT_ROOT/src/openjarvis/omnix_frontdoor.py" "$@"
+# Use venv Python if available, otherwise fall back to system Python
+if [ -f "$VENV" ]; then
+    PYTHON="$VENV"
+else
+    PYTHON="python3"
+fi
+
+"$PYTHON" "$PROJECT_ROOT/src/openjarvis/omnix_frontdoor.py" "$@"

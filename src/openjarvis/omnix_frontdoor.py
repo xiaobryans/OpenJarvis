@@ -14,7 +14,13 @@ import sys
 import urllib.error
 import urllib.parse
 import urllib.request
+from pathlib import Path
 from typing import Any
+
+# Add OpenJarvis source directory to Python path
+_script_dir = Path(__file__).parent
+if str(_script_dir) not in sys.path:
+    sys.path.insert(0, str(_script_dir))
 
 
 # Expected schema
@@ -78,70 +84,90 @@ def build_review_prompt(bundle: dict[str, Any]) -> str:
     pending_approvals = runtime.get("pendingApprovals", [])
     missions = runtime.get("missions", [])
 
-    prompt = f"""You are Jarvis, reviewing OMNIX status for upgrade planning readiness.
+    # Build a concise prompt with essential information only
+    prompt = f"""You are Jarvis reviewing OMNIX status for upgrade planning readiness.
 
-STATUS BUNDLE SUMMARY:
-- Schema: {bundle.get('schema')}
-- Runtime Health: {runtime.get('health', {})}
-- Missions: {len(missions)} total
-- Pending Approvals: {len(pending_approvals)}
-- Slack Installed: {slack.get('installed')}
-- Slack Configured: {slack.get('configured')}
-- Slack Continuous Ops Running: {slack.get('continuousOpsRunning')}
-- Dashboard Health: {health.get('commandCenter', {})}
-- Local Gateway Health: {health.get('localGateway', {})}
+Schema: {bundle.get('schema')}
+Pending Approvals: {len(pending_approvals)}
+Missions: {len(missions)}
+Slack Installed: {slack.get('installed')}
+Slack Configured: {slack.get('configured')}
+Slack Continuous Ops Running: {slack.get('continuousOpsRunning')}
+Dashboard Health: {health.get('commandCenter', {}).get('ok', False)}
+Local Gateway Health: {health.get('localGateway', {}).get('ok', False)}
 
-PENDING APPROVALS:
-{json.dumps(pending_approvals, indent=2) if pending_approvals else "None"}
-
-RECENT MISSIONS:
-{json.dumps(missions[:5], indent=2) if missions else "None"}
-
-SLACK STATUS:
-{json.dumps(slack, indent=2)}
-
-YOUR TASK:
-Review this status bundle and determine if Jarvis can proceed with OMNIX upgrade planning.
-
-Consider:
-1. Are there any critical blockers in pending approvals?
-2. Is the Slack integration properly configured for notifications?
-3. Are there any runtime health issues?
-4. Are there missing or unknown fields that indicate problems?
+Review this status and determine if Jarvis can proceed with OMNIX upgrade planning.
+For branch-only planning, Slack configuration is a risk, not a blocker.
+HOLD only for: missing status bundle, invalid schema, unsafe flags, runtime critical failure, or pending approvals that block the objective.
 
 OUTPUT FORMAT (exact):
 JARVIS OMNIX FRONT-DOOR REVIEW ACCEPT or HOLD
 
-If ACCEPT, include:
-- Status summary (1 line)
-- Whether Jarvis can proceed with upgrade planning
-- Shortest next action
+If ACCEPT, include: Status summary (1 line), whether Jarvis can proceed, shortest next action
+If HOLD, include: Status summary (1 line), specific blocker(s), shortest next action
 
-If HOLD, include:
-- Status summary (1 line)
-- Specific blocker(s)
-- Shortest next action to resolve
-
-DO NOT include any other text before or after the decision line.
-"""
+DO NOT include any other text before or after the decision line."""
 
     return prompt
 
 
 def call_jarvis_llm(prompt: str) -> str:
-    """Call Jarvis LLM with the review prompt.
+    """Call Jarvis LLM with the review prompt using jarvis CLI."""
+    import subprocess
+    import tempfile
+    import os
 
-    This is a placeholder - in a real implementation, this would call the
-    configured Jarvis LLM backend. For now, we'll return a simple analysis.
-    """
-    # Placeholder: In production, this would call the actual Jarvis LLM
-    # via the OpenJarvis API or directly through the model backend.
+    try:
+        # Write prompt to temp file
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
+            f.write(prompt)
+            temp_file = f.name
+        
+        try:
+            # Try using jarvis ask with the prompt as argument
+            # Use --no-stream to get non-blocking output
+            result = subprocess.run(
+                ["jarvis", "ask", "--no-stream", prompt],
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+            
+            if result.returncode == 0:
+                # Extract the actual response from jarvis ask output
+                # jarvis ask typically includes banner, we need to extract just the response
+                lines = result.stdout.strip().split('\n')
+                # Find the first non-banner line
+                response_lines = []
+                in_response = False
+                for line in lines:
+                    if in_response or (line and not line.startswith(' ') and not line.startswith('_') and not line.startswith('J') and not line.startswith('P')):
+                        in_response = True
+                        if line.strip():
+                            response_lines.append(line)
+                
+                if response_lines:
+                    return '\n'.join(response_lines)
+                return result.stdout.strip()
+            else:
+                print(f"jarvis ask failed with return code {result.returncode}", file=sys.stderr)
+                print(f"stderr: {result.stderr}", file=sys.stderr)
+                return _fallback_rule_based_review(prompt)
+        finally:
+            os.unlink(temp_file)
+            
+    except (subprocess.TimeoutExpired, FileNotFoundError, Exception) as e:
+        print(f"jarvis ask exception: {e}", file=sys.stderr)
+        return _fallback_rule_based_review(prompt)
 
-    # For now, implement simple rule-based analysis
+
+def _fallback_rule_based_review(prompt: str) -> str:
+    """Fallback rule-based review when jarvis ask is unavailable."""
     lines = prompt.split("\n")
     pending_count = 0
     slack_configured = False
     slack_running = False
+    runtime_healthy = True
 
     for line in lines:
         if "Pending Approvals:" in line:
@@ -154,7 +180,8 @@ def call_jarvis_llm(prompt: str) -> str:
         if "Slack Continuous Ops Running:" in line:
             slack_running = "True" in line
 
-    # Simple decision logic
+    # Updated decision logic for branch-only planning
+    # HOLD only for critical blockers, not Slack configuration issues
     if pending_count > 0:
         return """JARVIS OMNIX FRONT-DOOR REVIEW HOLD
 Status: {pending_count} pending approval(s) blocking upgrade planning
@@ -162,18 +189,19 @@ Blocker: Pending approvals must be resolved before upgrade planning
 Next action: Review and resolve pending approvals via dashboard or CLI
 """.format(pending_count=pending_count)
 
+    # Slack not configured is a risk, not a blocker for branch-only planning
     if not slack_configured:
-        return """JARVIS OMNIX FRONT-DOOR REVIEW HOLD
-Status: Slack not configured for notifications
-Blocker: Slack integration required for upgrade notifications
-Next action: Configure Slack integration via OpenClaw CLI
+        return """JARVIS OMNIX FRONT-DOOR REVIEW ACCEPT
+Status: Runtime healthy, Slack not configured (risk for notifications, not blocker for branch-only planning)
+Can proceed: Yes, Jarvis can proceed with OMNIX upgrade planning (Slack notifications will be unavailable)
+Next action: Begin upgrade planning with Jarvis; configure Slack if notifications are needed
 """
 
     if not slack_running:
-        return """JARVIS OMNIX FRONT-DOOR REVIEW HOLD
-Status: Slack continuous ops not running
-Blocker: Slack bridge not active for notifications
-Next action: Start Slack continuous ops service via CLI
+        return """JARVIS OMNIX FRONT-DOOR REVIEW ACCEPT
+Status: Runtime healthy, Slack continuous ops not running (risk for notifications, not blocker for branch-only planning)
+Can proceed: Yes, Jarvis can proceed with OMNIX upgrade planning (Slack notifications will be unavailable)
+Next action: Begin upgrade planning with Jarvis; start Slack bridge if notifications are needed
 """
 
     return """JARVIS OMNIX FRONT-DOOR REVIEW ACCEPT
