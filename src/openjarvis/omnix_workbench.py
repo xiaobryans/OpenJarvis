@@ -145,20 +145,25 @@ def mode_plan(url: str, objective: str) -> str:
         bundle = fetch_status_bundle(url)
         validate_schema(bundle)
         
-        # Extract compact context
+        # Extract ultra-compact context
         runtime = bundle.get("runtime", {})
+        slack = bundle.get("slack", {})
         pending_count = len(runtime.get("pendingApprovals", []))
+        mission_count = len(runtime.get("missions", []))
+        schema_ok = bundle.get("schema") == _EXPECTED_SCHEMA
+        slack_configured = slack.get("configured", False)
+        slack_running = slack.get("continuousOpsRunning", False)
         
-        prompt = f"""Create OMNIX upgrade plan for: {objective}
-
-Current state: {pending_count} pending approvals, schema validated.
-Branch-only planning: Slack config is risk, not blocker.
-Focus: safe, incremental upgrade path with clear milestones.
-
-Output: 3-5 step plan with risk assessments and validation points."""
+        # Ultra-compact prompt with exact required fields
+        prompt = f"""Plan: {objective}
+Schema: {schema_ok}
+Runtime: {mission_count} missions
+Pending: {pending_count} approvals
+Slack: configured={slack_configured}, running={slack_running} (risk only)
+Output: JARVIS OMNIX PLAN ACCEPT or HOLD + 3-5 step plan"""
         
         response, success = call_jarvis_agent("simple", prompt)
-        source = "[JARVIS LLM]" if success else "[FALLBACK]"
+        source = "[JARVIS LLM]" if success else "[FALLBACK - LLM unavailable]"
         return f"{source}\n{response}"
     except Exception as e:
         return f"Plan error: {e}"
@@ -171,14 +176,17 @@ def mode_prompt(url: str, objective: str) -> str:
         bundle = fetch_status_bundle(url)
         validate_schema(bundle)
         
-        prompt = f"""Generate coding prompt for: {objective}
-
-Context: Branch-only OMNIX work, no production changes.
-Requirements: Clear acceptance criteria, test scope, validation steps.
-Output: Structured prompt for coding agent with success metrics."""
+        # Ultra-compact prompt with required fields
+        prompt = f"""Coding prompt: {objective}
+Branch-only: yes
+Repo sync gate: required
+Scope: local changes only
+Safety: no production, no secrets, no writes
+Validation: local tests pass
+Output: JARVIS OMNIX CODING PROMPT ACCEPT or HOLD + branch-only coding prompt"""
         
         response, success = call_jarvis_agent("simple", prompt)
-        source = "[JARVIS LLM]" if success else "[FALLBACK]"
+        source = "[JARVIS LLM]" if success else "[FALLBACK - LLM unavailable]"
         return f"{source}\n{response}"
     except Exception as e:
         return f"Prompt error: {e}"
@@ -228,33 +236,21 @@ Note: Do not mark production-ready unless explicitly stated."""
 
 
 def mode_memory(query: str) -> str:
-    """Memory mode: Obsidian-style continuity placeholder."""
-    return """[PLACEHOLDER] Memory/Continuity Mode
+    """Memory mode: placeholder for future memory/continuity features."""
+    return """[PLACEHOLDER - NOT IMPLEMENTED] Memory Mode
 
-This mode will provide Obsidian-style memory and continuity for OMNIX work.
-Future features:
-- Persistent context across sessions
-- Knowledge graph of decisions and artifacts
-- Searchable history of plans and outcomes
-- Automatic context injection for related work
-
-Current status: Placeholder - no secrets, no persistence yet."""
+This mode is a placeholder for future memory/continuity features.
+Not yet implemented: no persistence, no knowledge graph, no search.
+Current status: Placeholder only - no functionality."""
 
 
 def mode_artifact(context: str) -> str:
-    """Artifact mode: Paperclip-style document/artifact context placeholder."""
-    return f"""[PLACEHOLDER] Artifact/Document Context Mode
+    """Artifact mode: placeholder for future document/artifact context features."""
+    return f"""[PLACEHOLDER - NOT IMPLEMENTED] Artifact Mode
 
-This mode will provide Paperclip-style document and artifact context.
-Future features:
-- Document indexing and retrieval
-- Artifact relationship tracking
-- Context-aware document suggestions
-- Artifact version history
-
-Input context: {context[:200]}...
-
-Current status: Placeholder - no document indexing yet."""
+This mode is a placeholder for future document/artifact context features.
+Not yet implemented: no indexing, no retrieval, no relationship tracking.
+Current status: Placeholder only - no functionality."""
 
 
 def main() -> int:

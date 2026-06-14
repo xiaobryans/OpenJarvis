@@ -1,6 +1,6 @@
-# Jarvis OMNIX Workbench v1
+# Jarvis OMNIX Workbench v1 Scaffold
 
-All-in-one local front door for OMNIX upgrade work using Jarvis agents.
+Functional local front door for OMNIX upgrade work using Jarvis agents.
 
 ## Starting the Dashboard Bridge
 
@@ -55,13 +55,13 @@ bash scripts/omnix-workbench gate "<pasted report>"
 ```
 
 ### Memory
-Obsidian-style memory/continuity placeholder.
+Memory/continuity placeholder (not yet implemented).
 ```bash
 bash scripts/omnix-workbench memory "query"
 ```
 
 ### Artifact
-Paperclip-style document/artifact context placeholder.
+Document/artifact context placeholder (not yet implemented).
 ```bash
 bash scripts/omnix-workbench artifact "context"
 ```
