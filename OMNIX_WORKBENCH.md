@@ -11,6 +11,13 @@ OPENCLAW_WORKSPACE_DIR=/Users/user/CascadeProjects/openclaw-workspace-omnix PORT
 
 ## Running the Workbench
 
+**Visible launcher (recommended):**
+```bash
+cd /Users/user/OpenJarvis
+bash scripts/jarvis-omnix <mode> [args]
+```
+
+**Direct script:**
 ```bash
 cd /Users/user/OpenJarvis
 bash scripts/omnix-workbench <mode> [args]
