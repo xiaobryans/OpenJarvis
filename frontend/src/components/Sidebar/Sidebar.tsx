@@ -229,7 +229,7 @@ export function Sidebar() {
                   : 'var(--color-text-tertiary)',
               }}>
                 {nodeStatus === 'online'
-                  ? `Cloud Active · ${bundle?.runtime ?? '100.118.81.37'}`
+                  ? `Cloud Active · ${bundle?.hostname ?? 'openclaw-mobile'} · ${bundle?.tailscale_ip ?? '100.118.81.37'}`
                   : nodeStatus === 'offline'
                   ? 'Cloud Unreachable'
                   : 'Checking…'}
