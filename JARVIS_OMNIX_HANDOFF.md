@@ -268,10 +268,22 @@ npm run tauri build
 ```
 
 ### What to Do If Old UI Still Appears
-1. The packaged app at `/Applications/OpenJarvis.app` is the stale build
-2. Run `npm run tauri dev` in `/Users/user/OpenJarvis/frontend` — opens new window with new UI
-3. After `npm run tauri build` completes, drag `src-tauri/target/release/bundle/macos/OpenJarvis.app` to `/Applications/`
-4. Relaunch from `/Applications/OpenJarvis.app`
+
+> **IMPORTANT — Single-Instance:** Tauri enforces one instance per app ID (`com.openjarvis.desktop`).  
+> The old `/Applications/OpenJarvis.app` must be **quit first** before the new dev binary can open.
+
+**Step-by-step to see new UI:**
+1. Quit the running OpenJarvis app: `Cmd+Q` in the app, or `pkill openjarvis-desktop`
+2. In Terminal: `cd /Users/user/OpenJarvis/frontend`
+3. The Vite dev server is already running on port 5173. Launch the dev binary:  
+   `src-tauri/target/debug/openjarvis-desktop`  
+   OR restart everything cleanly: `npm run tauri dev`
+4. New window opens — Chat strip, Sidebar badge, and Dashboard panel all show Mission Control
+
+**To replace the packaged app permanently:**
+1. `cd /Users/user/OpenJarvis/frontend && npm run tauri build`
+2. `cp -r src-tauri/target/release/bundle/macos/OpenJarvis.app /Applications/OpenJarvis.app`
+3. Relaunch from Spotlight / Dock
 
 ---
 
