@@ -2,6 +2,83 @@
 
 ---
 
+## Governance Lock-In — Constitution + Policy Enforcement
+
+**Verdict: ACCEPT**
+**Local HEAD:** `9bd8684b` | **Remote fork HEAD:** `9bd8684b` | **Git status:** clean
+
+### What Was Built
+
+| File | Change |
+|---|---|
+| `src/openjarvis/governance/constitution.py` | **NEW** — Jarvis identity, `Verdict`/`Evidence`/`Blocker` types, `HARD_GATE_ACTIONS`, `ALWAYS_APPROVAL_AGENTS`, `ProjectProfile`, `ProjectRegistry`, `OMNIX_PROJECT` |
+| `src/openjarvis/governance/policies.py` | **NEW** — `requires_approval()`, `is_hard_gate()`, `classify_verdict()`, `validate_completion()`, `gate_check()`, `project_gate_check()`, `audit_log()` (secret-scrubbing), `build_blocker()`, `check_action_category()` |
+| `src/openjarvis/governance/__init__.py` | **NEW** — unified exports |
+| `docs/JARVIS_CONSTITUTION.md` | **NEW** — human-readable doctrine |
+| `src/openjarvis/mission/router.py` | `_requires_approval()` now delegates to `governance.policies.requires_approval()` |
+| `src/openjarvis/mission/runner.py` | `_persist_result()` uses `governance.validate_completion()` + `completion_refusal_reason()` |
+| `tests/test_governance.py` | **NEW** — 44 governance tests |
+
+### Governance Rules Locked In (Code-Enforced)
+
+**1. Jarvis Identity:** Project-agnostic; OMNIX is Project 1 not the whole system; supervises all active projects concurrently.
+
+**2. Honesty Policy:** `classify_verdict()` enforces ACCEPT requires verified evidence; HOLD on assumption/missing; UNSAFE on hard gate. `insufficient_data_message()` as standard phrase.
+
+**3. Hard Gates (UNSAFE — no exception):**
+`secrets_exposure`, `open_public_endpoint`, `tailscale_funnel`, `aws_infrastructure_change`, `omnix_production_deploy`, `vercel_deploy`, `supabase_change`, `stripe_change`, `billing_change`, `provider_routing_change`, `destructive_filesystem_op`, `destructive_git_op`, `real_slack_send`, `real_telegram_send`, `real_email_send`, `browser_form_submit`, `browser_purchase`, `browser_delete`, `browser_send`, `browser_account_mutation`, `production_data_change`
+
+**4. Always-Approval Agents:** `deployment`, `email`, `security_risk`, `browser`, `coding`
+
+**5. Multi-Project:** `ProjectRegistry` holds concurrent projects; OMNIX registered with priority=1; isolated `memory_namespace` per project; OMNIX `deploy_gates` include all production-critical gates.
+
+**6. No Fake Work:** `validate_completion(output)` returns False for empty/whitespace; `_persist_result` in MissionRunner calls this via governance (not inline logic).
+
+**7. Audit Safety:** `audit_log()` scrubs `token`, `secret`, `api_key`, `bot_token`, `chat_id`, etc. from context dicts before logging.
+
+### How Future Agents Use Governance
+
+```python
+from openjarvis.governance import gate_check, classify_verdict, Evidence, EvidenceStatus, build_blocker
+
+# Gate check before any action
+result = gate_check("real_slack_send", agent_id="docs_report", risk_level="low")
+# → {"allowed": False, "verdict": "UNSAFE", ...}
+
+# Verdict from evidence
+verdict = classify_verdict([
+    Evidence("pytest output", EvidenceStatus.VERIFIED, source="pytest"),
+])
+# → Verdict.ACCEPT only if all evidence VERIFIED, no MISSING
+
+# Structured blocker
+blocker = build_blocker(
+    blocker="web_search tool not wired",
+    why_it_matters="research agent cannot execute without external search",
+    unblock_path="implement WebSearchTool, register in ExecutorRegistry",
+    can_continue_partially=True,
+    partial_scope="docs/qa tasks can still run",
+)
+```
+
+### Validation
+
+```
+pytest tests/test_governance.py tests/mission/ -v
+→ 183 passed, 0 failed, 1 warning (httpx deprecation, non-blocking)
+```
+
+### What Remains to Enforce Later
+
+- ProjectRegistry persistence (SQLite) — currently in-process only
+- Per-project memory isolation enforcement in memory backend
+- Multi-project mission routing (currently single pool)
+- Slack/Telegram per-project channel routing via notifier
+- Governance version history / immutable audit log persistence
+- Agent-to-agent governance checks
+
+---
+
 ## Mega Sprint 3 — Real Agent Execution + Slack/Telegram Operational Loop
 
 **Verdict: ACCEPT**
