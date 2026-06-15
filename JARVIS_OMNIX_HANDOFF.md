@@ -1,7 +1,13 @@
 # Jarvis OMNIX Workbench Handoff
 
 ## Final Verdict
-ACCEPT — Full OpenJarvis runtime on Ubuntu 22.04 cloud node. Tailnet endpoints working. Cloud memory primary (S3). Storage CLI fixed. SSM admin access working. Token-gated mobile action/control implemented. Local UI shows cloud status. Cost under cap. No public exposure.
+ACCEPT — Full OpenJarvis runtime on Ubuntu 22.04 cloud node. Tailnet endpoints working. Cloud memory primary (S3). Storage CLI fixed. SSM admin access working. Token-gated mobile action/control implemented. Cloud status now visible in Chat, Sidebar, and Dashboard. Desktop app rebuilt via `npm run tauri dev`. Cost under cap. No public exposure.
+
+**UI Sprint (2025-06-15):** Previously `CloudStatusPanel` existed only on the Dashboard page (dead for Bryan who stays on Chat). Now:
+- **Chat page**: `CloudStatusStrip` bar always visible at top showing Mission Control / Cloud Active / 100.118.81.37
+- **Sidebar**: cloud badge above bottom nav showing Mission Control + Cloud Active/Unreachable
+- **Dashboard**: renamed panel header to "Mission Control", added Cloud Active badge, Status/Action Gate rows
+- **Offline fallback**: all surfaces show "Cloud Unreachable" text, never silently disappear
 
 ---
 
@@ -219,10 +225,53 @@ curl -s -X POST http://100.118.81.37:3091/api/jarvis/action \
 
 | File | Change |
 |---|---|
-| `frontend/src/components/Dashboard/CloudStatusPanel.tsx` | Polls cloud node, shows status panel |
-| `frontend/src/pages/DashboardPage.tsx` | CloudStatusPanel in dashboard above telemetry |
+| `frontend/src/components/Cloud/useCloudStatus.ts` | **NEW** — shared hook polling `/api/jarvis/status-bundle` every 30s |
+| `frontend/src/components/Cloud/CloudStatusStrip.tsx` | **NEW** — strip on Chat page: Mission Control · Cloud Active · Cloud Runtime Active · Storage · Action Gate · 100.118.81.37 |
+| `frontend/src/components/Sidebar/Sidebar.tsx` | **UPDATED** — cloud badge above bottom nav with Mission Control + status |
+| `frontend/src/pages/ChatPage.tsx` | **UPDATED** — renders CloudStatusStrip above ChatArea |
+| `frontend/src/components/Dashboard/CloudStatusPanel.tsx` | **UPDATED** — Mission Control header, Cloud Active badge, Status/Action Gate rows |
+| `frontend/src/pages/DashboardPage.tsx` | Unchanged — CloudStatusPanel already wired here |
+| `frontend/src-tauri/tauri.conf.json` | **UPDATED** — added `http://100.118.81.37:*` to CSP `connect-src` |
 
-The panel polls every 30s, shows hostname/runtime/Tailscale/storage/cost, configurable URL via localStorage.
+### Visible Text Bryan Now Sees
+
+**Chat page (always visible without navigating):**
+- Strip at top: `Mission Control | Cloud Active | Cloud Runtime Active | Storage: aws-s3 | Action Gate: token-required | 100.118.81.37 | HH:MM:SS`
+- On offline: `Mission Control | Cloud Unreachable | Cloud Unreachable — ensure Tailnet is active`
+
+**Sidebar (always visible):**
+- Badge above nav: `Mission Control` / `Cloud Active · openclaw-mobile` (or `Cloud Unreachable` in red)
+
+**Dashboard (navigate to /dashboard):**
+- Header: `Mission Control | Cloud Active | OMNIX Cloud Node`
+- Grid: Status: Cloud Runtime Active, Storage: aws-s3, Action Gate: token-required, Tailscale: connected, Hostname: openclaw-mobile, Runtime: OpenJarvis
+- Offline: red box reading `Cloud Unreachable — ensure you are on Tailnet (100.118.81.37) and the node is running.`
+
+### Rebuild/Relaunch Command
+
+```bash
+# Option A — dev window (fast, shows new UI immediately):
+cd /Users/user/OpenJarvis/frontend
+npm install  # if needed
+npm run tauri dev
+# → Opens new OpenJarvis window with live Vite dev server
+
+# Option B — rebuild packaged app (slow, 10-30 min first build):
+cd /Users/user/OpenJarvis/frontend
+npm run tauri build
+# → Output at: src-tauri/target/release/bundle/macos/OpenJarvis.app
+# → Copy to /Applications/OpenJarvis.app to replace
+
+# Verify UI via browser (fastest):
+# Start: npm run dev  (in /Users/user/OpenJarvis/frontend)
+# Open: http://localhost:5173/
+```
+
+### What to Do If Old UI Still Appears
+1. The packaged app at `/Applications/OpenJarvis.app` is the stale build
+2. Run `npm run tauri dev` in `/Users/user/OpenJarvis/frontend` — opens new window with new UI
+3. After `npm run tauri build` completes, drag `src-tauri/target/release/bundle/macos/OpenJarvis.app` to `/Applications/`
+4. Relaunch from `/Applications/OpenJarvis.app`
 
 ---
 
@@ -265,6 +314,11 @@ The panel polls every 30s, shows hostname/runtime/Tailscale/storage/cost, config
 | Cloud read/write verified | **ACCEPT** |
 | Rollback documented | **ACCEPT** |
 | OpenJarvis UI integrated | ACCEPT (CloudStatusPanel) |
+| Chat page cloud status strip | **ACCEPT** (CloudStatusStrip always visible) |
+| Sidebar cloud badge | **ACCEPT** (Mission Control badge above nav) |
+| Dashboard Mission Control panel | **ACCEPT** (renamed, Action Gate row added) |
+| Offline fallback text visible | **ACCEPT** ("Cloud Unreachable" on all surfaces) |
+| Tauri CSP allows Tailscale IP | **ACCEPT** (100.118.81.37:* added) |
 | Mobile status access (Tailnet) | ACCEPT |
 | Mobile action/control (token-gated) | **ACCEPT** |
 | SSM admin access | **ACCEPT** |
@@ -328,4 +382,10 @@ Do not send Slack test messages. Do not print secrets.
 | `scripts/omnix-workbench` | Sources `.env` automatically |
 | `src/openjarvis/omnix_workbench.py` | `mode_cloud_status()` — live endpoint detection replacing hardcoded LOCAL-ONLY MODE |
 | `.env.example` | Added `OMNIX_WORKBENCH_CLOUD_STATUS_URL` |
-| `JARVIS_OMNIX_HANDOFF.md` | All ACCEPT, no remaining blockers |
+| `frontend/src/components/Cloud/useCloudStatus.ts` | **NEW** — shared cloud polling hook |
+| `frontend/src/components/Cloud/CloudStatusStrip.tsx` | **NEW** — Chat page cloud status strip |
+| `frontend/src/components/Sidebar/Sidebar.tsx` | Updated — Mission Control badge above nav |
+| `frontend/src/pages/ChatPage.tsx` | Updated — renders CloudStatusStrip |
+| `frontend/src/components/Dashboard/CloudStatusPanel.tsx` | Updated — Mission Control header + Action Gate row |
+| `frontend/src-tauri/tauri.conf.json` | Updated — CSP allows 100.118.81.37:* |
+| `JARVIS_OMNIX_HANDOFF.md` | Updated — UI sprint complete |
