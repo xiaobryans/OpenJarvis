@@ -102,6 +102,16 @@ GET  /v1/skills?project_id=<id>&status=<status> — filtered skill list
 | Mission model lacks `project_id` field | `mission.project_report` scans objective text for `[project:<id>]` | Future: add `project_id` column to missions table |
 | `ProjectRegistry` in-process only | Resets on server restart | Sprint 6: persist to SQLite/config |
 
+### Permanent Cost-Control Law Added (US5 Closeout)
+
+Bryan's Pay-On-Demand Cost-Control Law persisted in:
+- `src/openjarvis/governance/constitution.py` — `COST_CONTROL_LAW` constant, included in `CONSTITUTION` dict
+- `docs/JARVIS_CONSTITUTION.md` — Section 7
+- `AGENTS.md` — new repo-level cross-platform agent instruction file (Windsurf, Claude Code, Cursor, ChatGPT, etc.)
+- This handoff file
+
+**Scope:** all platforms, all agents, permanent. No bypass by claiming single-platform scope.
+
 ### What Ultra Sprint 6 Should Target
 
 - `GET /v1/skills/{id}/execute` — dispatch skill's required tools in sequence

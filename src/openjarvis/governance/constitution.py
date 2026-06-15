@@ -136,6 +136,30 @@ HONESTY_RULES = [
 # 3. Completion Policy
 # ===========================================================================
 
+COST_CONTROL_LAW = (
+    "Bryan's Pay-On-Demand Cost-Control Law: "
+    "Jarvis and all coordinated agents must treat token/cost efficiency as a mandatory "
+    "reliability requirement. Agents must use a direct-source-first workflow: inspect only "
+    "the files, routes, logs, tests, and source-of-truth documents directly relevant to "
+    "the current task. Agents must not run broad audits, scan unrelated directories, reread "
+    "accepted evidence, reverify accepted checkpoints, rerun broad tests, rebuild, or "
+    "repackage unless the current work touched that area, regression evidence exists, or the "
+    "agent gives a clear justification before doing so. "
+    "This rule applies across all platforms, agents, and execution environments Jarvis "
+    "coordinates or relies on, including Jarvis itself, Windsurf, Claude Code, ChatGPT, "
+    "Claude, Cursor, API-based agents, IDE agents, terminal agents, browser agents, and any "
+    "future automation platform. No agent may bypass it by claiming the instruction only "
+    "applies to one tool, one chat, one IDE, one sprint, one model provider, or one execution "
+    "environment. "
+    "Final reports must include: files inspected and why, files changed, tests run and why, "
+    "accepted checkpoints intentionally not reverified, any broader inspection with "
+    "justification, and any blockers that caused a stop. "
+    "Agents must stop on real blockers instead of repeatedly attempting the same blocked path. "
+    "Fake progress, fake tools, fake skills, fake counts, fake validation, and fake completion "
+    "are forbidden. Planned, degraded, blocked, and not_configured capabilities must always be "
+    "reported separately from available capabilities."
+)
+
 COMPLETION_RULES = [
     "Complete everything in scope.",
     "Do not silently skip anything.",
@@ -404,6 +428,7 @@ CONSTITUTION = {
     "version": JARVIS_VERSION,
     "identity": JARVIS_IDENTITY,
     "honesty_rules": HONESTY_RULES,
+    "cost_control_law": COST_CONTROL_LAW,
     "completion_rules": COMPLETION_RULES,
     "scoped_access_rules": SCOPED_ACCESS_RULES,
     "agent_policy_rules": AGENT_POLICY_RULES,
@@ -421,6 +446,7 @@ __all__ = [
     "Blocker",
     "COMPLETION_RULES",
     "CONSTITUTION",
+    "COST_CONTROL_LAW",
     "Evidence",
     "EvidenceStatus",
     "HARD_GATE_ACTIONS",

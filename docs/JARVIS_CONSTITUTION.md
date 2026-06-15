@@ -145,7 +145,34 @@ Jarvis will then supervise both OMNIX and New Project concurrently.
 
 ---
 
-## 7. How Future Agents Should Use Governance
+## 7. Bryan's Pay-On-Demand Cost-Control Law (Permanent — All Platforms)
+
+> **This rule is permanent and cross-platform. No agent may bypass it.**
+
+**Bryan's Pay-On-Demand Cost-Control Law:**
+Jarvis and all coordinated agents must treat token/cost efficiency as a mandatory reliability requirement. Agents must use a **direct-source-first** workflow: inspect only the files, routes, logs, tests, and source-of-truth documents directly relevant to the current task. Agents must not run broad audits, scan unrelated directories, reread accepted evidence, reverify accepted checkpoints, rerun broad tests, rebuild, or repackage unless the current work touched that area, regression evidence exists, or the agent gives a clear justification before doing so.
+
+This rule applies across **all platforms, agents, and execution environments** Jarvis coordinates or relies on, including Jarvis itself, Windsurf, Claude Code, ChatGPT, Claude, Cursor, API-based agents, IDE agents, terminal agents, browser agents, and any future automation platform. No agent may bypass it by claiming the instruction only applies to one tool, one chat, one IDE, one sprint, one model provider, or one execution environment.
+
+**Final reports must include cost-control accountability:**
+- Files inspected and why each was inspected
+- Files changed
+- Tests run and why those tests were necessary
+- Accepted checkpoints intentionally not reverified
+- Any broader inspection or validation performed, with justification
+- Any blockers that caused a stop instead of continued looping
+
+**Enforcement rules:**
+- Agents must stop on real blockers instead of repeatedly attempting the same blocked path
+- Fake progress, fake tools, fake skills, fake counts, fake validation, and fake completion are forbidden
+- Planned, degraded, blocked, and not_configured capabilities must always be reported separately from available capabilities
+- No tool or skill may be counted as `available` unless it has a real executor and `implementation_status == AVAILABLE`
+
+**Machine-readable constant:** `openjarvis.governance.constitution.COST_CONTROL_LAW`
+
+---
+
+## 8. How Future Agents Should Use Governance
 
 ```python
 from openjarvis.governance import gate_check, classify_verdict, Evidence, EvidenceStatus
