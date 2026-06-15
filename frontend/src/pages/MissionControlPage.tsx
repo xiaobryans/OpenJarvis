@@ -6,6 +6,8 @@ import {
   Loader2,
   Bell,
   BellOff,
+  Play,
+  Send,
 } from 'lucide-react';
 import { apiFetch } from '../lib/api';
 
@@ -33,8 +35,24 @@ interface Task {
   status: string;
   priority: number;
   risk_level: string;
+  result: string;
+  summary: string;
   created_at: number;
   updated_at: number;
+}
+
+interface RunResult {
+  mission_id: string;
+  status: string;
+  tasks_started: number;
+  tasks_completed: number;
+  tasks_blocked: number;
+  tasks_failed: number;
+  approvals_required: number;
+  events_emitted: number;
+  no_progress: boolean;
+  no_progress_reason: string;
+  ok: boolean;
 }
 
 interface MissionEventRecord {
@@ -193,6 +211,16 @@ export function MissionControlPage() {
   // Notification status
   const [notifyStatus, setNotifyStatus] = useState<NotifyStatus | null>(null);
 
+  // Run mission pass
+  const [running, setRunning] = useState(false);
+  const [lastRunResult, setLastRunResult] = useState<RunResult | null>(null);
+  const [runError, setRunError] = useState<string | null>(null);
+
+  // Notify inflight
+  const [notifyingSlack, setNotifyingSlack] = useState(false);
+  const [notifyingTelegram, setNotifyingTelegram] = useState(false);
+  const [notifyFeedback, setNotifyFeedback] = useState<string | null>(null);
+
   // -------------------------------------------------------------------------
   // Fetch helpers
   // -------------------------------------------------------------------------
@@ -298,6 +326,9 @@ export function MissionControlPage() {
     if (!selectedId) {
       setMissionTasks([]);
       setMissionEvents([]);
+      setLastRunResult(null);
+      setRunError(null);
+      setNotifyFeedback(null);
       return;
     }
     fetchMissionDetail(selectedId);
@@ -329,6 +360,75 @@ export function MissionControlPage() {
       setCreateError(String(e));
     } finally {
       setCreating(false);
+    }
+  };
+
+  const handleRunMission = async () => {
+    if (!selectedId || running) return;
+    setRunning(true);
+    setRunError(null);
+    setLastRunResult(null);
+    try {
+      const resp = await apiFetch(`/v1/missions/${selectedId}/run`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ max_steps: 20 }),
+      });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        throw new Error((err as { detail?: string }).detail ?? `HTTP ${resp.status}`);
+      }
+      const data = await resp.json() as RunResult;
+      setLastRunResult(data);
+      await Promise.all([
+        fetchMissions(),
+        fetchPending(),
+        fetchMissionDetail(selectedId),
+      ]);
+    } catch (e) {
+      setRunError(String(e));
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  const handleNotifySlack = async () => {
+    if (!selectedId || notifyingSlack) return;
+    setNotifyingSlack(true);
+    setNotifyFeedback(null);
+    try {
+      const resp = await apiFetch(`/v1/missions/${selectedId}/notify/slack`, { method: 'POST' });
+      const data = await resp.json();
+      if (data.ok) {
+        setNotifyFeedback('Slack: sent');
+      } else {
+        setNotifyFeedback(`Slack: ${data.error_type === 'not_configured' ? 'not configured' : (data.error ?? 'failed')}`);
+      }
+    } catch (e) {
+      setNotifyFeedback(`Slack: error — ${e}`);
+    } finally {
+      setNotifyingSlack(false);
+      setTimeout(() => setNotifyFeedback(null), 4000);
+    }
+  };
+
+  const handleNotifyTelegram = async () => {
+    if (!selectedId || notifyingTelegram) return;
+    setNotifyingTelegram(true);
+    setNotifyFeedback(null);
+    try {
+      const resp = await apiFetch(`/v1/missions/${selectedId}/notify/telegram`, { method: 'POST' });
+      const data = await resp.json();
+      if (data.ok) {
+        setNotifyFeedback('Telegram: sent');
+      } else {
+        setNotifyFeedback(`Telegram: ${data.error_type === 'not_configured' ? 'not configured' : (data.error ?? 'failed')}`);
+      }
+    } catch (e) {
+      setNotifyFeedback(`Telegram: error — ${e}`);
+    } finally {
+      setNotifyingTelegram(false);
+      setTimeout(() => setNotifyFeedback(null), 4000);
     }
   };
 
@@ -541,6 +641,96 @@ export function MissionControlPage() {
                     )}
                   </div>
 
+                  {/* Run + Notify action bar */}
+                  <div className="flex items-center gap-2 flex-wrap mb-3">
+                    <button
+                      onClick={handleRunMission}
+                      disabled={running}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg font-medium disabled:opacity-40 cursor-pointer"
+                      style={{ background: 'var(--color-accent)', color: '#fff' }}
+                    >
+                      {running
+                        ? <Loader2 size={12} className="animate-spin" />
+                        : <Play size={12} />}
+                      Run Mission Pass
+                    </button>
+
+                    <button
+                      onClick={handleNotifySlack}
+                      disabled={notifyingSlack}
+                      className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded-lg disabled:opacity-40 cursor-pointer"
+                      style={{
+                        background: notifyStatus?.slack.ready
+                          ? 'color-mix(in srgb, #22c55e 12%, var(--color-bg-secondary))'
+                          : 'var(--color-bg-secondary)',
+                        border: '1px solid var(--color-border)',
+                        color: notifyStatus?.slack.ready ? '#22c55e' : 'var(--color-text-tertiary)',
+                      }}
+                      title={notifyStatus?.slack.ready ? 'Notify Slack' : 'Slack not configured'}
+                    >
+                      {notifyingSlack ? <Loader2 size={11} className="animate-spin" /> : <Send size={11} />}
+                      Slack
+                    </button>
+
+                    <button
+                      onClick={handleNotifyTelegram}
+                      disabled={notifyingTelegram}
+                      className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded-lg disabled:opacity-40 cursor-pointer"
+                      style={{
+                        background: notifyStatus?.telegram.ready
+                          ? 'color-mix(in srgb, #22c55e 12%, var(--color-bg-secondary))'
+                          : 'var(--color-bg-secondary)',
+                        border: '1px solid var(--color-border)',
+                        color: notifyStatus?.telegram.ready ? '#22c55e' : 'var(--color-text-tertiary)',
+                      }}
+                      title={notifyStatus?.telegram.ready ? 'Notify Telegram' : 'Telegram not configured'}
+                    >
+                      {notifyingTelegram ? <Loader2 size={11} className="animate-spin" /> : <Bell size={11} />}
+                      Telegram
+                    </button>
+
+                    {notifyFeedback && (
+                      <span className="text-[10px]" style={{ color: 'var(--color-text-secondary)' }}>
+                        {notifyFeedback}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Run result / error feedback */}
+                  {runError && (
+                    <div className="mb-2 px-3 py-2 rounded-lg text-xs" style={{
+                      background: 'color-mix(in srgb, var(--color-error, #ef4444) 10%, var(--color-bg-secondary))',
+                      border: '1px solid color-mix(in srgb, var(--color-error, #ef4444) 25%, transparent)',
+                      color: 'var(--color-error, #ef4444)',
+                    }}>
+                      Run error: {runError}
+                    </div>
+                  )}
+                  {lastRunResult && (
+                    <div className="mb-3 px-3 py-2 rounded-lg text-[10px] space-y-0.5" style={{
+                      background: lastRunResult.ok
+                        ? 'color-mix(in srgb, var(--color-success, #22c55e) 8%, var(--color-bg-secondary))'
+                        : 'color-mix(in srgb, #f59e0b 8%, var(--color-bg-secondary))',
+                      border: `1px solid ${
+                        lastRunResult.ok
+                          ? 'color-mix(in srgb, var(--color-success, #22c55e) 20%, transparent)'
+                          : 'color-mix(in srgb, #f59e0b 25%, transparent)'
+                      }`,
+                    }}>
+                      <div style={{ color: lastRunResult.ok ? 'var(--color-success, #22c55e)' : '#f59e0b' }} className="font-medium">
+                        Run pass — {lastRunResult.ok ? 'progress made' : 'no progress'}
+                      </div>
+                      <div style={{ color: 'var(--color-text-secondary)' }}>
+                        started: {lastRunResult.tasks_started} · completed: {lastRunResult.tasks_completed} · blocked: {lastRunResult.tasks_blocked} · failed: {lastRunResult.tasks_failed} · approvals: {lastRunResult.approvals_required}
+                      </div>
+                      {lastRunResult.no_progress_reason && (
+                        <div style={{ color: 'var(--color-text-tertiary)' }}>
+                          {lastRunResult.no_progress_reason}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {/* Tabs */}
                   <div className="flex items-center gap-1 mb-3">
                     {(['tasks', 'events'] as const).map(tab => (
@@ -591,6 +781,16 @@ export function MissionControlPage() {
                             <div className="text-xs font-medium" style={{ color: 'var(--color-text)' }}>
                               {task.title}
                             </div>
+                            {task.summary && (
+                              <div className="text-[10px] mt-0.5 italic" style={{ color: 'var(--color-text-tertiary)' }}>
+                                {task.summary}
+                              </div>
+                            )}
+                            {task.result && task.status === 'blocked' && (
+                              <div className="text-[10px] mt-0.5" style={{ color: '#f97316' }}>
+                                Blocked: {task.result.slice(0, 120)}{task.result.length > 120 ? '…' : ''}
+                              </div>
+                            )}
                           </div>
                         ))}
                       </div>

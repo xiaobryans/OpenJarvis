@@ -7,22 +7,26 @@ All data comes from real MissionStore persistence; no fake data is injected.
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any, Dict, Optional
 
 from openjarvis.core.events import EventType, get_event_bus
 from openjarvis.mission.agent_registry import SpecialistRegistry
+from openjarvis.mission.executor import ExecutorRegistry
 from openjarvis.mission.models import (
     MissionEvent,
     MissionStatus,
     RiskLevel,
     TaskStatus,
 )
+from openjarvis.mission.notifier import SlackNotifier, TelegramNotifier
 from openjarvis.mission.router import MissionRouter
+from openjarvis.mission.runner import MissionRunner, _build_mission_notify_message
 from openjarvis.mission.store import MissionStore
 
 try:
     from fastapi import APIRouter, HTTPException
-    from pydantic import BaseModel
+    from pydantic import BaseModel, Field
 except ImportError:
     raise ImportError("fastapi and pydantic are required for mission routes")
 
@@ -32,6 +36,7 @@ router = APIRouter()
 
 _store: Optional[MissionStore] = None
 _mission_router: Optional[MissionRouter] = None
+_mission_runner: Optional[MissionRunner] = None
 
 
 def _get_store() -> MissionStore:
@@ -48,10 +53,21 @@ def _get_router() -> MissionRouter:
     return _mission_router
 
 
+def _get_runner() -> MissionRunner:
+    global _mission_runner
+    if _mission_runner is None:
+        _mission_runner = MissionRunner(store=_get_store())
+    return _mission_runner
+
+
 class CreateMissionRequest(BaseModel):
     objective: str
     title: str = ""
     owner: str = "Bryan"
+
+
+class RunMissionRequest(BaseModel):
+    max_steps: int = Field(default=20, ge=1, le=100)
 
 
 @router.get("/v1/missions")
@@ -233,6 +249,136 @@ async def list_recent_events(limit: int = 100) -> Dict[str, Any]:
     store = _get_store()
     events = store.list_recent_events(limit=effective_limit)
     return {"events": [e.to_dict() for e in events], "count": len(events)}
+
+
+# ===========================================================================
+# Sprint 3 — Agent Execution Routes
+# ===========================================================================
+
+
+@router.post("/v1/missions/{mission_id}/run")
+async def run_mission(mission_id: str, req: RunMissionRequest = RunMissionRequest()) -> Dict[str, Any]:
+    """Execute one controlled pass of runnable tasks for the mission.
+
+    Never fakes success.  If no runnable tasks exist, returns ok=False with reason.
+    """
+    store = _get_store()
+    if store.get_mission(mission_id) is None:
+        raise HTTPException(status_code=404, detail="Mission not found")
+    runner = _get_runner()
+    result = runner.run_mission_pass(mission_id, max_steps=req.max_steps)
+    return result.to_dict()
+
+
+@router.post("/v1/tasks/{task_id}/run")
+async def run_task(task_id: str) -> Dict[str, Any]:
+    """Execute a single task if it is in a runnable state (assigned/pending).
+
+    Returns the ExecutionResult.  Approval-gated and blocked tasks are not run.
+    """
+    store = _get_store()
+    task = store.get_task(task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    runner = _get_runner()
+    exec_result = runner.execute_task(task_id)
+    if exec_result is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return exec_result.to_dict()
+
+
+@router.get("/v1/missions/{mission_id}/run-state")
+async def get_run_state(mission_id: str) -> Dict[str, Any]:
+    """Return current task counts, blocked reasons, approval needs, and last events."""
+    store = _get_store()
+    if store.get_mission(mission_id) is None:
+        raise HTTPException(status_code=404, detail="Mission not found")
+    runner = _get_runner()
+    return runner.get_run_state(mission_id)
+
+
+@router.get("/v1/executors")
+async def list_executors() -> Dict[str, Any]:
+    """Return available executor registry and capability/status.
+
+    No secrets are included.
+    """
+    executors = ExecutorRegistry.all()
+    return {
+        "executors": [
+            {
+                "agent_id": ex.agent_id,
+                "safe_for_auto_execute": ex.safe_for_auto_execute,
+                "executor_class": type(ex).__name__,
+            }
+            for ex in executors
+        ],
+        "count": len(executors),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Mission-scoped Slack / Telegram notify routes
+# ---------------------------------------------------------------------------
+
+
+@router.post("/v1/missions/{mission_id}/notify/slack")
+async def notify_mission_slack(mission_id: str) -> Dict[str, Any]:
+    """Send a mission summary to Slack if configured.
+
+    Returns not_configured if OPENCLAW_SLACK_BOT_TOKEN is missing/placeholder.
+    Never exposes token values.
+    """
+    store = _get_store()
+    mission = store.get_mission(mission_id)
+    if mission is None:
+        raise HTTPException(status_code=404, detail="Mission not found")
+
+    notifier = SlackNotifier()
+    if not notifier.is_configured():
+        return {
+            "ok": False,
+            "error_type": "not_configured",
+            "error": "Slack not configured — set OPENCLAW_SLACK_BOT_TOKEN",
+            "mission_id": mission_id,
+        }
+
+    tasks = store.list_tasks(mission_id)
+    msg = _build_mission_notify_message(mission, tasks=tasks)
+    result = await notifier.send(msg)
+    result["mission_id"] = mission_id
+    return result
+
+
+@router.post("/v1/missions/{mission_id}/notify/telegram")
+async def notify_mission_telegram(mission_id: str) -> Dict[str, Any]:
+    """Send a mission summary/alert to Telegram if configured.
+
+    Returns not_configured if token/chat_id are missing.
+    Never exposes token values.
+    """
+    store = _get_store()
+    mission = store.get_mission(mission_id)
+    if mission is None:
+        raise HTTPException(status_code=404, detail="Mission not found")
+
+    notifier = TelegramNotifier()
+    if not notifier.is_configured():
+        return {
+            "ok": False,
+            "error_type": "not_configured",
+            "error": (
+                "Telegram not configured — set JARVIS_TELEGRAM_BOT_TOKEN "
+                "and JARVIS_TELEGRAM_CHAT_ID"
+            ),
+            "mission_id": mission_id,
+        }
+
+    tasks = store.list_tasks(mission_id)
+    msg = _build_mission_notify_message(mission, tasks=tasks)
+    result = await notifier.send(msg)
+    result["mission_id"] = mission_id
+    return result
 
 
 __all__ = ["router"]

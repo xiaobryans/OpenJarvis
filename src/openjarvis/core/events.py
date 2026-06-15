@@ -86,6 +86,12 @@ class EventType(str, Enum):
     TASK_STATUS_CHANGED = "task_status_changed"
     TASK_APPROVED = "task_approved"
     TASK_CANCELLED = "task_cancelled"
+    # Mega Sprint 3 — Agent Execution Loop
+    MISSION_RUNNER_STARTED = "mission_runner_started"
+    TASK_STARTED = "task_started"
+    TASK_COMPLETED = "task_completed"
+    TASK_BLOCKED = "task_blocked"
+    TASK_FAILED = "task_failed"
 
 
 @dataclass(slots=True)
