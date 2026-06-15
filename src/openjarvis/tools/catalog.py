@@ -828,6 +828,9 @@ def initialize_catalog() -> None:
     # Sprint 5 workflow pack — registered after Sprint 4 base tools
     from openjarvis.tools.workflow_catalog import initialize_workflow_catalog
     initialize_workflow_catalog()
+    # Sprint 6 autonomy/watchdog/alert/mobile/voice pack
+    from openjarvis.tools.autonomy_catalog import initialize_autonomy_catalog
+    initialize_autonomy_catalog()
     stats = ToolRegistry.stats()
     logger.info(
         "Tool catalog initialized: %d total, %d available, %d unavailable",

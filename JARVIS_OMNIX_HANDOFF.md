@@ -2,6 +2,207 @@
 
 ---
 
+## Ultra Sprint 6 — Autonomy + Watchdogs + Mobile/Voice Foundation
+
+**Verdict: ACCEPT**
+**Branch:** `localhost-get-tool` | **Git status:** clean after commit
+
+### What Was Built
+
+| File | Change |
+|---|---|
+| `src/openjarvis/autonomy/__init__.py` | **NEW** — autonomy package init; exports AutonomyMode, AutonomyPolicy, WatchdogRunner, WatchdogResult, AlertStore, AlertRecord |
+| `src/openjarvis/autonomy/modes.py` | **NEW** — AutonomyMode (6 modes), AutonomyPolicy (project-aware mode store + audit history + governance gate enforcement) |
+| `src/openjarvis/autonomy/watchdogs.py` | **NEW** — WatchdogResult, WatchdogRunner, 8 real observe-only watchdogs |
+| `src/openjarvis/autonomy/alerts.py` | **NEW** — AlertStore (SQLite `~/.jarvis/alerts.db`), AlertRecord, draft routing (no auto-send) |
+| `src/openjarvis/tools/autonomy_catalog.py` | **NEW** — 14 autonomy/watchdog/alert/mobile/voice tools with real executors |
+| `src/openjarvis/tools/catalog.py` | **UPDATED** — calls `initialize_autonomy_catalog()` after `initialize_workflow_catalog()` |
+| `src/openjarvis/server/autonomy_routes.py` | **NEW** — 8 REST routes: /v1/autonomy/*, /v1/watchdogs/*, /v1/alerts/*, /v1/mobile/status |
+| `src/openjarvis/server/app.py` | **UPDATED** — includes `autonomy_router` |
+| `tests/autonomy/__init__.py` | **NEW** — empty package init |
+| `tests/autonomy/test_autonomy_modes.py` | **NEW** — 28 tests (default mode, set/read, hard-gate block at every mode, project isolation) |
+| `tests/autonomy/test_watchdogs.py` | **NEW** — 24 tests (8 watchdog IDs, required fields, summarize, memory scrub, git dirty, tool degradation) |
+| `tests/autonomy/test_alerts.py` | **NEW** — 30 tests (create, list, ack, resolve, draft slack/telegram, daily digest, to_dict, project isolation) |
+| `tests/autonomy/test_autonomy_tools.py` | **NEW** — 22 tests (all 14 tools registered+available, executors, governance gateway block) |
+
+### Autonomy Modes Implemented
+
+| Mode | Observe | Propose | Auto-Execute | Notes |
+|---|---|---|---|---|
+| `off` | ✗ | ✗ | ✗ | Completely inactive |
+| `observe_only` | ✓ | ✗ | ✗ | **Default (safe)** — watchdogs run, no proposals |
+| `propose_only` | ✓ | ✓ | ✗ | May draft; no execution |
+| `safe_execute_approved` | ✓ | ✓ | low-risk only | Hard gates still blocked |
+| `blocked` | ✓ | ✗ | ✗ | Suspended pending owner decision |
+| `requires_approval` | ✓ | ✗ | ✗ | Any action requires explicit approval |
+
+**Hard gates always blocked at every mode:** `real_slack_send`, `real_telegram_send`, `omnix_production_deploy`, `aws_infrastructure_change`, `destructive_*`, `browser_*`, `secrets_exposure`, and all US sprint hard gates.
+
+### Watchdogs Implemented (8, observe-only)
+
+| ID | What it checks | Status if healthy |
+|---|---|---|
+| `backend_health_watchdog` | Recent tool execution failure rate | healthy if <20% failures |
+| `mission_stuck_watchdog` | Missions stuck >1h in non-terminal state | healthy if none stuck |
+| `approval_queue_watchdog` | Tasks awaiting approval | healthy if queue empty |
+| `tool_degradation_watchdog` | degraded/not_configured tools in registry | healthy if all available |
+| `memory_secret_rejection_watchdog` | Memory store secret scrub functional | healthy if ValueError raised on fake token |
+| `project_handoff_staleness_watchdog` | Handoff doc age >7 days | healthy if recently updated |
+| `git_dirty_watchdog` | Git working tree dirty | healthy if clean |
+| `execution_failure_watchdog` | Tools with ≥50% failure rate over 3+ runs | healthy if none |
+
+Rules: no auto-fix, no auto-send, no auto-deploy, no auto-merge. Missing dependency → degraded/not_configured (never fake healthy).
+
+### Alert/Notification Behavior
+
+- `AlertStore` backed by SQLite `~/.jarvis/alerts.db`; project-scoped; fields: `alert_id`, `project_id`, `severity`, `title`, `evidence`, `recommendation`, `source_watchdog_id`, `status`, timestamps
+- `alert.create` / `alert.list` / `alert.acknowledge` / `alert.resolve` — all functional
+- `alert.draft_slack_update` / `alert.draft_telegram_update` — always `send_status=not_sent`, `approval_required=True`; produces `draft_text` only; **no real send occurs**
+- `alert.daily_digest` — plain-text digest with open/ack counts and severity breakdown
+- No auto-send from any alert tool or API route
+
+### Mobile/Voice Readiness
+
+| Capability | Status | Notes |
+|---|---|---|
+| `mobile.status` tool | **available** | Compact JSON: autonomy mode, tool/skill counts, alert summary, watchdog registry |
+| `GET /v1/mobile/status` route | **available** | Same compact payload via REST |
+| `voice.parse_intent` tool | **available** | Text-based keyword parser; `voice_status=not_implemented`; explicit blocker: no STT engine |
+| Real STT voice recognition | **planned** | Blocker: no speech-to-text integration wired |
+
+### Tool Registry — Sprint 6 Real Counts (no inflation)
+
+| Status | Count | New categories |
+|---|---|---|
+| **available** | **60** | autonomy(2), watchdog(3), alert(7), mobile(1), voice(1) |
+| **not_configured** | **3** | Unchanged from US5 (slack/telegram/web.search) |
+| **degraded** | **0** | — |
+| **Total registered** | **63** | US5: 49 + US6: 14 |
+
+Skills unchanged: 21 total, 18 available, 3 degraded (unchanged from US5).
+
+### API Routes Added
+
+```
+GET  /v1/autonomy/status?project_id=omnix   — autonomy mode + policy status
+POST /v1/autonomy/mode                      — set autonomy mode (governance enforced)
+GET  /v1/watchdogs?project_id=omnix         — run all watchdogs + return results
+POST /v1/watchdogs/run                      — run watchdog pack or single watchdog
+GET  /v1/alerts?project_id=omnix            — list project alerts
+POST /v1/alerts                             — create alert
+POST /v1/alerts/{alert_id}/ack             — acknowledge alert
+POST /v1/alerts/{alert_id}/resolve         — resolve alert
+GET  /v1/mobile/status?project_id=omnix     — mobile-readable compact status
+```
+
+### Functional Demo Output (exact, non-secret)
+
+```
+1. OMNIX autonomy status: mode=observe_only, can_observe=True, can_propose=False,
+   hard_gates_always_blocked=True, real_send_always_blocked=True
+
+2. Set mode=propose_only: ok, can_auto_execute(real_slack_send)=False, can_propose=True
+
+3. Watchdog pack (omnix): 8 total, 3 healthy, 4 degraded, 1 failed, 0 not_configured
+   - approval_queue_watchdog: degraded (tasks awaiting approval)
+   - backend_health_watchdog: failed (recent execution failures)
+   - execution_failure_watchdog: healthy
+   - git_dirty_watchdog: degraded (uncommitted changes)
+   - memory_secret_rejection_watchdog: healthy (scrub functional)
+   - mission_stuck_watchdog: degraded (stuck missions)
+   - project_handoff_staleness_watchdog: healthy
+   - tool_degradation_watchdog: degraded (slack/telegram/web.search not_configured)
+
+4. Alerts created with evidence and severity; project-scoped
+
+5. Alert acknowledged: status=acknowledged, acknowledged_at set
+
+6. Slack draft: send_status=not_sent, approval_required=True
+   Telegram draft: send_status=not_sent, approval_required=True
+
+7. safe_execute_approved + real_slack_send: can_auto_execute=False (GOVERNANCE BLOCKED)
+   gateway.execute(slack.notify_mission): ok=False outcome=not_configured
+
+8. Execution log: autonomy.get_status=success, watchdog.list_ids=success,
+   slack.notify_mission=not_configured (governance catch)
+
+9. Tools: 63 total, 60 available, 3 not_configured, 0 degraded, 0 planned
+   Skills: 21 total, 18 available, 3 degraded
+
+10. launchd jarvis watchdog agents: NONE (confirmed clean)
+    crontab jarvis entries: NONE (confirmed clean)
+```
+
+### Tests Run (US6-specific only)
+
+```
+.venv/bin/pytest tests/autonomy/ -q
+→ 104 passed, 0 failed in 0.73s
+
+Regression (touched components: tools, skills, governance, memory):
+.venv/bin/pytest tests/tools/test_tool_registry.py tests/tools/test_sprint5_workflow_catalog.py
+                 tests/skills/test_skill_registry.py tests/memory/test_memory_store.py
+                 tests/test_governance.py -q
+→ 159 passed, 0 failed in 2.64s
+```
+
+### Accepted Checkpoints NOT Re-verified (unchanged, no regression evidence)
+
+- Cloud/status foundation — ACCEPT (not touched)
+- Sprint 1 Mission/Agent Core — ACCEPT (not touched)
+- Sprint 2 Mission Control Visibility — ACCEPT (not touched)
+- Sprint 3 Real Agent Execution + Slack/Telegram — ACCEPT (not touched)
+- Governance Lock-In — ACCEPT (governance read-only; `is_hard_gate()` called from `AutonomyPolicy`)
+- Ultra Sprint 4 Skills/Tools/Memory Foundation — ACCEPT (only registry extended)
+- Ultra Sprint 5 Tool/Skill Expansion — ACCEPT (only `catalog.py` initialization chain extended)
+
+### Known Blockers (Sprint 6)
+
+| Blocker | Impact | Unblock Path |
+|---|---|---|
+| `AutonomyPolicy` in-process only | Mode resets on server restart | Sprint 7: persist autonomy state to SQLite |
+| Real STT voice | `voice.parse_intent` is text-only keyword parser | Integrate whisper.cpp or cloud STT API |
+| `ProjectRegistry` in-process only | `project_handoff_staleness_watchdog` / `git_dirty_watchdog` may skip | Sprint 7: persist ProjectRegistry |
+| `OPENCLAW_SLACK_BOT_TOKEN` not set | `slack.notify_mission` = not_configured | Set env var |
+| `JARVIS_TELEGRAM_BOT_TOKEN`/`CHAT_ID` not set | `telegram.notify_mission` = not_configured | Set env vars |
+| `TAVILY_API_KEY` not set | `web.search` = not_configured | Set env var |
+
+### Safety Confirmations (Sprint 6)
+
+- No secrets committed or printed
+- No public endpoints opened
+- No Tailscale Funnel
+- No AWS infrastructure changes
+- No production deploys touched
+- No real Slack/Telegram/email sends (`send_status=not_sent` always on draft tools)
+- No persistent launch agents, cron jobs, daemons, or background auto-runners installed
+- No browser form submissions, purchases, account mutations
+- All watchdogs: observe/report only — no auto-fix, auto-send, auto-deploy, auto-merge
+- Hard gates enforced by `AutonomyPolicy.can_auto_execute()` regardless of mode
+- `mock_secret_rejection_watchdog` test proves memory scrub is not bypassed
+- `TestCanAutoExecute.test_hard_gate_blocked_at_every_mode` proves unsafe actions blocked at all 6 modes
+
+### What Is Ready for Ultra Sprint 7
+
+- Persist `AutonomyPolicy` state to SQLite (restart durability)
+- Persist `ProjectRegistry` to SQLite
+- Wire watchdog results into alert auto-creation (observe → draft alert, no auto-send)
+- Skill execution dispatch (`GET /v1/skills/{id}/execute`)
+- WebSocket/SSE push for Mission Control (replace polling)
+- Add `project_id` field to Mission model (schema migration)
+- Frontend: Autonomy/Watchdog/Alert panel (compact view in Mission Control)
+- Real STT integration for voice intent (whisper.cpp or cloud)
+
+### What Remains Intentionally Not Built (US6)
+
+- No real Slack/Telegram sends (approval gate only)
+- No AI-powered voice recognition (text keyword parser is honest foundation)
+- No persistent auto-runner or scheduled watchdog daemon (would require approval)
+- No frontend UI changes (watchdog/alert panel deferred to Sprint 7 if needed)
+- No Vercel/Supabase/Stripe/billing changes
+
+---
+
 ## Ultra Sprint 5 — Tool/Skill Expansion + OMNIX Workflow Packs
 
 **Verdict: ACCEPT**
@@ -1020,3 +1221,9 @@ Do not print secrets.
 | `frontend/src-tauri/tauri.conf.json` | Updated — CSP allows 100.118.81.37:* |
 | `JARVIS_OMNIX_HANDOFF.md` | Updated — UI sprint complete |
 
+<!-- TestDraftSection START -->
+## TestDraftSection (2026-06-15 16:50 UTC)
+
+Updated draft.
+
+<!-- TestDraftSection END -->
