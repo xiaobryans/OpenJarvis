@@ -1,75 +1,20 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useState } from 'react';
+import { useCloudStatus } from '../Cloud/useCloudStatus';
 
-const DEFAULT_CLOUD_URL = 'http://100.118.81.37:3091';
 const CLOUD_URL_KEY = 'omnix-cloud-node-url';
-const POLL_INTERVAL = 30000;
-
-interface HealthData {
-  status: string;
-  hostname: string;
-  runtime: string;
-}
-
-interface StatusBundleData {
-  hostname: string;
-  runtime: string;
-  tailscale: string;
-  storage: string;
-  action_gate?: string;
-  tailscale_ip?: string;
-}
-
-type NodeStatus = 'online' | 'offline' | 'checking';
 
 export function CloudStatusPanel() {
-  const [cloudUrl, setCloudUrl] = useState<string>(
-    () => localStorage.getItem(CLOUD_URL_KEY) || DEFAULT_CLOUD_URL
-  );
+  const { nodeStatus, bundle, lastChecked, error, cloudUrl } = useCloudStatus();
   const [editingUrl, setEditingUrl] = useState(false);
   const [urlDraft, setUrlDraft] = useState(cloudUrl);
 
-  const [nodeStatus, setNodeStatus] = useState<NodeStatus>('checking');
-  const [health, setHealth] = useState<HealthData | null>(null);
-  const [bundle, setBundle] = useState<StatusBundleData | null>(null);
-  const [lastChecked, setLastChecked] = useState<string>('—');
-  const [error, setError] = useState<string | null>(null);
-
-  const poll = useCallback(async () => {
-    setNodeStatus('checking');
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 5000);
-      const [hRes, sRes] = await Promise.all([
-        fetch(`${cloudUrl}/health`, { signal: controller.signal }),
-        fetch(`${cloudUrl}/api/jarvis/status-bundle`, { signal: controller.signal }),
-      ]);
-      clearTimeout(timeout);
-      const hData: HealthData = await hRes.json();
-      const sData: StatusBundleData = await sRes.json();
-      setHealth(hData);
-      setBundle(sData);
-      setNodeStatus('online');
-      setError(null);
-    } catch (e) {
-      setNodeStatus('offline');
-      setHealth(null);
-      setBundle(null);
-      setError('Cloud node unreachable');
-    }
-    setLastChecked(new Date().toLocaleTimeString());
-  }, [cloudUrl]);
-
-  useEffect(() => {
-    poll();
-    const interval = setInterval(poll, POLL_INTERVAL);
-    return () => clearInterval(interval);
-  }, [poll]);
-
   const saveUrl = () => {
     const trimmed = urlDraft.replace(/\/+$/, '');
-    setCloudUrl(trimmed);
     localStorage.setItem(CLOUD_URL_KEY, trimmed);
+    setUrlDraft(trimmed);
     setEditingUrl(false);
+    // Force reload to pick up new URL from localStorage
+    window.location.reload();
   };
 
   const dot = (color: string) => (
@@ -125,14 +70,16 @@ export function CloudStatusPanel() {
       </div>
 
       {/* Node details */}
-      {nodeStatus === 'online' && health && bundle && (
+      {nodeStatus === 'online' && bundle && (
         <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
           <Row label="Status" value="Cloud Runtime Active" highlight />
           <Row label="Storage" value={bundle.storage ?? 'Cloud Primary'} />
           <Row label="Action Gate" value={bundle.action_gate ?? 'Token Required'} />
-          <Row label="Tailscale" value={bundle.tailscale} />
-          <Row label="Hostname" value={health.hostname} />
-          <Row label="Runtime" value={health.runtime} />
+          <Row label="Tailscale" value={bundle.tailscale ?? 'connected'} />
+          <Row label="Hostname" value={bundle.hostname ?? 'openclaw-mobile'} />
+          <Row label="Runtime" value={bundle.runtime ?? 'OpenJarvis'} />
+          <Row label="IP" value={bundle.tailscale_ip ?? '100.118.81.37'} />
+          <span></span>
         </div>
       )}
 
@@ -173,7 +120,7 @@ export function CloudStatusPanel() {
             border: '1px solid color-mix(in srgb, var(--color-error, #ef4444) 20%, transparent)',
           }}
         >
-          Cloud Unreachable — ensure you are on Tailnet (100.118.81.37) and the node is running.
+          {error || 'Cloud Unreachable — ensure you are on Tailnet (100.118.81.37) and the node is running.'}
         </div>
       )}
 
