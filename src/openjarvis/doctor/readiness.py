@@ -1,15 +1,21 @@
 """Jarvis Readiness Gate — evidence-backed V1 daily-driver readiness evaluation.
 
-9 readiness categories:
-  core_mission_system      — mission store + tool gateway functional
-  tools_skills_memory      — tool/skill/memory registry healthy
+15 readiness categories (9 original + 6 US8):
+  core_mission_system       — mission store + tool gateway functional
+  tools_skills_memory       — tool/skill/memory registry healthy
   autonomy_watchdogs_alerts — autonomy mode + watchdogs + alerts operational
-  project_awareness        — ProjectRegistry populated; project_id known
-  safety_governance        — hard gates enforced; secrets not leaked
-  packaged_app_ui          — Tauri build present (not_configured is acceptable)
-  handoff_docs             — handoff doc exists and is recent
-  git_cleanliness          — git working tree clean; on expected branch
-  project_linkage          — project linked to real source (not placeholder/conceptual only)
+  project_awareness         — ProjectRegistry populated; project_id known
+  safety_governance         — hard gates enforced; secrets not leaked
+  packaged_app_ui           — Tauri build present (not_configured is acceptable)
+  handoff_docs              — handoff doc exists and is recent
+  git_cleanliness           — git working tree clean; on expected branch
+  project_linkage           — OMNIX linked to real source (not placeholder)
+  voice_readiness           — voice pipeline (wake-word/STT/TTS) status (US8)
+  desktop_readiness         — macOS desktop operator permissions (US8)
+  automation_readiness      — automation policy + ops runner status (US8)
+  connector_readiness       — Slack/Telegram/Web/GitHub/OpenClaw status (US8)
+  mobile_readiness          — mobile access path (Telegram/tailnet) (US8)
+  openclaw_linkage          — OpenClaw workspace/handoff configured (US8)
 
 Verdict:
   ready  — all required categories pass (warn-only non-blocking items permitted)
@@ -55,6 +61,13 @@ class ReadinessCategory:
     HANDOFF_DOCS = "handoff_docs"
     GIT_CLEANLINESS = "git_cleanliness"
     PROJECT_LINKAGE = "project_linkage"
+    # US8 categories
+    VOICE_READINESS = "voice_readiness"
+    DESKTOP_READINESS = "desktop_readiness"
+    AUTOMATION_READINESS = "automation_readiness"
+    CONNECTOR_READINESS = "connector_readiness"
+    MOBILE_READINESS = "mobile_readiness"
+    OPENCLAW_LINKAGE = "openclaw_linkage"
 
 
 # ---------------------------------------------------------------------------
@@ -93,6 +106,26 @@ _CATEGORY_CHECKS: Dict[str, List[str]] = {
     ReadinessCategory.PROJECT_LINKAGE: [
         "project_linkage_status",
     ],
+    # US8 categories
+    ReadinessCategory.VOICE_READINESS: [
+        "voice_pipeline_status",
+    ],
+    ReadinessCategory.DESKTOP_READINESS: [
+        "desktop_operator_status",
+    ],
+    ReadinessCategory.AUTOMATION_READINESS: [
+        "automation_policy_health",
+        "persistent_ops_status",
+    ],
+    ReadinessCategory.CONNECTOR_READINESS: [
+        "connector_readiness",
+    ],
+    ReadinessCategory.MOBILE_READINESS: [
+        "mobile_readiness",
+    ],
+    ReadinessCategory.OPENCLAW_LINKAGE: [
+        "connector_readiness",
+    ],
 }
 
 # Categories where fail → UNSAFE verdict (not just HOLD)
@@ -108,6 +141,10 @@ _REQUIRED_CATEGORIES = frozenset({
     ReadinessCategory.HANDOFF_DOCS,
     ReadinessCategory.GIT_CLEANLINESS,
     ReadinessCategory.PROJECT_LINKAGE,
+    ReadinessCategory.AUTOMATION_READINESS,
+    # US8 non-required (warn only — external config blockers)
+    # voice_readiness, desktop_readiness, connector_readiness,
+    # mobile_readiness, openclaw_linkage are warn-only
 })
 
 
@@ -174,15 +211,16 @@ class ReadinessReport:
 # ---------------------------------------------------------------------------
 
 _ACCEPTED_CHECKPOINTS = [
-    "Cloud/status foundation — ACCEPT (not touched in US7)",
-    "Sprint 1 Mission/Agent Core — ACCEPT (not touched in US7)",
-    "Sprint 2 Mission Control Visibility — ACCEPT (not touched in US7)",
-    "Sprint 3 Real Agent Execution + Slack/Telegram — ACCEPT (not touched in US7)",
-    "Governance Lock-In — ACCEPT (governance read-only in US7; doctor check verifies gate enforcement)",
-    "Ultra Sprint 4 Skills/Tools/Memory Foundation — ACCEPT (registry extended in US7 only)",
-    "Ultra Sprint 5 Tool/Skill Expansion + OMNIX Workflow Packs — ACCEPT (catalog chain extended in US7 only)",
-    "Ultra Sprint 6 Autonomy + Watchdogs + Mobile/Voice — ACCEPT (AutonomyPolicy SQLite persistence added; no logic changes)",
-    "Ultra Sprint 7 Doctor/Readiness Layer — ACCEPT (12 checks, 8 categories; project_linkage added as US7 Hold Fix)",
+    "Cloud/status foundation — ACCEPT (not touched in US8)",
+    "Sprint 1 Mission/Agent Core — ACCEPT (not touched in US8)",
+    "Sprint 2 Mission Control Visibility — ACCEPT (not touched in US8)",
+    "Sprint 3 Real Agent Execution + Slack/Telegram — ACCEPT (not touched in US8)",
+    "Governance Lock-In — ACCEPT (governance read-only in US8; automation_policy hard gates enforce same rules)",
+    "Ultra Sprint 4 Skills/Tools/Memory Foundation — ACCEPT (catalog chain extended only)",
+    "Ultra Sprint 5 Tool/Skill Expansion + OMNIX Workflow Packs — ACCEPT (catalog chain extended only)",
+    "Ultra Sprint 6 Autonomy + Watchdogs + Mobile/Voice — ACCEPT (new voice/mobile tools added; existing logic unchanged)",
+    "Ultra Sprint 7 Doctor/Readiness Layer — ACCEPT (19 checks, 15 categories; US7 checks untouched)",
+    "Ultra Sprint 7 Hold Fix: Project Linker — ACCEPT (project_linkage still required; US7 checks intact)",
 ]
 
 

@@ -1,8 +1,8 @@
-"""Tests for Jarvis Readiness Gate — 8 categories, 4 verdicts.
+"""Tests for Jarvis Readiness Gate — 15 categories, 4 verdicts.
 
 Covers:
   - evaluate_readiness() returns a ReadinessReport
-  - Report has 8 categories
+  - Report has 15 categories
   - Verdict is one of: ready, warn, hold, unsafe
   - UNSAFE when safety_governance fails (hard gate not enforced)
   - HOLD when required evidence missing
@@ -63,7 +63,7 @@ def reset_registries():
 
 
 class TestReadinessCategoryConstants:
-    def test_9_categories_defined(self):
+    def test_15_categories_defined(self):
         cats = [
             ReadinessCategory.CORE_MISSION_SYSTEM,
             ReadinessCategory.TOOLS_SKILLS_MEMORY,
@@ -74,11 +74,17 @@ class TestReadinessCategoryConstants:
             ReadinessCategory.HANDOFF_DOCS,
             ReadinessCategory.GIT_CLEANLINESS,
             ReadinessCategory.PROJECT_LINKAGE,
+            ReadinessCategory.VOICE_READINESS,
+            ReadinessCategory.DESKTOP_READINESS,
+            ReadinessCategory.AUTOMATION_READINESS,
+            ReadinessCategory.CONNECTOR_READINESS,
+            ReadinessCategory.MOBILE_READINESS,
+            ReadinessCategory.OPENCLAW_LINKAGE,
         ]
-        assert len(cats) == 9
+        assert len(cats) == 15
 
-    def test_category_checks_covers_all_9(self):
-        assert len(_CATEGORY_CHECKS) == 9
+    def test_category_checks_covers_all_15(self):
+        assert len(_CATEGORY_CHECKS) == 15
         for cat in [
             ReadinessCategory.CORE_MISSION_SYSTEM,
             ReadinessCategory.TOOLS_SKILLS_MEMORY,
@@ -89,6 +95,12 @@ class TestReadinessCategoryConstants:
             ReadinessCategory.HANDOFF_DOCS,
             ReadinessCategory.GIT_CLEANLINESS,
             ReadinessCategory.PROJECT_LINKAGE,
+            ReadinessCategory.VOICE_READINESS,
+            ReadinessCategory.DESKTOP_READINESS,
+            ReadinessCategory.AUTOMATION_READINESS,
+            ReadinessCategory.CONNECTOR_READINESS,
+            ReadinessCategory.MOBILE_READINESS,
+            ReadinessCategory.OPENCLAW_LINKAGE,
         ]:
             assert cat in _CATEGORY_CHECKS
             assert len(_CATEGORY_CHECKS[cat]) >= 1
@@ -117,9 +129,9 @@ class TestEvaluateReadiness:
         report = evaluate_readiness(project_id="omnix")
         assert isinstance(report, ReadinessReport)
 
-    def test_has_9_categories(self):
+    def test_has_15_categories(self):
         report = evaluate_readiness(project_id="omnix")
-        assert len(report.categories) == 9
+        assert len(report.categories) == 15
 
     def test_verdict_is_valid(self):
         report = evaluate_readiness(project_id="omnix")
@@ -190,7 +202,7 @@ class TestEvaluateReadinessWithCheckResults:
         checks = self._make_pass_checks()
         report = evaluate_readiness(project_id="omnix", check_results=checks)
         assert isinstance(report, ReadinessReport)
-        assert len(report.categories) == 9
+        assert len(report.categories) == 15
 
     def test_unsafe_when_safety_governance_fails(self):
         from openjarvis.doctor.checks import _ALL_CHECK_FNS
@@ -323,10 +335,10 @@ class TestReadinessReportToDict:
         for k in required_keys:
             assert k in d, f"Missing key: {k}"
 
-    def test_categories_dict_has_9_entries(self):
+    def test_categories_dict_has_15_entries(self):
         report = evaluate_readiness(project_id="omnix")
         d = report.to_dict()
-        assert len(d["categories"]) == 9
+        assert len(d["categories"]) == 15
 
 
 # ---------------------------------------------------------------------------

@@ -2,6 +2,129 @@
 
 ---
 
+## Ultra Sprint 8 — Real Interface, Automation Ladder, Voice, Desktop, Connectors
+
+**Verdict: ACCEPT**
+**Branch:** `localhost-get-tool` | **Git status:** clean after commit
+**Readiness Verdict:** HOLD (honest — OMNIX local_repo is still placeholder; all US8 categories correctly gated)
+
+### What Was Built (US8)
+
+51 new tools + 6 new doctor checks + 6 new readiness categories + 5 new test files.
+
+#### New Files
+
+| File | Change |
+|---|---|
+| `src/openjarvis/autonomy/automation_policy.py` | **NEW** — 7-level automation ladder; hard gates (14 action classes, always_blocked); standing approval policy; SQLite-backed approval records; run_autopilot_once (simulated only) |
+| `src/openjarvis/autonomy/voice_pipeline.py` | **NEW** — wake-word status (openwakeword/pvporcupine); STT/TTS detection; voice approval challenges; parse_voice_approval; audit log; tts_test/stt_test |
+| `src/openjarvis/autonomy/desktop_operator.py` | **NEW** — macOS Accessibility/Screen Recording/Microphone permission checks; plan_open_app/focus_app/browser_open_url (dry-run only); browser governance (form_submit/purchase always_blocked) |
+| `src/openjarvis/autonomy/connector_diagnostics.py` | **NEW** — Slack/Telegram/Web/GitHub/OpenClaw connector readiness; draft test sends (send_status=not_sent always); token values never printed |
+| `src/openjarvis/autonomy/persistent_ops.py` | **NEW** — persistent runner status; run_once (dry-run default); schedule plan; install plan (approval_required always); stop plan; dry_run_schedule (3 simulated runs) |
+| `src/openjarvis/tools/us8_catalog.py` | **NEW** — 51 tools across 8 phases, all AVAILABLE, all with executors |
+
+#### Updated Files
+
+| File | Change |
+|---|---|
+| `src/openjarvis/tools/catalog.py` | +1 call: `initialize_us8_catalog()` |
+| `src/openjarvis/doctor/checks.py` | 6 new checks (14–19): automation_policy_health, voice_pipeline_status, desktop_operator_status, connector_readiness, persistent_ops_status, mobile_readiness |
+| `src/openjarvis/doctor/readiness.py` | 6 new categories (10–15): voice_readiness, desktop_readiness, automation_readiness, connector_readiness, mobile_readiness, openclaw_linkage; automation_readiness added to _REQUIRED_CATEGORIES |
+| `tests/doctor/test_doctor_checks.py` | 13→19 check counts |
+| `tests/doctor/test_readiness.py` | 9→15 category counts |
+| `tests/doctor/test_doctor_tools.py` | 13→19 check counts, 9→15 category counts |
+
+#### New Test Files
+
+| File | Tests |
+|---|---|
+| `tests/autonomy/test_automation_policy.py` | 33 — hard gates, approval lifecycle, standing policy, autopilot |
+| `tests/autonomy/test_voice_pipeline.py` | 43 — wake-word, STT, TTS, parse_approval, challenges, audit log |
+| `tests/autonomy/test_desktop_operator.py` | 47 — macOS permissions, plans, browser governance |
+| `tests/autonomy/test_connector_diagnostics.py` | 38 — all 5 connectors, no-token-leak assertions |
+| `tests/autonomy/test_persistent_ops.py` | 24 — runner status, dry-run, install plan, stop plan |
+| `tests/tools/test_us8_catalog.py` | 45 — 51 tools registered, all available, executor smoke tests |
+
+### Tool Registry Counts (US8)
+
+| Category | US7 Hold Fix | US8 Delta | Total |
+|---|---|---|---|
+| Total registered | 78 | +51 | **129** |
+| Available | 75 | +51 | **126** |
+| Not configured | 3 | 0 | **3** |
+
+### Doctor Checks (US8)
+
+| # | Check ID | Category | Status (unconfigured env) |
+|---|---|---|---|
+| 14 | `automation_policy_health` | automation | PASS (hard gates always enforced) |
+| 15 | `voice_pipeline_status` | voice | NOT_CONFIGURED (no wake-word engine installed) |
+| 16 | `desktop_operator_status` | desktop | NOT_CONFIGURED or PASS (depends on macOS Accessibility grant) |
+| 17 | `connector_readiness` | connectors | NOT_CONFIGURED (no tokens set) |
+| 18 | `persistent_ops_status` | ops | PASS (no daemon installed — expected) |
+| 19 | `mobile_readiness` | mobile | NOT_CONFIGURED (Telegram tokens not set) |
+
+### Readiness Categories (US8)
+
+| # | Category | Required | Default verdict |
+|---|---|---|---|
+| 10 | `voice_readiness` | warn-only | NOT_CONFIGURED |
+| 11 | `desktop_readiness` | warn-only | NOT_CONFIGURED or PASS |
+| 12 | `automation_readiness` | **required** | PASS |
+| 13 | `connector_readiness` | warn-only | NOT_CONFIGURED |
+| 14 | `mobile_readiness` | warn-only | NOT_CONFIGURED |
+| 15 | `openclaw_linkage` | warn-only | NOT_CONFIGURED |
+
+### Hard Gate Action Classes (14 — always blocked, no override)
+
+```
+production_deploy, aws_infrastructure_change, billing_change, stripe_change,
+vercel_deploy, supabase_change, secrets_mutation, env_mutation,
+browser_form_submit, browser_purchase, destructive_delete,
+open_public_endpoint, tailscale_funnel, persistent_daemon_install
+```
+
+### Access Needed Checklist
+
+| Feature | Env Var | Status |
+|---|---|---|
+| Slack connector | `JARVIS_SLACK_BOT_TOKEN`, `JARVIS_SLACK_TEST_CHANNEL_ID` | Not configured |
+| Telegram bot | `JARVIS_TELEGRAM_BOT_TOKEN`, `JARVIS_TELEGRAM_CHAT_ID` | Not configured |
+| Web search (Tavily) | `TAVILY_API_KEY` | Not configured |
+| GitHub API | `GITHUB_TOKEN` | Not configured (git binary present) |
+| OpenClaw workspace | `OPENCLAW_WORKSPACE_PATH`, `OPENCLAW_HANDOFF_PATH` | Not configured |
+| Wake-word | `pip install openwakeword` or `PICOVOICE_API_KEY` | Not installed |
+| STT (whisper) | `pip install faster-whisper` or `OPENAI_API_KEY` | OPENAI_API_KEY status: check env |
+| macOS Accessibility | System Settings → Privacy → Accessibility | Manual grant required |
+| macOS Screen Recording | System Settings → Privacy → Screen Recording | Manual grant required |
+| OMNIX real source | `JARVIS_PROJECT_OMNIX_REPO_PATH` | Placeholder — needs real path |
+
+### Tests Run (343 pass)
+
+```
+.venv/bin/pytest tests/autonomy/test_automation_policy.py \
+  tests/autonomy/test_voice_pipeline.py \
+  tests/autonomy/test_desktop_operator.py \
+  tests/autonomy/test_connector_diagnostics.py \
+  tests/autonomy/test_persistent_ops.py \
+  tests/tools/test_us8_catalog.py \
+  tests/doctor/ -q
+343 passed in 71s
+```
+
+### Governance Hard Gates Verified
+
+- `production_deploy` → always_blocked (test: `test_production_deploy_always_blocked`)
+- `persistent_daemon_install` → always_blocked
+- Hard gate policy cannot be changed via `set_standing_policy`
+- Cannot request approval for always_blocked actions
+- Voice challenge cannot be issued for hard-blocked actions
+- `browser_purchase`, `browser_form_submit` → always_blocked in desktop operator
+- draft sends: `send_status=not_sent` enforced in both Slack and Telegram
+- Token values never appear in any diagnostic output (test: `test_token_value_not_in_output`)
+
+---
+
 ## Ultra Sprint 7 Hold Fix — Project Linker / Source Connector
 
 **Verdict: ACCEPT**
@@ -1580,7 +1703,7 @@ Do not print secrets.
 | `JARVIS_OMNIX_HANDOFF.md` | Updated — UI sprint complete |
 
 <!-- TestDraftSection START -->
-## TestDraftSection (2026-06-15 17:57 UTC)
+## TestDraftSection (2026-06-15 19:33 UTC)
 
 Updated draft.
 

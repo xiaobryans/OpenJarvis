@@ -837,6 +837,9 @@ def initialize_catalog() -> None:
     # Sprint 7 Hold Fix — project linker/source connector pack
     from openjarvis.tools.project_linker_catalog import initialize_project_linker_catalog
     initialize_project_linker_catalog()
+    # Ultra Sprint 8 — real interface + automation ladder + voice + desktop + connectors
+    from openjarvis.tools.us8_catalog import initialize_us8_catalog
+    initialize_us8_catalog()
     stats = ToolRegistry.stats()
     logger.info(
         "Tool catalog initialized: %d total, %d available, %d unavailable",

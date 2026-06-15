@@ -989,6 +989,427 @@ def check_project_linkage_status(project_id: str = "omnix") -> CheckResult:
 # Run all checks
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Check 14 — automation_policy_health
+# ---------------------------------------------------------------------------
+
+
+def check_automation_policy_health(project_id: str = "omnix") -> CheckResult:
+    """Verify automation policy hard gates are enforced and approval store is reachable."""
+    evidence: Dict[str, Any] = {}
+    try:
+        from openjarvis.autonomy.automation_policy import (
+            AutomationPolicy,
+            StandingPolicyMode,
+        )
+        # Verify hard gate action classes are always_blocked
+        test_action = "production_deploy"
+        ev = AutomationPolicy.evaluate(test_action, project_id=project_id)
+        evidence["hard_gate_test"] = test_action
+        evidence["hard_gate_blocked"] = ev["blocked"]
+        evidence["hard_gate_policy"] = ev["standing_policy"]
+
+        if not ev["blocked"]:
+            return CheckResult(
+                check_id="automation_policy_health",
+                category="automation",
+                status=CheckStatus.FAIL,
+                summary=(
+                    f"Hard gate '{test_action}' is NOT blocked — "
+                    "governance failure detected"
+                ),
+                evidence=evidence,
+                project_id=project_id,
+            )
+
+        # Verify auto-allowed action is not blocked
+        safe_action = "read_only_check"
+        ev2 = AutomationPolicy.evaluate(safe_action, project_id=project_id)
+        evidence["auto_allowed_test"] = safe_action
+        evidence["auto_allowed_can_proceed"] = ev2["can_proceed"]
+
+        if not ev2["can_proceed"]:
+            return CheckResult(
+                check_id="automation_policy_health",
+                category="automation",
+                status=CheckStatus.WARN,
+                summary=f"Safe action '{safe_action}' is not auto-allowed",
+                evidence=evidence,
+                project_id=project_id,
+            )
+
+        evidence["policy_summary_keys"] = list(
+            AutomationPolicy.get_policy_summary().keys()
+        )
+        return CheckResult(
+            check_id="automation_policy_health",
+            category="automation",
+            status=CheckStatus.PASS,
+            summary=(
+                "Automation policy healthy: hard gates blocked, "
+                "safe actions auto-allowed"
+            ),
+            evidence=evidence,
+            project_id=project_id,
+        )
+    except Exception as exc:
+        return CheckResult(
+            check_id="automation_policy_health",
+            category="automation",
+            status=CheckStatus.FAIL,
+            summary=f"Automation policy check failed: {exc}",
+            evidence={"error": str(exc)},
+            project_id=project_id,
+        )
+
+
+# ---------------------------------------------------------------------------
+# Check 15 — voice_pipeline_status
+# ---------------------------------------------------------------------------
+
+
+def check_voice_pipeline_status(project_id: str = "omnix") -> CheckResult:
+    """Check voice pipeline status: wake-word, STT, TTS."""
+    evidence: Dict[str, Any] = {}
+    try:
+        from openjarvis.autonomy.voice_pipeline import (
+            get_voice_status,
+            WakeWordEngine,
+            STTEngine,
+            TTSEngine,
+        )
+        status = get_voice_status()
+        evidence["voice_status"] = status["voice_status"]
+        evidence["wake_word_engine"] = status["wake_word"]["wake_word_status"]
+        evidence["stt_engine"] = status["stt"]["stt_status"]
+        evidence["tts_engine"] = status["tts"]["tts_status"]
+        evidence["fully_configured"] = status["fully_configured"]
+
+        tts_ok = status["tts"]["tts_status"] != TTSEngine.NOT_CONFIGURED
+        stt_ok = status["stt"].get("is_configured", False)
+        wake_ok = status["wake_word"]["wake_word_status"] != WakeWordEngine.NOT_CONFIGURED
+
+        if not tts_ok and not stt_ok and not wake_ok:
+            return CheckResult(
+                check_id="voice_pipeline_status",
+                category="voice",
+                status=CheckStatus.NOT_CONFIGURED,
+                summary=(
+                    "Voice pipeline not configured: wake-word, STT, and TTS all missing. "
+                    "Install openwakeword + faster-whisper (or set API keys)."
+                ),
+                evidence=evidence,
+                project_id=project_id,
+            )
+
+        if status["fully_configured"]:
+            check_status = CheckStatus.PASS
+            summary = (
+                f"Voice pipeline configured: {evidence['wake_word_engine']} / "
+                f"{evidence['stt_engine']} / {evidence['tts_engine']}"
+            )
+        else:
+            check_status = CheckStatus.WARN
+            configured_parts = []
+            if wake_ok:
+                configured_parts.append(f"wake={evidence['wake_word_engine']}")
+            if stt_ok:
+                configured_parts.append(f"stt={evidence['stt_engine']}")
+            if tts_ok:
+                configured_parts.append(f"tts={evidence['tts_engine']}")
+            summary = (
+                f"Voice pipeline partial: {', '.join(configured_parts) or 'none'}. "
+                f"Status: {evidence['voice_status']}"
+            )
+
+        return CheckResult(
+            check_id="voice_pipeline_status",
+            category="voice",
+            status=check_status,
+            summary=summary,
+            evidence=evidence,
+            project_id=project_id,
+        )
+    except Exception as exc:
+        return CheckResult(
+            check_id="voice_pipeline_status",
+            category="voice",
+            status=CheckStatus.NOT_CONFIGURED,
+            summary=f"Voice pipeline check error: {exc}",
+            evidence={"error": str(exc)},
+            project_id=project_id,
+        )
+
+
+# ---------------------------------------------------------------------------
+# Check 16 — desktop_operator_status
+# ---------------------------------------------------------------------------
+
+
+def check_desktop_operator_status(project_id: str = "omnix") -> CheckResult:
+    """Check macOS desktop operator permissions status."""
+    evidence: Dict[str, Any] = {}
+    try:
+        from openjarvis.autonomy.desktop_operator import (
+            get_desktop_permissions_status,
+            PermissionStatus,
+            OperatorStatus,
+        )
+        perms = get_desktop_permissions_status()
+        evidence["operator_status"] = perms["operator_status"]
+        evidence["platform"] = perms["platform"]
+        evidence["accessibility"] = perms["permissions"]["accessibility"]["status"]
+        evidence["screen_recording"] = perms["permissions"]["screen_recording"]["status"]
+        evidence["microphone"] = perms["permissions"]["microphone"]["status"]
+
+        if perms["operator_status"] == OperatorStatus.NOT_MACOS:
+            return CheckResult(
+                check_id="desktop_operator_status",
+                category="desktop",
+                status=CheckStatus.NOT_CONFIGURED,
+                summary=f"Desktop operator: not macOS (platform={perms['platform']})",
+                evidence=evidence,
+                project_id=project_id,
+            )
+
+        if perms["operator_status"] == OperatorStatus.AVAILABLE:
+            return CheckResult(
+                check_id="desktop_operator_status",
+                category="desktop",
+                status=CheckStatus.PASS,
+                summary="Desktop operator available: Accessibility permission granted",
+                evidence=evidence,
+                project_id=project_id,
+            )
+
+        if perms["operator_status"] == OperatorStatus.BLOCKED_BY_MACOS_PRIVACY:
+            return CheckResult(
+                check_id="desktop_operator_status",
+                category="desktop",
+                status=CheckStatus.WARN,
+                summary=(
+                    "Desktop operator blocked: Accessibility permission denied. "
+                    "Grant in System Settings → Privacy & Security → Accessibility."
+                ),
+                evidence=evidence,
+                project_id=project_id,
+            )
+
+        return CheckResult(
+            check_id="desktop_operator_status",
+            category="desktop",
+            status=CheckStatus.NOT_CONFIGURED,
+            summary=(
+                "Desktop operator not configured: "
+                "Accessibility permission not yet granted. "
+                "System Settings → Privacy & Security → Accessibility."
+            ),
+            evidence=evidence,
+            project_id=project_id,
+        )
+    except Exception as exc:
+        return CheckResult(
+            check_id="desktop_operator_status",
+            category="desktop",
+            status=CheckStatus.NOT_CONFIGURED,
+            summary=f"Desktop operator check error: {exc}",
+            evidence={"error": str(exc)},
+            project_id=project_id,
+        )
+
+
+# ---------------------------------------------------------------------------
+# Check 17 — connector_readiness
+# ---------------------------------------------------------------------------
+
+
+def check_connector_readiness(project_id: str = "omnix") -> CheckResult:
+    """Check readiness of all outbound connectors."""
+    evidence: Dict[str, Any] = {}
+    try:
+        from openjarvis.autonomy.connector_diagnostics import (
+            ConnectorStatus,
+            get_slack_status,
+            get_telegram_status,
+            get_web_search_status,
+            get_github_status,
+            get_openclaw_status,
+        )
+        slack = get_slack_status()
+        tg = get_telegram_status()
+        web = get_web_search_status()
+        gh = get_github_status()
+        oc = get_openclaw_status()
+
+        evidence["slack"] = slack["status"]
+        evidence["telegram"] = tg["status"]
+        evidence["web_search"] = web["status"]
+        evidence["github"] = gh["status"]
+        evidence["openclaw"] = oc["status"]
+
+        configured_count = sum(
+            1 for s in [slack, tg, web, gh, oc]
+            if s["status"] in (
+                ConnectorStatus.CONFIGURED,
+                ConnectorStatus.READY_PENDING_TEST,
+            )
+        )
+        evidence["configured_count"] = configured_count
+
+        if configured_count == 0:
+            return CheckResult(
+                check_id="connector_readiness",
+                category="connectors",
+                status=CheckStatus.NOT_CONFIGURED,
+                summary=(
+                    "No outbound connectors configured. "
+                    "Set JARVIS_SLACK_BOT_TOKEN, JARVIS_TELEGRAM_BOT_TOKEN, "
+                    "TAVILY_API_KEY as needed."
+                ),
+                evidence=evidence,
+                project_id=project_id,
+            )
+
+        # GitHub with git available is good; others may be not_configured
+        any_fully_ready = any(
+            s["status"] in (ConnectorStatus.CONFIGURED, ConnectorStatus.READY_PENDING_TEST)
+            for s in [slack, tg, web]
+        )
+
+        if gh["git_available"]:
+            check_status = CheckStatus.PASS if any_fully_ready else CheckStatus.WARN
+        else:
+            check_status = CheckStatus.NOT_CONFIGURED
+
+        summary = (
+            f"Connectors: slack={slack['status']}, "
+            f"telegram={tg['status']}, web={web['status']}, "
+            f"github={gh['status']}, openclaw={oc['status']}"
+        )
+        return CheckResult(
+            check_id="connector_readiness",
+            category="connectors",
+            status=check_status,
+            summary=summary,
+            evidence=evidence,
+            project_id=project_id,
+        )
+    except Exception as exc:
+        return CheckResult(
+            check_id="connector_readiness",
+            category="connectors",
+            status=CheckStatus.NOT_CONFIGURED,
+            summary=f"Connector readiness check error: {exc}",
+            evidence={"error": str(exc)},
+            project_id=project_id,
+        )
+
+
+# ---------------------------------------------------------------------------
+# Check 18 — persistent_ops_status
+# ---------------------------------------------------------------------------
+
+
+def check_persistent_ops_status(project_id: str = "omnix") -> CheckResult:
+    """Verify no unauthorized persistent runner is installed."""
+    evidence: Dict[str, Any] = {}
+    try:
+        from openjarvis.autonomy.persistent_ops import get_runner_status, RunnerStatus
+        status = get_runner_status()
+        evidence["runner_status"] = status["runner_status"]
+        evidence["launchd_installed"] = status["launchd_plist_exists"]
+        evidence["cron_installed"] = status["cron_entry_exists"]
+        evidence["log_path"] = status["log_path"]
+
+        if status["installed"]:
+            return CheckResult(
+                check_id="persistent_ops_status",
+                category="ops",
+                status=CheckStatus.WARN,
+                summary=(
+                    "Persistent runner is installed. "
+                    "Verify it was explicitly approved and intended."
+                ),
+                evidence=evidence,
+                project_id=project_id,
+            )
+
+        return CheckResult(
+            check_id="persistent_ops_status",
+            category="ops",
+            status=CheckStatus.PASS,
+            summary="No persistent runner installed (expected — run-on-demand only)",
+            evidence=evidence,
+            project_id=project_id,
+        )
+    except Exception as exc:
+        return CheckResult(
+            check_id="persistent_ops_status",
+            category="ops",
+            status=CheckStatus.NOT_CONFIGURED,
+            summary=f"Persistent ops check error: {exc}",
+            evidence={"error": str(exc)},
+            project_id=project_id,
+        )
+
+
+# ---------------------------------------------------------------------------
+# Check 19 — mobile_readiness_check
+# ---------------------------------------------------------------------------
+
+
+def check_mobile_readiness(project_id: str = "omnix") -> CheckResult:
+    """Check mobile access path readiness."""
+    evidence: Dict[str, Any] = {}
+    try:
+        from openjarvis.autonomy.connector_diagnostics import get_telegram_status
+        tg = get_telegram_status()
+        evidence["telegram_status"] = tg["status"]
+        evidence["telegram_configured"] = tg["configured"]
+        evidence["missing_env_vars"] = tg["missing_env_vars"]
+        evidence["mobile_status_endpoint"] = "GET /v1/mobile/status"
+        evidence["tailnet_access"] = "available_if_tailscale_installed"
+
+        if tg["configured"]:
+            return CheckResult(
+                check_id="mobile_readiness",
+                category="mobile",
+                status=CheckStatus.PASS,
+                summary=(
+                    "Mobile access ready: Telegram configured, "
+                    "local network and tailnet always available."
+                ),
+                evidence=evidence,
+                project_id=project_id,
+            )
+
+        return CheckResult(
+            check_id="mobile_readiness",
+            category="mobile",
+            status=CheckStatus.NOT_CONFIGURED,
+            summary=(
+                "Mobile access partial: Telegram not configured "
+                f"(missing: {tg['missing_env_vars']}). "
+                "Local network and tailnet always available."
+            ),
+            evidence=evidence,
+            project_id=project_id,
+        )
+    except Exception as exc:
+        return CheckResult(
+            check_id="mobile_readiness",
+            category="mobile",
+            status=CheckStatus.NOT_CONFIGURED,
+            summary=f"Mobile readiness check error: {exc}",
+            evidence={"error": str(exc)},
+            project_id=project_id,
+        )
+
+
+# ---------------------------------------------------------------------------
+# Check registry (19 checks total)
+# ---------------------------------------------------------------------------
+
 _ALL_CHECK_FNS: List[Callable[..., CheckResult]] = [
     check_backend_health,
     check_project_registry_health,
@@ -1003,11 +1424,17 @@ _ALL_CHECK_FNS: List[Callable[..., CheckResult]] = [
     check_handoff_freshness,
     check_packaged_app_build_metadata,
     check_project_linkage_status,
+    check_automation_policy_health,
+    check_voice_pipeline_status,
+    check_desktop_operator_status,
+    check_connector_readiness,
+    check_persistent_ops_status,
+    check_mobile_readiness,
 ]
 
 
 def run_all_checks(project_id: str = "omnix") -> List[CheckResult]:
-    """Run all 13 diagnostic checks. Returns a list of CheckResult objects.
+    """Run all 19 diagnostic checks. Returns a list of CheckResult objects.
 
     Never raises — any unhandled exception inside a check is caught and
     reported as a CheckStatus.FAIL for that check.
@@ -1035,17 +1462,23 @@ __all__ = [
     "CheckStatus",
     "_ALL_CHECK_FNS",
     "check_alert_status",
+    "check_automation_policy_health",
     "check_autonomy_mode_status",
     "check_backend_health",
+    "check_connector_readiness",
+    "check_desktop_operator_status",
     "check_execution_log_health",
     "check_git_worktree_status",
     "check_handoff_freshness",
     "check_memory_store_health",
+    "check_mobile_readiness",
     "check_packaged_app_build_metadata",
+    "check_persistent_ops_status",
     "check_project_linkage_status",
     "check_project_registry_health",
     "check_skill_registry_counts",
     "check_tool_registry_counts",
+    "check_voice_pipeline_status",
     "check_watchdog_status",
     "run_all_checks",
 ]

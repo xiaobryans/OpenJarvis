@@ -1,9 +1,9 @@
-"""Tests for Jarvis Doctor checks — 12 independent diagnostic checks.
+"""Tests for Jarvis Doctor checks — 19 independent diagnostic checks.
 
 Covers:
   - Each check returns a CheckResult with check_id, category, status, evidence
   - Status is one of: pass, warn, fail, not_configured
-  - run_all_checks() returns exactly 12 results
+  - run_all_checks() returns exactly 19 results
   - backend_health passes (core modules importable)
   - project_registry_health passes (OMNIX registered)
   - tool_registry_counts passes or warns (never zero available after init)
@@ -29,17 +29,23 @@ from openjarvis.doctor.checks import (
     CheckStatus,
     _ALL_CHECK_FNS,
     check_alert_status,
+    check_automation_policy_health,
     check_autonomy_mode_status,
     check_backend_health,
+    check_connector_readiness,
+    check_desktop_operator_status,
     check_execution_log_health,
     check_git_worktree_status,
     check_handoff_freshness,
     check_memory_store_health,
+    check_mobile_readiness,
     check_packaged_app_build_metadata,
+    check_persistent_ops_status,
     check_project_linkage_status,
     check_project_registry_health,
     check_skill_registry_counts,
     check_tool_registry_counts,
+    check_voice_pipeline_status,
     check_watchdog_status,
     run_all_checks,
 )
@@ -108,14 +114,14 @@ class TestCheckResultContract:
 
 
 # ---------------------------------------------------------------------------
-# run_all_checks — 12 total
+# run_all_checks — 19 total
 # ---------------------------------------------------------------------------
 
 
 class TestRunAllChecks:
-    def test_returns_exactly_13_results(self):
+    def test_returns_exactly_19_results(self):
         results = run_all_checks(project_id="omnix")
-        assert len(results) == 13
+        assert len(results) == 19
 
     def test_all_results_are_check_result(self):
         results = run_all_checks(project_id="omnix")
@@ -149,11 +155,11 @@ class TestRunAllChecks:
             assert r.project_id == "omnix"
 
     def test_all_check_fns_count(self):
-        assert len(_ALL_CHECK_FNS) == 13
+        assert len(_ALL_CHECK_FNS) == 19
 
     def test_no_exception_on_unknown_project(self):
         results = run_all_checks(project_id="nonexistent_xyz_proj")
-        assert len(results) == 13
+        assert len(results) == 19
 
 
 # ---------------------------------------------------------------------------
