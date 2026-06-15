@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 
 from openjarvis.server.analytics_routes import router as analytics_router
 from openjarvis.server.mission_routes import router as mission_router
+from openjarvis.server.notify_routes import router as notify_router
 from openjarvis.server.api_routes import include_all_routes
 from openjarvis.server.comparison import comparison_router
 from openjarvis.server.connectors_router import create_connectors_router
@@ -302,6 +303,7 @@ def create_app(
     app.include_router(research_router)
     app.include_router(analytics_router)
     app.include_router(mission_router)
+    app.include_router(notify_router)
     include_all_routes(app)
 
     # Restore SendBlue channel bindings from database on startup

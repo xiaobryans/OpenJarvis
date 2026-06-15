@@ -84,6 +84,8 @@ class EventType(str, Enum):
     TASK_ASSIGNED = "task_assigned"
     TASK_AWAITING_APPROVAL = "task_awaiting_approval"
     TASK_STATUS_CHANGED = "task_status_changed"
+    TASK_APPROVED = "task_approved"
+    TASK_CANCELLED = "task_cancelled"
 
 
 @dataclass(slots=True)

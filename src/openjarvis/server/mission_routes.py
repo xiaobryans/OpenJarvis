@@ -9,6 +9,14 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, Optional
 
+from openjarvis.core.events import EventType, get_event_bus
+from openjarvis.mission.agent_registry import SpecialistRegistry
+from openjarvis.mission.models import (
+    MissionEvent,
+    MissionStatus,
+    RiskLevel,
+    TaskStatus,
+)
 from openjarvis.mission.router import MissionRouter
 from openjarvis.mission.store import MissionStore
 
@@ -95,6 +103,135 @@ async def list_mission_events(mission_id: str) -> Dict[str, Any]:
     if store.get_mission(mission_id) is None:
         raise HTTPException(status_code=404, detail="Mission not found")
     events = store.list_events(mission_id)
+    return {"events": [e.to_dict() for e in events], "count": len(events)}
+
+
+@router.get("/v1/tasks/pending-approval")
+async def list_pending_approval_tasks() -> Dict[str, Any]:
+    store = _get_store()
+    tasks = store.list_all_tasks_by_status(TaskStatus.AWAITING_APPROVAL)
+    return {"tasks": [t.to_dict() for t in tasks], "count": len(tasks)}
+
+
+def _emit_task_event(
+    store: MissionStore,
+    event_type: EventType,
+    mission_id: str,
+    task_id: str,
+    agent_id: str,
+    message: str,
+    payload: Dict[str, Any],
+    severity: str = "info",
+) -> MissionEvent:
+    evt = MissionEvent(
+        mission_id=mission_id,
+        task_id=task_id,
+        agent_id=agent_id,
+        event_type=event_type.value,
+        severity=severity,
+        message=message,
+        payload=payload,
+    )
+    store.save_event(evt)
+    try:
+        bus = get_event_bus()
+        bus.publish(
+            event_type,
+            data={"mission_id": mission_id, "task_id": task_id, "agent_id": agent_id},
+        )
+    except Exception as exc:
+        logger.debug("Event bus publish skipped: %s", exc)
+    return evt
+
+
+def _maybe_advance_mission_status(store: MissionStore, mission_id: str) -> None:
+    """If no awaiting_approval tasks remain for the mission and the mission
+    itself is still awaiting_approval, advance it to running and emit a status
+    change event."""
+    pending = store.list_all_tasks_by_status(TaskStatus.AWAITING_APPROVAL)
+    still_pending = any(t.mission_id == mission_id for t in pending)
+    if still_pending:
+        return
+    mission = store.get_mission(mission_id)
+    if mission is None or mission.status != MissionStatus.AWAITING_APPROVAL:
+        return
+    store.update_mission_status(mission_id, MissionStatus.RUNNING)
+    status_evt = MissionEvent(
+        mission_id=mission_id,
+        event_type=EventType.MISSION_STATUS_CHANGED.value,
+        severity="info",
+        message="All pending approvals cleared — mission status → running",
+        payload={"status": "running", "reason": "all_approvals_cleared"},
+    )
+    store.save_event(status_evt)
+    try:
+        bus = get_event_bus()
+        bus.publish(
+            EventType.MISSION_STATUS_CHANGED,
+            data={"mission_id": mission_id, "status": "running"},
+        )
+    except Exception as exc:
+        logger.debug("Event bus publish skipped: %s", exc)
+
+
+@router.patch("/v1/tasks/{task_id}/approve")
+async def approve_task(task_id: str) -> Dict[str, Any]:
+    store = _get_store()
+    task = store.get_task(task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    updated = store.update_task_status(task_id, TaskStatus.ASSIGNED)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Task not found")
+    _emit_task_event(
+        store,
+        EventType.TASK_APPROVED,
+        mission_id=task.mission_id,
+        task_id=task_id,
+        agent_id=task.assigned_agent_id,
+        message=f"Task approved by owner: {task.title}",
+        payload={"approved_by": "owner", "previous_status": task.status.value},
+    )
+    _maybe_advance_mission_status(store, task.mission_id)
+    logger.info("Task %s approved, mission %s", task_id, task.mission_id)
+    return {"task_id": task_id, "status": "assigned", "ok": True}
+
+
+@router.patch("/v1/tasks/{task_id}/deny")
+async def deny_task(task_id: str) -> Dict[str, Any]:
+    store = _get_store()
+    task = store.get_task(task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    updated = store.update_task_status(task_id, TaskStatus.CANCELLED)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Task not found")
+    _emit_task_event(
+        store,
+        EventType.TASK_CANCELLED,
+        mission_id=task.mission_id,
+        task_id=task_id,
+        agent_id=task.assigned_agent_id,
+        message=f"Task denied by owner: {task.title}",
+        payload={"denied_by": "owner", "previous_status": task.status.value},
+        severity="warning",
+    )
+    _maybe_advance_mission_status(store, task.mission_id)
+    logger.info("Task %s denied, mission %s", task_id, task.mission_id)
+    return {"task_id": task_id, "status": "cancelled", "ok": True}
+
+
+@router.get("/v1/agents")
+async def list_agents() -> Dict[str, Any]:
+    agents = SpecialistRegistry.all()
+    return {"agents": [a.to_dict() for a in agents], "count": len(agents)}
+
+
+@router.get("/v1/events/recent")
+async def list_recent_events(limit: int = 100) -> Dict[str, Any]:
+    effective_limit = max(1, min(limit, 500))
+    store = _get_store()
+    events = store.list_recent_events(limit=effective_limit)
     return {"events": [e.to_dict() for e in events], "count": len(events)}
 
 
