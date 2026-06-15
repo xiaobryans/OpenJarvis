@@ -8,6 +8,13 @@ import {
   BellOff,
   Play,
   Send,
+  Wrench,
+  Zap,
+  Database,
+  CheckCircle2,
+  AlertCircle,
+  Clock,
+  XCircle,
 } from 'lucide-react';
 import { apiFetch } from '../lib/api';
 
@@ -78,6 +85,54 @@ interface AgentSpec {
 interface NotifyStatus {
   slack: { configured: boolean; channel: string | null; ready: boolean };
   telegram: { configured: boolean; chat_id: string | null; ready: boolean };
+}
+
+interface ToolSpec {
+  tool_id: string;
+  display_name: string;
+  description: string;
+  category: string;
+  risk_level: string;
+  implementation_status: string;
+  enabled: boolean;
+  configured: boolean;
+  approval_required: boolean;
+  is_available: boolean;
+  blocker: string;
+}
+
+interface ToolStats {
+  total_registered: number;
+  available: number;
+  unavailable: number;
+}
+
+interface SkillSpec {
+  skill_id: string;
+  display_name: string;
+  description: string;
+  required_tool_ids: string[];
+  optional_tool_ids: string[];
+  risk_level: string;
+  status: string;
+  is_available: boolean;
+  blocker: string;
+}
+
+interface MemoryNamespace {
+  namespace: string;
+  project_id: string;
+  count: number;
+}
+
+interface ToolExecution {
+  log_id: string;
+  tool_id: string;
+  outcome: string;
+  ok: boolean;
+  error: string;
+  execution_ms: number;
+  created_at: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -216,6 +271,16 @@ export function MissionControlPage() {
   const [lastRunResult, setLastRunResult] = useState<RunResult | null>(null);
   const [runError, setRunError] = useState<string | null>(null);
 
+  // Tools / Skills / Memory
+  const [tools, setTools] = useState<ToolSpec[]>([]);
+  const [toolStats, setToolStats] = useState<ToolStats | null>(null);
+  const [toolsLoading, setToolsLoading] = useState(true);
+  const [skills, setSkills] = useState<SkillSpec[]>([]);
+  const [skillsLoading, setSkillsLoading] = useState(true);
+  const [memNamespaces, setMemNamespaces] = useState<MemoryNamespace[]>([]);
+  const [recentExecs, setRecentExecs] = useState<ToolExecution[]>([]);
+  const [tsmTab, setTsmTab] = useState<'tools' | 'skills' | 'memory' | 'log'>('tools');
+
   // Notify inflight
   const [notifyingSlack, setNotifyingSlack] = useState(false);
   const [notifyingTelegram, setNotifyingTelegram] = useState(false);
@@ -293,6 +358,55 @@ export function MissionControlPage() {
     }
   }, []);
 
+  const fetchTools = useCallback(async () => {
+    try {
+      const resp = await apiFetch('/v1/tools');
+      if (!resp.ok) return;
+      const data = await resp.json();
+      setTools(data.tools ?? []);
+      setToolStats(data.stats ?? null);
+    } catch {
+      // silent
+    } finally {
+      setToolsLoading(false);
+    }
+  }, []);
+
+  const fetchSkills = useCallback(async () => {
+    try {
+      const resp = await apiFetch('/v1/skills');
+      if (!resp.ok) return;
+      const data = await resp.json();
+      setSkills(data.skills ?? []);
+    } catch {
+      // silent
+    } finally {
+      setSkillsLoading(false);
+    }
+  }, []);
+
+  const fetchMemoryNamespaces = useCallback(async () => {
+    try {
+      const resp = await apiFetch('/v1/memory/namespaces');
+      if (!resp.ok) return;
+      const data = await resp.json();
+      setMemNamespaces(data.namespaces ?? []);
+    } catch {
+      // silent
+    }
+  }, []);
+
+  const fetchRecentExecs = useCallback(async () => {
+    try {
+      const resp = await apiFetch('/v1/tools/executions/recent?limit=20');
+      if (!resp.ok) return;
+      const data = await resp.json();
+      setRecentExecs(data.executions ?? []);
+    } catch {
+      // silent
+    }
+  }, []);
+
   // -------------------------------------------------------------------------
   // Effects
   // -------------------------------------------------------------------------
@@ -320,6 +434,14 @@ export function MissionControlPage() {
   useEffect(() => {
     fetchNotifyStatus();
   }, [fetchNotifyStatus]);
+
+  // Fetch tools / skills / memory once on mount
+  useEffect(() => {
+    fetchTools();
+    fetchSkills();
+    fetchMemoryNamespaces();
+    fetchRecentExecs();
+  }, [fetchTools, fetchSkills, fetchMemoryNamespaces, fetchRecentExecs]);
 
   // Refresh detail when selection changes
   useEffect(() => {
@@ -926,6 +1048,175 @@ export function MissionControlPage() {
                   );
                 })}
               </div>
+            )}
+          </Panel>
+
+          {/* Tools / Skills / Memory panel */}
+          <Panel title="Tools · Skills · Memory">
+            {/* Tab bar */}
+            <div className="flex gap-1 mb-3">
+              {(['tools', 'skills', 'memory', 'log'] as const).map(tab => (
+                <button
+                  key={tab}
+                  onClick={() => setTsmTab(tab)}
+                  className="px-2 py-0.5 rounded text-[10px] font-medium capitalize transition-colors"
+                  style={{
+                    background: tsmTab === tab ? 'var(--color-accent, #6366f1)' : 'transparent',
+                    color: tsmTab === tab ? '#fff' : 'var(--color-text-tertiary)',
+                    border: '1px solid',
+                    borderColor: tsmTab === tab ? 'var(--color-accent, #6366f1)' : 'var(--color-border)',
+                  }}
+                >
+                  {tab === 'log' ? 'Exec Log' : tab}
+                </button>
+              ))}
+            </div>
+
+            {/* Stats strip */}
+            {tsmTab === 'tools' && toolStats && (
+              <div className="flex gap-3 mb-3 text-[10px]" style={{ color: 'var(--color-text-tertiary)' }}>
+                <span><span className="font-semibold" style={{ color: '#22c55e' }}>{toolStats.available}</span> available</span>
+                <span><span className="font-semibold" style={{ color: '#f59e0b' }}>{toolStats.unavailable}</span> unavailable</span>
+                <span><span className="font-semibold" style={{ color: 'var(--color-text)' }}>{toolStats.total_registered}</span> total</span>
+              </div>
+            )}
+
+            {/* Tools tab */}
+            {tsmTab === 'tools' && (
+              toolsLoading ? (
+                <div className="flex justify-center py-4"><Loader2 size={14} className="animate-spin" style={{ color: 'var(--color-text-tertiary)' }} /></div>
+              ) : tools.length === 0 ? (
+                <EmptyState text="No tools registered" />
+              ) : (
+                <div className="space-y-1 max-h-72 overflow-y-auto pr-1">
+                  {tools.map(tool => {
+                    const avail = tool.is_available;
+                    const color = avail ? '#22c55e' : tool.implementation_status === 'not_configured' ? '#f59e0b' : 'var(--color-text-tertiary)';
+                    return (
+                      <div key={tool.tool_id} className="flex items-start justify-between gap-2 px-2.5 py-1.5 rounded-lg" style={{ background: 'var(--color-bg)' }}>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5">
+                            {avail
+                              ? <CheckCircle2 size={10} style={{ color: '#22c55e', flexShrink: 0 }} />
+                              : tool.implementation_status === 'not_configured'
+                                ? <AlertCircle size={10} style={{ color: '#f59e0b', flexShrink: 0 }} />
+                                : <XCircle size={10} style={{ color: 'var(--color-text-tertiary)', flexShrink: 0 }} />}
+                            <span className="text-[11px] font-medium truncate" style={{ color: 'var(--color-text)' }}>{tool.display_name}</span>
+                          </div>
+                          <div className="text-[9px] mt-0.5 font-mono" style={{ color: 'var(--color-text-tertiary)' }}>{tool.tool_id}</div>
+                          {!avail && tool.blocker && (
+                            <div className="text-[9px] mt-0.5" style={{ color: '#f59e0b' }}>{tool.blocker}</div>
+                          )}
+                        </div>
+                        <span
+                          className="text-[9px] px-1 py-0.5 rounded shrink-0 capitalize"
+                          style={{ color, background: `color-mix(in srgb, ${color} 12%, transparent)` }}
+                        >
+                          {tool.implementation_status.replace(/_/g, ' ')}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )
+            )}
+
+            {/* Skills tab */}
+            {tsmTab === 'skills' && (
+              skillsLoading ? (
+                <div className="flex justify-center py-4"><Loader2 size={14} className="animate-spin" style={{ color: 'var(--color-text-tertiary)' }} /></div>
+              ) : skills.length === 0 ? (
+                <EmptyState text="No skills registered" />
+              ) : (
+                <div className="space-y-1.5 max-h-72 overflow-y-auto pr-1">
+                  {skills.map(skill => {
+                    const avail = skill.is_available;
+                    const statusColor = avail ? '#22c55e' : skill.status === 'degraded' ? '#f59e0b' : skill.status === 'not_configured' ? '#f59e0b' : '#ef4444';
+                    return (
+                      <div key={skill.skill_id} className="px-2.5 py-1.5 rounded-lg" style={{ background: 'var(--color-bg)' }}>
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <Zap size={10} style={{ color: statusColor, flexShrink: 0 }} />
+                            <span className="text-[11px] font-medium truncate" style={{ color: 'var(--color-text)' }}>{skill.display_name}</span>
+                          </div>
+                          <span className="text-[9px] px-1 py-0.5 rounded shrink-0 capitalize" style={{ color: statusColor, background: `color-mix(in srgb, ${statusColor} 12%, transparent)` }}>
+                            {skill.status.replace(/_/g, ' ')}
+                          </span>
+                        </div>
+                        <div className="text-[9px] mt-0.5" style={{ color: 'var(--color-text-tertiary)' }}>
+                          Needs: {skill.required_tool_ids.join(', ') || 'none'}
+                        </div>
+                        {!avail && skill.blocker && (
+                          <div className="text-[9px] mt-0.5" style={{ color: '#f59e0b' }}>{skill.blocker}</div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )
+            )}
+
+            {/* Memory tab */}
+            {tsmTab === 'memory' && (
+              memNamespaces.length === 0 ? (
+                <EmptyState text="No memory entries yet" />
+              ) : (
+                <div className="space-y-1 max-h-72 overflow-y-auto pr-1">
+                  {memNamespaces.map((ns, i) => (
+                    <div key={i} className="flex items-center justify-between px-2.5 py-1.5 rounded-lg" style={{ background: 'var(--color-bg)' }}>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <Database size={10} style={{ color: '#6366f1', flexShrink: 0 }} />
+                          <span className="text-[11px] font-medium truncate" style={{ color: 'var(--color-text)' }}>{ns.namespace}</span>
+                        </div>
+                        {ns.project_id && (
+                          <div className="text-[9px]" style={{ color: 'var(--color-text-tertiary)' }}>project: {ns.project_id}</div>
+                        )}
+                      </div>
+                      <span className="text-[10px] font-semibold" style={{ color: '#6366f1' }}>{ns.count}</span>
+                    </div>
+                  ))}
+                </div>
+              )
+            )}
+
+            {/* Exec Log tab */}
+            {tsmTab === 'log' && (
+              recentExecs.length === 0 ? (
+                <EmptyState text="No executions logged yet" />
+              ) : (
+                <div className="space-y-1 max-h-72 overflow-y-auto pr-1">
+                  {recentExecs.map(exec => {
+                    const okColor = exec.ok ? '#22c55e' : exec.outcome === 'hard_gate' ? '#ef4444' : '#f59e0b';
+                    return (
+                      <div key={exec.log_id} className="px-2.5 py-1.5 rounded-lg" style={{ background: 'var(--color-bg)' }}>
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            {exec.ok
+                              ? <CheckCircle2 size={10} style={{ color: '#22c55e', flexShrink: 0 }} />
+                              : exec.outcome === 'hard_gate'
+                                ? <XCircle size={10} style={{ color: '#ef4444', flexShrink: 0 }} />
+                                : <AlertCircle size={10} style={{ color: '#f59e0b', flexShrink: 0 }} />}
+                            <span className="text-[11px] font-mono truncate" style={{ color: 'var(--color-text)' }}>{exec.tool_id}</span>
+                          </div>
+                          <span className="text-[9px] px-1 py-0.5 rounded shrink-0 capitalize" style={{ color: okColor, background: `color-mix(in srgb, ${okColor} 12%, transparent)` }}>
+                            {exec.outcome.replace(/_/g, ' ')}
+                          </span>
+                        </div>
+                        {exec.execution_ms > 0 && (
+                          <div className="text-[9px] mt-0.5" style={{ color: 'var(--color-text-tertiary)' }}>
+                            <Clock size={8} style={{ display: 'inline', marginRight: 2 }} />
+                            {exec.execution_ms.toFixed(1)}ms
+                          </div>
+                        )}
+                        {!exec.ok && exec.error && (
+                          <div className="text-[9px] mt-0.5 truncate" style={{ color: '#f59e0b' }}>{exec.error}</div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )
             )}
           </Panel>
 
