@@ -1,5 +1,197 @@
 # Jarvis OMNIX Workbench Handoff
 
+---
+
+## Mega Sprint 3 — Real Agent Execution + Slack/Telegram Operational Loop
+
+**Verdict: ACCEPT**
+
+### What Sprint 3 Implemented
+
+**Backend — Agent Execution Layer**
+
+| File | Change |
+|---|---|
+| `src/openjarvis/core/events.py` | Added: `MISSION_RUNNER_STARTED`, `TASK_STARTED`, `TASK_COMPLETED`, `TASK_BLOCKED`, `TASK_FAILED` |
+| `src/openjarvis/mission/executor.py` | **NEW** — `ExecutionResult`, `AgentExecutor` protocol, 12 executor impls, `ExecutorRegistry` |
+| `src/openjarvis/mission/runner.py` | **NEW** — `MissionRunner` with full lifecycle + `run_mission_pass` + `get_run_state` + auto-notify |
+| `src/openjarvis/server/mission_routes.py` | Added: `POST /v1/missions/{id}/run`, `POST /v1/tasks/{id}/run`, `GET /v1/missions/{id}/run-state`, `GET /v1/executors`, `POST /v1/missions/{id}/notify/slack`, `POST /v1/missions/{id}/notify/telegram` |
+| `src/openjarvis/mission/__init__.py` | Exports `ExecutionResult`, `ExecutorRegistry`, `MissionRunner`, `RunResult` |
+| `tests/mission/test_mission_sprint3.py` | **NEW** — 53 tests, all passing |
+
+**Frontend**
+
+| File | Change |
+|---|---|
+| `frontend/src/pages/MissionControlPage.tsx` | Added: "Run Mission Pass" button with pass result summary, "Notify Slack" + "Notify Telegram" buttons with not_configured inline feedback, task `summary`/`result`/blocked reason display |
+
+### Executor Behavior
+
+| Agent | Executor | Behavior |
+|---|---|---|
+| `docs_report` | `DocsReportExecutor` | **COMPLETES** — deterministic text report from mission/task context |
+| `qa` | `QAExecutor` | **COMPLETES** — deterministic QA validation report |
+| `architect` | `ArchitectExecutor` | **COMPLETES** — deterministic architecture plan |
+| `testing_bug` | `TestingBugExecutor` | **COMPLETES** — deterministic test validation report |
+| `research` | `ResearchExecutor` | **BLOCKED** — `web_search`/`read_url` tool not yet wired |
+| `coding` | `CodingExecutor` | **AWAITING_APPROVAL** — must not auto-modify code |
+| `deployment` | `DeploymentExecutor` | **AWAITING_APPROVAL** — always |
+| `email` | `EmailExecutor` | **AWAITING_APPROVAL** — always |
+| `browser` | `BrowserExecutor` | **AWAITING_APPROVAL** — tool not wired |
+| `security_risk` | `SecurityRiskExecutor` | **AWAITING_APPROVAL** — always |
+| `reminders` | `RemindersExecutor` | **BLOCKED** — calendar tool not wired |
+| `manager` | `ManagerExecutor` | **BLOCKED** — coordination only, no domain execution |
+
+### Mission Runner Behavior
+
+- `run_mission_pass(mission_id, max_steps=20)` runs one controlled pass
+- Iterates tasks in priority order; skips `awaiting_approval`/already-terminal tasks
+- Respects `task.dependencies` (waits for all deps to be `completed`)
+- Persists every status change to `MissionStore` + emits `MissionEvent`
+- Derives `MissionStatus` from final task states (never fakes it)
+- Refuses to mark a task `COMPLETED` if executor returned empty `output`
+- Returns `RunResult` dict with `ok`, progress counts, `no_progress_reason`
+
+### How to Run a Mission Pass
+
+```bash
+# Create a mission
+curl -X POST http://localhost:57291/v1/missions \
+  -H 'Content-Type: application/json' \
+  -d '{"objective": "validate quality and document results"}'
+
+# Run one execution pass
+curl -X POST http://localhost:57291/v1/missions/{mission_id}/run \
+  -H 'Content-Type: application/json' \
+  -d '{"max_steps": 20}'
+
+# Get run state
+curl http://localhost:57291/v1/missions/{mission_id}/run-state
+
+# Run a single task
+curl -X POST http://localhost:57291/v1/tasks/{task_id}/run
+
+# List executors
+curl http://localhost:57291/v1/executors
+```
+
+### Slack/Telegram Notify Routes
+
+```bash
+# Mission-scoped Slack notify (returns not_configured if OPENCLAW_SLACK_BOT_TOKEN missing)
+curl -X POST http://localhost:57291/v1/missions/{mission_id}/notify/slack
+
+# Mission-scoped Telegram notify (returns not_configured if tokens missing)
+curl -X POST http://localhost:57291/v1/missions/{mission_id}/notify/telegram
+```
+
+Both endpoints:
+- Return `{"ok": false, "error_type": "not_configured"}` if tokens missing/placeholder
+- Never expose token values in response body
+- Send a structured mission summary including title, status, task counts, blocked items
+
+### Environment Variables
+
+| Variable | Purpose | Default |
+|---|---|---|
+| `OPENCLAW_SLACK_BOT_TOKEN` | Slack bot token | none (not_configured) |
+| `OPENCLAW_SLACK_CONTINUOUS_OPS_CHANNEL` | Slack channel | `C0BAF08SQTB` |
+| `JARVIS_TELEGRAM_BOT_TOKEN` | Telegram bot token | none (not_configured) |
+| `JARVIS_TELEGRAM_CHAT_ID` | Telegram chat ID | none (not_configured) |
+| `JARVIS_SLACK_MISSION_AUTONOTIFY` | Auto-post to Slack on major mission events | `false` |
+| `JARVIS_TELEGRAM_MISSION_AUTONOTIFY` | Auto-alert Telegram on major mission events | `false` |
+
+Auto-notify only fires on: `completed`, `failed`, `blocked`, `awaiting_approval` status. Never spams every event.
+
+### Validation Results
+
+```
+pytest tests/mission/test_mission_foundation.py tests/mission/test_mission_sprint2.py tests/mission/test_mission_sprint3.py -v
+→ 139 passed, 0 failed, 1 warning (httpx deprecation, non-blocking)
+
+Frontend typecheck: npx tsc -b --noEmit → Exit 0, clean
+Tauri build: npm run tauri -- build → Finished, OpenJarvis.app bundled
+Installed: /Applications/OpenJarvis.app (Sprint 3 build, Jun 15 2026)
+```
+
+### Functional Demo Output (exact)
+
+Safe mission (`validate quality and document results`):
+```
+tasks_completed=1, tasks_blocked=0, approvals_required=0, ok=True
+docs_report → completed (real output: [docs_report] Documentation/report generated...)
+mission_status → completed
+```
+
+Mixed mission (`research, deploy, email, document`):
+```
+tasks_completed=1, tasks_blocked=1, approvals_required=2, ok=True
+research → blocked (no tool wired)
+deployment → awaiting_approval (always)
+docs_report → completed
+email → awaiting_approval (always)
+mission_status → awaiting_approval
+```
+
+Slack/Telegram (no tokens configured):
+```
+ok=False, error_type=not_configured (no network call made)
+```
+
+### Repository State (Sprint 3)
+
+| Field | Value |
+|---|---|
+| Branch | `localhost-get-tool` |
+| Local HEAD | `460871e9` |
+| Remote fork HEAD | `460871e9` (xiaobryans/OpenJarvis) |
+| Git status | Clean after push |
+
+### ACCEPT/HOLD Checklist
+
+- [x] Real execution loop exists
+- [x] At least one safe executor (docs_report/qa/architect/testing_bug) completes with persisted real output
+- [x] Risky tasks (deployment/email/security_risk/coding) remain approval-gated/blocked
+- [x] Mission runner emits real events and updates statuses correctly
+- [x] Slack/Telegram notification routes work safely with not_configured behavior and no token exposure
+- [x] 139/139 tests pass (Sprint 1+2+3)
+- [x] Frontend typechecked and packaged app visually verified
+- [x] Git clean and pushed to fork
+- [x] No fake agent work
+- [x] No forbidden systems touched
+
+### Safety Confirmations
+
+- No secrets printed or committed
+- No public endpoints opened
+- No Tailscale Funnel
+- No AWS infrastructure changes
+- No OMNIX production/Vercel/Supabase/Stripe/billing touched
+- No real Slack/Telegram messages sent
+- No auto-send email/browser/deploy/destructive actions
+
+### What Is Ready for Mega Sprint 4
+
+- **research executor**: Wire `web_search`/`read_url` tool → unblocks research tasks
+- **coding executor**: Define safe action gate → enable diff-only code proposals
+- **WebSocket/SSE push**: Replace polling on Mission Control page with real-time event stream
+- **Manager Agent**: Connect `MissionRouter` outputs to actual agent dispatching loop
+- **Slack event bus subscription**: Wire `mission_runner_started`/`task_awaiting_approval` to auto-post on event bus (currently env-gated only)
+- **testing_bug real execution**: Run `pytest` in a sandboxed subprocess for safe test tasks
+- **Mission chaining**: Multi-mission dependency graph
+
+### What Is Intentionally Not Built (Sprint 3)
+
+- Browser automation (no browser tool)
+- Email sending (always approval-gated, no send tool)
+- Voice activation
+- LLM-based planning (still `keyword_deterministic`)
+- Real web search for research agent
+- WebSocket push (still polling)
+- Production deploys or AWS infra changes
+
+---
+
 ## Final Verdict
 ACCEPT — Full OpenJarvis runtime on Ubuntu 22.04 cloud node. Tailnet endpoints working. Cloud memory primary (S3). Storage CLI fixed. SSM admin access working. Token-gated mobile action/control implemented. Cloud status now visible in Chat, Sidebar, and Dashboard. Production desktop app built and installed to `/Applications/OpenJarvis.app`. Cost under cap. No public exposure.
 
