@@ -373,21 +373,100 @@ None.
 
 ---
 
-## Next Prompt
+## Mega Sprint 1 — Accepted
+
+| Item | Status |
+|---|---|
+| Mission / Task / Agent / MissionEvent models | ACCEPT |
+| MissionStore SQLite persistence | ACCEPT |
+| MissionRouter keyword_deterministic planning | ACCEPT |
+| SpecialistRegistry (12 agents) | ACCEPT |
+| Existing API routes (GET/POST /v1/missions, tasks, events) | ACCEPT |
+| 48/48 Sprint 1 tests passing | ACCEPT |
+
+---
+
+## Mega Sprint 2 — Accepted
+
+**Branch:** `localhost-get-tool`
+**Local HEAD:** `6eb0b44525de7c47937c8bad546f42fdf304d96a`
+**Fork HEAD:** `6eb0b44525de7c47937c8bad546f42fdf304d96a` (same)
+**Installed:** `/Applications/OpenJarvis.app` (rebuilt Jun 15 21:15)
+**Tests:** 86 passed (48 Sprint 1 + 38 Sprint 2), 0 failed
+
+| Item | Status |
+|---|---|
+| `MissionStore.list_all_tasks_by_status` | ACCEPT |
+| `MissionStore.update_task_status` | ACCEPT |
+| `MissionStore.list_recent_events` | ACCEPT |
+| `GET /v1/tasks/pending-approval` | ACCEPT |
+| `PATCH /v1/tasks/{id}/approve` → assigned + event + mission advance | ACCEPT |
+| `PATCH /v1/tasks/{id}/deny` → cancelled + event + mission advance | ACCEPT |
+| `GET /v1/agents` → 12 agents from SpecialistRegistry | ACCEPT |
+| `GET /v1/events/recent?limit=N` → cross-mission DESC | ACCEPT |
+| `notifier.py` SlackNotifier (httpx) + TelegramNotifier (python-telegram-bot) | ACCEPT |
+| `GET /v1/notify/status` → no tokens exposed | ACCEPT |
+| `POST /v1/notify/slack` → always 200, ok=false when not configured | ACCEPT |
+| `POST /v1/notify/telegram` → always 200, ok=false when not configured | ACCEPT |
+| `MissionControlPage.tsx` live from real APIs, no fake data | ACCEPT |
+| Missions panel (poll 15s) + create form → POST /v1/missions | ACCEPT |
+| Mission detail (tasks tab + events tab, per-mission) | ACCEPT |
+| Approval queue (poll 10s) + approve/deny buttons → PATCH | ACCEPT |
+| Agent roster (mount once, 12 agents, real registry data only) | ACCEPT |
+| Notification status bar (Slack/Telegram configured chips, no token exposure) | ACCEPT |
+| `/mission-control` route in App.tsx | ACCEPT |
+| Sidebar Mission Control nav item (Target icon, between Dashboard and Data Sources) | ACCEPT |
+| TypeScript typecheck: 0 errors | ACCEPT |
+| Tauri production build: clean (warnings only, no errors) | ACCEPT |
+| Packaged app visual verification | ACCEPT — screenshot confirmed |
+| 38 Sprint 2 tests + 48 Sprint 1 tests all pass | ACCEPT |
+
+**Exclusions confirmed (not built):**
+- No real agent execution, no LLM planning, no task auto-completion
+- Slack/Telegram: no auto-send on mission events — explicit POST only
+- No browser agent, email send, voice
+- No Slack/Telegram messages sent during sprint
+
+---
+
+## Next Prompt — Mega Sprint 3
 
 ```
-Continue Jarvis OMNIX Workbench. Read /Users/user/OpenJarvis/JARVIS_OMNIX_HANDOFF.md.
-All sprint goals complete. No known imperfections.
-- Active node: openclaw-mobile (i-0393eec12545b74e3, t3.micro, Ubuntu 22.04, 100.118.81.37)
-- Cloud primary storage: S3 bucket omnix-workbench-071179620006-ap-southeast-1-artifacts
-- SSM: Online (agent 3.3.4121.0)
-- Action endpoint: /api/jarvis/action (POST, token from S3/~/.omnix_workbench/cloud-action-token)
-- jarvis omnix cloud: CLOUD RUNTIME ACTIVE
-- Cost: ~$28.50-33.50/month. openclaw-cloud: stopped. ECS: 0/0.
-Potential next items:
-- Implement iPhone Shortcuts for action endpoint
-- Monitor cloud storage usage
-Do not send Slack test messages. Do not print secrets.
+Continue Bryan's OpenJarvis / Jarvis Mission Control.
+Read /Users/user/OpenJarvis/JARVIS_OMNIX_HANDOFF.md first.
+
+Rules: Brutally honest ACCEPT/HOLD/UNSAFE only. No fake ACCEPT. No fake UI.
+No fake agent work. No secrets printed. Scoped access only.
+
+Accepted HEAD: 6eb0b44525de7c47937c8bad546f42fdf304d96a (branch: localhost-get-tool)
+All Sprint 1 + Sprint 2 items ACCEPT (see handoff doc).
+
+Sprint 2 delivered:
+- Live /mission-control dashboard with real API data
+- Approval queue with approve/deny (task_approved/task_cancelled events, mission status advance)
+- Agent roster (12 real registry agents)
+- Notification foundation (Slack via httpx, Telegram via python-telegram-bot)
+- 86/86 tests passing
+
+Bryan's target: Manager Agent decomposes + coordinates specialists; agents communicate
+via Slack; Manager/Jarvis reports to Bryan; Telegram alerts when away from Mac.
+
+Mega Sprint 3 candidates (pick a controlled subset):
+1. Real agent execution scaffold: run a task through a specialist agent (coding or research)
+   with real tool execution (read_file, write_file, run_command) — no LLM hallucination,
+   real tool output only. Stays inside the Mission Control task lifecycle.
+2. Manager Agent bridge: connect MissionRouter outputs to actual agent dispatching;
+   one agent type (e.g. research via web_search) executes its task and marks it done.
+3. Slack auto-notify on mission events (task_approved, task_awaiting_approval) using
+   the SlackNotifier already built — triggered by event bus subscription, not polling.
+4. Mission Control live refresh: WebSocket or SSE push from backend instead of polling,
+   so the frontend updates in real time without 10-15s delays.
+5. Telegram: set JARVIS_TELEGRAM_BOT_TOKEN + JARVIS_TELEGRAM_CHAT_ID, verify send works
+   end-to-end from /v1/notify/telegram, and wire auto-notify for high-risk approvals.
+
+Do not auto-execute real agents without explicit scope definition.
+Do not send Slack or Telegram messages without Bryan's explicit approval call.
+Do not print secrets.
 ```
 
 ---
