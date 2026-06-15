@@ -831,6 +831,9 @@ def initialize_catalog() -> None:
     # Sprint 6 autonomy/watchdog/alert/mobile/voice pack
     from openjarvis.tools.autonomy_catalog import initialize_autonomy_catalog
     initialize_autonomy_catalog()
+    # Sprint 7 doctor/readiness pack
+    from openjarvis.tools.doctor_catalog import initialize_doctor_catalog
+    initialize_doctor_catalog()
     stats = ToolRegistry.stats()
     logger.info(
         "Tool catalog initialized: %d total, %d available, %d unavailable",

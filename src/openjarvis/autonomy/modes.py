@@ -11,7 +11,8 @@ Modes (most restricted → most permissive):
 Governance rules enforced at this layer:
   - Hard-gated actions (real sends, deploys, mutations) are NEVER auto-allowed at any mode
   - safe_execute_approved only permits risk_level=low, non-hard-gate tool actions
-  - Autonomy state is per-project (project_id) and in-process (resets on restart)
+  - Autonomy state is per-project (project_id) and persisted to SQLite
+    (~/.jarvis/autonomy_modes.db); survives server restarts
   - No mode allows: real Slack/Telegram/email send, deploy, browser mutation, AWS change
   - Mode changes are recorded in the AutonomyPolicy audit log
 
@@ -24,10 +25,13 @@ No fake autonomy:
 
 from __future__ import annotations
 
+import sqlite3
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from pathlib import Path
+from typing import Any, Dict, Iterator, List, Optional
 
 
 class AutonomyMode(str, Enum):
@@ -88,22 +92,109 @@ class AutonomyModeEntry:
         }
 
 
+_DEFAULT_DB_PATH = Path.home() / ".jarvis" / "autonomy_modes.db"
+
+
 class AutonomyPolicy:
     """Project-aware autonomy mode manager.
 
     Stores mode per project_id. Default is observe_only.
     Hard gates from governance constitution are always enforced regardless of mode.
 
-    In-process only — resets on server restart.
-    Future sprint: persist to SQLite for restart durability.
+    Persisted to SQLite (~/.jarvis/autonomy_modes.db) — survives server restarts.
+    In-memory cache avoids redundant DB reads within a single process.
     """
 
     _modes: Dict[str, AutonomyModeEntry] = {}
     _history: List[AutonomyModeEntry] = []
+    _db_path: Path = _DEFAULT_DB_PATH
+    _db_initialized: bool = False
+
+    # ------------------------------------------------------------------
+    # SQLite helpers
+    # ------------------------------------------------------------------
+
+    @classmethod
+    @contextmanager
+    def _connect(cls) -> Iterator[sqlite3.Connection]:
+        conn = sqlite3.connect(str(cls._db_path), timeout=10)
+        conn.row_factory = sqlite3.Row
+        try:
+            yield conn
+        finally:
+            conn.close()
+
+    @classmethod
+    def _init_db(cls) -> None:
+        if cls._db_initialized:
+            return
+        try:
+            cls._db_path.parent.mkdir(parents=True, exist_ok=True)
+            with cls._connect() as conn:
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS autonomy_modes (
+                        project_id TEXT PRIMARY KEY,
+                        mode TEXT NOT NULL,
+                        set_by TEXT NOT NULL DEFAULT 'system',
+                        set_at REAL NOT NULL,
+                        reason TEXT NOT NULL DEFAULT ''
+                    )
+                """)
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS autonomy_mode_history (
+                        rowid INTEGER PRIMARY KEY AUTOINCREMENT,
+                        project_id TEXT NOT NULL,
+                        mode TEXT NOT NULL,
+                        set_by TEXT NOT NULL DEFAULT 'system',
+                        set_at REAL NOT NULL,
+                        reason TEXT NOT NULL DEFAULT ''
+                    )
+                """)
+                conn.commit()
+            cls._db_initialized = True
+        except Exception:
+            pass
+
+    @classmethod
+    def _load_from_db(cls, project_id: str) -> Optional[AutonomyModeEntry]:
+        """Load a project's persisted mode from SQLite. Returns None on miss/error."""
+        try:
+            cls._init_db()
+            with cls._connect() as conn:
+                row = conn.execute(
+                    "SELECT * FROM autonomy_modes WHERE project_id = ?",
+                    (project_id,),
+                ).fetchone()
+            if row is None:
+                return None
+            try:
+                mode = AutonomyMode(row["mode"])
+            except ValueError:
+                mode = _DEFAULT_MODE
+            return AutonomyModeEntry(
+                project_id=row["project_id"],
+                mode=mode,
+                set_by=row["set_by"],
+                set_at=row["set_at"],
+                reason=row["reason"],
+            )
+        except Exception:
+            return None
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
 
     @classmethod
     def get_mode(cls, project_id: str) -> AutonomyMode:
-        """Return the current autonomy mode for a project. Default: observe_only."""
+        """Return the current autonomy mode for a project. Default: observe_only.
+
+        Checks in-memory cache first; loads from SQLite on miss.
+        """
+        if project_id not in cls._modes:
+            persisted = cls._load_from_db(project_id)
+            if persisted is not None:
+                cls._modes[project_id] = persisted
         entry = cls._modes.get(project_id)
         return entry.mode if entry else _DEFAULT_MODE
 
@@ -116,7 +207,7 @@ class AutonomyPolicy:
         set_by: str = "system",
         reason: str = "",
     ) -> AutonomyModeEntry:
-        """Set the autonomy mode for a project. Records in audit history."""
+        """Set the autonomy mode for a project. Persists to SQLite + audit history."""
         entry = AutonomyModeEntry(
             project_id=project_id,
             mode=mode,
@@ -125,6 +216,24 @@ class AutonomyPolicy:
         )
         cls._modes[project_id] = entry
         cls._history.append(entry)
+        try:
+            cls._init_db()
+            with cls._connect() as conn:
+                conn.execute(
+                    """INSERT OR REPLACE INTO autonomy_modes
+                       (project_id, mode, set_by, set_at, reason)
+                       VALUES (?,?,?,?,?)""",
+                    (project_id, mode.value, set_by, entry.set_at, reason),
+                )
+                conn.execute(
+                    """INSERT INTO autonomy_mode_history
+                       (project_id, mode, set_by, set_at, reason)
+                       VALUES (?,?,?,?,?)""",
+                    (project_id, mode.value, set_by, entry.set_at, reason),
+                )
+                conn.commit()
+        except Exception:
+            pass
         return entry
 
     @classmethod
@@ -215,9 +324,18 @@ class AutonomyPolicy:
 
     @classmethod
     def clear(cls) -> None:
-        """Reset — for tests only."""
+        """Reset — for tests only. Clears in-memory state and SQLite rows."""
         cls._modes.clear()
         cls._history.clear()
+        try:
+            if cls._db_path.exists():
+                with cls._connect() as conn:
+                    conn.execute("DELETE FROM autonomy_modes")
+                    conn.execute("DELETE FROM autonomy_mode_history")
+                    conn.commit()
+        except Exception:
+            pass
+        cls._db_initialized = False
 
 
 __all__ = [

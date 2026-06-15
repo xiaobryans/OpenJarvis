@@ -15,6 +15,7 @@ from openjarvis.server.memory_routes import router as memory_router
 from openjarvis.server.mission_routes import router as mission_router
 from openjarvis.server.notify_routes import router as notify_router
 from openjarvis.server.autonomy_routes import router as autonomy_router
+from openjarvis.server.doctor_routes import router as doctor_router
 from openjarvis.server.projects_routes import router as projects_router
 from openjarvis.server.skills_routes import router as skills_router
 from openjarvis.server.tools_routes import router as tools_router
@@ -314,6 +315,7 @@ def create_app(
     app.include_router(memory_router)
     app.include_router(projects_router)
     app.include_router(autonomy_router)
+    app.include_router(doctor_router)
     include_all_routes(app)
 
     # Restore SendBlue channel bindings from database on startup

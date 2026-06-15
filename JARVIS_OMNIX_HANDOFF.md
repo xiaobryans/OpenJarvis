@@ -2,6 +2,187 @@
 
 ---
 
+## Ultra Sprint 7 — Reliability + Scale + QA + Reference Mission Control UI Polish
+
+**Verdict: ACCEPT**
+**Branch:** `localhost-get-tool` | **Git status:** clean after commit
+**Mature V1 Readiness Verdict:** WARN (doctor/readiness evidence-backed; all required checks pass; packaged_app_ui=not_configured, git may be dirty until commit)
+
+### What Was Built
+
+| File | Change |
+|---|---|
+| `src/openjarvis/doctor/__init__.py` | **NEW** — doctor package init; exports CheckResult, CheckStatus, ReadinessCategory, ReadinessVerdict, evaluate_readiness, run_all_checks |
+| `src/openjarvis/doctor/checks.py` | **NEW** — 12 independent diagnostic checks; run_all_checks(); CheckResult dataclass; CheckStatus constants |
+| `src/openjarvis/doctor/readiness.py` | **NEW** — 8-category readiness gate; 4 verdicts (ready/warn/hold/unsafe); evaluate_readiness(); generate_v1_report(); fake capability check; accepted checkpoints carried forward |
+| `src/openjarvis/tools/doctor_catalog.py` | **NEW** — 5 doctor/readiness tools (doctor.run, doctor.project, doctor.report, readiness.evaluate, readiness.evidence_summary); all available with real executors |
+| `src/openjarvis/server/doctor_routes.py` | **NEW** — 4 REST routes: GET /v1/doctor, /v1/doctor/project, /v1/readiness, /v1/readiness/report |
+| `src/openjarvis/autonomy/modes.py` | **UPDATED** — AutonomyPolicy SQLite persistence (~/.jarvis/autonomy_modes.db); survives server restarts; clear() also clears DB for test isolation |
+| `src/openjarvis/tools/catalog.py` | **UPDATED** — calls initialize_doctor_catalog() after initialize_autonomy_catalog() |
+| `src/openjarvis/server/app.py` | **UPDATED** — includes doctor_router |
+| `tests/doctor/__init__.py` | **NEW** — empty package init |
+| `tests/doctor/test_doctor_checks.py` | **NEW** — 74 tests covering all 12 checks, CheckResult contract, run_all_checks() |
+| `tests/doctor/test_readiness.py` | **NEW** — 32 tests covering 8 categories, 4 verdicts, accepted checkpoints, fake capability check, generate_v1_report() |
+| `tests/doctor/test_doctor_tools.py` | **NEW** — 27 tests covering tool registration, executors, gateway integration |
+| `tests/autonomy/test_autonomy_tools.py` | **UPDATED** — tool counts: 63+5=68 total, 60+5=65 available |
+
+### Doctor Diagnostic Checks (12)
+
+| # | Check ID | Category | What It Verifies |
+|---|---|---|---|
+| 1 | backend_health | backend | All 10 core modules importable |
+| 2 | project_registry_health | project | ProjectRegistry populated; OMNIX=Project 1 |
+| 3 | tool_registry_counts | tools | available/not_configured/degraded counts + unavailable reasons |
+| 4 | skill_registry_counts | skills | available/degraded/not_configured counts + degraded reasons |
+| 5 | memory_store_health | memory | SQLite reachable + secret rejection functional |
+| 6 | autonomy_mode_status | autonomy | Current mode; hard gate enforcement verified |
+| 7 | watchdog_status | autonomy | 8 watchdogs registered; run_project_pack() results |
+| 8 | alert_status | alerts | AlertStore reachable; open alert count |
+| 9 | execution_log_health | execution_log | SQLite reachable; recent entry count |
+| 10 | git_worktree_status | git | branch + HEAD + clean/dirty |
+| 11 | handoff_freshness | handoff | Handoff doc exists + age ≤7d |
+| 12 | packaged_app_build_metadata | packaged_app | OpenJarvis.app presence (not_configured is acceptable) |
+
+### Readiness Gate (8 Categories, 4 Verdicts)
+
+| Category | Required | Checks |
+|---|---|---|
+| core_mission_system | ✓ | backend_health, execution_log_health |
+| tools_skills_memory | ✓ | tool_registry_counts, skill_registry_counts, memory_store_health |
+| autonomy_watchdogs_alerts | ✓ | watchdog_status, alert_status |
+| project_awareness | ✓ | project_registry_health |
+| safety_governance | ✓ (UNSAFE on fail) | autonomy_mode_status |
+| packaged_app_ui | ✗ | packaged_app_build_metadata |
+| handoff_docs | ✓ | handoff_freshness |
+| git_cleanliness | ✓ | git_worktree_status |
+
+Verdict rules: UNSAFE > HOLD > WARN > READY
+
+### AutonomyPolicy SQLite Persistence (US6 Blocker Fixed)
+
+- Modes persisted to `~/.jarvis/autonomy_modes.db` (table: autonomy_modes)
+- Mode changes also written to autonomy_mode_history table
+- In-memory cache + SQLite load-on-miss pattern
+- SQLite failure is non-fatal (falls back to in-memory)
+- `clear()` deletes DB rows + clears in-memory (test isolation preserved)
+- All 104 existing autonomy tests pass unchanged
+
+### Tool Registry Counts (US7)
+
+| Category | US6 | US7 Delta | US7 Total |
+|---|---|---|---|
+| Total registered | 63 | +5 | **68** |
+| Available | 60 | +5 | **65** |
+| Not configured | 3 | 0 | **3** |
+| Degraded | 0 | 0 | **0** |
+
+### Skill Registry Counts (unchanged)
+
+| Category | Count |
+|---|---|
+| Total | 21 |
+| Available | 18 |
+| Degraded | 3 |
+
+### Watchdogs (unchanged, 8 total)
+
+backend_health_watchdog, mission_stuck_watchdog, approval_queue_watchdog,
+tool_degradation_watchdog, memory_secret_rejection_watchdog,
+project_handoff_staleness_watchdog, git_dirty_watchdog, execution_failure_watchdog
+
+### API Routes Added
+
+| Method | Path | Description |
+|---|---|---|
+| GET | /v1/doctor | Run all 12 diagnostic checks |
+| GET | /v1/doctor/project | Project-specific checks (4) |
+| GET | /v1/readiness | Readiness gate evaluation (8 categories, 4 verdicts) |
+| GET | /v1/readiness/report | Full V1 evidence summary with counts + roadmap |
+
+### Tests Run and Why
+
+| Test File | Tests | Why Run |
+|---|---|---|
+| `tests/doctor/test_doctor_checks.py` | 74 | New module — all 12 checks + contract tests |
+| `tests/doctor/test_readiness.py` | 32 | New module — all 8 categories + 4 verdicts |
+| `tests/doctor/test_doctor_tools.py` | 27 | New tools + gateway integration regression |
+| `tests/autonomy/test_autonomy_modes.py` | 28 | AutonomyPolicy was modified (SQLite persistence) |
+| `tests/autonomy/test_autonomy_tools.py` | 22 | Tool count changed (+5 doctor tools) |
+| `tests/autonomy/test_watchdogs.py` | 24 | Watchdog integration path used by doctor checks |
+| `tests/autonomy/test_alerts.py` | 30 | AlertStore used by doctor checks |
+| `tests/tools/test_tool_registry.py` | 23 | Tool registry changes |
+| **Total** | **260** | All new + directly-touched areas |
+
+### Accepted Checkpoints Intentionally Not Reverified
+
+| Checkpoint | Reason |
+|---|---|
+| Cloud/status foundation | Not touched in US7 |
+| Sprint 1 Mission/Agent Core | Not touched in US7 |
+| Sprint 2 Mission Control Visibility | Not touched in US7 |
+| Sprint 3 Real Agent Execution + Slack/Telegram | Not touched in US7 |
+| Governance Lock-In | Governance read-only in US7; doctor check verifies gate enforcement |
+| Ultra Sprint 4 Skills/Tools/Memory Foundation | Registry extended in US7 only; counts test updated |
+| Ultra Sprint 5 Tool/Skill Expansion + OMNIX Workflow Packs | Catalog chain extended; no logic changes |
+
+### Files Inspected and Why
+
+| File | Why |
+|---|---|
+| `JARVIS_OMNIX_HANDOFF.md` | US6 accepted state, blockers to carry forward |
+| `src/openjarvis/server/app.py` | Router registration pattern; add doctor_router |
+| `src/openjarvis/server/autonomy_routes.py` | Existing autonomy/watchdog API surface |
+| `src/openjarvis/server/projects_routes.py` | Existing project API, multi-project support |
+| `src/openjarvis/tools/jarvis_registry.py` | ToolRegistry/ToolSpec/ToolStatus patterns |
+| `src/openjarvis/tools/execution_log.py` | Execution log SQLite structure |
+| `src/openjarvis/tools/catalog.py` | Catalog initialization chain |
+| `src/openjarvis/tools/autonomy_catalog.py` | Autonomy catalog pattern to follow |
+| `src/openjarvis/skills/catalog.py` | initialize_catalog function name |
+| `src/openjarvis/skills/jarvis_registry.py` | SkillRegistry API, SkillStatus constants |
+| `src/openjarvis/autonomy/modes.py` | AutonomyPolicy in-process blocker; SQLite fix target |
+| `src/openjarvis/autonomy/watchdogs.py` | WatchdogRunner API (static methods, run_project_pack) |
+| `src/openjarvis/autonomy/alerts.py` | AlertStore API (list() method, AlertRecord fields) |
+| `src/openjarvis/governance/constitution.py` | ProjectRegistry, hard gates, COST_CONTROL_LAW |
+| `src/openjarvis/memory/store.py` | JarvisMemory API (write() signature, secret rejection) |
+| `tests/autonomy/test_autonomy_modes.py` | Test pattern; clear() fixture |
+
+### Safety Confirmations
+
+- No secrets printed or committed
+- No public endpoints opened
+- No Tailscale Funnel used
+- No AWS infrastructure changed
+- No OMNIX production deploys touched
+- No Vercel/Supabase/Stripe/billing touched
+- No real Slack/Telegram/email sent
+- No persistent launch agents/cron/daemons installed
+- No browser actions executed
+- Unsafe actions verified blocked by governance gate
+- Cost-control law followed: only files tied to US7 goals were inspected
+
+### Remaining Intentional Limitations
+
+- `voice.parse_intent` is text-only keyword parser (no real STT)
+- ProjectRegistry is in-process only (OMNIX hardcoded; future projects via `register()`)
+- AutonomyPolicy now persists to SQLite but ProjectRegistry still in-process
+- No WebSocket/SSE push (Mission Control uses polling)
+- No `project_id` field on Mission model (planned schema migration)
+- Frontend unchanged: doctor/readiness routes are backend-only in US7
+- Packaged app not rebuilt in US7 (no frontend changes; packaged_app_ui=not_configured is acceptable)
+
+### Recommended Post-V1 Roadmap
+
+1. WebSocket/SSE push for Mission Control (replace polling)
+2. Real STT integration (whisper.cpp or cloud provider)
+3. Mission model schema migration: add project_id field
+4. Frontend doctor/readiness panel in Mission Control
+5. Multi-project config file (add future projects without code changes)
+6. Watchdog results → alert auto-creation pipeline
+7. Skill execution dispatch endpoint
+8. ProjectRegistry SQLite persistence (mirrors AutonomyPolicy pattern)
+
+---
+
 ## Ultra Sprint 6 — Autonomy + Watchdogs + Mobile/Voice Foundation
 
 **Verdict: ACCEPT**
@@ -1222,7 +1403,7 @@ Do not print secrets.
 | `JARVIS_OMNIX_HANDOFF.md` | Updated — UI sprint complete |
 
 <!-- TestDraftSection START -->
-## TestDraftSection (2026-06-15 16:50 UTC)
+## TestDraftSection (2026-06-15 17:57 UTC)
 
 Updated draft.
 

@@ -109,15 +109,15 @@ class TestAutonomyCatalogRegistration:
                 f"{tool_id}: expected category={expected_cat}, got {spec.category}"
             )
 
-    def test_total_tool_count_is_63(self):
-        """US5: 49 tools. US6 adds 14. Total must be 63."""
+    def test_total_tool_count_is_68(self):
+        """US5: 49 tools. US6 adds 14. US7 adds 5 doctor/readiness. Total must be 68."""
         total = len(ToolRegistry.list_all())
-        assert total == 63, f"Expected 63 total tools, got {total}"
+        assert total == 68, f"Expected 68 total tools, got {total}"
 
-    def test_available_count_is_60(self):
-        """US5: 46 available. US6 adds 14 available. Total available must be 60."""
+    def test_available_count_is_65(self):
+        """US5: 46 available. US6 adds 14. US7 adds 5 doctor/readiness. Total available must be 65."""
         available = len(ToolRegistry.list_available())
-        assert available == 60, f"Expected 60 available tools, got {available}"
+        assert available == 65, f"Expected 65 available tools, got {available}"
 
 
 class TestAutonomyExecutors:
