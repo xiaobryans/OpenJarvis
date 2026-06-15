@@ -77,6 +77,13 @@ class EventType(str, Enum):
     OPTIMIZE_TRIAL_END = "optimize_trial_end"
     OPTIMIZE_RUN_END = "optimize_run_end"
     FEEDBACK_RECEIVED = "feedback_received"
+    # Mega Sprint 1 — Mission Control Foundation
+    MISSION_CREATED = "mission_created"
+    MISSION_STATUS_CHANGED = "mission_status_changed"
+    TASK_CREATED = "task_created"
+    TASK_ASSIGNED = "task_assigned"
+    TASK_AWAITING_APPROVAL = "task_awaiting_approval"
+    TASK_STATUS_CHANGED = "task_status_changed"
 
 
 @dataclass(slots=True)
