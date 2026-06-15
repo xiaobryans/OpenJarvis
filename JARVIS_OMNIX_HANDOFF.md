@@ -17,6 +17,12 @@ ACCEPT — Full OpenJarvis runtime on Ubuntu 22.04 cloud node. Tailnet endpoints
 - Added error visibility to show detailed error messages
 - Rebuilt and installed app (Jun 15 19:11)
 
+**UI Consistency Fix (2025-06-15):** Sidebar showed "Cloud Active" but Dashboard showed "Offline". Root cause: Dashboard `CloudStatusPanel.tsx` still used direct fetch() instead of shared `useCloudStatus` hook. Fixed by:
+- Replaced direct fetch in CloudStatusPanel with shared useCloudStatus hook
+- All three surfaces (Chat, Sidebar, Dashboard) now use same Tauri proxy command
+- Unified data source ensures consistent status across all Mission Control surfaces
+- Rebuilt and installed app (Jun 15 19:20)
+
 ---
 
 ## Repository State
@@ -27,10 +33,10 @@ ACCEPT — Full OpenJarvis runtime on Ubuntu 22.04 cloud node. Tailnet endpoints
 | Branch | `localhost-get-tool` |
 | Fork | `https://github.com/xiaobryans/OpenJarvis.git` |
 | Origin | `https://github.com/open-jarvis/OpenJarvis.git` (do not push) |
-| Local HEAD | `907acf96` |
-| Remote fork HEAD | `907acf96` |
+| Local HEAD | `e3afe3f6` |
+| Remote fork HEAD | `e3afe3f6` |
 | Production build | `/Users/user/OpenJarvis/frontend/src-tauri/target/release/bundle/macos/OpenJarvis.app` |
-| Installed to | `/Applications/OpenJarvis.app` (replaced Jun 15 19:11 with CORS fix) |
+| Installed to | `/Applications/OpenJarvis.app` (replaced Jun 15 19:20 with UI consistency fix) |
 
 ---
 
