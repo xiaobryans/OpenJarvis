@@ -11,6 +11,12 @@ ACCEPT — Full OpenJarvis runtime on Ubuntu 22.04 cloud node. Tailnet endpoints
 - **Production build**: `npm run tauri build` completed in 7m 20s, installed to `/Applications/OpenJarvis.app`
 - **Sidebar fix**: Changed from ambiguous `bundle?.runtime` (OpenJarvis) to stable `bundle?.hostname` (openclaw-mobile) + `bundle?.tailscale_ip` (100.118.81.37)
 
+**CORS Fix (2025-06-15):** Packaged app showed "Cloud Unreachable" even though terminal curl worked. Root cause: Python SimpleHTTP server doesn't send CORS headers, blocking Tauri WebView fetches. Fixed by:
+- Added Tauri command `fetch_cloud_status` using Rust reqwest (bypasses CORS)
+- Updated frontend to use Tauri command instead of direct fetch
+- Added error visibility to show detailed error messages
+- Rebuilt and installed app (Jun 15 19:11)
+
 ---
 
 ## Repository State
@@ -21,10 +27,10 @@ ACCEPT — Full OpenJarvis runtime on Ubuntu 22.04 cloud node. Tailnet endpoints
 | Branch | `localhost-get-tool` |
 | Fork | `https://github.com/xiaobryans/OpenJarvis.git` |
 | Origin | `https://github.com/open-jarvis/OpenJarvis.git` (do not push) |
-| Local HEAD | `3dc8371b` |
-| Remote fork HEAD | `3dc8371b` |
+| Local HEAD | `907acf96` |
+| Remote fork HEAD | `907acf96` |
 | Production build | `/Users/user/OpenJarvis/frontend/src-tauri/target/release/bundle/macos/OpenJarvis.app` |
-| Installed to | `/Applications/OpenJarvis.app` (replaced Jun 15 18:58) |
+| Installed to | `/Applications/OpenJarvis.app` (replaced Jun 15 19:11 with CORS fix) |
 
 ---
 
