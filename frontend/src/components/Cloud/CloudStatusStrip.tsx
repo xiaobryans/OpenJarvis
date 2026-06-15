@@ -2,7 +2,7 @@ import { Cloud } from 'lucide-react';
 import { useCloudStatus } from './useCloudStatus';
 
 export function CloudStatusStrip() {
-  const { nodeStatus, bundle, lastChecked } = useCloudStatus();
+  const { nodeStatus, bundle, lastChecked, error } = useCloudStatus();
 
   const isOnline = nodeStatus === 'online';
   const isChecking = nodeStatus === 'checking';
@@ -63,7 +63,7 @@ export function CloudStatusStrip() {
         <>
           <span style={{ color: 'var(--color-text-tertiary)' }}>·</span>
           <span style={{ color: 'var(--color-error, #ef4444)' }}>
-            Cloud Unreachable — ensure Tailnet is active
+            {error || 'Cloud Unreachable — ensure Tailnet is active'}
           </span>
         </>
       )}

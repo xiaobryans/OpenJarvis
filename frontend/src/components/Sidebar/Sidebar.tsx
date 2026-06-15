@@ -27,7 +27,7 @@ export function Sidebar() {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchQuery, setSearchQuery] = useState('');
-  const { nodeStatus, bundle } = useCloudStatus();
+  const { nodeStatus, bundle, error } = useCloudStatus();
 
   const sidebarOpen = useAppStore((s) => s.sidebarOpen);
   const toggleSidebar = useAppStore((s) => s.toggleSidebar);
@@ -231,7 +231,7 @@ export function Sidebar() {
                 {nodeStatus === 'online'
                   ? `Cloud Active · ${bundle?.hostname ?? 'openclaw-mobile'} · ${bundle?.tailscale_ip ?? '100.118.81.37'}`
                   : nodeStatus === 'offline'
-                  ? 'Cloud Unreachable'
+                  ? error || 'Cloud Unreachable'
                   : 'Checking…'}
               </div>
             </div>

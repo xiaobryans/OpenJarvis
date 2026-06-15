@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 
 const DEFAULT_CLOUD_URL = 'http://100.118.81.37:3091';
 const CLOUD_URL_KEY = 'omnix-cloud-node-url';
@@ -20,6 +21,7 @@ export interface CloudStatus {
   bundle: CloudStatusBundle | null;
   lastChecked: string;
   cloudUrl: string;
+  error: string | null;
 }
 
 export function useCloudStatus(): CloudStatus {
@@ -29,22 +31,21 @@ export function useCloudStatus(): CloudStatus {
   const [nodeStatus, setNodeStatus] = useState<CloudNodeStatus>('checking');
   const [bundle, setBundle] = useState<CloudStatusBundle | null>(null);
   const [lastChecked, setLastChecked] = useState<string>('—');
+  const [error, setError] = useState<string | null>(null);
 
   const poll = useCallback(async () => {
     setNodeStatus('checking');
+    setError(null);
     try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 5000);
-      const res = await fetch(`${cloudUrl}/api/jarvis/status-bundle`, {
-        signal: controller.signal,
+      const data = await invoke<CloudStatusBundle>('fetch_cloud_status', {
+        url: `${cloudUrl}/api/jarvis/status-bundle`,
       });
-      clearTimeout(timeout);
-      const data: CloudStatusBundle = await res.json();
       setBundle(data);
       setNodeStatus('online');
-    } catch {
+    } catch (e) {
       setNodeStatus('offline');
       setBundle(null);
+      setError(String(e));
     }
     setLastChecked(new Date().toLocaleTimeString());
   }, [cloudUrl]);
@@ -55,5 +56,5 @@ export function useCloudStatus(): CloudStatus {
     return () => clearInterval(interval);
   }, [poll]);
 
-  return { nodeStatus, bundle, lastChecked, cloudUrl };
+  return { nodeStatus, bundle, lastChecked, cloudUrl, error };
 }

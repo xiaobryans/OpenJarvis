@@ -1852,17 +1852,37 @@ async fn delete_ollama_model(model_name: String) -> Result<serde_json::Value, St
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(30))
         .build()
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
     let resp = client
         .delete(&url)
         .json(&serde_json::json!({"name": model_name}))
         .send()
         .await
-        .map_err(|e| format!("Delete failed: {}", e))?;
+        .map_err(|e| format!("Delete request failed: {}", e))?;
     if !resp.status().is_success() {
         return Err(format!("Delete returned status {}", resp.status()));
     }
-    Ok(serde_json::json!({"status": "deleted", "model": model_name}))
+    Ok(serde_json::json!({"status": "ok", "model": model_name}))
+}
+
+/// Fetch cloud status bundle from Tailscale IP (bypasses WebView CORS).
+#[tauri::command]
+async fn fetch_cloud_status(url: String) -> Result<serde_json::Value, String> {
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(5))
+        .build()
+        .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
+    let resp = client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| format!("Connection failed: {}", e))?;
+    if !resp.status().is_success() {
+        return Err(format!("HTTP {}", resp.status()));
+    }
+    resp.json()
+        .await
+        .map_err(|e| format!("Invalid JSON response: {}", e))
 }
 
 // ---------------------------------------------------------------------------
@@ -2490,6 +2510,7 @@ pub fn run() {
             toggle_overlay,
             hide_overlay,
             get_overlay_conversation,
+            fetch_cloud_status,
         ])
         .build(tauri::generate_context!())
         .expect("error while building OpenJarvis Desktop")
