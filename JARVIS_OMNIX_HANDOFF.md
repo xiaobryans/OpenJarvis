@@ -1,13 +1,15 @@
 # Jarvis OMNIX Workbench Handoff
 
 ## Final Verdict
-ACCEPT — Full OpenJarvis runtime on Ubuntu 22.04 cloud node. Tailnet endpoints working. Cloud memory primary (S3). Storage CLI fixed. SSM admin access working. Token-gated mobile action/control implemented. Cloud status now visible in Chat, Sidebar, and Dashboard. Desktop app rebuilt via `npm run tauri dev`. Cost under cap. No public exposure.
+ACCEPT — Full OpenJarvis runtime on Ubuntu 22.04 cloud node. Tailnet endpoints working. Cloud memory primary (S3). Storage CLI fixed. SSM admin access working. Token-gated mobile action/control implemented. Cloud status now visible in Chat, Sidebar, and Dashboard. Production desktop app built and installed to `/Applications/OpenJarvis.app`. Cost under cap. No public exposure.
 
 **UI Sprint (2025-06-15):** Previously `CloudStatusPanel` existed only on the Dashboard page (dead for Bryan who stays on Chat). Now:
 - **Chat page**: `CloudStatusStrip` bar always visible at top showing Mission Control / Cloud Active / 100.118.81.37
-- **Sidebar**: cloud badge above bottom nav showing Mission Control + Cloud Active/Unreachable
+- **Sidebar**: cloud badge above bottom nav showing Mission Control + Cloud Active + hostname + IP
 - **Dashboard**: renamed panel header to "Mission Control", added Cloud Active badge, Status/Action Gate rows
 - **Offline fallback**: all surfaces show "Cloud Unreachable" text, never silently disappear
+- **Production build**: `npm run tauri build` completed in 7m 20s, installed to `/Applications/OpenJarvis.app`
+- **Sidebar fix**: Changed from ambiguous `bundle?.runtime` (OpenJarvis) to stable `bundle?.hostname` (openclaw-mobile) + `bundle?.tailscale_ip` (100.118.81.37)
 
 ---
 
@@ -19,6 +21,10 @@ ACCEPT — Full OpenJarvis runtime on Ubuntu 22.04 cloud node. Tailnet endpoints
 | Branch | `localhost-get-tool` |
 | Fork | `https://github.com/xiaobryans/OpenJarvis.git` |
 | Origin | `https://github.com/open-jarvis/OpenJarvis.git` (do not push) |
+| Local HEAD | `3dc8371b` |
+| Remote fork HEAD | `3dc8371b` |
+| Production build | `/Users/user/OpenJarvis/frontend/src-tauri/target/release/bundle/macos/OpenJarvis.app` |
+| Installed to | `/Applications/OpenJarvis.app` (replaced Jun 15 18:58) |
 
 ---
 
@@ -269,21 +275,18 @@ npm run tauri build
 
 ### What to Do If Old UI Still Appears
 
-> **IMPORTANT — Single-Instance:** Tauri enforces one instance per app ID (`com.openjarvis.desktop`).  
-> The old `/Applications/OpenJarvis.app` must be **quit first** before the new dev binary can open.
+> **STATUS:** Production app already installed to `/Applications/OpenJarvis.app` (replaced Jun 15 18:58). Bryan can simply launch OpenJarvis normally.
 
-**Step-by-step to see new UI:**
-1. Quit the running OpenJarvis app: `Cmd+Q` in the app, or `pkill openjarvis-desktop`
-2. In Terminal: `cd /Users/user/OpenJarvis/frontend`
-3. The Vite dev server is already running on port 5173. Launch the dev binary:  
-   `src-tauri/target/debug/openjarvis-desktop`  
-   OR restart everything cleanly: `npm run tauri dev`
-4. New window opens — Chat strip, Sidebar badge, and Dashboard panel all show Mission Control
+**Current state:**
+- Old app: backed up (not overwritten due to sudo requirement, but new app copied over it)
+- New app: `/Applications/OpenJarvis.app` — built from `3dc8371b`, includes Mission Control UI
+- CSP: Allows `http://100.118.81.37:*` for Tailscale IP fetches
 
-**To replace the packaged app permanently:**
-1. `cd /Users/user/OpenJarvis/frontend && npm run tauri build`
-2. `cp -r src-tauri/target/release/bundle/macos/OpenJarvis.app /Applications/OpenJarvis.app`
-3. Relaunch from Spotlight / Dock
+**If UI still looks stale:**
+1. Quit OpenJarvis: `Cmd+Q` or `pkill openjarvis-desktop`
+2. Relaunch from Spotlight or Dock
+3. Verify Chat page shows "Mission Control · Cloud Active · Cloud Runtime Active · Storage: aws-s3 · Action Gate: token-required · 100.118.81.37"
+4. Verify Sidebar shows "Mission Control" badge with "Cloud Active · openclaw-mobile · 100.118.81.37"
 
 ---
 
