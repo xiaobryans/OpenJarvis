@@ -17,14 +17,17 @@ import {
   Loader2,
   ScrollText,
   Database,
+  Cloud,
 } from 'lucide-react';
 import { ConversationList } from './ConversationList';
 import { useAppStore } from '../../lib/store';
+import { useCloudStatus } from '../Cloud/useCloudStatus';
 
 export function Sidebar() {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchQuery, setSearchQuery] = useState('');
+  const { nodeStatus, bundle } = useCloudStatus();
 
   const sidebarOpen = useAppStore((s) => s.sidebarOpen);
   const toggleSidebar = useAppStore((s) => s.toggleSidebar);
@@ -189,6 +192,49 @@ export function Sidebar() {
           {/* Conversation list */}
           <div className="flex-1 overflow-y-auto px-2">
             <ConversationList searchQuery={searchQuery} />
+          </div>
+
+          {/* Cloud status badge */}
+          <div
+            className="mx-2 mb-1 px-2 py-1.5 rounded-lg flex items-center gap-2 text-xs shrink-0"
+            style={{
+              background: nodeStatus === 'online'
+                ? 'color-mix(in srgb, var(--color-success, #22c55e) 8%, var(--color-bg-secondary))'
+                : nodeStatus === 'offline'
+                ? 'color-mix(in srgb, var(--color-error, #ef4444) 8%, var(--color-bg-secondary))'
+                : 'var(--color-bg-secondary)',
+              border: '1px solid var(--color-border)',
+            }}
+          >
+            <Cloud
+              size={12}
+              style={{
+                color: nodeStatus === 'online'
+                  ? 'var(--color-success, #22c55e)'
+                  : nodeStatus === 'offline'
+                  ? 'var(--color-error, #ef4444)'
+                  : 'var(--color-text-tertiary)',
+                flexShrink: 0,
+              }}
+            />
+            <div className="flex-1 min-w-0">
+              <div className="font-medium truncate" style={{ color: 'var(--color-text)' }}>
+                Mission Control
+              </div>
+              <div className="truncate" style={{
+                color: nodeStatus === 'online'
+                  ? 'var(--color-success, #22c55e)'
+                  : nodeStatus === 'offline'
+                  ? 'var(--color-error, #ef4444)'
+                  : 'var(--color-text-tertiary)',
+              }}>
+                {nodeStatus === 'online'
+                  ? `Cloud Active · ${bundle?.runtime ?? '100.118.81.37'}`
+                  : nodeStatus === 'offline'
+                  ? 'Cloud Unreachable'
+                  : 'Checking…'}
+              </div>
+            </div>
           </div>
 
           {/* Bottom nav */}

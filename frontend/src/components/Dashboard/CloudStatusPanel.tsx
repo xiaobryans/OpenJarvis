@@ -15,6 +15,8 @@ interface StatusBundleData {
   runtime: string;
   tailscale: string;
   storage: string;
+  action_gate?: string;
+  tailscale_ip?: string;
 }
 
 type NodeStatus = 'online' | 'offline' | 'checking';
@@ -100,17 +102,22 @@ export function CloudStatusPanel() {
         <div className="flex items-center gap-2">
           {dot(statusColor)}
           <span className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>
-            OMNIX Cloud Node
+            Mission Control
           </span>
           <span
-            className="text-xs px-1.5 py-0.5 rounded"
+            className="text-xs px-1.5 py-0.5 rounded font-medium"
             style={{
               color: statusColor,
               background: `color-mix(in srgb, ${statusColor} 12%, transparent)`,
             }}
           >
-            {statusLabel}
+            {nodeStatus === 'online' ? 'Cloud Active' : statusLabel}
           </span>
+          {nodeStatus === 'online' && (
+            <span className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+              OMNIX Cloud Node
+            </span>
+          )}
         </div>
         <span className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
           {lastChecked}
@@ -120,10 +127,12 @@ export function CloudStatusPanel() {
       {/* Node details */}
       {nodeStatus === 'online' && health && bundle && (
         <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
+          <Row label="Status" value="Cloud Runtime Active" highlight />
+          <Row label="Storage" value={bundle.storage ?? 'Cloud Primary'} />
+          <Row label="Action Gate" value={bundle.action_gate ?? 'Token Required'} />
+          <Row label="Tailscale" value={bundle.tailscale} />
           <Row label="Hostname" value={health.hostname} />
           <Row label="Runtime" value={health.runtime} />
-          <Row label="Tailscale" value={bundle.tailscale} highlight />
-          <Row label="Storage" value={bundle.storage} />
         </div>
       )}
 
@@ -155,15 +164,16 @@ export function CloudStatusPanel() {
       )}
 
       {/* Offline error */}
-      {nodeStatus === 'offline' && error && (
+      {nodeStatus === 'offline' && (
         <div
-          className="text-xs px-2 py-1.5 rounded"
+          className="text-xs px-2 py-1.5 rounded font-medium"
           style={{
             background: 'color-mix(in srgb, var(--color-error, #ef4444) 8%, transparent)',
-            color: 'var(--color-text-secondary)',
+            color: 'var(--color-error, #ef4444)',
+            border: '1px solid color-mix(in srgb, var(--color-error, #ef4444) 20%, transparent)',
           }}
         >
-          {error} — ensure you are on Tailnet and the node is running.
+          Cloud Unreachable — ensure you are on Tailnet (100.118.81.37) and the node is running.
         </div>
       )}
 
