@@ -23,6 +23,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
 from openjarvis.core.events import EventType, get_event_bus
+from openjarvis.governance.policies import requires_approval as _gov_requires_approval
 from openjarvis.mission.agent_registry import SpecialistRegistry
 from openjarvis.mission.models import (
     Mission,
@@ -107,10 +108,8 @@ _APPROVAL_RISK_THRESHOLD = RiskLevel.HIGH
 
 
 def _requires_approval(risk: RiskLevel, agent_id: str) -> bool:
-    return (
-        _RISK_ORDER[risk] >= _RISK_ORDER[_APPROVAL_RISK_THRESHOLD]
-        or agent_id in _ALWAYS_APPROVAL_AGENTS
-    )
+    """Delegates to governance policy — single authoritative source for approval rules."""
+    return _gov_requires_approval(risk.value, agent_id)
 
 
 # ---------------------------------------------------------------------------

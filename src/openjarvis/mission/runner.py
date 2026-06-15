@@ -25,6 +25,10 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 from openjarvis.core.events import EventType, get_event_bus
+from openjarvis.governance.policies import (
+    completion_refusal_reason,
+    validate_completion,
+)
 from openjarvis.mission.executor import ExecutionResult, ExecutorRegistry
 from openjarvis.mission.models import (
     Mission,
@@ -435,13 +439,9 @@ class MissionRunner:
     def _persist_result(self, task: Task, result: ExecutionResult) -> ExecutionResult:
         """Persist the execution result using the appropriate lifecycle method."""
         if result.status == TaskStatus.COMPLETED:
-            if not result.output:
-                # Refuse to mark completed with no real output
+            if not validate_completion(result.output):
                 result.status = TaskStatus.BLOCKED
-                result.blocked_reason = (
-                    "Executor returned COMPLETED but produced no output — "
-                    "refusing to mark completed (no fake work)"
-                )
+                result.blocked_reason = completion_refusal_reason()
                 self.block_task(task.id, result.blocked_reason, result)
             else:
                 self.complete_task(task.id, result)
