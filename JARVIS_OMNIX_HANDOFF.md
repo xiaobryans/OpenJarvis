@@ -2,6 +2,117 @@
 
 ---
 
+## Ultra Sprint 5 — Tool/Skill Expansion + OMNIX Workflow Packs
+
+**Verdict: ACCEPT**
+**Local HEAD:** `(see git log)` | **Branch:** `localhost-get-tool` | **Git status:** clean after commit
+
+### What Was Built
+
+| File | Change |
+|---|---|
+| `src/openjarvis/tools/workflow_catalog.py` | **NEW** — 34 Sprint 5 workflow tools (Phase B-E) with real executors |
+| `src/openjarvis/skills/workflow_catalog.py` | **NEW** — 15 Sprint 5 workflow skills |
+| `src/openjarvis/tools/catalog.py` | **UPDATED** — calls `initialize_workflow_catalog()` from `initialize_catalog()` |
+| `src/openjarvis/skills/catalog.py` | **UPDATED** — calls `initialize_workflow_skills_catalog()` |
+| `src/openjarvis/server/tools_routes.py` | **UPDATED** — `?category=` and `?status=` filters + `by_category` grouping |
+| `src/openjarvis/server/skills_routes.py` | **UPDATED** — `?project_id=` and `?status=` filters |
+| `tests/tools/test_sprint5_workflow_catalog.py` | **NEW** — 87 tests (tool count, executor behavior, no-network, isolation) |
+| `tests/skills/test_sprint5_workflow_skills.py` | **NEW** — 30 tests (skill status, blockers, agent filters) |
+
+### Tool Registry — Sprint 5 Real Counts (no inflation)
+
+| Status | Count | Categories |
+|---|---|---|
+| **available** | **46** | agent(1), governance(3), memory(10), mission(8), notify(5), project(5), qa(1), repo(4), report(3), research(6), tests(3) |
+| **not_configured** | **3** | `slack.notify_mission`, `telegram.notify_mission`, `web.search` (TAVILY_API_KEY not set) |
+| **Total registered** | **49** | Sprint4: 15, Sprint5 new: 34 |
+
+Sprint 4 count verified unchanged (13→46 cumulative available, still no fake inflation).
+
+### Skill Registry — Sprint 5 Real Counts
+
+| Status | Count | Skill IDs |
+|---|---|---|
+| **available** | **18** | `agent_discovery`, `approval_summary`, `blocker_triage`, `bug_fix_memory`, `coding_quality_gate`, `daily_project_report`, `decision_log_management`, `governance_audit`, `handoff_management`, `memory_management`, `mission_oversight`, `omnix_project_oversight`, `project_awareness`, `project_memory_management`, `qa_acceptance_review`, `source_review`, `test_and_report`, `validation_memory` |
+| **degraded** | **3** | `notify_operations` (slack/telegram not configured), `notification_drafting` (same), `research_briefing` (web.search not configured) |
+| **Total registered** | **21** | Sprint4: 6, Sprint5 new: 15 |
+
+### Phase Summary
+
+| Phase | Tools | Skills | Status |
+|---|---|---|---|
+| B — Project/Repo/Tests/Mission/QA/Governance | 15 | 6 | AVAILABLE |
+| C — Research/Browser | 6 | 2 | 5 available, 1 not_configured (web.search) |
+| D — Communication/Reporting | 5 | 3 | AVAILABLE (drafts only; no real sends) |
+| E — Extended Memory | 8 | 4 | AVAILABLE |
+
+### New Tools by Category
+
+**Project (3 new):** `project.status`, `project.handoff_read`, `project.handoff_update_plan`
+**Repo (4 new):** `repo.status`, `repo.branch_info`, `repo.diff_summary`, `repo.recent_commits`
+**Tests (3 new):** `tests.discover`, `tests.run_targeted`, `tests.report_summary`
+**Mission (2 new):** `mission.create_from_project_issue`, `mission.project_report`
+**QA (1 new):** `qa.check_acceptance_evidence`
+**Governance (2 new):** `governance.classify_report`, `governance.build_blocker_report`
+**Research (6 new):** `docs.summarize_text`, `sources.capture`, `research.brief`, `web.fetch_url`, `browser.open_url`, `web.search`
+**Notify (2 new):** `slack.draft_update`, `telegram.draft_alert`
+**Report (3 new):** `report.generate_status`, `report.generate_daily_digest`, `approval.queue_summary`
+**Memory (8 new):** `memory.project_summary`, `memory.record_decision`, `memory.record_bug`, `memory.record_fix`, `memory.record_blocker`, `memory.record_validation`, `memory.list_recent_project_entries`, `memory.scrub_check`
+
+### API Route Additions
+
+```
+GET  /v1/tools?category=<cat>&status=<status>   — filtered tool list + by_category grouping
+GET  /v1/skills?project_id=<id>&status=<status> — filtered skill list
+(all Sprint 4 routes unchanged)
+```
+
+### Safety Confirmations (Sprint 5)
+
+- No secrets committed or printed
+- `project.handoff_update_plan`: writes ONLY to registered `handoff_paths`; rejects content matching secret patterns
+- `tests.run_targeted`: runs ONLY within project repo path; uses `sys.executable`; timeout 120s; no shell injection
+- `repo.*` tools: read-only `git` commands only; no push, commit, checkout, or destructive operations
+- `web.fetch_url`: SSRF-protected (rejects localhost/private IPs); GET-only; no auth passed; 20KB truncation
+- `browser.open_url`: dry_run=True in tests; no form submissions, purchases, or account mutations
+- `slack.draft_update` / `telegram.draft_alert`: draft-only; `send_status=not_sent`; explicit approval required to send
+- `web.search`: NOT_CONFIGURED without TAVILY_API_KEY; no fake execution
+- All git tools: no write/destructive ops; `shutil.which("git")` guard
+- `memory.*` tools: scrub check before write; project_id isolation enforced at query level
+- Hard-gate actions still blocked at gateway (UNSAFE verdict)
+
+### Validation Results
+
+```
+.venv/bin/pytest tests/tools/test_sprint5_workflow_catalog.py tests/skills/test_sprint5_workflow_skills.py -v
+→ 87 passed, 0 failed in 2.27s
+
+.venv/bin/pytest tests/tools/test_tool_registry.py tests/skills/test_skill_registry.py tests/memory/test_memory_store.py -v
+→ 57 passed, 0 failed (Sprint 4 regression: PASS)
+```
+
+### Known Blockers (Sprint 5)
+
+| Blocker | Impact | Unblock Path |
+|---|---|---|
+| `TAVILY_API_KEY` not set | `web.search` = not_configured; `research_briefing` skill = degraded | Set `TAVILY_API_KEY` env var |
+| `OPENCLAW_SLACK_BOT_TOKEN` not set | `slack.notify_mission` = not_configured | Set env var |
+| `JARVIS_TELEGRAM_BOT_TOKEN`/`CHAT_ID` not set | `telegram.notify_mission` = not_configured | Set env vars |
+| Mission model lacks `project_id` field | `mission.project_report` scans objective text for `[project:<id>]` | Future: add `project_id` column to missions table |
+| `ProjectRegistry` in-process only | Resets on server restart | Sprint 6: persist to SQLite/config |
+
+### What Ultra Sprint 6 Should Target
+
+- `GET /v1/skills/{id}/execute` — dispatch skill's required tools in sequence
+- Wire `memory.write` into agent executors so agents leave traces automatically
+- WebSocket/SSE push — replace polling on Mission Control with real-time event stream
+- Add `project_id` field to Mission model (schema migration)
+- `ProjectRegistry` SQLite persistence for restart durability
+- Frontend: Tools panel category grouping + status breakdown (uses new `by_category` in `/v1/tools`)
+
+---
+
 ## Ultra Sprint 4 — Skills + Tools + Memory + First Automation Foundation
 
 **Verdict: ACCEPT**
@@ -898,3 +1009,4 @@ Do not print secrets.
 | `frontend/src/components/Dashboard/CloudStatusPanel.tsx` | Updated — Mission Control header + Action Gate row |
 | `frontend/src-tauri/tauri.conf.json` | Updated — CSP allows 100.118.81.37:* |
 | `JARVIS_OMNIX_HANDOFF.md` | Updated — UI sprint complete |
+

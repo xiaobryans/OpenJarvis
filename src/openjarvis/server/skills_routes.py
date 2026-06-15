@@ -32,10 +32,18 @@ def _ensure_catalogs() -> None:
 
 
 @router.get("/v1/skills")
-async def list_skills(agent_id: str = "") -> Dict[str, Any]:
+async def list_skills(
+    agent_id: str = "",
+    project_id: str = "",
+    status: str = "",
+) -> Dict[str, Any]:
     """List all skills with computed availability status.
 
-    Pass ?agent_id=<id> to filter to skills compatible with that agent.
+    Filters:
+      ?agent_id=<id>       — skills compatible with that agent
+      ?project_id=<id>     — skills scoped to a project ([] = all projects)
+      ?status=<status>     — available | degraded | blocked | not_configured | planned
+
     Status is computed live from ToolRegistry — blocked tools propagate.
     """
     _ensure_catalogs()
@@ -43,6 +51,13 @@ async def list_skills(agent_id: str = "") -> Dict[str, Any]:
         skills = SkillRegistry.list_for_agent(agent_id)
     else:
         skills = SkillRegistry.list_all()
+    if project_id:
+        skills = [
+            s for s in skills
+            if not s.project_scopes or project_id in s.project_scopes
+        ]
+    if status:
+        skills = [s for s in skills if s.status == status]
     stats = SkillRegistry.stats()
     return {
         "skills": [s.to_dict() for s in skills],

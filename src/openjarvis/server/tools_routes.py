@@ -44,10 +44,18 @@ class ToolExecuteRequest(BaseModel):
 
 
 @router.get("/v1/tools")
-async def list_tools(available_only: bool = False) -> Dict[str, Any]:
+async def list_tools(
+    available_only: bool = False,
+    category: Optional[str] = None,
+    status: Optional[str] = None,
+) -> Dict[str, Any]:
     """List all registered tools with their status.
 
-    Pass ?available_only=true to filter to only available tools.
+    Filters:
+      ?available_only=true   — only available tools
+      ?category=<cat>        — filter by category (mission, repo, tests, memory, …)
+      ?status=<status>       — filter by implementation_status
+
     Never inflates counts — planned/degraded appear separately.
     """
     _ensure_catalog()
@@ -55,11 +63,26 @@ async def list_tools(available_only: bool = False) -> Dict[str, Any]:
         tools = ToolRegistry.list_available()
     else:
         tools = ToolRegistry.list_all()
+    if category:
+        tools = [t for t in tools if t.category == category]
+    if status:
+        tools = [t for t in tools if t.implementation_status == status]
     stats = ToolRegistry.stats()
+    # Build category grouping
+    by_category: Dict[str, Any] = {}
+    for t in ToolRegistry.list_all():
+        cat = t.category
+        if cat not in by_category:
+            by_category[cat] = {"available": 0, "unavailable": 0, "tools": []}
+        if t.is_available():
+            by_category[cat]["available"] += 1
+        else:
+            by_category[cat]["unavailable"] += 1
     return {
         "tools": [t.to_dict() for t in tools],
         "count": len(tools),
         "stats": stats,
+        "by_category": by_category,
     }
 
 

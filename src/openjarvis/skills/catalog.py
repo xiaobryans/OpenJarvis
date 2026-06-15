@@ -159,6 +159,9 @@ def initialize_catalog() -> None:
         return
     for spec in _SKILL_DEFS:
         SkillRegistry.register(spec)
+    # Sprint 5 workflow skills — registered after Sprint 4 base skills
+    from openjarvis.skills.workflow_catalog import initialize_workflow_skills_catalog
+    initialize_workflow_skills_catalog()
     stats = SkillRegistry.stats()
     logger.info(
         "Skill catalog initialized: %d total, %d available",

@@ -825,6 +825,9 @@ def initialize_catalog() -> None:
         return
     for spec, executor in _TOOL_DEFS:
         ToolRegistry.register(spec, executor=executor)
+    # Sprint 5 workflow pack — registered after Sprint 4 base tools
+    from openjarvis.tools.workflow_catalog import initialize_workflow_catalog
+    initialize_workflow_catalog()
     stats = ToolRegistry.stats()
     logger.info(
         "Tool catalog initialized: %d total, %d available, %d unavailable",
