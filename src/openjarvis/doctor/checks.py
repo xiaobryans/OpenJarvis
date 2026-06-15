@@ -878,6 +878,114 @@ def check_packaged_app_build_metadata(project_id: str = "omnix") -> CheckResult:
 
 
 # ---------------------------------------------------------------------------
+# Check 13 — project_linkage_status
+# ---------------------------------------------------------------------------
+
+
+def check_project_linkage_status(project_id: str = "omnix") -> CheckResult:
+    """Verify project source linkage — is the project linked to its real source?
+
+    FAIL if:
+      - local_repo is a placeholder (points to Jarvis/OpenJarvis codebase)
+      - no real source configured (no GitHub, no OpenClaw, no real local repo)
+      - project has no source links at all
+
+    WARN if:
+      - at least one real source linked but others missing/not_configured
+
+    PASS if:
+      - at least one real non-placeholder source is linked and readable
+    """
+    evidence: Dict[str, Any] = {}
+    try:
+        from openjarvis.projects.source_links import ProjectSourceRegistry
+
+        status_report = ProjectSourceRegistry.get_linkage_status(project_id)
+        linkage_status = status_report["linkage_status"]
+        evidence["linkage_status"] = linkage_status
+        evidence["counts"] = status_report.get("counts", {})
+        evidence["blocker"] = status_report.get("blocker", "")
+        evidence["sources"] = [
+            {"source_id": s["source_id"], "status": s["status"],
+             "link_type": s["link_type"]}
+            for s in status_report.get("sources", [])
+        ]
+
+        if linkage_status in ("linked",):
+            return CheckResult(
+                check_id="project_linkage_status",
+                category="project_linkage",
+                status=CheckStatus.PASS,
+                summary=(
+                    f"Project '{project_id}' linkage: {linkage_status} — "
+                    f"{evidence['counts'].get('operational', 0)} operational source(s)"
+                ),
+                evidence=evidence,
+                project_id=project_id,
+            )
+
+        if linkage_status == "placeholder":
+            return CheckResult(
+                check_id="project_linkage_status",
+                category="project_linkage",
+                status=CheckStatus.FAIL,
+                summary=(
+                    f"Project '{project_id}' linkage: PLACEHOLDER — "
+                    f"local_repo points to Jarvis/OpenJarvis, not real "
+                    f"{project_id.upper()} product source. "
+                    f"Readiness=HOLD until real source is configured."
+                ),
+                evidence=evidence,
+                project_id=project_id,
+            )
+
+        if linkage_status == "not_configured":
+            return CheckResult(
+                check_id="project_linkage_status",
+                category="project_linkage",
+                status=CheckStatus.FAIL,
+                summary=(
+                    f"Project '{project_id}' linkage: NOT_CONFIGURED — "
+                    f"no sources configured. Readiness=HOLD."
+                ),
+                evidence=evidence,
+                project_id=project_id,
+            )
+
+        if linkage_status == "missing_required":
+            return CheckResult(
+                check_id="project_linkage_status",
+                category="project_linkage",
+                status=CheckStatus.WARN,
+                summary=(
+                    f"Project '{project_id}' linkage: MISSING_REQUIRED — "
+                    f"some sources configured but not accessible."
+                ),
+                evidence=evidence,
+                project_id=project_id,
+            )
+
+        return CheckResult(
+            check_id="project_linkage_status",
+            category="project_linkage",
+            status=CheckStatus.NOT_CONFIGURED,
+            summary=f"Project '{project_id}' linkage: {linkage_status}",
+            evidence=evidence,
+            project_id=project_id,
+        )
+
+    except Exception as exc:
+        return CheckResult(
+            check_id="project_linkage_status",
+            category="project_linkage",
+            status=CheckStatus.FAIL,
+            summary=f"Project linkage check failed: {exc}",
+            evidence={"error": str(exc)},
+            project_id=project_id,
+        )
+
+
+# ---------------------------------------------------------------------------
 # Run all checks
 # ---------------------------------------------------------------------------
 
@@ -894,11 +1002,12 @@ _ALL_CHECK_FNS: List[Callable[..., CheckResult]] = [
     check_git_worktree_status,
     check_handoff_freshness,
     check_packaged_app_build_metadata,
+    check_project_linkage_status,
 ]
 
 
 def run_all_checks(project_id: str = "omnix") -> List[CheckResult]:
-    """Run all 12 diagnostic checks. Returns a list of CheckResult objects.
+    """Run all 13 diagnostic checks. Returns a list of CheckResult objects.
 
     Never raises — any unhandled exception inside a check is caught and
     reported as a CheckStatus.FAIL for that check.
@@ -933,6 +1042,7 @@ __all__ = [
     "check_handoff_freshness",
     "check_memory_store_health",
     "check_packaged_app_build_metadata",
+    "check_project_linkage_status",
     "check_project_registry_health",
     "check_skill_registry_counts",
     "check_tool_registry_counts",

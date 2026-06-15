@@ -834,6 +834,9 @@ def initialize_catalog() -> None:
     # Sprint 7 doctor/readiness pack
     from openjarvis.tools.doctor_catalog import initialize_doctor_catalog
     initialize_doctor_catalog()
+    # Sprint 7 Hold Fix — project linker/source connector pack
+    from openjarvis.tools.project_linker_catalog import initialize_project_linker_catalog
+    initialize_project_linker_catalog()
     stats = ToolRegistry.stats()
     logger.info(
         "Tool catalog initialized: %d total, %d available, %d unavailable",

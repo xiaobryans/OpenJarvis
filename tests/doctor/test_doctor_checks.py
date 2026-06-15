@@ -36,6 +36,7 @@ from openjarvis.doctor.checks import (
     check_handoff_freshness,
     check_memory_store_health,
     check_packaged_app_build_metadata,
+    check_project_linkage_status,
     check_project_registry_health,
     check_skill_registry_counts,
     check_tool_registry_counts,
@@ -112,9 +113,9 @@ class TestCheckResultContract:
 
 
 class TestRunAllChecks:
-    def test_returns_exactly_12_results(self):
+    def test_returns_exactly_13_results(self):
         results = run_all_checks(project_id="omnix")
-        assert len(results) == 12
+        assert len(results) == 13
 
     def test_all_results_are_check_result(self):
         results = run_all_checks(project_id="omnix")
@@ -148,11 +149,11 @@ class TestRunAllChecks:
             assert r.project_id == "omnix"
 
     def test_all_check_fns_count(self):
-        assert len(_ALL_CHECK_FNS) == 12
+        assert len(_ALL_CHECK_FNS) == 13
 
     def test_no_exception_on_unknown_project(self):
         results = run_all_checks(project_id="nonexistent_xyz_proj")
-        assert len(results) == 12
+        assert len(results) == 13
 
 
 # ---------------------------------------------------------------------------
@@ -399,6 +400,43 @@ class TestHandoffFreshness:
         r = check_handoff_freshness("omnix")
         valid = {CheckStatus.PASS, CheckStatus.WARN, CheckStatus.FAIL, CheckStatus.NOT_CONFIGURED}
         assert r.status in valid
+
+
+# ---------------------------------------------------------------------------
+# check_project_linkage_status
+# ---------------------------------------------------------------------------
+
+
+class TestProjectLinkageStatus:
+    @pytest.fixture(autouse=True)
+    def reset_source_registry(self):
+        from openjarvis.projects.source_links import ProjectSourceRegistry
+        ProjectSourceRegistry.clear()
+        yield
+        ProjectSourceRegistry.clear()
+
+    def test_omnix_fails_as_placeholder(self):
+        r = check_project_linkage_status("omnix")
+        assert r.check_id == "project_linkage_status"
+        assert r.status == CheckStatus.FAIL
+
+    def test_placeholder_blocker_in_evidence(self):
+        r = check_project_linkage_status("omnix")
+        assert r.evidence["linkage_status"] == "placeholder"
+
+    def test_category_is_project_linkage(self):
+        r = check_project_linkage_status("omnix")
+        assert r.category == "project_linkage"
+
+    def test_counts_in_evidence(self):
+        r = check_project_linkage_status("omnix")
+        assert "counts" in r.evidence
+        assert r.evidence["counts"]["placeholder"] >= 1
+
+    def test_sources_in_evidence(self):
+        r = check_project_linkage_status("omnix")
+        assert "sources" in r.evidence
+        assert len(r.evidence["sources"]) >= 1
 
 
 # ---------------------------------------------------------------------------

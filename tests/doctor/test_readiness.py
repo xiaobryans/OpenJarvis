@@ -32,6 +32,7 @@ from openjarvis.doctor.readiness import (
     evaluate_readiness,
     generate_v1_report,
 )
+from openjarvis.projects.source_links import ProjectSourceRegistry
 
 
 # ---------------------------------------------------------------------------
@@ -48,10 +49,12 @@ def reset_registries():
     ToolRegistry.clear()
     SkillRegistry.clear()
     AutonomyPolicy.clear()
+    ProjectSourceRegistry.clear()
     yield
     ToolRegistry.clear()
     SkillRegistry.clear()
     AutonomyPolicy.clear()
+    ProjectSourceRegistry.clear()
 
 
 # ---------------------------------------------------------------------------
@@ -60,7 +63,7 @@ def reset_registries():
 
 
 class TestReadinessCategoryConstants:
-    def test_8_categories_defined(self):
+    def test_9_categories_defined(self):
         cats = [
             ReadinessCategory.CORE_MISSION_SYSTEM,
             ReadinessCategory.TOOLS_SKILLS_MEMORY,
@@ -70,11 +73,12 @@ class TestReadinessCategoryConstants:
             ReadinessCategory.PACKAGED_APP_UI,
             ReadinessCategory.HANDOFF_DOCS,
             ReadinessCategory.GIT_CLEANLINESS,
+            ReadinessCategory.PROJECT_LINKAGE,
         ]
-        assert len(cats) == 8
+        assert len(cats) == 9
 
-    def test_category_checks_covers_all_8(self):
-        assert len(_CATEGORY_CHECKS) == 8
+    def test_category_checks_covers_all_9(self):
+        assert len(_CATEGORY_CHECKS) == 9
         for cat in [
             ReadinessCategory.CORE_MISSION_SYSTEM,
             ReadinessCategory.TOOLS_SKILLS_MEMORY,
@@ -84,6 +88,7 @@ class TestReadinessCategoryConstants:
             ReadinessCategory.PACKAGED_APP_UI,
             ReadinessCategory.HANDOFF_DOCS,
             ReadinessCategory.GIT_CLEANLINESS,
+            ReadinessCategory.PROJECT_LINKAGE,
         ]:
             assert cat in _CATEGORY_CHECKS
             assert len(_CATEGORY_CHECKS[cat]) >= 1
@@ -112,9 +117,9 @@ class TestEvaluateReadiness:
         report = evaluate_readiness(project_id="omnix")
         assert isinstance(report, ReadinessReport)
 
-    def test_has_8_categories(self):
+    def test_has_9_categories(self):
         report = evaluate_readiness(project_id="omnix")
-        assert len(report.categories) == 8
+        assert len(report.categories) == 9
 
     def test_verdict_is_valid(self):
         report = evaluate_readiness(project_id="omnix")
@@ -143,6 +148,11 @@ class TestEvaluateReadiness:
         combined = "\n".join(report.accepted_checkpoints)
         assert "ACCEPT" in combined
         assert "Sprint" in combined
+
+    def test_verdict_is_hold_due_to_omnix_placeholder(self):
+        """OMNIX local_repo=OpenJarvis placeholder → project_linkage FAIL → HOLD."""
+        report = evaluate_readiness(project_id="omnix")
+        assert report.verdict == ReadinessVerdict.HOLD
 
     def test_fake_capability_check_present(self):
         report = evaluate_readiness(project_id="omnix")
@@ -180,7 +190,7 @@ class TestEvaluateReadinessWithCheckResults:
         checks = self._make_pass_checks()
         report = evaluate_readiness(project_id="omnix", check_results=checks)
         assert isinstance(report, ReadinessReport)
-        assert len(report.categories) == 8
+        assert len(report.categories) == 9
 
     def test_unsafe_when_safety_governance_fails(self):
         from openjarvis.doctor.checks import _ALL_CHECK_FNS
@@ -313,10 +323,10 @@ class TestReadinessReportToDict:
         for k in required_keys:
             assert k in d, f"Missing key: {k}"
 
-    def test_categories_dict_has_8_entries(self):
+    def test_categories_dict_has_9_entries(self):
         report = evaluate_readiness(project_id="omnix")
         d = report.to_dict()
-        assert len(d["categories"]) == 8
+        assert len(d["categories"]) == 9
 
 
 # ---------------------------------------------------------------------------
@@ -386,7 +396,7 @@ class TestGenerateV1Report:
 
 class TestAcceptedCheckpoints:
     def test_accepted_checkpoints_nonempty(self):
-        assert len(_ACCEPTED_CHECKPOINTS) >= 7
+        assert len(_ACCEPTED_CHECKPOINTS) >= 8
 
     def test_each_sprint_referenced(self):
         combined = "\n".join(_ACCEPTED_CHECKPOINTS)

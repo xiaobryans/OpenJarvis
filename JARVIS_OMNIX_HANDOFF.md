@@ -2,11 +2,188 @@
 
 ---
 
+## Ultra Sprint 7 Hold Fix — Project Linker / Source Connector
+
+**Verdict: ACCEPT**
+**Branch:** `localhost-get-tool` | **Git status:** clean after commit
+**Mature V1 Readiness Verdict:** HOLD — honest; OMNIX local_repo is placeholder (Jarvis codebase). Real OMNIX source not yet configured. Readiness correctly HOLDs until Bryan links a real source.
+
+### Problem Solved
+
+Previous US7 readiness reported WARN but did not detect that OMNIX `repo_path=/Users/user/OpenJarvis` points to the Jarvis/OpenJarvis codebase itself, not the real OMNIX product source. Jarvis cannot inspect/fix the real OMNIX product until an operational source is configured.
+
+### What Was Built
+
+| File | Change |
+|---|---|
+| `src/openjarvis/projects/__init__.py` | **NEW** — projects package init |
+| `src/openjarvis/projects/source_links.py` | **NEW** — ProjectSourceLink dataclass, ProjectSourceLinkType (10 types), ProjectSourceStatus (7 statuses), ProjectSourceRegistry (bootstrap + validate + get_linkage_status), validate_source_link(), make_future_project_source_template() |
+| `src/openjarvis/tools/project_linker_catalog.py` | **NEW** — 10 project-linker tools, all available, all with real executors |
+| `src/openjarvis/doctor/checks.py` | **UPDATED** — Check #13: check_project_linkage_status (FAIL when OMNIX is placeholder) |
+| `src/openjarvis/doctor/readiness.py` | **UPDATED** — ReadinessCategory.PROJECT_LINKAGE as 9th required category |
+| `src/openjarvis/doctor/__init__.py` | **UPDATED** — export check_project_linkage_status; docstring 12→13 checks, 8→9 categories |
+| `src/openjarvis/tools/catalog.py` | **UPDATED** — calls initialize_project_linker_catalog() |
+| `tests/projects/__init__.py` | **NEW** — empty package init |
+| `tests/projects/test_project_source_links.py` | **NEW** — 70 tests covering all source types, placeholder detection, readiness HOLD, future project template, no-secrets guarantee |
+| `tests/doctor/test_doctor_checks.py` | **UPDATED** — 12→13 check counts; added TestProjectLinkageStatus |
+| `tests/doctor/test_readiness.py` | **UPDATED** — 8→9 category counts; test_verdict_is_hold_due_to_omnix_placeholder |
+| `tests/doctor/test_doctor_tools.py` | **UPDATED** — 12→13 count refs; ProjectSourceRegistry reset |
+| `tests/autonomy/test_autonomy_tools.py` | **UPDATED** — tool counts 68/65→78/75 |
+
+### Project Source Link Types (10)
+
+| Type | Description |
+|---|---|
+| `local_repo` | Local filesystem repo path |
+| `github_remote` | GitHub owner/repo URL (blocked until approved) |
+| `handoff_file` | Path to a handoff .md file |
+| `handoff_directory` | Directory of handoff files |
+| `openclaw_workspace` | OpenClaw workspace path (read-only) |
+| `openclaw_handoff` | OpenClaw handoff file path (read-only) |
+| `runtime_health_endpoint` | HTTP GET health URL (blocked until approved) |
+| `runtime_status_endpoint` | HTTP GET status URL (blocked until approved) |
+| `docs_directory` | Local docs directory |
+| `memory_namespace` | Jarvis memory namespace key |
+
+### OMNIX Linkage State (current)
+
+| Source | Status | Note |
+|---|---|---|
+| local_repo | **placeholder** | `/Users/user/OpenJarvis` = Jarvis codebase, not OMNIX product |
+| github_remote | not_configured | Not set |
+| handoff_file | linked | `JARVIS_OMNIX_HANDOFF.md` exists and readable (metadata only) |
+| openclaw_workspace | not_configured | Not set |
+| openclaw_handoff | not_configured | Not set |
+| runtime_health_endpoint | not_configured | Not set |
+| docs_directory | missing | `docs/` not found in Jarvis repo |
+| memory_namespace | linked | `project:omnix` (metadata only) |
+
+**Primary source operational:** 0 / 4 → `linkage_status=placeholder` → readiness `PROJECT_LINKAGE=FAIL` → **HOLD**
+
+### Placeholder Detection Logic (read-only, non-broad)
+
+Only 1 targeted file check: does `{path}/src/openjarvis/governance/constitution.py` exist?  
+If yes → path is the Jarvis codebase → status=`placeholder`.  
+No broad scan. No directory listing.
+
+### Primary vs Secondary Sources
+
+**Primary** (determine operational linkage): `local_repo`, `github_remote`, `openclaw_workspace`, `openclaw_handoff`  
+**Secondary** (metadata only; do not satisfy linkage): `handoff_file`, `handoff_directory`, `docs_directory`, `memory_namespace`, `runtime_*`
+
+### Project Linker Tools (10)
+
+| Tool | Description |
+|---|---|
+| `project.sources.list` | List all configured source links |
+| `project.sources.validate_all` | Validate all sources; returns linkage_status |
+| `project.source.validate` | Validate a single source by source_id |
+| `project.link_local_repo_plan` | Dry-run: what status would a path get? |
+| `project.link_local_repo` | Register + validate a local repo path |
+| `project.link_handoff_file` | Register + validate a handoff file |
+| `project.link_openclaw_workspace` | Register an OpenClaw workspace (read-only) |
+| `project.link_runtime_endpoint` | Register a runtime endpoint (blocked until approved) |
+| `project.link_memory_namespace` | Register memory namespace |
+| `project.linkage_doctor` | Full linkage health + readiness impact + unblock steps |
+
+### Readiness Gate (9th Category Added)
+
+| Category | Required | Verdict Impact |
+|---|---|---|
+| `project_linkage` | ✓ | HOLD if OMNIX has no real source linked |
+
+### Tool Registry Counts (US7 Hold Fix)
+
+| Category | US7 | Hold Fix Delta | Total |
+|---|---|---|---|
+| Total registered | 68 | +10 | **78** |
+| Available | 65 | +10 | **75** |
+| Not configured | 3 | 0 | **3** |
+
+### Tests Run (314 pass)
+
+| Test File | Tests | Why |
+|---|---|---|
+| `tests/projects/test_project_source_links.py` | 70 | All new source link types + placeholder + readiness HOLD + future project template |
+| `tests/doctor/test_doctor_checks.py` | updated | check #13 + count 12→13 |
+| `tests/doctor/test_readiness.py` | updated | category #9 + HOLD assertion |
+| `tests/doctor/test_doctor_tools.py` | updated | 12→13 counts |
+| `tests/autonomy/test_autonomy_tools.py` | updated | 68/65→78/75 |
+| **Total scope** | **314** | All pass |
+
+### Functional Demo Output (exact, non-secret)
+
+```
+LIST PROJECTS:
+  omnix: OMNIX | repo_path=/Users/user/OpenJarvis
+
+OMNIX SOURCE LINKS:
+  local_repo       → /Users/user/OpenJarvis (placeholder — Jarvis codebase)
+  github_remote    → (empty)              (not_configured)
+  handoff_file     → JARVIS_OMNIX_HANDOFF.md (linked — metadata only)
+  openclaw_*       → (empty)              (not_configured)
+  memory_namespace → project:omnix        (linked — metadata only)
+
+OMNIX LINKAGE STATUS:
+  linkage_status = placeholder
+  primary.operational = 0 / 4
+  blocker: "Primary source(s) are placeholders — configure real OMNIX repo"
+
+PROJECT LINKAGE DOCTOR:
+  check_id = project_linkage_status
+  status   = fail
+  summary  = "Project 'omnix' linkage: PLACEHOLDER — local_repo points to Jarvis/OpenJarvis"
+
+READINESS IMPACT:
+  VERDICT = HOLD
+  project_linkage category status = fail (is_required=True)
+
+HOW BRYAN LINKS A FUTURE PROJECT:
+  project.link_local_repo         → provide real repo path (non-Jarvis)
+  project.link_handoff_file       → provide handoff.md path
+  project.link_memory_namespace   → "project:acme"
+  project.link_openclaw_workspace → provide OpenClaw path (read-only)
+  project.link_runtime_endpoint   → URL (blocked until approved)
+  project.linkage_doctor          → shows status + unblock steps
+```
+
+### Governance Confirmations
+
+- No secrets read or printed
+- No env vars printed
+- No writes to any source repo
+- No broad directory scans (only targeted path checks)
+- GitHub/API access: not_configured or blocked until explicitly approved
+- Runtime endpoints: blocked until explicitly approved; no live HTTP calls made
+- OpenClaw: read-only unless explicitly approved
+- No mutations: OMNIX, OpenClaw, GitHub, runtime, deploy, Vercel, Supabase, Stripe
+
+### Unblock Path for Bryan
+
+To move readiness from HOLD → WARN/READY on project_linkage:
+
+**Option A** — Configure real OMNIX local repo:
+```
+project.link_local_repo(project_id="omnix", repo_path="/path/to/real/omnix/repo")
+```
+
+**Option B** — Configure GitHub remote (requires explicit approval):
+```
+project.link_runtime_endpoint(project_id="omnix", url="https://github.com/owner/omnix")
+```
+
+**Option C** — Configure OpenClaw workspace (read-only):
+```
+project.link_openclaw_workspace(project_id="omnix", workspace_path="/path/to/openclaw/workspace")
+```
+
+---
+
 ## Ultra Sprint 7 — Reliability + Scale + QA + Reference Mission Control UI Polish
 
 **Verdict: ACCEPT**
 **Branch:** `localhost-get-tool` | **Git status:** clean after commit
-**Mature V1 Readiness Verdict:** WARN (doctor/readiness evidence-backed; all required checks pass; packaged_app_ui=not_configured, git may be dirty until commit)
+**Mature V1 Readiness Verdict:** HOLD (project_linkage=placeholder; see US7 Hold Fix above)
 
 ### What Was Built
 

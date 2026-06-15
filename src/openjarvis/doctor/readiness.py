@@ -1,6 +1,6 @@
 """Jarvis Readiness Gate — evidence-backed V1 daily-driver readiness evaluation.
 
-8 readiness categories:
+9 readiness categories:
   core_mission_system      — mission store + tool gateway functional
   tools_skills_memory      — tool/skill/memory registry healthy
   autonomy_watchdogs_alerts — autonomy mode + watchdogs + alerts operational
@@ -9,6 +9,7 @@
   packaged_app_ui          — Tauri build present (not_configured is acceptable)
   handoff_docs             — handoff doc exists and is recent
   git_cleanliness          — git working tree clean; on expected branch
+  project_linkage          — project linked to real source (not placeholder/conceptual only)
 
 Verdict:
   ready  — all required categories pass (warn-only non-blocking items permitted)
@@ -53,6 +54,7 @@ class ReadinessCategory:
     PACKAGED_APP_UI = "packaged_app_ui"
     HANDOFF_DOCS = "handoff_docs"
     GIT_CLEANLINESS = "git_cleanliness"
+    PROJECT_LINKAGE = "project_linkage"
 
 
 # ---------------------------------------------------------------------------
@@ -88,6 +90,9 @@ _CATEGORY_CHECKS: Dict[str, List[str]] = {
     ReadinessCategory.GIT_CLEANLINESS: [
         "git_worktree_status",
     ],
+    ReadinessCategory.PROJECT_LINKAGE: [
+        "project_linkage_status",
+    ],
 }
 
 # Categories where fail → UNSAFE verdict (not just HOLD)
@@ -102,6 +107,7 @@ _REQUIRED_CATEGORIES = frozenset({
     ReadinessCategory.SAFETY_GOVERNANCE,
     ReadinessCategory.HANDOFF_DOCS,
     ReadinessCategory.GIT_CLEANLINESS,
+    ReadinessCategory.PROJECT_LINKAGE,
 })
 
 
@@ -176,6 +182,7 @@ _ACCEPTED_CHECKPOINTS = [
     "Ultra Sprint 4 Skills/Tools/Memory Foundation — ACCEPT (registry extended in US7 only)",
     "Ultra Sprint 5 Tool/Skill Expansion + OMNIX Workflow Packs — ACCEPT (catalog chain extended in US7 only)",
     "Ultra Sprint 6 Autonomy + Watchdogs + Mobile/Voice — ACCEPT (AutonomyPolicy SQLite persistence added; no logic changes)",
+    "Ultra Sprint 7 Doctor/Readiness Layer — ACCEPT (12 checks, 8 categories; project_linkage added as US7 Hold Fix)",
 ]
 
 
@@ -425,6 +432,7 @@ def generate_v1_report(project_id: str = "omnix") -> Dict[str, Any]:
             "No project_id field on Mission model (planned schema migration)",
             "Frontend unchanged: doctor/readiness routes are backend-only",
             "Packaged app not rebuilt in US7 (no frontend changes)",
+            "OMNIX local_repo points to Jarvis/OpenJarvis (placeholder); real OMNIX source not yet configured",
         ],
         "post_v1_roadmap": [
             "WebSocket/SSE push for Mission Control (replace polling)",
@@ -434,6 +442,7 @@ def generate_v1_report(project_id: str = "omnix") -> Dict[str, Any]:
             "Multi-project config file (add future projects without code changes)",
             "Watchdog results → alert auto-creation pipeline",
             "Skill execution dispatch endpoint",
+            "Configure real OMNIX source: real local repo path, GitHub remote, or OpenClaw workspace",
         ],
     }
 
