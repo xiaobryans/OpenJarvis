@@ -8,6 +8,96 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### US12 — Small Gaps Closure + Product Polish
+
+**Status wording and backend-only annotations** (`doctor/checks.py`):
+- Fixed module docstring: "12 independent" → "32 independent diagnostic checks".
+- `check_secrets_backend` FAIL summary now names the env vars to set
+  (`JARVIS_OPENAI_API_KEY` / `JARVIS_ANTHROPIC_API_KEY` / macOS Keychain)
+  instead of the opaque "0 keys present".
+- `check_packaged_app_build_metadata` NOT_CONFIGURED summary now explicitly
+  notes that US9–US12 capabilities are backend-only and not yet surfaced in
+  the packaged app UI.
+- `check_connector_readiness` NOT_CONFIGURED summary now carries a
+  "backend-only status; no connector panel in the app UI yet" annotation so
+  operators understand the distinction between backend capability and UI
+  visibility.
+
+**Stale reference cleanup** (`doctor/readiness.py`):
+- Cost-control law comment updated: "US7" → "US11" (reflects the last sprint
+  that touched the readiness layer).
+- `evaluate_readiness()` docstring: "runs all 12 checks" → "runs all 32 checks".
+- `generate_v1_report()` `remaining_limitations`: "not rebuilt in US7" →
+  "not rebuilt in US12 (US9–US12 capabilities are backend-only)".
+- Added US12 entry to `_ACCEPTED_CHECKPOINTS` so the accepted sprint chain
+  is complete through US12.
+
+**Test polish** (`tests/doctor/test_readiness.py`):
+- Module docstring updated: "15 categories" → "27 categories".
+- `test_category_checks_covers_all_15` renamed to
+  `test_category_checks_covers_all_27` (the assertion already checked 27;
+  only the name was stale).
+
+**Documentation/handoff** (`CHANGELOG.md`, `JARVIS_OMNIX_HANDOFF.md`):
+- Added this US12 section and the previously missing US11 section to
+  `[Unreleased]`.
+- Added US12 handoff section to `JARVIS_OMNIX_HANDOFF.md` documenting
+  accepted capabilities, backend-only vs UI-visible limitations, and that
+  packaged-app verification is intentionally deferred to the combined
+  US9–US12 pass.
+
+### US11 — Intelligence + Trust Layer
+
+**Trust/evidence layer** (`intelligence/trust.py`):
+- Added `TrustStatus` constants: `ready`, `degraded`, `blocked`,
+  `unconfigured`, `unknown`.
+- Added `EvidenceRecord`: verifiable evidence with source, reason, timestamp,
+  value, and `is_verified()` / `to_dict()`.
+- Added `INSUFFICIENT_DATA_MSG` + `insufficient_data()` helper — per honesty
+  policy, missing evidence yields the standard `insufficient_data_to_verify`
+  message rather than an inferred status.
+- Added `ReadinessTrustReport` with `trust_status`, `is_sufficient`, and
+  evidence list.
+- Added `build_readiness_trust_report()`: returns READY if all required keys
+  are present and non-empty, DEGRADED otherwise.
+
+**Action confidence/approval** (`intelligence/trust.py`):
+- Added `ActionAccessType` (read_only, propose_only, auto_approved,
+  requires_approval, hard_blocked).
+- Added `ActionProfile` dataclass: captures action_id, access_type,
+  risk_level, requires_confirmation, and evidence.
+- Added `build_action_profile()`: derives profile from action metadata;
+  always blocks hard-gate actions regardless of context.
+
+**Planner/self-check trust** (`intelligence/trust.py`):
+- Added `PreExecutionSelfCheck.check()`: verifies all required context keys
+  are present before execution.
+- Added `PostExecutionSelfCheck.check()`: verifies result is non-empty and
+  non-None; returns `ok=False` with a `reason` for empty or None results.
+
+**Memory/context provenance** (`intelligence/trust.py`):
+- Added `MemorySource` constants: `durable`, `transient`, `injected`,
+  `inferred`, `unknown`.
+- Added `MemoryProvenance`: captures source_type, namespace, recency,
+  trust_status, and notes.
+- Added `classify_memory_provenance()`: classifies durable sources as READY,
+  transient as DEGRADED, injected as BLOCKED, inferred/unknown as UNKNOWN.
+
+**Tool/connector intelligence** (`intelligence/trust.py`):
+- Added `ConnectorTrustStatus` dataclass: connector_id, trust_status,
+  last_health_ok, error_reason, evidence.
+- Added `classify_connector_trust()`: READY when configured + healthy,
+  DEGRADED when configured but last health failed (with reason), UNCONFIGURED
+  when not configured.
+
+**Readiness/status integration** (`doctor/checks.py`, `doctor/readiness.py`):
+- Added `check_trust_layer` (check #32): imports all US11 symbols, verifies
+  TrustStatus constants, exercises EvidenceRecord, MemoryProvenance,
+  classify_connector_trust, PreExecutionSelfCheck, PostExecutionSelfCheck,
+  build_readiness_trust_report, and insufficient_data.
+- Added `TRUST_LAYER` category (27th category); marked required.
+- Added US11 accepted checkpoint to `_ACCEPTED_CHECKPOINTS`.
+
 ### US10 — Daily-Driver Operations Hardening
 
 **Runtime lifecycle hardening** (`daemon/service.py`):

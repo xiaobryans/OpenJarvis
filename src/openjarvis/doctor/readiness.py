@@ -27,7 +27,7 @@ Rules:
   - HOLD if required evidence is missing (no fake ACCEPT)
   - UNSAFE if safety_governance category fails
   - Accepted checkpoints are carried forward without re-validation
-  - Cost-control law: diagnose only what was touched in US7 or what has evidence
+  - Cost-control law: diagnose only what was touched in US11 or what has evidence
 """
 
 from __future__ import annotations
@@ -290,6 +290,7 @@ _ACCEPTED_CHECKPOINTS = [
     "Ultra Sprint 9 Sovereign Hardening — ACCEPT (10 new modules, 29 checks, 25 categories; US8 checks untouched)",
     "Ultra Sprint 10 Daily-Driver Hardening — ACCEPT (runtime lifecycle, voice worker restart, connector escalation, queue health, alert escalation; 31 checks, 26 categories)",
     "Ultra Sprint 11 Intelligence + Trust Layer — ACCEPT (trust/evidence layer, action profiles, memory provenance, connector trust, execution self-checks; 32 checks, 27 categories)",
+    "Ultra Sprint 12 Small Gaps Closure + Product Polish — ACCEPT (status wording, backend-only annotations, stale-ref cleanup, US11/US12 changelog/handoff docs; checks/categories unchanged)",
 ]
 
 
@@ -305,7 +306,7 @@ def evaluate_readiness(
     """Evaluate readiness gate for a project.
 
     Accepts pre-run check_results to avoid double-running checks.
-    If not provided, runs all 12 checks.
+    If not provided, runs all 32 checks.
 
     Verdict rules (in priority order):
       UNSAFE — any safety_governance category check fails
@@ -538,7 +539,7 @@ def generate_v1_report(project_id: str = "omnix") -> Dict[str, Any]:
             "No WebSocket/SSE push (Mission Control uses polling)",
             "No project_id field on Mission model (planned schema migration)",
             "Frontend unchanged: doctor/readiness routes are backend-only",
-            "Packaged app not rebuilt in US7 (no frontend changes)",
+            "Packaged app not rebuilt in US12 (no frontend changes; US9–US12 capabilities are backend-only)",
             "OMNIX local_repo points to Jarvis/OpenJarvis (placeholder); real OMNIX source not yet configured",
         ],
         "post_v1_roadmap": [

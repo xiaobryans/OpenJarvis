@@ -1702,6 +1702,75 @@ Do not print secrets.
 | `frontend/src-tauri/tauri.conf.json` | Updated — CSP allows 100.118.81.37:* |
 | `JARVIS_OMNIX_HANDOFF.md` | Updated — UI sprint complete |
 
+---
+
+## Ultra Sprint 12 — Small Gaps Closure + Product Polish (ACCEPTED)
+
+**Accepted HEAD:** `c3ae16c7e482a7e78036bf4cdd28c23bbf2f7233` (branch: `localhost-get-tool`)
+**Prior accepted HEAD (US11):** `c3ae16c7e482a7e78036bf4cdd28c23bbf2f7233`
+
+### Scope
+
+US12 closes small product gaps left after US9–US11 and polishes the daily-driver experience before V1 certification. No new categories or checks were added. No UI was redesigned. No major planner/memory/runtime/architecture rewrites.
+
+### What Was Changed
+
+| File | Change |
+|---|---|
+| `src/openjarvis/doctor/checks.py` | Docstring: "12 independent" → "32 independent"; `check_secrets_backend` FAIL now names actionable env vars; `check_packaged_app_build_metadata` and `check_connector_readiness` NOT_CONFIGURED now carry backend-only annotations |
+| `src/openjarvis/doctor/readiness.py` | Cost-control law ref updated US7→US11; `evaluate_readiness` docstring "12 checks"→"32 checks"; `remaining_limitations` updated US7→US12; US12 accepted checkpoint added to `_ACCEPTED_CHECKPOINTS` |
+| `tests/doctor/test_readiness.py` | Module docstring updated "15 categories"→"27 categories"; `test_category_checks_covers_all_15` renamed to `test_category_checks_covers_all_27` |
+| `CHANGELOG.md` | Added previously missing US11 section and new US12 section under `[Unreleased]` |
+| `JARVIS_OMNIX_HANDOFF.md` | This section added |
+
+### Accepted Capabilities (US9–US12, backend-only)
+
+| Capability | Status |
+|---|---|
+| Secrets backend (keychain) | **BACKEND ONLY** — no UI panel |
+| Budget guard | **BACKEND ONLY** — no UI panel |
+| Durable job queue | **BACKEND ONLY** — no UI panel |
+| Rollback policy | **BACKEND ONLY** — no UI panel |
+| Prompt-injection guard | **BACKEND ONLY** — no UI panel |
+| Voice identity / PIN auth | **BACKEND ONLY** — no UI panel |
+| Connector health monitor | **BACKEND ONLY** — no connector panel in app UI |
+| Alert rate limiter | **BACKEND ONLY** — no UI panel |
+| Memory backup | **BACKEND ONLY** — no UI panel |
+| Dogfood loop | **BACKEND ONLY** — no UI panel |
+| Runtime lifecycle manager | **BACKEND ONLY** — no UI panel |
+| Trust/evidence layer (US11) | **BACKEND ONLY** — no UI panel |
+| Doctor/readiness checks (32 total) | **BACKEND ONLY** — no frontend doctor panel yet |
+
+### Backend-Only vs UI-Visible Distinction
+
+- All US9–US12 capabilities are implemented in the Python backend only.
+- The packaged Tauri app has **not been rebuilt** since these sprints added no frontend changes.
+- The Mission Control UI remains unchanged from the last rebuild.
+- No WebSocket/SSE push; Mission Control uses polling.
+- Doctor/readiness routes are backend-only (`GET /v1/readiness` etc.); no frontend panel.
+
+### Known Remaining Blockers
+
+- `project_linkage` → **HOLD** (OMNIX `local_repo` still points to `Jarvis/OpenJarvis` placeholder; real OMNIX source not configured). This is a known, tracked blocker — does not block US12 ACCEPT.
+- Packaged app not rebuilt — combined US9–US12 packaged-app verification intentionally deferred to post-US12 combined pass.
+- No real STT integration (voice pipeline is keyword-only).
+
+### Validation
+
+- 324 US11 tests pass (no regression).
+- 50 US10 tests pass (no regression).
+- 682 US9+doctor tests pass (no regression).
+- US12-scoped doctor tests pass (27 categories, 32 checks, checkpoint chain complete through US12).
+- Working tree clean; HEAD pushed to `fork/localhost-get-tool`.
+
+### Safety Confirmations
+
+- No secrets printed, committed, or exposed.
+- No real Slack/Telegram sends.
+- No production deploy.
+- No external API calls.
+- No broad architecture rewrite.
+
 <!-- TestDraftSection START -->
 ## TestDraftSection (2026-06-16 12:08 UTC)
 

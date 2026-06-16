@@ -1,4 +1,4 @@
-"""Jarvis Doctor — 12 independent diagnostic checks.
+"""Jarvis Doctor — 32 independent diagnostic checks.
 
 Each check:
   - is independent (no side effects on other checks)
@@ -847,7 +847,10 @@ def check_packaged_app_build_metadata(project_id: str = "omnix") -> CheckResult:
                 status=CheckStatus.NOT_CONFIGURED,
                 summary=(
                     "Packaged app: OpenJarvis.app not found "
-                    "(dev-mode only; Tauri build not installed)"
+                    "(dev-mode only; Tauri build not installed). "
+                    "Note: US9–US12 capabilities (hardening, trust layer, "
+                    "lifecycle, product polish) are backend-only — "
+                    "not yet surfaced in the packaged app UI."
                 ),
                 evidence=evidence,
                 project_id=project_id,
@@ -1266,7 +1269,8 @@ def check_connector_readiness(project_id: str = "omnix") -> CheckResult:
                 category="connectors",
                 status=CheckStatus.NOT_CONFIGURED,
                 summary=(
-                    "No outbound connectors configured. "
+                    "No outbound connectors configured (backend-only status; "
+                    "no connector panel in the app UI yet). "
                     "Set JARVIS_SLACK_BOT_TOKEN, JARVIS_TELEGRAM_BOT_TOKEN, "
                     "TAVILY_API_KEY as needed."
                 ),
@@ -1428,7 +1432,11 @@ def check_secrets_backend(project_id: str = "omnix") -> CheckResult:
                 check_id="secrets_backend",
                 category="security",
                 status=CheckStatus.FAIL,
-                summary="Secrets backend: 0 keys present",
+                summary=(
+                    "Secrets backend: no keys detected — "
+                    "set JARVIS_OPENAI_API_KEY / JARVIS_ANTHROPIC_API_KEY "
+                    "env vars or configure macOS Keychain"
+                ),
                 evidence=evidence,
                 project_id=project_id,
             )

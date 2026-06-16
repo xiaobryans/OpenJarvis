@@ -1,8 +1,8 @@
-"""Tests for Jarvis Readiness Gate — 15 categories, 4 verdicts.
+"""Tests for Jarvis Readiness Gate — 27 categories, 4 verdicts.
 
 Covers:
   - evaluate_readiness() returns a ReadinessReport
-  - Report has 15 categories
+  - Report has 27 categories
   - Verdict is one of: ready, warn, hold, unsafe
   - UNSAFE when safety_governance fails (hard gate not enforced)
   - HOLD when required evidence missing
@@ -83,7 +83,7 @@ class TestReadinessCategoryConstants:
         ]
         assert len(cats) == 15
 
-    def test_category_checks_covers_all_15(self):
+    def test_category_checks_covers_all_27(self):
         assert len(_CATEGORY_CHECKS) == 27
         for cat in [
             ReadinessCategory.CORE_MISSION_SYSTEM,
