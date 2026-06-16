@@ -42,6 +42,21 @@ VALID_STATUSES = {
 }
 
 
+@pytest.fixture(autouse=True)
+def _isolate_env_file(monkeypatch):
+    """Block _load_env (disk read of cloud-keys.env) so monkeypatch.delenv is not overridden.
+
+    Root cause of the 4 pre-existing failures: every get_*_status() calls
+    _load_env() which re-reads ~/.openjarvis/cloud-keys.env into os.environ,
+    undoing any monkeypatch.delenv() the test issued. Patching it to a no-op
+    gives tests genuine os.environ isolation.
+    """
+    monkeypatch.setattr(
+        "openjarvis.autonomy.connector_diagnostics._load_env",
+        lambda: None,
+    )
+
+
 class TestSlackStatus:
     def test_returns_connector_field(self):
         r = get_slack_status()
