@@ -41,7 +41,9 @@ from typing import Any, Dict, List, Optional
 class WakeWordEngine:
     OPENWAKEWORD = "openwakeword"
     PVPORCUPINE = "pvporcupine"
+    HOTKEY_FALLBACK = "hotkey_fallback"
     NOT_CONFIGURED = "not_configured"
+    BLOCKED_BY_PROVIDER_OR_PLATFORM = "BLOCKED_BY_PROVIDER_OR_PLATFORM"
 
 
 class STTEngine:
@@ -142,16 +144,33 @@ def get_wake_word_status() -> Dict[str, Any]:
             "blocker": pvp.get("blocker", ""),
             "install_command": None,
         }
+    # Both engines unavailable — report fallback mode honestly
+    try:
+        from openjarvis.autonomy.wakeword_fallback import get_wakeword_engine_status
+        fb = get_wakeword_engine_status()
+        fallback_mode = fb.get("fallback_mode", "none")
+    except Exception:
+        fallback_mode = "none"
+
     return {
-        "wake_word_status": WakeWordEngine.NOT_CONFIGURED,
-        "engine": WakeWordEngine.NOT_CONFIGURED,
+        "wake_word_status": WakeWordEngine.BLOCKED_BY_PROVIDER_OR_PLATFORM,
+        "engine": WakeWordEngine.HOTKEY_FALLBACK if fallback_mode == "hotkey" else WakeWordEngine.NOT_CONFIGURED,
         "phrases": ["jarvis", "hey jarvis"],
         "is_listening": False,
+        "true_wakeword_blocked": True,
+        "true_wakeword_blocked_reason": (
+            "openwakeword blocked by onnxruntime/macOS x86_64 incompatibility; "
+            "pvporcupine unavailable per US9 authorization"
+        ),
+        "fallback_mode": fallback_mode,
+        "fallback_available": fallback_mode in ("hotkey", "manual_api"),
         "blockers": [oww.get("blocker", ""), pvp.get("blocker", "")],
         "install_commands": [
-            "pip install openwakeword  # free, no API key required",
-            "pip install pvporcupine   # also needs JARVIS_WAKEWORD_ACCESS_KEY from picovoice.ai",
+            "pip install openwakeword  # blocked on macOS x86_64/CPython 3.13 by onnxruntime",
         ],
+        "manual_action": (
+            "Use F8 hotkey (push-to-talk) or call activate_voice() from wakeword_fallback module"
+        ),
     }
 
 
@@ -315,16 +334,29 @@ def get_voice_status() -> Dict[str, Any]:
     stt = get_stt_status()
     tts = get_tts_status()
 
-    wake_ok = wake["wake_word_status"] != WakeWordEngine.NOT_CONFIGURED
+    wake_status_val = wake["wake_word_status"]
+    wake_true = wake_status_val not in (
+        WakeWordEngine.NOT_CONFIGURED,
+        WakeWordEngine.BLOCKED_BY_PROVIDER_OR_PLATFORM,
+    )
+    wake_blocked = wake_status_val == WakeWordEngine.BLOCKED_BY_PROVIDER_OR_PLATFORM
+    wake_fallback = wake.get("fallback_mode", "none") in ("hotkey", "manual_api")
+    wake_ok = wake_true or wake_blocked  # blocked state IS a known state
     stt_ok = stt.get("is_configured", False)
     tts_ok = tts.get("is_configured", False)
-    fully_configured = wake_ok and stt_ok and tts_ok
+    fully_configured = wake_true and stt_ok and tts_ok  # requires actual wake-word engine
 
     if fully_configured:
         status = "configured_not_started"
         summary = (
             "Voice pipeline configured. Not started — "
             "requires macOS Microphone permission and explicit VoicePipeline.start() call."
+        )
+    elif wake_blocked and stt_ok and tts_ok:
+        status = "partial_hotkey_fallback"
+        summary = (
+            "STT and TTS configured. True wake-word BLOCKED_BY_PROVIDER_OR_PLATFORM — "
+            f"hotkey fallback {'active' if wake_fallback else 'available (F8 push-to-talk)'}."
         )
     elif stt_ok and tts_ok:
         status = "partial_no_wake_word"

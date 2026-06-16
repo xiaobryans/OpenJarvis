@@ -58,6 +58,8 @@ class TestWakeWordStatus:
         assert status["wake_word_status"] in (
             WakeWordEngine.OPENWAKEWORD,
             WakeWordEngine.PVPORCUPINE,
+            WakeWordEngine.HOTKEY_FALLBACK,
+            WakeWordEngine.BLOCKED_BY_PROVIDER_OR_PLATFORM,
             WakeWordEngine.NOT_CONFIGURED,
         )
 
@@ -119,6 +121,7 @@ class TestVoiceStatus:
         assert "voice_status" in status
         assert status["voice_status"] in (
             "configured_not_started",
+            "partial_hotkey_fallback",
             "partial_no_wake_word",
             "tts_only",
             "not_configured",

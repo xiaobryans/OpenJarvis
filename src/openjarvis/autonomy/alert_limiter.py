@@ -210,7 +210,10 @@ def check_alert(
         hour = int(time.strftime("%H"))
         q_start = channel_cfg.get("quiet_hours_start", 22)
         q_end = channel_cfg.get("quiet_hours_end", 8)
-        in_quiet = (hour >= q_start) or (hour < q_end)
+        if q_start is None or q_end is None:
+            in_quiet = False
+        else:
+            in_quiet = (hour >= q_start) or (hour < q_end)
         min_level = cfg.get("min_level_in_quiet_hours", AlertLevel.CRITICAL)
         if in_quiet and _LEVEL_ORDER.get(level, 0) < _LEVEL_ORDER.get(min_level, 2):
             return AlertDecision(

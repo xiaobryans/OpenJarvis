@@ -1087,7 +1087,11 @@ def check_voice_pipeline_status(project_id: str = "omnix") -> CheckResult:
 
         tts_ok = status["tts"]["tts_status"] != TTSEngine.NOT_CONFIGURED
         stt_ok = status["stt"].get("is_configured", False)
-        wake_ok = status["wake_word"]["wake_word_status"] != WakeWordEngine.NOT_CONFIGURED
+        wake_status = status["wake_word"]["wake_word_status"]
+        wake_ok = wake_status not in (WakeWordEngine.NOT_CONFIGURED,)
+        wake_blocked = wake_status == WakeWordEngine.BLOCKED_BY_PROVIDER_OR_PLATFORM
+        evidence["wake_word_fallback_mode"] = status["wake_word"].get("fallback_mode", "none")
+        evidence["wake_word_blocked"] = wake_blocked
 
         if not tts_ok and not stt_ok and not wake_ok:
             return CheckResult(

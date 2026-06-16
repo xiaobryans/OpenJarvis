@@ -21,10 +21,39 @@ from openjarvis.autonomy.alert_limiter import (
 )
 
 
+_NO_QUIET_HOURS_CONFIG = {
+    "channels": {
+        "slack": {
+            "max_per_hour": 10,
+            "max_per_minute": 2,
+            "cooldown_seconds": 60,
+            "quiet_hours_start": None,
+            "quiet_hours_end": None,
+            "quiet_hours_tz": "local",
+        },
+        "telegram": {
+            "max_per_hour": 10,
+            "max_per_minute": 2,
+            "cooldown_seconds": 60,
+            "quiet_hours_start": None,
+            "quiet_hours_end": None,
+            "quiet_hours_tz": "local",
+        },
+    },
+    "incident_mode": False,
+    "freeze_mode": False,
+    "escalation_levels": ["info", "warn", "critical", "incident"],
+    "min_level_in_quiet_hours": "critical",
+    "dedup_window_seconds": 300,
+}
+
+
 @pytest.fixture(autouse=True)
 def clean_config(tmp_path, monkeypatch):
     cfg_file = tmp_path / "alert_config.json"
     log_file = tmp_path / "alert_log.jsonl"
+    # Write config with quiet hours disabled so tests pass at any time of day
+    cfg_file.write_text(json.dumps(_NO_QUIET_HOURS_CONFIG), encoding="utf-8")
     monkeypatch.setattr("openjarvis.autonomy.alert_limiter._ALERT_CONFIG", cfg_file)
     monkeypatch.setattr("openjarvis.autonomy.alert_limiter._ALERT_LOG", log_file)
     monkeypatch.setattr("openjarvis.autonomy.alert_limiter._CONFIG_DIR", tmp_path)
