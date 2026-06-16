@@ -8,6 +8,53 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### US13 — V1 Daily-Driver Certification
+
+**New module** (`doctor/certification.py`):
+- `CertificationStatus` constants: `certified`, `backend_only`, `hold`, `insufficient_data_to_verify`.
+- `CertificationVisibility` constants: `ui_visible`, `backend_only`, `unavailable`.
+- `CertificationItem` dataclass: name, area, status, visibility, evidence, hold_reason.
+- `FailureModeItem` dataclass: failure_mode, behavior, evidence.
+- `CertificationMatrix` dataclass: 12-item daily-driver matrix, 8 documented failure modes,
+  `verdict()`, `get_hold_blockers()`, `get_backend_only()`, `get_ui_visible()`, `to_dict()`.
+- `build_certification_matrix(project_id, check_results)`: builds matrix from pre-run checks;
+  accepts `check_results` to avoid re-running all checks.
+- `INSUFFICIENT_DATA_MSG = "Insufficient data to verify."`: runtime truthfulness gate constant.
+- `insufficient_data(reason)`: helper returns the standard message with optional reason.
+- Failure-mode certification documents: missing_microphone_permission, voice_worker_unavailable,
+  connector_unconfigured_degraded_blocked, local_dependency_missing, queue_stalled_or_empty,
+  missing_memory_context_evidence, external_action_requiring_approval,
+  backend_only_feature_not_visible_in_ui.
+
+**New check #33** (`doctor/checks.py`):
+- `check_certification_matrix`: builds the V1 daily-driver certification matrix; applies
+  truthfulness gate (no item may have empty evidence); returns WARN if verdict=hold, PASS if
+  verdict=certified, FAIL on truthfulness violation.
+- Recursion guard: runs only the 32 non-self checks via list comprehension; passes pre-run
+  results to `build_certification_matrix` to prevent circular re-entry.
+- Module docstring updated: "32 independent" → "33 independent diagnostic checks".
+- Registry comment updated: "32 checks total" → "33 checks total".
+
+**New category #28** (`doctor/readiness.py`):
+- `ReadinessCategory.CERTIFICATION = "certification"` added (warn-only, not required).
+- `_CATEGORY_CHECKS` entry: `certification → ["certification_matrix"]`.
+- `_ACCEPTED_CHECKPOINTS` entry: US13 ACCEPT.
+- `generate_v1_report()` `remaining_limitations`: updated to reflect US13 packaged-app rebuild.
+- Module docstring updated: "27 readiness categories" → "28 readiness categories".
+
+**Tests** (`tests/test_us13_certification.py`): 66 new scoped tests covering all US13 scope items.
+  Module-scoped `shared_checks` / `shared_matrix` fixtures ensure `run_all_checks()` runs once.
+
+**Regression fixes** (count assertions updated throughout — US13 adds check #33, category #28):
+- `tests/doctor/test_doctor_checks.py`: 32→33 throughout.
+- `tests/doctor/test_readiness.py`: 27→28 throughout.
+- `tests/doctor/test_doctor_tools.py`: 32→33 checks, 27→28 categories.
+- `tests/doctor/test_us9_readiness.py`: 32→33.
+- `tests/test_us10_hardening.py`: 32→33.
+- `tests/test_us11_intelligence_trust.py`: 27→28.
+
+---
+
 ### US12 — Small Gaps Closure + Product Polish
 
 **Status wording and backend-only annotations** (`doctor/checks.py`):

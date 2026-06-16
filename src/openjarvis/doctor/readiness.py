@@ -1,6 +1,6 @@
 """Jarvis Readiness Gate — evidence-backed V1 daily-driver readiness evaluation.
 
-27 readiness categories (9 original + 6 US8 + 10 US9 + 1 US10 + 1 US11):
+28 readiness categories (9 original + 6 US8 + 10 US9 + 1 US10 + 1 US11 + 1 US13):
   core_mission_system       — mission store + tool gateway functional
   tools_skills_memory       — tool/skill/memory registry healthy
   autonomy_watchdogs_alerts — autonomy mode + watchdogs + alerts operational
@@ -83,6 +83,8 @@ class ReadinessCategory:
     RUNTIME_LIFECYCLE = "runtime_lifecycle"
     # US11 categories
     TRUST_LAYER = "trust_layer"
+    # US13 categories
+    CERTIFICATION = "certification"
 
 
 # ---------------------------------------------------------------------------
@@ -181,6 +183,10 @@ _CATEGORY_CHECKS: Dict[str, List[str]] = {
     ReadinessCategory.TRUST_LAYER: [
         "trust_layer",
     ],
+    # US13 categories
+    ReadinessCategory.CERTIFICATION: [
+        "certification_matrix",
+    ],
 }
 
 # Categories where fail → UNSAFE verdict (not just HOLD)
@@ -205,11 +211,11 @@ _REQUIRED_CATEGORIES = frozenset({
     ReadinessCategory.RUNTIME_LIFECYCLE,
     # US11 required trust/evidence layer
     ReadinessCategory.TRUST_LAYER,
-    # US8/US9/US10/US11 non-required (warn only — external config/hardware blockers)
+    # US8/US9/US10/US11/US13 non-required (warn only — external config/hardware blockers)
     # voice_readiness, desktop_readiness, connector_readiness,
     # mobile_readiness, openclaw_linkage, secrets_backend,
     # job_queue, voice_identity, connector_health_monitor,
-    # alert_rate_limiter, memory_backup, dogfood_loop are warn-only
+    # alert_rate_limiter, memory_backup, dogfood_loop, certification are warn-only
 })
 
 
@@ -291,6 +297,7 @@ _ACCEPTED_CHECKPOINTS = [
     "Ultra Sprint 10 Daily-Driver Hardening — ACCEPT (runtime lifecycle, voice worker restart, connector escalation, queue health, alert escalation; 31 checks, 26 categories)",
     "Ultra Sprint 11 Intelligence + Trust Layer — ACCEPT (trust/evidence layer, action profiles, memory provenance, connector trust, execution self-checks; 32 checks, 27 categories)",
     "Ultra Sprint 12 Small Gaps Closure + Product Polish — ACCEPT (status wording, backend-only annotations, stale-ref cleanup, US11/US12 changelog/handoff docs; checks/categories unchanged)",
+    "Ultra Sprint 13 V1 Daily-Driver Certification — ACCEPT (certification matrix, runtime truthfulness gate, failure-mode docs, packaged-app gate; 33 checks, 28 categories)",
 ]
 
 
@@ -306,7 +313,7 @@ def evaluate_readiness(
     """Evaluate readiness gate for a project.
 
     Accepts pre-run check_results to avoid double-running checks.
-    If not provided, runs all 32 checks.
+    If not provided, runs all 33 checks.
 
     Verdict rules (in priority order):
       UNSAFE — any safety_governance category check fails
@@ -539,7 +546,7 @@ def generate_v1_report(project_id: str = "omnix") -> Dict[str, Any]:
             "No WebSocket/SSE push (Mission Control uses polling)",
             "No project_id field on Mission model (planned schema migration)",
             "Frontend unchanged: doctor/readiness routes are backend-only",
-            "Packaged app not rebuilt in US12 (no frontend changes; US9–US12 capabilities are backend-only)",
+            "US9-US13 capabilities are backend-only (packaged app rebuilt in US13 for gate; no new UI)",
             "OMNIX local_repo points to Jarvis/OpenJarvis (placeholder); real OMNIX source not yet configured",
         ],
         "post_v1_roadmap": [

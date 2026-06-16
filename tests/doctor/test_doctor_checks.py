@@ -1,9 +1,9 @@
-"""Tests for Jarvis Doctor checks — 31 independent diagnostic checks.
+"""Tests for Jarvis Doctor checks — 33 independent diagnostic checks.
 
 Covers:
   - Each check returns a CheckResult with check_id, category, status, evidence
   - Status is one of: pass, warn, fail, not_configured
-  - run_all_checks() returns exactly 31 results
+  - run_all_checks() returns exactly 33 results
   - backend_health passes (core modules importable)
   - project_registry_health passes (OMNIX registered)
   - tool_registry_counts passes or warns (never zero available after init)
@@ -114,14 +114,14 @@ class TestCheckResultContract:
 
 
 # ---------------------------------------------------------------------------
-# run_all_checks — 31 total
+# run_all_checks — 33 total
 # ---------------------------------------------------------------------------
 
 
 class TestRunAllChecks:
-    def test_returns_exactly_32_results(self):
+    def test_returns_exactly_33_results(self):
         results = run_all_checks(project_id="omnix")
-        assert len(results) == 32
+        assert len(results) == 33
 
     def test_all_results_are_check_result(self):
         results = run_all_checks(project_id="omnix")
@@ -155,11 +155,11 @@ class TestRunAllChecks:
             assert r.project_id == "omnix"
 
     def test_all_check_fns_count(self):
-        assert len(_ALL_CHECK_FNS) == 32
+        assert len(_ALL_CHECK_FNS) == 33
 
     def test_no_exception_on_unknown_project(self):
         results = run_all_checks(project_id="nonexistent_xyz_proj")
-        assert len(results) == 32
+        assert len(results) == 33
 
 
 # ---------------------------------------------------------------------------

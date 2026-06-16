@@ -1,4 +1,4 @@
-"""Tests for Jarvis Readiness Gate — 27 categories, 4 verdicts.
+"""Tests for Jarvis Readiness Gate — 28 categories, 4 verdicts.
 
 Covers:
   - evaluate_readiness() returns a ReadinessReport
@@ -83,8 +83,8 @@ class TestReadinessCategoryConstants:
         ]
         assert len(cats) == 15
 
-    def test_category_checks_covers_all_27(self):
-        assert len(_CATEGORY_CHECKS) == 27
+    def test_category_checks_covers_all_28(self):
+        assert len(_CATEGORY_CHECKS) == 28
         for cat in [
             ReadinessCategory.CORE_MISSION_SYSTEM,
             ReadinessCategory.TOOLS_SKILLS_MEMORY,
@@ -139,9 +139,9 @@ class TestEvaluateReadiness:
         report = evaluate_readiness(project_id="omnix")
         assert isinstance(report, ReadinessReport)
 
-    def test_has_27_categories(self):
+    def test_has_28_categories(self):
         report = evaluate_readiness(project_id="omnix")
-        assert len(report.categories) == 27
+        assert len(report.categories) == 28
 
     def test_verdict_is_valid(self):
         report = evaluate_readiness(project_id="omnix")
@@ -212,7 +212,7 @@ class TestEvaluateReadinessWithCheckResults:
         checks = self._make_pass_checks()
         report = evaluate_readiness(project_id="omnix", check_results=checks)
         assert isinstance(report, ReadinessReport)
-        assert len(report.categories) == 27
+        assert len(report.categories) == 28
 
     def test_unsafe_when_safety_governance_fails(self):
         from openjarvis.doctor.checks import _ALL_CHECK_FNS
@@ -345,10 +345,10 @@ class TestReadinessReportToDict:
         for k in required_keys:
             assert k in d, f"Missing key: {k}"
 
-    def test_categories_dict_has_27_entries(self):
+    def test_categories_dict_has_28_entries(self):
         report = evaluate_readiness(project_id="omnix")
         d = report.to_dict()
-        assert len(d["categories"]) == 27
+        assert len(d["categories"]) == 28
 
 
 # ---------------------------------------------------------------------------

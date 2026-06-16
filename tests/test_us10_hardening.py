@@ -474,10 +474,10 @@ class TestCheckRuntimeLifecycle:
         ids = {r.check_id for r in results}
         assert "runtime_lifecycle" in ids
 
-    def test_run_all_checks_returns_32(self):
+    def test_run_all_checks_returns_33(self):
         from openjarvis.doctor.checks import run_all_checks
         results = run_all_checks()
-        assert len(results) == 32, f"Expected 32 checks, got {len(results)}"
+        assert len(results) == 33, f"Expected 33 checks, got {len(results)}"
 
 
 # ---------------------------------------------------------------------------

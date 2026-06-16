@@ -1,4 +1,4 @@
-"""Jarvis Doctor — 32 independent diagnostic checks.
+"""Jarvis Doctor — 33 independent diagnostic checks.
 
 Each check:
   - is independent (no side effects on other checks)
@@ -2259,7 +2259,105 @@ def check_trust_layer(project_id: str = "omnix") -> CheckResult:
 
 
 # ---------------------------------------------------------------------------
-# Check registry (32 checks total — 19 US7/US8 + 10 US9 + 1 strict-rules + 1 US10 + 1 US11)
+# Check 33 — certification_matrix (US13)
+# ---------------------------------------------------------------------------
+
+
+def check_certification_matrix(project_id: str = "omnix") -> CheckResult:
+    """Verify the V1 daily-driver certification matrix builds without truthfulness violations.
+
+    Passes pre-run check results from the current check_map context to avoid
+    re-running all checks.  Because this check is itself part of run_all_checks,
+    it runs its own lightweight subset to avoid circular dependency.
+    """
+    evidence: Dict[str, Any] = {}
+    try:
+        from openjarvis.doctor.certification import (
+            CertificationStatus,
+            build_certification_matrix,
+        )
+
+        # Run every check except ourselves to avoid circular re-entry:
+        #   check_certification_matrix -> build_certification_matrix(no results)
+        #   -> run_all_checks -> check_certification_matrix -> ...
+        subset_results = [
+            fn(project_id=project_id)
+            for fn in _ALL_CHECK_FNS
+            if fn is not check_certification_matrix
+        ]
+        matrix = build_certification_matrix(project_id=project_id, check_results=subset_results)
+        total = len(matrix.items)
+        hold_items = matrix.get_hold_blockers()
+        backend_only = matrix.get_backend_only()
+        ui_visible = matrix.get_ui_visible()
+        verdict = matrix.verdict()
+
+        evidence["head"] = matrix.head
+        evidence["total_items"] = total
+        evidence["hold_count"] = len(hold_items)
+        evidence["backend_only_count"] = len(backend_only)
+        evidence["ui_visible_count"] = len(ui_visible)
+        evidence["verdict"] = verdict
+        evidence["failure_modes_documented"] = len(matrix.failure_modes)
+
+        # Truthfulness gate: no item may have empty evidence string
+        empty_evidence = [
+            i.name for i in matrix.items if not i.evidence
+        ]
+        evidence["empty_evidence_items"] = empty_evidence
+        if empty_evidence:
+            return CheckResult(
+                check_id="certification_matrix",
+                category="certification",
+                status=CheckStatus.FAIL,
+                summary=(
+                    f"Truthfulness violation: {len(empty_evidence)} item(s) have "
+                    f"empty evidence: {empty_evidence}"
+                ),
+                evidence=evidence,
+                project_id=project_id,
+            )
+
+        if verdict == "hold":
+            hold_names = [i.name for i in hold_items]
+            return CheckResult(
+                check_id="certification_matrix",
+                category="certification",
+                status=CheckStatus.WARN,
+                summary=(
+                    f"Certification matrix built; verdict=hold; "
+                    f"{len(hold_items)} hold blocker(s): {hold_names}"
+                ),
+                evidence=evidence,
+                project_id=project_id,
+            )
+
+        return CheckResult(
+            check_id="certification_matrix",
+            category="certification",
+            status=CheckStatus.PASS,
+            summary=(
+                f"Certification matrix: {total} items, verdict={verdict}, "
+                f"{len(ui_visible)} UI-visible certified, "
+                f"{len(backend_only)} backend-only, "
+                f"{len(matrix.failure_modes)} failure modes documented"
+            ),
+            evidence=evidence,
+            project_id=project_id,
+        )
+    except Exception as exc:
+        return CheckResult(
+            check_id="certification_matrix",
+            category="certification",
+            status=CheckStatus.FAIL,
+            summary=f"Certification matrix check failed: {exc}",
+            evidence={"exception": str(exc)},
+            project_id=project_id,
+        )
+
+
+# ---------------------------------------------------------------------------
+# Check registry (33 checks total — 19 US7/US8 + 10 US9 + 1 strict-rules + 1 US10 + 1 US11 + 1 US13)
 # ---------------------------------------------------------------------------
 
 
@@ -2300,11 +2398,13 @@ _ALL_CHECK_FNS: List[Callable[..., CheckResult]] = [
     check_runtime_lifecycle,
     # US11 checks
     check_trust_layer,
+    # US13 checks
+    check_certification_matrix,
 ]
 
 
 def run_all_checks(project_id: str = "omnix") -> List[CheckResult]:
-    """Run all 32 diagnostic checks. Returns a list of CheckResult objects.
+    """Run all 33 diagnostic checks. Returns a list of CheckResult objects.
 
     Never raises — any unhandled exception inside a check is caught and
     reported as a CheckStatus.FAIL for that check.
@@ -2360,6 +2460,7 @@ __all__ = [
     "check_voice_identity",
     "check_runtime_lifecycle",
     "check_strict_operating_rules_present",
+    "check_certification_matrix",
     "check_trust_layer",
     "check_voice_pipeline_status",
     "check_watchdog_status",

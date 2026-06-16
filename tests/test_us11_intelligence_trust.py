@@ -1022,11 +1022,11 @@ class TestReadinessTrustLayerCategory:
         assert ReadinessCategory.TRUST_LAYER in _CATEGORY_CHECKS
         assert "trust_layer" in _CATEGORY_CHECKS[ReadinessCategory.TRUST_LAYER]
 
-    def test_evaluate_readiness_has_27_categories(self, monkeypatch):
+    def test_evaluate_readiness_has_28_categories(self, monkeypatch):
         monkeypatch.setenv("JARVIS_PROJECT_OMNIX_REPO_PATH", "/Users/user/OpenJarvis")
         from openjarvis.doctor.readiness import evaluate_readiness
         report = evaluate_readiness(project_id="omnix")
-        assert len(report.categories) == 27
+        assert len(report.categories) == 28
 
     def test_trust_layer_category_present_in_report(self, monkeypatch):
         monkeypatch.setenv("JARVIS_PROJECT_OMNIX_REPO_PATH", "/Users/user/OpenJarvis")
@@ -1056,9 +1056,9 @@ class TestReadinessTrustLayerCategory:
         assert "Trust Layer" in combined
         assert "ACCEPT" in combined
 
-    def test_category_checks_has_27_entries(self):
+    def test_category_checks_has_28_entries(self):
         from openjarvis.doctor.readiness import _CATEGORY_CHECKS
-        assert len(_CATEGORY_CHECKS) == 27
+        assert len(_CATEGORY_CHECKS) == 28
 
 
 # ---------------------------------------------------------------------------

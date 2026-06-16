@@ -1777,3 +1777,116 @@ US12 closes small product gaps left after US9–US11 and polishes the daily-driv
 Updated draft.
 
 <!-- TestDraftSection END -->
+
+---
+
+## US13 — V1 Daily-Driver Certification
+
+**Accepted HEAD:** `d988f4ef3d23b22c0ab2cb32876a087eeb0b901c`
+**Branch:** `localhost-get-tool`
+**Date:** 2026-06-17
+
+### What Changed
+
+| File | Change |
+|---|---|
+| `src/openjarvis/doctor/certification.py` | **NEW** — V1 daily-driver certification matrix module |
+| `src/openjarvis/doctor/checks.py` | Added `check_certification_matrix` (check #33); recursion guard |
+| `src/openjarvis/doctor/readiness.py` | Added `CERTIFICATION` category (#28), US13 checkpoint, updated docstrings |
+| `tests/test_us13_certification.py` | **NEW** — 66 scoped tests, all pass |
+| `tests/doctor/test_doctor_checks.py` | 32→33 count assertions |
+| `tests/doctor/test_readiness.py` | 27→28 count assertions |
+| `tests/doctor/test_doctor_tools.py` | 32→33 / 27→28 count assertions |
+| `tests/doctor/test_us9_readiness.py` | 32→33 count assertion |
+| `tests/test_us10_hardening.py` | 32→33 count assertion |
+| `tests/test_us11_intelligence_trust.py` | 27→28 count assertions |
+
+### Daily-Driver Certification Matrix (28 categories, 33 checks)
+
+| Area | Status | Visibility | Evidence Source |
+|---|---|---|---|
+| app_launch_runtime_connection | certified | ui_visible | backend_health=pass + packaged_app check |
+| mission_control_status_readiness | certified | ui_visible | backend_health=pass; Mission Control ships in packaged app |
+| voice_path | backend_only | backend_only | voice_pipeline_status=not_configured (no wake-word engine) |
+| connector_health | backend_only | backend_only | connector_readiness=not_configured (tokens absent) |
+| queue_retry_stalled_job_visibility | backend_only | backend_only | job_queue check result |
+| alert_limiting_escalation | backend_only | backend_only | alert_rate_limiter check result |
+| memory_context_behavior | backend_only | backend_only | memory_store_health check result |
+| trust_evidence_layer | backend_only | backend_only | trust_layer check result |
+| action_approval_risk_clarity | certified | ui_visible | autonomy_mode=pass + automation_policy=pass; approval queue in Mission Control |
+| degraded_blocked_insufficient_data_behavior | backend_only | backend_only | inject_guard + rollback + budget checks |
+| backend_only_vs_ui_visible_capabilities | backend_only | backend_only | documented; packaged_app check |
+| remaining_hold_blockers | backend_only | backend_only | project_linkage=pass (3 operational sources) |
+
+**Matrix verdict:** `certified` (project_linkage is now linked — previous HOLD resolved)
+
+### UI-Visible vs Backend-Only
+
+**UI-Visible (certified):**
+- App launch / runtime connection
+- Mission Control: missions, tasks, approval queue, agent roster, notifications
+- Action approval / risk clarity (approval queue in Mission Control)
+- Chat interface (always available, text fallback for voice)
+
+**Backend-Only (US9–US13 capabilities):**
+- Secrets backend, budget guard, job queue, rollback policy
+- Inject guard, voice identity, connector health monitor
+- Alert rate limiter, memory backup, dogfood loop
+- Runtime lifecycle, trust layer, certification matrix
+- Voice path (no UI panel; hotkey Tauri-side)
+- Connector health: Slack, Telegram, Tavily (no connector panel)
+
+### Failure-Mode Certification (8 modes documented)
+
+| Failure Mode | Behavior |
+|---|---|
+| missing_microphone_permission | voice_pipeline → not_configured; chatbox fallback always available |
+| voice_worker_unavailable | voice_pipeline → not_configured; hotkey/chatbox unaffected |
+| connector_unconfigured_degraded_blocked | POST /v1/notify/slack returns ok=false; no crash |
+| local_dependency_missing | backend_health catches ImportError → FAIL with module list |
+| queue_stalled_or_empty | job_queue → warn; retry policy in rollback_policy check |
+| missing_memory_context_evidence | memory provenance returns UNKNOWN; INSUFFICIENT_DATA_MSG returned |
+| external_action_requiring_approval | automation_policy hard-gates 14 classes; approval queue for rest |
+| backend_only_feature_not_visible_in_ui | packaged_app check annotates all US9–US13 as backend-only |
+
+### Runtime Truthfulness Gate
+
+- `INSUFFICIENT_DATA_MSG = "Insufficient data to verify."` — used throughout certification
+- No item may claim `certified` or `backend_only` without a live check result as evidence
+- Code presence alone does not constitute evidence
+- Enforced in `build_certification_matrix()` and tested in `TestRuntimeTruthfulnessGate` (5 tests)
+
+### Known Remaining Limitations (for US14+)
+
+- Voice path: no wake-word engine installed; voice_pipeline remains not_configured
+- Connectors: Slack/Telegram/Tavily tokens not configured in this environment
+- No WebSocket/SSE push (Mission Control uses polling)
+- No real STT (voice.parse_intent is text-only keyword parser)
+- No project_id field on Mission model (planned schema migration)
+- Frontend doctor/readiness panel not yet exposed in app UI
+
+### Validation Results
+
+- US13 scoped tests: **66 passed** in 3.16s
+- US12 regression (tests/doctor/): **191 passed** in 130s
+- US11+10+9 regression: **674 passed** in 60s
+
+**Packaged-app gate (US13 HEAD `d988f4ef`):**
+- Build: `npm run build:tauri` → vite build ✓ → `cargo tauri build` → `Finished release profile in 1m 55s` ✓
+- Bundle: `OpenJarvis.app` + `OpenJarvis_1.0.1_x64.dmg` produced ✓
+- Binary: `openjarvis-desktop` 21,719,280 bytes, Jun 17 02:19, version 1.0.1 ✓
+- Install: `cp -R bundle/macos/OpenJarvis.app /Applications/OpenJarvis.app` ✓
+- Launch: `open /Applications/OpenJarvis.app` exit 0 ✓
+- Backend health: `GET /health → {"status":"ok"}` ✓
+- Missions UI: `GET /v1/missions → 36 missions` ✓
+- Python-level certification: `verdict=CERTIFIED`, 27 pass, 6 warn, 0 fail, 0 hold ✓
+- Doctor/readiness routes: backend-only (HTTP returns SPA HTML) — confirmed per spec ✓
+
+### Safety Confirmations
+
+- No secrets printed, committed, or exposed.
+- No real Slack/Telegram/Tavily sends.
+- No production deploy.
+- No external API calls.
+- No broad architecture rewrite.
+- No US14 work started.
