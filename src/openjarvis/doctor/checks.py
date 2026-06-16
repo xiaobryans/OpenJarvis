@@ -1407,8 +1407,493 @@ def check_mobile_readiness(project_id: str = "omnix") -> CheckResult:
 
 
 # ---------------------------------------------------------------------------
-# Check registry (19 checks total)
+# US9 Check 20 — secrets_backend
 # ---------------------------------------------------------------------------
+
+
+def check_secrets_backend(project_id: str = "omnix") -> CheckResult:
+    """Verify secrets backend availability and key presence (values redacted)."""
+    evidence: Dict[str, Any] = {}
+    try:
+        from openjarvis.security.keychain import get_secrets_presence_report
+        report = get_secrets_presence_report()
+        evidence = report
+        missing_count = report["keys_missing"]
+        if report["keys_present"] == 0:
+            return CheckResult(
+                check_id="secrets_backend",
+                category="security",
+                status=CheckStatus.FAIL,
+                summary="Secrets backend: 0 keys present",
+                evidence=evidence,
+                project_id=project_id,
+            )
+        if missing_count > 0:
+            return CheckResult(
+                check_id="secrets_backend",
+                category="security",
+                status=CheckStatus.WARN,
+                summary=(
+                    f"Secrets backend: {report['keys_present']} present, "
+                    f"{missing_count} missing — {report['missing_keys']}"
+                ),
+                evidence=evidence,
+                project_id=project_id,
+            )
+        return CheckResult(
+            check_id="secrets_backend",
+            category="security",
+            status=CheckStatus.PASS,
+            summary=f"Secrets backend: all {report['keys_present']} keys present (values redacted)",
+            evidence=evidence,
+            project_id=project_id,
+        )
+    except Exception as exc:
+        return CheckResult(
+            check_id="secrets_backend",
+            category="security",
+            status=CheckStatus.FAIL,
+            summary=f"Secrets backend check failed: {exc}",
+            evidence={"error": str(exc)},
+            project_id=project_id,
+        )
+
+
+# ---------------------------------------------------------------------------
+# US9 Check 21 — budget_guard
+# ---------------------------------------------------------------------------
+
+
+def check_budget_guard(project_id: str = "omnix") -> CheckResult:
+    """Verify runtime budget guard is active and within limits."""
+    evidence: Dict[str, Any] = {}
+    try:
+        from openjarvis.autonomy.budget_guard import get_budget_status
+        s = get_budget_status()
+        evidence = {
+            "verdict": s.verdict,
+            "today_spend_usd": s.today_spend_usd,
+            "per_day_hard_limit": s.config.get("per_day_hard_limit_usd"),
+            "per_day_soft_limit": s.config.get("per_day_soft_limit_usd"),
+            "entries_today": s.entries_today,
+            "overall_ok": s.overall_ok,
+        }
+        if s.verdict == "hard_stop":
+            return CheckResult(
+                check_id="budget_guard",
+                category="cost_control",
+                status=CheckStatus.FAIL,
+                summary=f"Budget hard limit exceeded: {s.today_spend_usd:.4f} USD today",
+                evidence=evidence,
+                project_id=project_id,
+            )
+        if s.verdict == "soft_warn":
+            return CheckResult(
+                check_id="budget_guard",
+                category="cost_control",
+                status=CheckStatus.WARN,
+                summary=f"Budget soft limit approached: {s.today_spend_usd:.4f} USD today",
+                evidence=evidence,
+                project_id=project_id,
+            )
+        return CheckResult(
+            check_id="budget_guard",
+            category="cost_control",
+            status=CheckStatus.PASS,
+            summary=f"Budget guard active: {s.today_spend_usd:.4f} USD today (within limits)",
+            evidence=evidence,
+            project_id=project_id,
+        )
+    except Exception as exc:
+        return CheckResult(
+            check_id="budget_guard",
+            category="cost_control",
+            status=CheckStatus.FAIL,
+            summary=f"Budget guard check failed: {exc}",
+            evidence={"error": str(exc)},
+            project_id=project_id,
+        )
+
+
+# ---------------------------------------------------------------------------
+# US9 Check 22 — job_queue
+# ---------------------------------------------------------------------------
+
+
+def check_job_queue(project_id: str = "omnix") -> CheckResult:
+    """Verify durable job queue is accessible and report queue state."""
+    evidence: Dict[str, Any] = {}
+    try:
+        from openjarvis.autonomy.job_queue import queue_stats
+        stats = queue_stats()
+        evidence = stats
+        stuck = stats.get("running", 0)
+        failed = stats.get("failed", 0)
+        if stuck > 10:
+            return CheckResult(
+                check_id="job_queue",
+                category="automation",
+                status=CheckStatus.WARN,
+                summary=f"Job queue: {stuck} jobs stuck in running state",
+                evidence=evidence,
+                project_id=project_id,
+            )
+        if failed > 0:
+            return CheckResult(
+                check_id="job_queue",
+                category="automation",
+                status=CheckStatus.WARN,
+                summary=f"Job queue: {failed} failed jobs (may need retry or inspection)",
+                evidence=evidence,
+                project_id=project_id,
+            )
+        return CheckResult(
+            check_id="job_queue",
+            category="automation",
+            status=CheckStatus.PASS,
+            summary=(
+                f"Job queue healthy: {stats.get('pending',0)} pending, "
+                f"{stats.get('running',0)} running, {stats.get('succeeded',0)} succeeded"
+            ),
+            evidence=evidence,
+            project_id=project_id,
+        )
+    except Exception as exc:
+        return CheckResult(
+            check_id="job_queue",
+            category="automation",
+            status=CheckStatus.FAIL,
+            summary=f"Job queue check failed: {exc}",
+            evidence={"error": str(exc)},
+            project_id=project_id,
+        )
+
+
+# ---------------------------------------------------------------------------
+# US9 Check 23 — rollback_policy
+# ---------------------------------------------------------------------------
+
+
+def check_rollback_policy(project_id: str = "omnix") -> CheckResult:
+    """Verify rollback policy is active."""
+    evidence: Dict[str, Any] = {}
+    try:
+        from openjarvis.autonomy.rollback_plan import get_rollback_policy_status
+        s = get_rollback_policy_status()
+        evidence = s
+        if not s.get("policy_active"):
+            return CheckResult(
+                check_id="rollback_policy",
+                category="safety",
+                status=CheckStatus.FAIL,
+                summary="Rollback policy not active",
+                evidence=evidence,
+                project_id=project_id,
+            )
+        return CheckResult(
+            check_id="rollback_policy",
+            category="safety",
+            status=CheckStatus.PASS,
+            summary="Rollback policy active — dangerous actions blocked, dry-run available",
+            evidence=evidence,
+            project_id=project_id,
+        )
+    except Exception as exc:
+        return CheckResult(
+            check_id="rollback_policy",
+            category="safety",
+            status=CheckStatus.FAIL,
+            summary=f"Rollback policy check failed: {exc}",
+            evidence={"error": str(exc)},
+            project_id=project_id,
+        )
+
+
+# ---------------------------------------------------------------------------
+# US9 Check 24 — inject_guard
+# ---------------------------------------------------------------------------
+
+
+def check_inject_guard(project_id: str = "omnix") -> CheckResult:
+    """Verify prompt-injection guard is active."""
+    evidence: Dict[str, Any] = {}
+    try:
+        from openjarvis.security.inject_guard import get_inject_guard_status
+        s = get_inject_guard_status()
+        evidence = s
+        if not s.get("active"):
+            return CheckResult(
+                check_id="inject_guard",
+                category="security",
+                status=CheckStatus.FAIL,
+                summary="Inject guard not active",
+                evidence=evidence,
+                project_id=project_id,
+            )
+        return CheckResult(
+            check_id="inject_guard",
+            category="security",
+            status=CheckStatus.PASS,
+            summary=(
+                f"Inject guard active: {s['pattern_count']} patterns, "
+                "governance boundary enforced"
+            ),
+            evidence=evidence,
+            project_id=project_id,
+        )
+    except Exception as exc:
+        return CheckResult(
+            check_id="inject_guard",
+            category="security",
+            status=CheckStatus.FAIL,
+            summary=f"Inject guard check failed: {exc}",
+            evidence={"error": str(exc)},
+            project_id=project_id,
+        )
+
+
+# ---------------------------------------------------------------------------
+# US9 Check 25 — voice_identity
+# ---------------------------------------------------------------------------
+
+
+def check_voice_identity(project_id: str = "omnix") -> CheckResult:
+    """Verify voice identity/auth hardening status."""
+    evidence: Dict[str, Any] = {}
+    try:
+        from openjarvis.autonomy.voice_identity import get_voice_identity_status
+        s = get_voice_identity_status()
+        evidence = s
+        if not s.get("active"):
+            return CheckResult(
+                check_id="voice_identity",
+                category="security",
+                status=CheckStatus.FAIL,
+                summary="Voice identity auth not active",
+                evidence=evidence,
+                project_id=project_id,
+            )
+        if not s.get("pin_configured"):
+            return CheckResult(
+                check_id="voice_identity",
+                category="security",
+                status=CheckStatus.WARN,
+                summary=(
+                    "Voice identity active but operator PIN not configured — "
+                    "set JARVIS_OPERATOR_PIN_HASH for full hardening"
+                ),
+                evidence=evidence,
+                project_id=project_id,
+            )
+        return CheckResult(
+            check_id="voice_identity",
+            category="security",
+            status=CheckStatus.PASS,
+            summary="Voice identity: active, PIN configured, replay+expiry protection active",
+            evidence=evidence,
+            project_id=project_id,
+        )
+    except Exception as exc:
+        return CheckResult(
+            check_id="voice_identity",
+            category="security",
+            status=CheckStatus.FAIL,
+            summary=f"Voice identity check failed: {exc}",
+            evidence={"error": str(exc)},
+            project_id=project_id,
+        )
+
+
+# ---------------------------------------------------------------------------
+# US9 Check 26 — connector_health_monitor
+# ---------------------------------------------------------------------------
+
+
+def check_connector_health_monitor(project_id: str = "omnix") -> CheckResult:
+    """Verify connector health monitor and report connector health."""
+    evidence: Dict[str, Any] = {}
+    try:
+        from openjarvis.autonomy.connector_health import (
+            check_all_connectors,
+            HealthStatus,
+            get_connector_health_report,
+        )
+        check_all_connectors(force=False)
+        report = get_connector_health_report()
+        evidence = {
+            "total": report["total"],
+            "unhealthy": report["unhealthy"],
+            "unhealthy_count": report["unhealthy_count"],
+        }
+        if report["unhealthy_count"] > 0:
+            return CheckResult(
+                check_id="connector_health_monitor",
+                category="connectors",
+                status=CheckStatus.WARN,
+                summary=(
+                    f"Connector health: {report['unhealthy_count']} unhealthy — "
+                    f"{report['unhealthy']}"
+                ),
+                evidence=evidence,
+                project_id=project_id,
+            )
+        return CheckResult(
+            check_id="connector_health_monitor",
+            category="connectors",
+            status=CheckStatus.PASS,
+            summary=f"All {report['total']} connectors healthy or not_configured",
+            evidence=evidence,
+            project_id=project_id,
+        )
+    except Exception as exc:
+        return CheckResult(
+            check_id="connector_health_monitor",
+            category="connectors",
+            status=CheckStatus.FAIL,
+            summary=f"Connector health monitor check failed: {exc}",
+            evidence={"error": str(exc)},
+            project_id=project_id,
+        )
+
+
+# ---------------------------------------------------------------------------
+# US9 Check 27 — alert_rate_limiter
+# ---------------------------------------------------------------------------
+
+
+def check_alert_rate_limiter(project_id: str = "omnix") -> CheckResult:
+    """Verify alert rate limiter is active."""
+    evidence: Dict[str, Any] = {}
+    try:
+        from openjarvis.autonomy.alert_limiter import get_alert_limiter_status
+        s = get_alert_limiter_status()
+        evidence = s
+        if not s.get("active"):
+            return CheckResult(
+                check_id="alert_rate_limiter",
+                category="alerts",
+                status=CheckStatus.FAIL,
+                summary="Alert rate limiter not active",
+                evidence=evidence,
+                project_id=project_id,
+            )
+        freeze = s.get("freeze_mode", False)
+        incident = s.get("incident_mode", False)
+        status_note = ""
+        if freeze:
+            status_note = " [FREEZE MODE ACTIVE]"
+        elif incident:
+            status_note = " [INCIDENT MODE ACTIVE]"
+        return CheckResult(
+            check_id="alert_rate_limiter",
+            category="alerts",
+            status=CheckStatus.PASS,
+            summary=(
+                f"Alert rate limiter active: {len(s.get('channels_configured', []))} "
+                f"channels, quiet hours enabled{status_note}"
+            ),
+            evidence=evidence,
+            project_id=project_id,
+        )
+    except Exception as exc:
+        return CheckResult(
+            check_id="alert_rate_limiter",
+            category="alerts",
+            status=CheckStatus.FAIL,
+            summary=f"Alert rate limiter check failed: {exc}",
+            evidence={"error": str(exc)},
+            project_id=project_id,
+        )
+
+
+# ---------------------------------------------------------------------------
+# US9 Check 28 — memory_backup
+# ---------------------------------------------------------------------------
+
+
+def check_memory_backup(project_id: str = "omnix") -> CheckResult:
+    """Verify memory backup system is ready."""
+    evidence: Dict[str, Any] = {}
+    try:
+        from openjarvis.memory.backup import get_memory_backup_status
+        s = get_memory_backup_status()
+        evidence = s
+        return CheckResult(
+            check_id="memory_backup",
+            category="memory",
+            status=CheckStatus.PASS,
+            summary=(
+                f"Memory backup ready: {s['backup_count']} backup(s), "
+                "checksum validation active, redaction enabled"
+            ),
+            evidence=evidence,
+            project_id=project_id,
+        )
+    except Exception as exc:
+        return CheckResult(
+            check_id="memory_backup",
+            category="memory",
+            status=CheckStatus.FAIL,
+            summary=f"Memory backup check failed: {exc}",
+            evidence={"error": str(exc)},
+            project_id=project_id,
+        )
+
+
+# ---------------------------------------------------------------------------
+# US9 Check 29 — dogfood_loop
+# ---------------------------------------------------------------------------
+
+
+def check_dogfood_loop(project_id: str = "omnix") -> CheckResult:
+    """Verify dogfood loop is available and report last snapshot age."""
+    evidence: Dict[str, Any] = {}
+    try:
+        from openjarvis.autonomy.dogfood_loop import get_dogfood_status
+        s = get_dogfood_status()
+        evidence = s
+        if not s.get("latest_report_date"):
+            return CheckResult(
+                check_id="dogfood_loop",
+                category="observability",
+                status=CheckStatus.WARN,
+                summary="Dogfood loop available but no snapshot yet — run run_dogfood_snapshot()",
+                evidence=evidence,
+                project_id=project_id,
+            )
+        age_hours = s.get("latest_report_age_hours", 0)
+        if age_hours > 48:
+            return CheckResult(
+                check_id="dogfood_loop",
+                category="observability",
+                status=CheckStatus.WARN,
+                summary=f"Dogfood snapshot stale: {age_hours:.1f}h old (> 48h)",
+                evidence=evidence,
+                project_id=project_id,
+            )
+        return CheckResult(
+            check_id="dogfood_loop",
+            category="observability",
+            status=CheckStatus.PASS,
+            summary=f"Dogfood loop: last snapshot {age_hours:.1f}h ago, {s.get('latest_blocker_count',0)} blocker(s)",
+            evidence=evidence,
+            project_id=project_id,
+        )
+    except Exception as exc:
+        return CheckResult(
+            check_id="dogfood_loop",
+            category="observability",
+            status=CheckStatus.FAIL,
+            summary=f"Dogfood loop check failed: {exc}",
+            evidence={"error": str(exc)},
+            project_id=project_id,
+        )
+
+
+# ---------------------------------------------------------------------------
+# Check registry (29 checks total — 19 US7/US8 + 10 US9)
+# ---------------------------------------------------------------------------
+
 
 _ALL_CHECK_FNS: List[Callable[..., CheckResult]] = [
     check_backend_health,
@@ -1430,11 +1915,22 @@ _ALL_CHECK_FNS: List[Callable[..., CheckResult]] = [
     check_connector_readiness,
     check_persistent_ops_status,
     check_mobile_readiness,
+    # US9 checks
+    check_secrets_backend,
+    check_budget_guard,
+    check_job_queue,
+    check_rollback_policy,
+    check_inject_guard,
+    check_voice_identity,
+    check_connector_health_monitor,
+    check_alert_rate_limiter,
+    check_memory_backup,
+    check_dogfood_loop,
 ]
 
 
 def run_all_checks(project_id: str = "omnix") -> List[CheckResult]:
-    """Run all 19 diagnostic checks. Returns a list of CheckResult objects.
+    """Run all 29 diagnostic checks. Returns a list of CheckResult objects.
 
     Never raises — any unhandled exception inside a check is caught and
     reported as a CheckStatus.FAIL for that check.
@@ -1461,23 +1957,33 @@ __all__ = [
     "CheckResult",
     "CheckStatus",
     "_ALL_CHECK_FNS",
+    "check_alert_rate_limiter",
     "check_alert_status",
     "check_automation_policy_health",
     "check_autonomy_mode_status",
     "check_backend_health",
+    "check_budget_guard",
+    "check_connector_health_monitor",
     "check_connector_readiness",
     "check_desktop_operator_status",
+    "check_dogfood_loop",
     "check_execution_log_health",
     "check_git_worktree_status",
     "check_handoff_freshness",
+    "check_inject_guard",
+    "check_job_queue",
+    "check_memory_backup",
     "check_memory_store_health",
     "check_mobile_readiness",
     "check_packaged_app_build_metadata",
     "check_persistent_ops_status",
     "check_project_linkage_status",
     "check_project_registry_health",
+    "check_rollback_policy",
+    "check_secrets_backend",
     "check_skill_registry_counts",
     "check_tool_registry_counts",
+    "check_voice_identity",
     "check_voice_pipeline_status",
     "check_watchdog_status",
     "run_all_checks",

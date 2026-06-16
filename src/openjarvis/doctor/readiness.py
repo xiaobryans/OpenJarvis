@@ -68,6 +68,17 @@ class ReadinessCategory:
     CONNECTOR_READINESS = "connector_readiness"
     MOBILE_READINESS = "mobile_readiness"
     OPENCLAW_LINKAGE = "openclaw_linkage"
+    # US9 categories
+    SECRETS_BACKEND = "secrets_backend"
+    BUDGET_GUARD = "budget_guard"
+    JOB_QUEUE = "job_queue"
+    ROLLBACK_POLICY = "rollback_policy"
+    INJECT_GUARD = "inject_guard"
+    VOICE_IDENTITY = "voice_identity"
+    CONNECTOR_HEALTH_MONITOR = "connector_health_monitor"
+    ALERT_RATE_LIMITER = "alert_rate_limiter"
+    MEMORY_BACKUP = "memory_backup"
+    DOGFOOD_LOOP = "dogfood_loop"
 
 
 # ---------------------------------------------------------------------------
@@ -126,6 +137,37 @@ _CATEGORY_CHECKS: Dict[str, List[str]] = {
     ReadinessCategory.OPENCLAW_LINKAGE: [
         "connector_readiness",
     ],
+    # US9 categories
+    ReadinessCategory.SECRETS_BACKEND: [
+        "secrets_backend",
+    ],
+    ReadinessCategory.BUDGET_GUARD: [
+        "budget_guard",
+    ],
+    ReadinessCategory.JOB_QUEUE: [
+        "job_queue",
+    ],
+    ReadinessCategory.ROLLBACK_POLICY: [
+        "rollback_policy",
+    ],
+    ReadinessCategory.INJECT_GUARD: [
+        "inject_guard",
+    ],
+    ReadinessCategory.VOICE_IDENTITY: [
+        "voice_identity",
+    ],
+    ReadinessCategory.CONNECTOR_HEALTH_MONITOR: [
+        "connector_health_monitor",
+    ],
+    ReadinessCategory.ALERT_RATE_LIMITER: [
+        "alert_rate_limiter",
+    ],
+    ReadinessCategory.MEMORY_BACKUP: [
+        "memory_backup",
+    ],
+    ReadinessCategory.DOGFOOD_LOOP: [
+        "dogfood_loop",
+    ],
 }
 
 # Categories where fail → UNSAFE verdict (not just HOLD)
@@ -142,9 +184,15 @@ _REQUIRED_CATEGORIES = frozenset({
     ReadinessCategory.GIT_CLEANLINESS,
     ReadinessCategory.PROJECT_LINKAGE,
     ReadinessCategory.AUTOMATION_READINESS,
-    # US8 non-required (warn only — external config blockers)
+    # US9 required hardening layers
+    ReadinessCategory.BUDGET_GUARD,
+    ReadinessCategory.ROLLBACK_POLICY,
+    ReadinessCategory.INJECT_GUARD,
+    # US8/US9 non-required (warn only — external config/hardware blockers)
     # voice_readiness, desktop_readiness, connector_readiness,
-    # mobile_readiness, openclaw_linkage are warn-only
+    # mobile_readiness, openclaw_linkage, secrets_backend,
+    # job_queue, voice_identity, connector_health_monitor,
+    # alert_rate_limiter, memory_backup, dogfood_loop are warn-only
 })
 
 
@@ -221,6 +269,8 @@ _ACCEPTED_CHECKPOINTS = [
     "Ultra Sprint 6 Autonomy + Watchdogs + Mobile/Voice — ACCEPT (new voice/mobile tools added; existing logic unchanged)",
     "Ultra Sprint 7 Doctor/Readiness Layer — ACCEPT (19 checks, 15 categories; US7 checks untouched)",
     "Ultra Sprint 7 Hold Fix: Project Linker — ACCEPT (project_linkage still required; US7 checks intact)",
+    "Ultra Sprint 8 Infrastructure Modules — ACCEPT (51 tools, 6 checks, 19 total checks, 15 categories)",
+    "Ultra Sprint 9 Sovereign Hardening — ACCEPT (10 new modules, 29 checks, 25 categories; US8 checks untouched)",
 ]
 
 

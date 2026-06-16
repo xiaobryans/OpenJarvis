@@ -84,7 +84,7 @@ class TestReadinessCategoryConstants:
         assert len(cats) == 15
 
     def test_category_checks_covers_all_15(self):
-        assert len(_CATEGORY_CHECKS) == 15
+        assert len(_CATEGORY_CHECKS) == 25
         for cat in [
             ReadinessCategory.CORE_MISSION_SYSTEM,
             ReadinessCategory.TOOLS_SKILLS_MEMORY,
@@ -141,7 +141,7 @@ class TestEvaluateReadiness:
 
     def test_has_15_categories(self):
         report = evaluate_readiness(project_id="omnix")
-        assert len(report.categories) == 15
+        assert len(report.categories) == 25
 
     def test_verdict_is_valid(self):
         report = evaluate_readiness(project_id="omnix")
@@ -212,7 +212,7 @@ class TestEvaluateReadinessWithCheckResults:
         checks = self._make_pass_checks()
         report = evaluate_readiness(project_id="omnix", check_results=checks)
         assert isinstance(report, ReadinessReport)
-        assert len(report.categories) == 15
+        assert len(report.categories) == 25
 
     def test_unsafe_when_safety_governance_fails(self):
         from openjarvis.doctor.checks import _ALL_CHECK_FNS
@@ -348,7 +348,7 @@ class TestReadinessReportToDict:
     def test_categories_dict_has_15_entries(self):
         report = evaluate_readiness(project_id="omnix")
         d = report.to_dict()
-        assert len(d["categories"]) == 15
+        assert len(d["categories"]) == 25
 
 
 # ---------------------------------------------------------------------------
