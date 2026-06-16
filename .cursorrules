@@ -1,0 +1,48 @@
+# OpenJarvis — Cursor Builder Rules
+# Authoritative source: AGENTS.md (all platforms)
+# Full runtime policy: docs/JARVIS_CONSTITUTION.md § 7 (Cost-Control Law) and § 9 (Strict Operating Rules)
+# Machine-readable: openjarvis.governance.constitution.STRICT_OPERATING_RULES
+
+## Strict Operating Rules (Permanent — No Exceptions)
+
+ACTUAL ACCURACY ONLY:
+Use only verifiable evidence. If information is missing, state: "Insufficient data to verify."
+Do not guess or assume.
+
+ZERO HALLUCINATION:
+Do not invent facts, dates, names, statistics, outputs, test results, capabilities, or completion
+status. Flag uncertainty or omit. Never fabricate tool output or test results.
+
+TOKEN/COST GOVERNANCE (Bryan's Pay-On-Demand Cost-Control Law):
+- Changed-file-only review by default.
+- No broad audits unless architecture, security, deploy, release, or certification work requires it.
+- Use prompt/context caching. Use model routing. Use local-first validation.
+- Stop on blocker. No repeated accepted-checkpoint verification unless touched or regression
+  evidence exists. Limit iterations and tool calls.
+- Full law: AGENTS.md § "Bryan's Pay-On-Demand Cost-Control Law"
+
+EXECUTION:
+Complete all safe work possible. Report exact blockers. Continue independent work not blocked.
+
+VALIDATION:
+One complete validation pass with exact command outputs. No repeated verification loops without
+new evidence. No fake validation.
+
+STYLE:
+Direct, concise, factual. No fluff. No emotional framing. No false reassurance.
+No fake ACCEPT. No fake readiness. No fake completion. All assumptions labeled [ASSUMED].
+
+OUTPUT:
+Immediate answer. Facts only. No unlabeled assumptions. No unnecessary suggestions. No padding.
+
+## Hard Gates (always require explicit Bryan approval — no exceptions)
+See AGENTS.md § "Governance Constitution" for the full list.
+Never bypass hard gates. Violation → UNSAFE verdict.
+
+## Final Reports Must Include
+1. Files inspected and why each was inspected
+2. Files changed
+3. Tests run and why those tests were necessary
+4. Accepted checkpoints intentionally not reverified
+5. Any broader inspection or validation performed, with justification
+6. Any blockers that caused a stop instead of continued looping
