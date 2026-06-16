@@ -328,11 +328,60 @@ def stt_test() -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
+def _get_approval_pin_status() -> str:
+    """Return 'set' if JARVIS_OPERATOR_PIN_HASH is present, else 'not_set'."""
+    import os as _os
+    from pathlib import Path as _Path
+    h = _os.environ.get("JARVIS_OPERATOR_PIN_HASH", "")
+    if not h:
+        env_file = _Path.home() / ".openjarvis" / "cloud-keys.env"
+        try:
+            for line in env_file.read_text().splitlines():
+                if line.startswith("JARVIS_OPERATOR_PIN_HASH="):
+                    h = line.split("=", 1)[1].strip()
+                    break
+        except Exception:
+            pass
+    return "set" if len(h) == 64 else "not_set"
+
+
+def _get_fallback_status() -> Dict[str, Any]:
+    """Get hotkey + manual chatbox status from wakeword_fallback."""
+    try:
+        from openjarvis.autonomy.wakeword_fallback import get_wakeword_engine_status
+        fb = get_wakeword_engine_status()
+        return {
+            "hotkey_status": fb.get("hotkey_status", "available"),
+            "hotkey_binding": fb.get("hotkey_binding", "cmd+shift+space"),
+            "manual_chatbox_status": fb.get("manual_chatbox_status", "available"),
+            "microphone_status": fb.get("microphone_status", "unknown"),
+            "microphone_device": fb.get("microphone_device", ""),
+            "true_wakeword_worker_available": fb.get("true_wakeword_worker_available", False),
+        }
+    except Exception:
+        return {
+            "hotkey_status": "available",
+            "hotkey_binding": "cmd+shift+space",
+            "manual_chatbox_status": "available",
+            "microphone_status": "unknown",
+            "microphone_device": "",
+            "true_wakeword_worker_available": False,
+        }
+
+
 def get_voice_status() -> Dict[str, Any]:
-    """Complete voice pipeline status."""
+    """Complete voice pipeline status with all required fields.
+
+    Voice readiness:
+      READY    — true wake-word + mic + STT/TTS + approval PIN all operational
+      PARTIAL  — hotkey or manual chatbox available but true wake-word blocked
+      HOLD     — no usable activation path
+    """
     wake = get_wake_word_status()
     stt = get_stt_status()
     tts = get_tts_status()
+    fb = _get_fallback_status()
+    pin_status = _get_approval_pin_status()
 
     wake_status_val = wake["wake_word_status"]
     wake_true = wake_status_val not in (
@@ -340,11 +389,37 @@ def get_voice_status() -> Dict[str, Any]:
         WakeWordEngine.BLOCKED_BY_PROVIDER_OR_PLATFORM,
     )
     wake_blocked = wake_status_val == WakeWordEngine.BLOCKED_BY_PROVIDER_OR_PLATFORM
-    wake_fallback = wake.get("fallback_mode", "none") in ("hotkey", "manual_api")
-    wake_ok = wake_true or wake_blocked  # blocked state IS a known state
+    worker_available = fb.get("true_wakeword_worker_available", False)
+    # If bridge worker is available, treat as non-blocked even if main-venv is blocked
+    effective_wake_true = wake_true or worker_available
+    wake_fallback = fb.get("hotkey_status") in ("active", "available")
     stt_ok = stt.get("is_configured", False)
     tts_ok = tts.get("is_configured", False)
-    fully_configured = wake_true and stt_ok and tts_ok  # requires actual wake-word engine
+    mic_ok = fb.get("microphone_status") == "granted"
+    pin_ok = pin_status == "set"
+    fully_configured = effective_wake_true and stt_ok and tts_ok
+
+    # Voice readiness classification
+    if effective_wake_true and stt_ok and tts_ok and mic_ok and pin_ok:
+        voice_readiness = "READY"
+        readiness_reason = "True wake-word + mic + STT/TTS + approval PIN all operational"
+    elif (wake_fallback or fb.get("manual_chatbox_status") == "available") and (stt_ok or tts_ok):
+        voice_readiness = "PARTIAL"
+        active_paths = []
+        if wake_fallback:
+            active_paths.append(f"hotkey({fb.get('hotkey_binding','cmd+shift+space')})")
+        if fb.get("manual_chatbox_status") == "available":
+            active_paths.append("manual_chatbox")
+        if worker_available:
+            active_paths.append("true_wakeword_worker(available)")
+        readiness_reason = (
+            f"Hotkey/manual chatbox active. True wake-word: "
+            f"{'worker_available' if worker_available else 'BLOCKED'}. "
+            f"Active paths: {', '.join(active_paths)}"
+        )
+    else:
+        voice_readiness = "HOLD"
+        readiness_reason = "No usable activation path — check microphone, STT, and hotkey config"
 
     if fully_configured:
         status = "configured_not_started"
@@ -352,17 +427,18 @@ def get_voice_status() -> Dict[str, Any]:
             "Voice pipeline configured. Not started — "
             "requires macOS Microphone permission and explicit VoicePipeline.start() call."
         )
-    elif wake_blocked and stt_ok and tts_ok:
+    elif (wake_blocked or worker_available) and stt_ok and tts_ok:
         status = "partial_hotkey_fallback"
         summary = (
-            "STT and TTS configured. True wake-word BLOCKED_BY_PROVIDER_OR_PLATFORM — "
-            f"hotkey fallback {'active' if wake_fallback else 'available (F8 push-to-talk)'}."
+            f"STT and TTS configured. True wake-word: "
+            f"{'worker_available' if worker_available else 'BLOCKED_BY_PROVIDER_OR_PLATFORM'} — "
+            f"hotkey ({fb.get('hotkey_binding', 'cmd+shift+space')}) available."
         )
     elif stt_ok and tts_ok:
         status = "partial_no_wake_word"
         summary = (
             "STT and TTS configured. Wake-word engine not installed — "
-            "install openwakeword (pip install openwakeword) for always-on detection."
+            "worker venv not found."
         )
     elif tts_ok:
         status = "tts_only"
@@ -372,14 +448,29 @@ def get_voice_status() -> Dict[str, Any]:
         summary = "Voice pipeline not configured. See blockers for setup steps."
 
     return {
+        # Core status
         "voice_status": status,
+        "voice_readiness": voice_readiness,
+        "readiness_reason": readiness_reason,
         "summary": summary,
         "fully_configured": fully_configured,
+        # Required status fields
+        "true_wakeword_status": wake_status_val,
+        "true_wakeword_worker_available": worker_available,
+        "hotkey_status": fb.get("hotkey_status", "available"),
+        "hotkey_binding": fb.get("hotkey_binding", "cmd+shift+space"),
+        "manual_chatbox_status": fb.get("manual_chatbox_status", "available"),
+        "microphone_status": fb.get("microphone_status", "unknown"),
+        "microphone_device": fb.get("microphone_device", ""),
+        "stt_status": stt.get("stt_status", STTEngine.NOT_CONFIGURED),
+        "tts_status": tts.get("tts_status", TTSEngine.NOT_CONFIGURED),
+        "approval_pin_status": pin_status,
+        # Raw sub-statuses
         "wake_word": wake,
         "stt": stt,
         "tts": tts,
         "push_to_talk_available": stt_ok,
-        "wake_word_available": wake_ok and stt_ok,
+        "wake_word_available": (effective_wake_true or wake_fallback) and stt_ok,
     }
 
 

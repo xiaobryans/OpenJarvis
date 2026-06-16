@@ -1,27 +1,30 @@
 """Jarvis Wake-Word Fallback — hotkey push-to-talk + manual-trigger activation.
 
-True wake-word status: BLOCKED_BY_PROVIDER_OR_PLATFORM
-  - openwakeword: blocked (onnxruntime incompatible on macOS x86_64 CPython 3.13)
-  - pvporcupine: unavailable per US9 authorization
-  - snowboy: EOL / Python 3 unsupported
-  - precise: abandoned
+Activation paths:
+  1. True wake-word: via WakeWordBridge (isolated .wake_worker_venv, Python 3.12,
+     openwakeword + onnxruntime). See wakeword_bridge.py.
+  2. Hotkey (push-to-talk): configurable via JARVIS_VOICE_HOTKEY env var.
+     Default: cmd+shift+space (human-readable), parsed to pynput format.
+     Supports: cmd, ctrl, alt, shift + any key. Example: 'cmd+shift+space'.
+  3. Manual API / chatbox: activate_voice() callable from REPL, CLI, or UI.
 
-This module provides the safest available alternative:
-  1. Configurable keyboard hotkey (default: F8) via pynput — push-to-talk mode.
-  2. Manual API trigger via activate_voice() — callable from REPL, CLI, or HTTP endpoint.
-  3. Always-listening mode (key held) — optional, disabled by default.
+Hotkey configuration:
+  JARVIS_VOICE_HOTKEY='cmd+shift+space'   # default
+  JARVIS_VOICE_HOTKEY='ctrl+alt+j'        # override example
+  JARVIS_VOICE_HOTKEY='<backtick>'        # backtick only if explicitly set
 
-Classification contract (honest):
-  get_wakeword_engine_status() always returns:
-    true_wakeword_status = BLOCKED_BY_PROVIDER_OR_PLATFORM
-    fallback_mode        = "hotkey" | "manual_api" | "none"
-    is_listening         = False (hotkey mode is NOT always-on true wake-word)
+Classification contract:
+  get_wakeword_engine_status() returns:
+    true_wakeword_status   = from wakeword_bridge (openwakeword or BLOCKED)
+    hotkey_status          = "active" | "available" | "unavailable"
+    hotkey_binding         = human-readable binding string
+    manual_chatbox_status  = "available" (always)
+    is_listening           = False (hotkey is push-to-talk, not always-on)
 
 Safety rules:
-  - Never claims true wake-word detection.
+  - Never claims true wake-word detection from this module.
   - Never starts recording without explicit trigger.
-  - Activation callbacks receive only a trigger event — no audio captured here.
-  - Trigger log is in-memory only (not persisted, no PII).
+  - Trigger log in-memory only (not persisted, no PII).
 """
 
 from __future__ import annotations
@@ -44,8 +47,48 @@ FALLBACK_HOTKEY = "hotkey"
 FALLBACK_MANUAL_API = "manual_api"
 FALLBACK_NONE = "none"
 
-_DEFAULT_HOTKEY = os.environ.get("JARVIS_VOICE_HOTKEY", "<f8>")
-_DEFAULT_HOLD_TO_TALK_KEY = os.environ.get("JARVIS_VOICE_HOLD_KEY", "<ctrl>+<alt>+j")
+_DEFAULT_HOTKEY_HUMAN = "cmd+shift+space"
+_DEFAULT_HOTKEY_ENV = os.environ.get("JARVIS_VOICE_HOTKEY", _DEFAULT_HOTKEY_HUMAN)
+
+# Human-readable → pynput key name mapping
+_KEY_ALIASES: dict[str, str] = {
+    "cmd": "<cmd>",
+    "command": "<cmd>",
+    "ctrl": "<ctrl>",
+    "control": "<ctrl>",
+    "alt": "<alt>",
+    "option": "<alt>",
+    "shift": "<shift>",
+    "space": "<space>",
+    "enter": "<enter>",
+    "return": "<enter>",
+    "esc": "<esc>",
+    "escape": "<esc>",
+    "tab": "<tab>",
+    "backtick": "<96>",  # backtick — supported only as explicit override
+    "`": "<96>",
+    "f1": "<f1>", "f2": "<f2>", "f3": "<f3>", "f4": "<f4>",
+    "f5": "<f5>", "f6": "<f6>", "f7": "<f7>", "f8": "<f8>",
+    "f9": "<f9>", "f10": "<f10>", "f11": "<f11>", "f12": "<f12>",
+}
+
+
+def _parse_hotkey(human: str) -> str:
+    """Convert human-readable hotkey string to pynput GlobalHotKeys format.
+
+    Examples:
+      'cmd+shift+space'  -> '<cmd>+<shift>+<space>'
+      'ctrl+alt+j'       -> '<ctrl>+<alt>+j'
+      '<f8>'             -> '<f8>'   (pass-through if already pynput-formatted)
+    """
+    if human.startswith("<"):
+        return human  # already in pynput format
+    parts = [p.strip().lower() for p in human.split("+")]
+    pynput_parts = [_KEY_ALIASES.get(p, p) for p in parts]
+    return "+".join(pynput_parts)
+
+
+_DEFAULT_HOTKEY = _parse_hotkey(_DEFAULT_HOTKEY_ENV)
 
 
 # ---------------------------------------------------------------------------
@@ -168,23 +211,51 @@ class _FallbackEngineState:
             }
 
     def status(self) -> Dict[str, Any]:
+        # Query bridge for true wake-word availability (import guarded)
+        try:
+            from openjarvis.autonomy.wakeword_bridge import get_worker_status
+            bridge_status = get_worker_status()
+            true_wakeword_status = bridge_status.get("true_wakeword_status", WAKEWORD_STATUS_BLOCKED)
+            worker_available = bridge_status.get("worker_available", False)
+        except Exception:
+            true_wakeword_status = WAKEWORD_STATUS_BLOCKED
+            worker_available = False
+            bridge_status = {}
+
+        mic = _check_microphone_ready()
         with self._lock:
-            return {
-                "true_wakeword_status": WAKEWORD_STATUS_BLOCKED,
-                "true_wakeword_blocked_reason": (
-                    "openwakeword blocked by onnxruntime/macOS x86_64 incompatibility; "
-                    "pvporcupine unavailable per US9 authorization"
-                ),
-                "fallback_mode": self._fallback_mode,
-                "fallback_active": self._running or self._fallback_mode == FALLBACK_MANUAL_API,
-                "hotkey_active": self._hotkey_active,
-                "configured_hotkey": _DEFAULT_HOTKEY,
-                "trigger_count": self._trigger_count,
-                "last_trigger": self._last_trigger,
-                "is_listening": False,  # never true — not real always-on wake-word
-                "microphone_ready": _check_microphone_ready(),
-                "callbacks_registered": len(self._callbacks),
-            }
+            hotkey_pynput = _DEFAULT_HOTKEY
+            hotkey_human = _DEFAULT_HOTKEY_ENV
+            hotkey_active = self._hotkey_active
+            fallback_mode = self._fallback_mode
+            trigger_count = self._trigger_count
+            last_trigger = self._last_trigger
+            cbs = len(self._callbacks)
+
+        return {
+            # True wake-word
+            "true_wakeword_status": true_wakeword_status,
+            "true_wakeword_worker_available": worker_available,
+            "true_wakeword_model": bridge_status.get("model", "hey_jarvis_v0.1"),
+            "true_wakeword_phrases": bridge_status.get("phrases", ["hey jarvis"]),
+            # Hotkey
+            "hotkey_status": "active" if hotkey_active else "available",
+            "hotkey_binding": hotkey_human,
+            "hotkey_binding_pynput": hotkey_pynput,
+            # Manual chatbox
+            "manual_chatbox_status": "available",
+            # Microphone
+            "microphone_status": "granted" if mic.get("ok") else "denied_or_no_device",
+            "microphone_device": mic.get("device", ""),
+            # Legacy / internal
+            "fallback_mode": fallback_mode,
+            "fallback_active": hotkey_active or fallback_mode == FALLBACK_MANUAL_API,
+            "trigger_count": trigger_count,
+            "last_trigger": last_trigger,
+            "is_listening": False,
+            "microphone_ready": mic,
+            "callbacks_registered": cbs,
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -231,10 +302,12 @@ def register_voice_callback(cb: Callable[[VoiceTriggerEvent], None]) -> None:
 def start_hotkey_listener(hotkey: str = _DEFAULT_HOTKEY) -> Dict[str, Any]:
     """Start the hotkey push-to-talk listener.
 
-    Default hotkey: F8 (configurable via JARVIS_VOICE_HOTKEY env var).
+    Default hotkey: Cmd+Shift+Space (configurable via JARVIS_VOICE_HOTKEY env var).
+    Accepts human-readable format: 'cmd+shift+space', 'ctrl+alt+j', etc.
     Returns status dict. Never claims true wake-word detection.
     """
-    return _ENGINE.start_hotkey(hotkey)
+    parsed = _parse_hotkey(hotkey)
+    return _ENGINE.start_hotkey(parsed)
 
 
 def stop_listener() -> None:
@@ -251,10 +324,12 @@ def activate_voice() -> Dict[str, Any]:
 
 
 def get_wakeword_engine_status() -> Dict[str, Any]:
-    """Return honest wake-word fallback status.
-
-    true_wakeword_status is always BLOCKED_BY_PROVIDER_OR_PLATFORM.
-    is_listening is always False — hotkey is push-to-talk, not always-on.
+    """Return full activation-path status:
+      - true_wakeword_status: openwakeword_available | BLOCKED_BY_PROVIDER_OR_PLATFORM
+      - hotkey_status / hotkey_binding: Cmd+Shift+Space (configurable)
+      - manual_chatbox_status: always available
+      - microphone_status: granted | denied_or_no_device
+      - is_listening: always False (hotkey = push-to-talk, not always-on)
     """
     return _ENGINE.status()
 
