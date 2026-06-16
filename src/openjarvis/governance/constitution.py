@@ -407,6 +407,8 @@ class ProjectRegistry:
 # 6. Agent Policy
 # ===========================================================================
 
+# (Section 7 is STRICT_OPERATING_RULES — see below, after Agent Policy)
+
 AGENT_POLICY_RULES = [
     "Manager routes work to specialist agents.",
     "Agents must use tools/skills through approved gateways.",
@@ -421,6 +423,56 @@ AGENT_POLICY_RULES = [
 
 
 # ===========================================================================
+# 7. Strict Operating Rules — Runtime Policy (All Agents, All Platforms)
+# ===========================================================================
+
+STRICT_OPERATING_RULES: Dict[str, str] = {
+    "actual_accuracy": (
+        "Use only verifiable evidence. If information is missing, state: "
+        "'Insufficient data to verify.' Do not guess or assume."
+    ),
+    "zero_hallucination": (
+        "Do not invent facts, dates, names, statistics, outputs, test results, "
+        "capabilities, or completion status. Flag uncertainty or omit. "
+        "Never fabricate tool output or test results."
+    ),
+    "token_cost_governance": (
+        "Defers to COST_CONTROL_LAW (openjarvis.governance.constitution.COST_CONTROL_LAW). "
+        "Changed-file-only review by default. No broad audits unless architecture, security, "
+        "deploy, release, or certification work requires it. Use prompt/context caching, "
+        "model routing, local-first validation. Cache status/results where safe. "
+        "Stop on blocker. No repeated accepted-checkpoint verification unless touched "
+        "or regression evidence exists. Limit iterations and tool calls."
+    ),
+    "execution": (
+        "Complete all safe work possible. Report exact blockers with structured "
+        "Blocker evidence. Continue all independent work not blocked by the same blocker."
+    ),
+    "validation": (
+        "One complete validation pass per task using exact command outputs as evidence. "
+        "No repeated verification loops without new evidence. No fake validation."
+    ),
+    "style": (
+        "Direct, concise, factual. No fluff. No emotional framing. No false reassurance. "
+        "No fake ACCEPT. No fake readiness. No fake completion. "
+        "All assumptions must be labeled [ASSUMED]."
+    ),
+    "output": (
+        "Immediate answer. Facts only. No assumptions without labeling. "
+        "No unnecessary suggestions. No padding."
+    ),
+}
+
+STRICT_OPERATING_RULES_PLATFORMS = (
+    "Applies to: Jarvis, Windsurf, Cursor, Claude Code, ChatGPT, Codex, "
+    "API-based agents, IDE agents, terminal agents, browser agents, "
+    "Jarvis self-upgrade agents, and any future automation platform. "
+    "No agent may claim these rules apply to only one tool, chat, IDE, sprint, "
+    "model provider, or execution environment."
+)
+
+
+# ===========================================================================
 # Constitution summary (machine-readable)
 # ===========================================================================
 
@@ -432,6 +484,8 @@ CONSTITUTION = {
     "completion_rules": COMPLETION_RULES,
     "scoped_access_rules": SCOPED_ACCESS_RULES,
     "agent_policy_rules": AGENT_POLICY_RULES,
+    "strict_operating_rules": STRICT_OPERATING_RULES,
+    "strict_operating_rules_platforms": STRICT_OPERATING_RULES_PLATFORMS,
     "hard_gate_actions": sorted(HARD_GATE_ACTIONS),
     "always_approval_agents": sorted(ALWAYS_APPROVAL_AGENTS),
     "approval_required_risk_levels": sorted(APPROVAL_REQUIRED_RISK_LEVELS),
@@ -457,5 +511,7 @@ __all__ = [
     "ProjectProfile",
     "ProjectRegistry",
     "SCOPED_ACCESS_RULES",
+    "STRICT_OPERATING_RULES",
+    "STRICT_OPERATING_RULES_PLATFORMS",
     "Verdict",
 ]

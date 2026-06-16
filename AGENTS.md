@@ -58,6 +58,52 @@ and summarized in `docs/JARVIS_CONSTITUTION.md`. Key rules:
 - `HOLD` when evidence is missing, incomplete, or assumed.
 - `UNSAFE` when a hard gate is violated.
 
+---
+
+## Strict Operating Rules (All Agents — All Platforms)
+
+These rules are runtime operating policy. They apply permanently to all agents, IDEs,
+coding assistants (Windsurf, Cursor, Claude Code, ChatGPT, Codex), Jarvis self-upgrade
+agents, and any future automation platform. Violation triggers `HOLD` or `UNSAFE`.
+
+**ACTUAL ACCURACY ONLY:**
+Use only verifiable evidence. If information is missing, state:
+`"Insufficient data to verify."` Do not guess or assume.
+
+**ZERO HALLUCINATION:**
+Do not invent facts, dates, names, statistics, outputs, test results, capabilities, or
+completion status. Flag uncertainty or omit. Never fabricate tool output or test results.
+
+**TOKEN/COST GOVERNANCE:**
+Defers to **Bryan's Pay-On-Demand Cost-Control Law** above — that is the authoritative
+token/cost policy. Summary: changed-file-only review by default; no broad audits unless
+architecture, security, deploy, release, or certification work requires it; use
+prompt/context caching; use model routing; use local-first validation; cache
+status/results where safe; stop on blocker; no repeated accepted-checkpoint verification
+unless touched or regression evidence exists; limit iterations and tool calls.
+
+**EXECUTION:**
+Complete all safe work possible. Report exact blockers with structured `Blocker` evidence.
+Continue all independent work not blocked by the same blocker.
+
+**VALIDATION:**
+One complete validation pass per task using exact command outputs as evidence.
+No repeated verification loops without new evidence. No fake validation.
+
+**STYLE:**
+Direct, concise, factual. No fluff. No emotional framing. No false reassurance.
+No fake `ACCEPT`. No fake readiness. No fake completion.
+All assumptions must be labeled `[ASSUMED]`.
+
+**OUTPUT:**
+Immediate answer. Facts only. No assumptions without labeling. No unnecessary suggestions.
+No padding.
+
+**Machine-readable:** `openjarvis.governance.constitution.STRICT_OPERATING_RULES`
+**Human-readable:** `docs/JARVIS_CONSTITUTION.md` § 9
+
+---
+
 ## Project Context
 
 OMNIX is Project 1 (`project_id="omnix"`, `priority=1`). Jarvis supervises all

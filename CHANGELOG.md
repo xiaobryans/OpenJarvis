@@ -8,6 +8,43 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### US10 — Daily-Driver Operations Hardening
+
+**Runtime lifecycle hardening** (`daemon/service.py`):
+- Added `RuntimeLifecycleManager`: PID file management, startup health probe
+  (importability check for core modules), graceful shutdown with registered
+  callbacks, SIGTERM/SIGINT handlers, and `is_running()` static helper.
+
+**Voice worker lifecycle hardening** (`autonomy/wakeword_bridge.py`):
+- Added watchdog thread with exponential-backoff auto-restart (`auto_restart=True`
+  on `WakeWordBridge.start()`). Configurable via `JARVIS_WAKEWORD_MAX_RESTARTS`
+  (default 5) and `JARVIS_WAKEWORD_RESTART_BACKOFF` (default 2.0s base).
+- `status()` now reports `restart_count`, `last_restart_at`, `auto_restart`,
+  and `max_restarts`.
+
+**Connector health degradation handling** (`autonomy/connector_health.py`):
+- Auto-promotes connectors from `degraded` → `blocked` when
+  `consecutive_failures >= 3` (configurable `_DEGRADED_ESCALATION_THRESHOLD`).
+- Added `get_degraded_connectors()`, `get_connector_degradation_summary()`,
+  and `reset_connector_failures()` for remediation workflows.
+
+**Durable queue retry/recovery visibility** (`autonomy/job_queue.py`):
+- Added `get_stalled_jobs()`: jobs stuck in `running` state past stale threshold.
+- Added `get_retry_stats()`: retry counts, exhausted-attempts summary.
+- Added `get_queue_health_report()`: unified health report for ops dashboard.
+
+**Alert limiting / failure escalation** (`autonomy/alert_limiter.py`):
+- Added `auto_escalate_on_failures(failure_count, threshold)`: activates
+  `incident_mode` when failure count exceeds threshold (no alert sends; advisory only).
+- Added `get_escalation_status()`: current escalation state for doctor/readiness.
+
+**Readiness/status accuracy** (`doctor/checks.py`, `doctor/readiness.py`):
+- Added `check_runtime_lifecycle` (check #31): verifies lifecycle manager,
+  queue crash recovery, wakeword bridge, connector degradation summary, and
+  alert escalation are all importable; confirms PID dir is writable.
+- Added `RUNTIME_LIFECYCLE` category (26th category); marked required.
+- Added US10 accepted checkpoint to `_ACCEPTED_CHECKPOINTS`.
+
 ## [1.0.2] - 2026-05-24
 
 A patch release that fixes a packaging bug which broke the v1.0.1

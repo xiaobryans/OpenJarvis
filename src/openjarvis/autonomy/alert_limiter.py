@@ -322,15 +322,86 @@ def get_alert_limiter_status() -> Dict[str, Any]:
     }
 
 
+def auto_escalate_on_failures(
+    failure_count: int,
+    escalate_threshold: int = 5,
+    source: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Activate incident mode if failure_count exceeds escalate_threshold.
+
+    Call this from a watchdog/monitor when repeated external failures occur
+    (e.g., connector keeps failing, job keeps erroring).
+
+    Returns: {escalated: bool, incident_mode: bool, reason: str}
+
+    Safety: Never sends alerts — only sets incident_mode flag.
+    """
+    cfg = load_alert_config()
+    already_in_incident = cfg.get("incident_mode", False)
+
+    if already_in_incident:
+        return {
+            "escalated": False,
+            "incident_mode": True,
+            "reason": "Already in incident mode",
+            "failure_count": failure_count,
+            "threshold": escalate_threshold,
+        }
+
+    if failure_count >= escalate_threshold:
+        set_incident_mode(True)
+        reason = (
+            f"Auto-escalated to incident mode: {failure_count} failures "
+            f">= threshold {escalate_threshold}"
+            + (f" (source: {source})" if source else "")
+        )
+        return {
+            "escalated": True,
+            "incident_mode": True,
+            "reason": reason,
+            "failure_count": failure_count,
+            "threshold": escalate_threshold,
+        }
+
+    return {
+        "escalated": False,
+        "incident_mode": False,
+        "reason": f"Below threshold: {failure_count}/{escalate_threshold} failures",
+        "failure_count": failure_count,
+        "threshold": escalate_threshold,
+    }
+
+
+def get_escalation_status() -> Dict[str, Any]:
+    """Return current escalation state for ops dashboard / doctor check."""
+    cfg = load_alert_config()
+    return {
+        "incident_mode": cfg.get("incident_mode", False),
+        "freeze_mode": cfg.get("freeze_mode", False),
+        "escalation_levels": cfg.get("escalation_levels", []),
+        "min_level_in_quiet_hours": cfg.get("min_level_in_quiet_hours", AlertLevel.CRITICAL),
+        "dedup_window_seconds": cfg.get("dedup_window_seconds", 300),
+        "channels_with_limits": {
+            ch: {
+                "max_per_hour": v.get("max_per_hour"),
+                "max_per_minute": v.get("max_per_minute"),
+            }
+            for ch, v in cfg.get("channels", {}).items()
+        },
+    }
+
+
 __all__ = [
     "AlertLevel",
     "AlertDecision",
-    "load_alert_config",
-    "save_alert_config",
-    "set_incident_mode",
-    "set_freeze_mode",
+    "auto_escalate_on_failures",
     "check_alert",
-    "make_dedup_key",
     "get_alert_stats",
     "get_alert_limiter_status",
+    "get_escalation_status",
+    "load_alert_config",
+    "make_dedup_key",
+    "save_alert_config",
+    "set_freeze_mode",
+    "set_incident_mode",
 ]

@@ -1,11 +1,11 @@
 """Jarvis Readiness Gate — evidence-backed V1 daily-driver readiness evaluation.
 
-15 readiness categories (9 original + 6 US8):
+26 readiness categories (9 original + 6 US8 + 10 US9 + 1 US10):
   core_mission_system       — mission store + tool gateway functional
   tools_skills_memory       — tool/skill/memory registry healthy
   autonomy_watchdogs_alerts — autonomy mode + watchdogs + alerts operational
   project_awareness         — ProjectRegistry populated; project_id known
-  safety_governance         — hard gates enforced; secrets not leaked
+  safety_governance         — hard gates enforced; secrets not leaked; strict rules present
   packaged_app_ui           — Tauri build present (not_configured is acceptable)
   handoff_docs              — handoff doc exists and is recent
   git_cleanliness           — git working tree clean; on expected branch
@@ -79,6 +79,8 @@ class ReadinessCategory:
     ALERT_RATE_LIMITER = "alert_rate_limiter"
     MEMORY_BACKUP = "memory_backup"
     DOGFOOD_LOOP = "dogfood_loop"
+    # US10 categories
+    RUNTIME_LIFECYCLE = "runtime_lifecycle"
 
 
 # ---------------------------------------------------------------------------
@@ -104,6 +106,7 @@ _CATEGORY_CHECKS: Dict[str, List[str]] = {
     ],
     ReadinessCategory.SAFETY_GOVERNANCE: [
         "autonomy_mode_status",
+        "strict_operating_rules_present",
     ],
     ReadinessCategory.PACKAGED_APP_UI: [
         "packaged_app_build_metadata",
@@ -168,6 +171,10 @@ _CATEGORY_CHECKS: Dict[str, List[str]] = {
     ReadinessCategory.DOGFOOD_LOOP: [
         "dogfood_loop",
     ],
+    # US10 categories
+    ReadinessCategory.RUNTIME_LIFECYCLE: [
+        "runtime_lifecycle",
+    ],
 }
 
 # Categories where fail → UNSAFE verdict (not just HOLD)
@@ -188,7 +195,9 @@ _REQUIRED_CATEGORIES = frozenset({
     ReadinessCategory.BUDGET_GUARD,
     ReadinessCategory.ROLLBACK_POLICY,
     ReadinessCategory.INJECT_GUARD,
-    # US8/US9 non-required (warn only — external config/hardware blockers)
+    # US10 required daily-driver hardening
+    ReadinessCategory.RUNTIME_LIFECYCLE,
+    # US8/US9/US10 non-required (warn only — external config/hardware blockers)
     # voice_readiness, desktop_readiness, connector_readiness,
     # mobile_readiness, openclaw_linkage, secrets_backend,
     # job_queue, voice_identity, connector_health_monitor,
@@ -271,6 +280,7 @@ _ACCEPTED_CHECKPOINTS = [
     "Ultra Sprint 7 Hold Fix: Project Linker — ACCEPT (project_linkage still required; US7 checks intact)",
     "Ultra Sprint 8 Infrastructure Modules — ACCEPT (51 tools, 6 checks, 19 total checks, 15 categories)",
     "Ultra Sprint 9 Sovereign Hardening — ACCEPT (10 new modules, 29 checks, 25 categories; US8 checks untouched)",
+    "Ultra Sprint 10 Daily-Driver Hardening — ACCEPT (runtime lifecycle, voice worker restart, connector escalation, queue health, alert escalation; 31 checks, 26 categories)",
 ]
 
 

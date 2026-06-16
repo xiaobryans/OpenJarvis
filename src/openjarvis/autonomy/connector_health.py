@@ -34,6 +34,7 @@ from openjarvis.autonomy.connector_diagnostics import (
 
 _HEALTH_STORE = Path.home() / ".openjarvis" / "connector_health.json"
 _MIN_CHECK_INTERVAL = 300  # seconds between checks per connector
+_DEGRADED_ESCALATION_THRESHOLD = 3  # consecutive failures before escalating to blocked
 
 
 class HealthStatus:
@@ -218,6 +219,17 @@ def check_connector_health(
                 consecutive_failures=(existing.consecutive_failures if existing else 0) + 1,
             )
 
+        # Escalate to blocked if consecutive failures exceed threshold
+        if (
+            entry.status == HealthStatus.DEGRADED
+            and entry.consecutive_failures >= _DEGRADED_ESCALATION_THRESHOLD
+        ):
+            entry.status = HealthStatus.BLOCKED
+            entry.failure_reason = (
+                f"{entry.failure_reason or 'degraded'} "
+                f"[escalated: {entry.consecutive_failures} consecutive failures]"
+            )
+
     health[connector] = entry
     _save_health(health)
     return entry
@@ -267,11 +279,68 @@ def clear_health_cache(db_path: Optional[Path] = None) -> None:
         target.unlink()
 
 
+def get_degraded_connectors(include_blocked: bool = True) -> List[str]:
+    """Return connectors in degraded or blocked state from cache.
+
+    Uses cached data only — does not re-check connectors.
+    """
+    health = _load_health()
+    statuses = {HealthStatus.DEGRADED}
+    if include_blocked:
+        statuses.add(HealthStatus.BLOCKED)
+    return [name for name, entry in health.items() if entry.status in statuses]
+
+
+def get_connector_degradation_summary() -> Dict[str, Any]:
+    """Return degradation summary: counts, worst connectors, escalation threshold."""
+    health = _load_health()
+    by_status: Dict[str, int] = {}
+    worst: List[Dict[str, Any]] = []
+    for name, entry in health.items():
+        by_status[entry.status] = by_status.get(entry.status, 0) + 1
+        if entry.status in (HealthStatus.DEGRADED, HealthStatus.BLOCKED):
+            worst.append({
+                "connector": name,
+                "status": entry.status,
+                "consecutive_failures": entry.consecutive_failures,
+                "failure_reason": entry.failure_reason,
+            })
+    worst.sort(key=lambda x: x["consecutive_failures"], reverse=True)
+    return {
+        "by_status": by_status,
+        "degraded_or_blocked": worst,
+        "degraded_count": by_status.get(HealthStatus.DEGRADED, 0),
+        "blocked_count": by_status.get(HealthStatus.BLOCKED, 0),
+        "escalation_threshold": _DEGRADED_ESCALATION_THRESHOLD,
+        "total_tracked": len(health),
+    }
+
+
+def reset_connector_failures(connector: str) -> bool:
+    """Reset consecutive_failures for a connector to 0 and set status healthy.
+
+    Use after manual remediation to clear escalated blocked state.
+    """
+    health = _load_health()
+    if connector not in health:
+        return False
+    entry = health[connector]
+    entry.consecutive_failures = 0
+    entry.status = HealthStatus.HEALTHY
+    entry.failure_reason = None
+    entry.last_success = time.time()
+    _save_health(health)
+    return True
+
+
 __all__ = [
     "HealthStatus",
     "ConnectorHealthEntry",
     "check_connector_health",
     "check_all_connectors",
     "get_connector_health_report",
+    "get_connector_degradation_summary",
+    "get_degraded_connectors",
+    "reset_connector_failures",
     "clear_health_cache",
 ]

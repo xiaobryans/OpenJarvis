@@ -1894,8 +1894,187 @@ def check_dogfood_loop(project_id: str = "omnix") -> CheckResult:
         )
 
 
+def check_strict_operating_rules_present(project_id: str = "omnix") -> CheckResult:
+    """Verify strict operating rules are persisted in core governance docs.
+
+    Checks:
+    - AGENTS.md contains STRICT OPERATING RULES section
+    - docs/JARVIS_CONSTITUTION.md contains Strict Operating Rules section
+    - constitution.py exports STRICT_OPERATING_RULES (non-empty dict)
+    """
+    evidence: Dict[str, Any] = {}
+    failures: List[str] = []
+
+    try:
+        from openjarvis.governance.constitution import ProjectRegistry
+
+        project = ProjectRegistry.get(project_id) or ProjectRegistry.get_default()
+        repo_path = Path(project.repo_path) if project.repo_path else Path(".")
+
+        # 1. AGENTS.md
+        agents_md = repo_path / "AGENTS.md"
+        if agents_md.exists():
+            text = agents_md.read_text()
+            if "Strict Operating Rules" in text:
+                evidence["agents_md"] = "PASS: Strict Operating Rules section found"
+            else:
+                evidence["agents_md"] = "FAIL: Strict Operating Rules section missing"
+                failures.append("AGENTS.md missing Strict Operating Rules")
+        else:
+            evidence["agents_md"] = "FAIL: AGENTS.md not found"
+            failures.append("AGENTS.md not found")
+
+        # 2. docs/JARVIS_CONSTITUTION.md
+        constitution_md = repo_path / "docs" / "JARVIS_CONSTITUTION.md"
+        if constitution_md.exists():
+            text = constitution_md.read_text()
+            if "Strict Operating Rules" in text:
+                evidence["jarvis_constitution_md"] = "PASS: Strict Operating Rules section found"
+            else:
+                evidence["jarvis_constitution_md"] = "FAIL: Strict Operating Rules section missing"
+                failures.append("docs/JARVIS_CONSTITUTION.md missing Strict Operating Rules")
+        else:
+            evidence["jarvis_constitution_md"] = "FAIL: docs/JARVIS_CONSTITUTION.md not found"
+            failures.append("docs/JARVIS_CONSTITUTION.md not found")
+
+        # 3. constitution.py exports STRICT_OPERATING_RULES
+        try:
+            from openjarvis.governance.constitution import (  # noqa: PLC0415
+                STRICT_OPERATING_RULES,
+            )
+
+            if isinstance(STRICT_OPERATING_RULES, dict) and STRICT_OPERATING_RULES:
+                evidence["constitution_py"] = (
+                    f"PASS: STRICT_OPERATING_RULES exported "
+                    f"({len(STRICT_OPERATING_RULES)} rules)"
+                )
+            else:
+                evidence["constitution_py"] = "FAIL: STRICT_OPERATING_RULES empty or wrong type"
+                failures.append("STRICT_OPERATING_RULES empty or wrong type")
+        except ImportError as exc:
+            evidence["constitution_py"] = f"FAIL: import error — {exc}"
+            failures.append(f"STRICT_OPERATING_RULES not importable: {exc}")
+
+    except Exception as exc:
+        return CheckResult(
+            check_id="strict_operating_rules_present",
+            category="safety_governance",
+            status=CheckStatus.FAIL,
+            summary=f"strict_operating_rules_present check error — {exc}",
+            evidence={"exception": str(exc)},
+            project_id=project_id,
+        )
+
+    if failures:
+        return CheckResult(
+            check_id="strict_operating_rules_present",
+            category="safety_governance",
+            status=CheckStatus.FAIL,
+            summary=f"Strict operating rules missing from governance docs: {failures}",
+            evidence=evidence,
+            project_id=project_id,
+        )
+    return CheckResult(
+        check_id="strict_operating_rules_present",
+        category="safety_governance",
+        status=CheckStatus.PASS,
+        summary=(
+            "Strict operating rules present in AGENTS.md, "
+            "docs/JARVIS_CONSTITUTION.md, and constitution.py"
+        ),
+        evidence=evidence,
+        project_id=project_id,
+    )
+
+
 # ---------------------------------------------------------------------------
-# Check registry (29 checks total — 19 US7/US8 + 10 US9)
+# US10 Check 31 — runtime_lifecycle
+# ---------------------------------------------------------------------------
+
+
+def check_runtime_lifecycle(project_id: str = "omnix") -> CheckResult:
+    """Verify runtime lifecycle manager components are functional.
+
+    Checks:
+    - RuntimeLifecycleManager imports cleanly
+    - PID file directory is writable
+    - Core probe modules are importable (same set as lifecycle manager)
+    - Queue crash recovery is available (recover_stale_running importable)
+    """
+    evidence: Dict[str, Any] = {}
+    failures: List[str] = []
+
+    try:
+        from openjarvis.daemon.service import RuntimeLifecycleManager  # noqa: PLC0415
+        evidence["runtime_lifecycle_manager"] = "ok"
+    except Exception as exc:
+        evidence["runtime_lifecycle_manager"] = f"import_error: {exc}"
+        failures.append(f"RuntimeLifecycleManager not importable: {exc}")
+
+    try:
+        from openjarvis.autonomy.job_queue import recover_stale_running  # noqa: PLC0415
+        evidence["queue_crash_recovery"] = "ok"
+    except Exception as exc:
+        evidence["queue_crash_recovery"] = f"import_error: {exc}"
+        failures.append(f"queue crash recovery not importable: {exc}")
+
+    try:
+        from openjarvis.autonomy.wakeword_bridge import WakeWordBridge  # noqa: PLC0415
+        evidence["wakeword_bridge"] = "ok"
+    except Exception as exc:
+        evidence["wakeword_bridge"] = f"import_error: {exc}"
+        failures.append(f"WakeWordBridge not importable: {exc}")
+
+    try:
+        from openjarvis.autonomy.connector_health import get_connector_degradation_summary  # noqa: PLC0415
+        evidence["connector_degradation_summary"] = "ok"
+    except Exception as exc:
+        evidence["connector_degradation_summary"] = f"import_error: {exc}"
+        failures.append(f"connector_degradation_summary not importable: {exc}")
+
+    try:
+        from openjarvis.autonomy.alert_limiter import auto_escalate_on_failures  # noqa: PLC0415
+        evidence["alert_escalation"] = "ok"
+    except Exception as exc:
+        evidence["alert_escalation"] = f"import_error: {exc}"
+        failures.append(f"alert escalation not importable: {exc}")
+
+    # Check PID directory is writable
+    pid_dir = Path.home() / ".openjarvis"
+    try:
+        pid_dir.mkdir(parents=True, exist_ok=True)
+        tmp = pid_dir / ".lifecycle_probe"
+        tmp.write_text("ok")
+        tmp.unlink()
+        evidence["pid_dir_writable"] = str(pid_dir)
+    except Exception as exc:
+        evidence["pid_dir_writable"] = f"not_writable: {exc}"
+        failures.append(f"PID dir not writable: {exc}")
+
+    if failures:
+        return CheckResult(
+            check_id="runtime_lifecycle",
+            category="runtime",
+            status=CheckStatus.FAIL,
+            summary=f"Runtime lifecycle check failed: {failures}",
+            evidence=evidence,
+            project_id=project_id,
+        )
+    return CheckResult(
+        check_id="runtime_lifecycle",
+        category="runtime",
+        status=CheckStatus.PASS,
+        summary=(
+            "Runtime lifecycle: all components importable, "
+            "PID dir writable, queue recovery available"
+        ),
+        evidence=evidence,
+        project_id=project_id,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Check registry (31 checks total — 19 US7/US8 + 10 US9 + 1 strict-rules + 1 US10)
 # ---------------------------------------------------------------------------
 
 
@@ -1930,11 +2109,15 @@ _ALL_CHECK_FNS: List[Callable[..., CheckResult]] = [
     check_alert_rate_limiter,
     check_memory_backup,
     check_dogfood_loop,
+    # Governance doc presence check
+    check_strict_operating_rules_present,
+    # US10 checks
+    check_runtime_lifecycle,
 ]
 
 
 def run_all_checks(project_id: str = "omnix") -> List[CheckResult]:
-    """Run all 29 diagnostic checks. Returns a list of CheckResult objects.
+    """Run all 31 diagnostic checks. Returns a list of CheckResult objects.
 
     Never raises — any unhandled exception inside a check is caught and
     reported as a CheckStatus.FAIL for that check.
@@ -1988,6 +2171,8 @@ __all__ = [
     "check_skill_registry_counts",
     "check_tool_registry_counts",
     "check_voice_identity",
+    "check_runtime_lifecycle",
+    "check_strict_operating_rules_present",
     "check_voice_pipeline_status",
     "check_watchdog_status",
     "run_all_checks",

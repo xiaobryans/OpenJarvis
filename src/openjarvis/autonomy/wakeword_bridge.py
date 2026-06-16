@@ -45,6 +45,8 @@ _WORKER_SCRIPT = Path(__file__).parent / "wakeword_worker.py"
 _SOCKET_PATH = os.environ.get("JARVIS_WAKEWORD_SOCKET", "/tmp/jarvis_wakeword.sock")
 _TCP_PORT = int(os.environ.get("JARVIS_WAKEWORD_PORT", "19876"))
 _WORKER_STARTUP_TIMEOUT = float(os.environ.get("JARVIS_WAKEWORD_STARTUP_TIMEOUT", "8.0"))
+_WORKER_MAX_RESTARTS = int(os.environ.get("JARVIS_WAKEWORD_MAX_RESTARTS", "5"))
+_WORKER_RESTART_BACKOFF_BASE = float(os.environ.get("JARVIS_WAKEWORD_RESTART_BACKOFF", "2.0"))
 
 # ---------------------------------------------------------------------------
 # Trigger event
@@ -78,6 +80,11 @@ class WakeWordBridge:
         self._trigger_count = 0
         self._conn: Optional[socket.socket] = None
         self._error: Optional[str] = None
+        self._restart_count: int = 0
+        self._last_restart_at: Optional[float] = None
+        self._watchdog_thread: Optional[threading.Thread] = None
+        self._auto_restart: bool = False
+        self._max_restarts: int = _WORKER_MAX_RESTARTS
 
     def register_callback(self, cb: Callable[[WakeWordTriggerEvent], None]) -> None:
         with self._lock:
@@ -87,11 +94,16 @@ class WakeWordBridge:
         """Check if worker venv + script exist."""
         return _WORKER_PYTHON.exists() and _WORKER_SCRIPT.exists()
 
-    def start(self) -> Dict[str, Any]:
-        """Start worker subprocess and socket reader thread."""
+    def start(self, auto_restart: bool = False) -> Dict[str, Any]:
+        """Start worker subprocess and socket reader thread.
+
+        auto_restart=True: launch watchdog that restarts worker on crash,
+        up to _max_restarts times with exponential backoff.
+        """
         with self._lock:
             if self._running:
                 return {"ok": True, "already_running": True}
+            self._auto_restart = auto_restart
 
         if not self.is_available():
             msg = (
@@ -158,10 +170,17 @@ class WakeWordBridge:
             with self._lock:
                 self._reader_thread = t
 
+            if auto_restart:
+                wt = threading.Thread(target=self._watchdog_loop, daemon=True, name="wakeword-watchdog")
+                wt.start()
+                with self._lock:
+                    self._watchdog_thread = wt
+
             logger.info("WakeWordBridge started — worker pid=%d", proc.pid)
             return {
                 "ok": True,
                 "worker_pid": proc.pid,
+                "auto_restart": auto_restart,
                 "socket": _SOCKET_PATH if os.path.exists(_SOCKET_PATH) else f"tcp:127.0.0.1:{_TCP_PORT}",
             }
 
@@ -169,6 +188,109 @@ class WakeWordBridge:
             with self._lock:
                 self._error = str(exc)
             logger.error("WakeWordBridge.start failed: %s", exc)
+            return {"ok": False, "error": str(exc)}
+
+    def _watchdog_loop(self) -> None:
+        """Monitor worker process; restart on crash with exponential backoff."""
+        logger.info("Watchdog started (max_restarts=%d)", self._max_restarts)
+        while True:
+            time.sleep(1.0)
+            with self._lock:
+                if not self._auto_restart:
+                    break
+                proc = self._process
+                running = self._running
+                restart_count = self._restart_count
+
+            if not running:
+                break
+
+            # Check if worker process has died
+            crashed = proc is not None and proc.poll() is not None
+            if not crashed:
+                continue
+
+            if restart_count >= self._max_restarts:
+                msg = f"Worker crashed {restart_count} times — max_restarts reached; giving up"
+                logger.error(msg)
+                with self._lock:
+                    self._running = False
+                    self._error = msg
+                break
+
+            backoff = _WORKER_RESTART_BACKOFF_BASE ** restart_count
+            logger.warning(
+                "Worker crashed (exit=%s, restart %d/%d) — waiting %.1fs before restart",
+                proc.returncode,
+                restart_count + 1,
+                self._max_restarts,
+                backoff,
+            )
+            time.sleep(backoff)
+
+            with self._lock:
+                self._running = False
+                self._conn = None
+                self._process = None
+                self._restart_count += 1
+                self._last_restart_at = time.time()
+
+            result = self._start_worker_process()
+            if not result.get("ok"):
+                logger.error("Restart attempt %d failed: %s", restart_count + 1, result.get("error"))
+            else:
+                logger.info("Worker restarted (attempt %d)", restart_count + 1)
+
+    def _start_worker_process(self) -> Dict[str, Any]:
+        """Internal: start worker subprocess + reader thread (no lock guard on running check).
+
+        Used by watchdog for restarts.
+        """
+        env = os.environ.copy()
+        env["JARVIS_WAKEWORD_SOCKET"] = _SOCKET_PATH
+
+        try:
+            proc = subprocess.Popen(
+                [str(_WORKER_PYTHON), str(_WORKER_SCRIPT)],
+                env=env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+            )
+            with self._lock:
+                self._process = proc
+
+            deadline = time.time() + _WORKER_STARTUP_TIMEOUT
+            while time.time() < deadline:
+                if os.path.exists(_SOCKET_PATH):
+                    break
+                if proc.poll() is not None:
+                    out = ""
+                    try:
+                        out = proc.stdout.read(2000) if proc.stdout else ""
+                    except Exception:
+                        pass
+                    return {"ok": False, "error": f"Worker exited early (rc={proc.returncode}): {out}"}
+                time.sleep(0.1)
+
+            conn = self._connect_unix() if os.path.exists(_SOCKET_PATH) else self._connect_tcp()
+            if conn is None:
+                return {"ok": False, "error": "Could not connect to worker socket after restart"}
+
+            with self._lock:
+                self._conn = conn
+                self._running = True
+                self._error = None
+
+            t = threading.Thread(target=self._reader_loop, daemon=True)
+            t.start()
+            with self._lock:
+                self._reader_thread = t
+
+            return {"ok": True, "worker_pid": proc.pid}
+        except Exception as exc:
+            with self._lock:
+                self._error = str(exc)
             return {"ok": False, "error": str(exc)}
 
     def _connect_unix(self) -> Optional[socket.socket]:
@@ -272,6 +394,10 @@ class WakeWordBridge:
                 "error": self._error,
                 "socket_path": _SOCKET_PATH,
                 "tcp_port": _TCP_PORT,
+                "restart_count": self._restart_count,
+                "last_restart_at": self._last_restart_at,
+                "auto_restart": self._auto_restart,
+                "max_restarts": self._max_restarts,
             }
 
 

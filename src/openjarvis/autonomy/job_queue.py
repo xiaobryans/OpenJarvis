@@ -393,6 +393,68 @@ def queue_stats(db_path: Optional[Path] = None) -> Dict[str, Any]:
     }
 
 
+def get_stalled_jobs(
+    stale_after_seconds: int = 300,
+    db_path: Optional[Path] = None,
+) -> List[Job]:
+    """Return jobs that have been in RUNNING state longer than stale_after_seconds.
+
+    These jobs are candidates for crash recovery via recover_stale_running().
+    """
+    cutoff = time.time() - stale_after_seconds
+    with _db(db_path) as conn:
+        rows = conn.execute(
+            "SELECT * FROM jobs WHERE state = ? AND started_at < ? ORDER BY started_at ASC",
+            (JobState.RUNNING, cutoff),
+        ).fetchall()
+    return [_row_to_job(r) for r in rows]
+
+
+def get_retry_stats(db_path: Optional[Path] = None) -> Dict[str, Any]:
+    """Return retry statistics: jobs with attempts > 1, max attempts hit."""
+    with _db(db_path) as conn:
+        retried = conn.execute(
+            "SELECT COUNT(*) as n FROM jobs WHERE attempts > 1"
+        ).fetchone()["n"]
+        exhausted = conn.execute(
+            "SELECT COUNT(*) as n FROM jobs WHERE state = ? AND attempts >= max_attempts",
+            (JobState.FAILED,),
+        ).fetchone()["n"]
+        high_retry = conn.execute(
+            "SELECT * FROM jobs WHERE attempts > 1 ORDER BY attempts DESC LIMIT 10"
+        ).fetchall()
+    return {
+        "jobs_with_retries": retried,
+        "exhausted_retries": exhausted,
+        "top_retry_jobs": [
+            {"job_id": r["job_id"], "action": r["action"], "attempts": r["attempts"], "state": r["state"]}
+            for r in high_retry
+        ],
+    }
+
+
+def get_queue_health_report(
+    stale_after_seconds: int = 300,
+    db_path: Optional[Path] = None,
+) -> Dict[str, Any]:
+    """Full queue health report for doctor/readiness and ops dashboard."""
+    stats = queue_stats(db_path=db_path)
+    stalled = get_stalled_jobs(stale_after_seconds=stale_after_seconds, db_path=db_path)
+    retry_stats = get_retry_stats(db_path=db_path)
+    return {
+        "stats": stats,
+        "stalled_jobs": len(stalled),
+        "stalled_job_ids": [j.job_id for j in stalled],
+        "stale_threshold_seconds": stale_after_seconds,
+        "retry_stats": retry_stats,
+        "health": "ok" if not stalled and stats.get("failed", 0) == 0 else "degraded",
+        "recovery_action": (
+            "call recover_stale_running() to reset stalled jobs"
+            if stalled else None
+        ),
+    }
+
+
 __all__ = [
     "JobState",
     "Job",
@@ -405,4 +467,7 @@ __all__ = [
     "list_jobs",
     "get_job",
     "queue_stats",
+    "get_stalled_jobs",
+    "get_retry_stats",
+    "get_queue_health_report",
 ]
