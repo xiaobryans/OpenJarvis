@@ -1,6 +1,6 @@
 """Jarvis Readiness Gate — evidence-backed V1 daily-driver readiness evaluation.
 
-26 readiness categories (9 original + 6 US8 + 10 US9 + 1 US10):
+27 readiness categories (9 original + 6 US8 + 10 US9 + 1 US10 + 1 US11):
   core_mission_system       — mission store + tool gateway functional
   tools_skills_memory       — tool/skill/memory registry healthy
   autonomy_watchdogs_alerts — autonomy mode + watchdogs + alerts operational
@@ -81,6 +81,8 @@ class ReadinessCategory:
     DOGFOOD_LOOP = "dogfood_loop"
     # US10 categories
     RUNTIME_LIFECYCLE = "runtime_lifecycle"
+    # US11 categories
+    TRUST_LAYER = "trust_layer"
 
 
 # ---------------------------------------------------------------------------
@@ -175,6 +177,10 @@ _CATEGORY_CHECKS: Dict[str, List[str]] = {
     ReadinessCategory.RUNTIME_LIFECYCLE: [
         "runtime_lifecycle",
     ],
+    # US11 categories
+    ReadinessCategory.TRUST_LAYER: [
+        "trust_layer",
+    ],
 }
 
 # Categories where fail → UNSAFE verdict (not just HOLD)
@@ -197,7 +203,9 @@ _REQUIRED_CATEGORIES = frozenset({
     ReadinessCategory.INJECT_GUARD,
     # US10 required daily-driver hardening
     ReadinessCategory.RUNTIME_LIFECYCLE,
-    # US8/US9/US10 non-required (warn only — external config/hardware blockers)
+    # US11 required trust/evidence layer
+    ReadinessCategory.TRUST_LAYER,
+    # US8/US9/US10/US11 non-required (warn only — external config/hardware blockers)
     # voice_readiness, desktop_readiness, connector_readiness,
     # mobile_readiness, openclaw_linkage, secrets_backend,
     # job_queue, voice_identity, connector_health_monitor,
@@ -281,6 +289,7 @@ _ACCEPTED_CHECKPOINTS = [
     "Ultra Sprint 8 Infrastructure Modules — ACCEPT (51 tools, 6 checks, 19 total checks, 15 categories)",
     "Ultra Sprint 9 Sovereign Hardening — ACCEPT (10 new modules, 29 checks, 25 categories; US8 checks untouched)",
     "Ultra Sprint 10 Daily-Driver Hardening — ACCEPT (runtime lifecycle, voice worker restart, connector escalation, queue health, alert escalation; 31 checks, 26 categories)",
+    "Ultra Sprint 11 Intelligence + Trust Layer — ACCEPT (trust/evidence layer, action profiles, memory provenance, connector trust, execution self-checks; 32 checks, 27 categories)",
 ]
 
 

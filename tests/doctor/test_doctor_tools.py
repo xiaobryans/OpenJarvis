@@ -125,12 +125,12 @@ class TestDoctorToolRegistration:
 
 
 class TestDoctorRunExecutor:
-    def test_returns_31_checks(self):
+    def test_returns_32_checks(self):
         initialize_doctor_catalog()
         executor = ToolRegistry.get_executor("doctor.run")
         result = executor({"project_id": "omnix"}, {})
-        assert result["total_checks"] == 31
-        assert len(result["checks"]) == 31
+        assert result["total_checks"] == 32
+        assert len(result["checks"]) == 32
 
     def test_project_id_in_result(self):
         initialize_doctor_catalog()
@@ -169,11 +169,11 @@ class TestDoctorReportExecutor:
         assert "by_category" in result
         assert isinstance(result["by_category"], dict)
 
-    def test_31_checks_total(self):
+    def test_32_checks_total(self):
         initialize_doctor_catalog()
         executor = ToolRegistry.get_executor("doctor.report")
         result = executor({"project_id": "omnix"}, {})
-        assert result["total_checks"] == 31
+        assert result["total_checks"] == 32
 
 
 class TestReadinessEvaluateExecutor:
@@ -184,11 +184,11 @@ class TestReadinessEvaluateExecutor:
         valid = {"ready", "warn", "hold", "unsafe"}
         assert result["verdict"] in valid
 
-    def test_has_26_categories(self):
+    def test_has_27_categories(self):
         initialize_doctor_catalog()
         executor = ToolRegistry.get_executor("readiness.evaluate")
         result = executor({"project_id": "omnix"}, {})
-        assert len(result["categories"]) == 26
+        assert len(result["categories"]) == 27
 
     def test_cost_control_compliant(self):
         initialize_doctor_catalog()
@@ -277,4 +277,4 @@ class TestGovernanceGatewayBlock:
         result = gw.execute("doctor.run", inputs={"project_id": "omnix"})
         assert result.ok is True
         assert result.outcome == "success"
-        assert result.output["total_checks"] == 31
+        assert result.output["total_checks"] == 32

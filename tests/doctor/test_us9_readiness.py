@@ -146,9 +146,9 @@ class TestUS9ReadinessCategories:
 
 
 class TestRunAllChecksIncludes29:
-    def test_run_all_checks_returns_31(self):
+    def test_run_all_checks_returns_32(self):
         results = run_all_checks()
-        assert len(results) == 31, f"Expected 31 checks, got {len(results)}"
+        assert len(results) == 32, f"Expected 32 checks, got {len(results)}"
 
     def test_all_us9_check_ids_present(self):
         results = run_all_checks()

@@ -2074,7 +2074,184 @@ def check_runtime_lifecycle(project_id: str = "omnix") -> CheckResult:
 
 
 # ---------------------------------------------------------------------------
-# Check registry (31 checks total — 19 US7/US8 + 10 US9 + 1 strict-rules + 1 US10)
+# US11 Check 32 — trust_layer
+# ---------------------------------------------------------------------------
+
+
+def check_trust_layer(project_id: str = "omnix") -> CheckResult:
+    """Verify trust/evidence layer module is functional (US11).
+
+    Checks:
+    - openjarvis.intelligence.trust imports cleanly
+    - TrustStatus, EvidenceRecord, MemoryProvenance are available
+    - ActionProfile, ConnectorTrustStatus are available
+    - PreExecutionSelfCheck and PostExecutionSelfCheck are callable
+    - classify_connector_trust returns a ConnectorTrustStatus
+    - build_readiness_trust_report returns a ReadinessTrustReport
+    - insufficient_data returns the standard message
+    """
+    evidence: Dict[str, Any] = {}
+    failures: List[str] = []
+
+    try:
+        from openjarvis.intelligence.trust import (  # noqa: PLC0415
+            TrustStatus,
+            EvidenceRecord,
+            MemoryProvenance,
+            MemorySource,
+            ActionProfile,
+            ActionAccessType,
+            ConnectorTrustStatus,
+            ReadinessTrustReport,
+            PreExecutionSelfCheck,
+            PostExecutionSelfCheck,
+            classify_connector_trust,
+            classify_memory_provenance,
+            build_readiness_trust_report,
+            build_action_profile,
+            insufficient_data,
+            INSUFFICIENT_DATA_MSG,
+        )
+        evidence["trust_module_import"] = "ok"
+    except Exception as exc:
+        evidence["trust_module_import"] = f"import_error: {exc}"
+        failures.append(f"trust module not importable: {exc}")
+        return CheckResult(
+            check_id="trust_layer",
+            category="trust",
+            status=CheckStatus.FAIL,
+            summary=f"Trust layer check failed: {failures}",
+            evidence=evidence,
+            project_id=project_id,
+        )
+
+    try:
+        assert TrustStatus.READY == "ready"
+        assert TrustStatus.DEGRADED == "degraded"
+        assert TrustStatus.BLOCKED == "blocked"
+        assert TrustStatus.UNCONFIGURED == "unconfigured"
+        assert TrustStatus.UNKNOWN == "unknown"
+        evidence["trust_status_constants"] = "ok"
+    except Exception as exc:
+        evidence["trust_status_constants"] = f"fail: {exc}"
+        failures.append(f"TrustStatus constants invalid: {exc}")
+
+    try:
+        er = EvidenceRecord(source="test", reason="probe", value="v")
+        assert er.is_verified()
+        d = er.to_dict()
+        assert "source" in d and "is_verified" in d
+        evidence["evidence_record"] = "ok"
+    except Exception as exc:
+        evidence["evidence_record"] = f"fail: {exc}"
+        failures.append(f"EvidenceRecord broken: {exc}")
+
+    try:
+        mp = MemoryProvenance(
+            source_type=MemorySource.DURABLE,
+            namespace="project:omnix",
+            recency=None,
+            trust_status=TrustStatus.DEGRADED,
+        )
+        d = mp.to_dict()
+        assert "source_type" in d and "trust_status" in d
+        evidence["memory_provenance"] = "ok"
+    except Exception as exc:
+        evidence["memory_provenance"] = f"fail: {exc}"
+        failures.append(f"MemoryProvenance broken: {exc}")
+
+    try:
+        cts = classify_connector_trust(
+            "slack", configured=False, last_health_ok=None
+        )
+        assert cts.trust_status == TrustStatus.UNCONFIGURED
+        cts2 = classify_connector_trust(
+            "slack", configured=True, last_health_ok=True
+        )
+        assert cts2.trust_status == TrustStatus.READY
+        cts3 = classify_connector_trust(
+            "slack", configured=True, last_health_ok=False, error_reason="timeout"
+        )
+        assert cts3.trust_status == TrustStatus.DEGRADED
+        evidence["classify_connector_trust"] = "ok"
+    except Exception as exc:
+        evidence["classify_connector_trust"] = f"fail: {exc}"
+        failures.append(f"classify_connector_trust broken: {exc}")
+
+    try:
+        pre = PreExecutionSelfCheck.check(["key_a", "key_b"], {"key_a": "v", "key_b": True})
+        assert pre["ok"] is True
+        pre_fail = PreExecutionSelfCheck.check(["key_a", "missing_key"], {"key_a": "v"})
+        assert pre_fail["ok"] is False
+        assert "missing_key" in pre_fail["missing"]
+        evidence["pre_execution_self_check"] = "ok"
+    except Exception as exc:
+        evidence["pre_execution_self_check"] = f"fail: {exc}"
+        failures.append(f"PreExecutionSelfCheck broken: {exc}")
+
+    try:
+        post_ok = PostExecutionSelfCheck.check("real result")
+        assert post_ok["ok"] is True
+        post_empty = PostExecutionSelfCheck.check("")
+        assert post_empty["ok"] is False
+        post_none = PostExecutionSelfCheck.check(None)
+        assert post_none["ok"] is False
+        evidence["post_execution_self_check"] = "ok"
+    except Exception as exc:
+        evidence["post_execution_self_check"] = f"fail: {exc}"
+        failures.append(f"PostExecutionSelfCheck broken: {exc}")
+
+    try:
+        rtr = build_readiness_trust_report(
+            "test_subject",
+            {"k1": "v1", "k2": True},
+            ["k1", "k2"],
+        )
+        assert rtr.trust_status == TrustStatus.READY
+        assert rtr.is_sufficient
+        rtr_miss = build_readiness_trust_report(
+            "test_subject", {"k1": "v1"}, ["k1", "k2"]
+        )
+        assert rtr_miss.trust_status == TrustStatus.DEGRADED
+        assert not rtr_miss.is_sufficient
+        evidence["build_readiness_trust_report"] = "ok"
+    except Exception as exc:
+        evidence["build_readiness_trust_report"] = f"fail: {exc}"
+        failures.append(f"build_readiness_trust_report broken: {exc}")
+
+    try:
+        msg = insufficient_data("test_context")
+        assert "insufficient_data_to_verify" in msg
+        assert "test_context" in msg
+        evidence["insufficient_data_fn"] = "ok"
+    except Exception as exc:
+        evidence["insufficient_data_fn"] = f"fail: {exc}"
+        failures.append(f"insufficient_data broken: {exc}")
+
+    if failures:
+        return CheckResult(
+            check_id="trust_layer",
+            category="trust",
+            status=CheckStatus.FAIL,
+            summary=f"Trust layer check failed: {failures}",
+            evidence=evidence,
+            project_id=project_id,
+        )
+    return CheckResult(
+        check_id="trust_layer",
+        category="trust",
+        status=CheckStatus.PASS,
+        summary=(
+            "Trust layer: module importable, all components functional, "
+            "self-checks operational, evidence records verified"
+        ),
+        evidence=evidence,
+        project_id=project_id,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Check registry (32 checks total — 19 US7/US8 + 10 US9 + 1 strict-rules + 1 US10 + 1 US11)
 # ---------------------------------------------------------------------------
 
 
@@ -2113,11 +2290,13 @@ _ALL_CHECK_FNS: List[Callable[..., CheckResult]] = [
     check_strict_operating_rules_present,
     # US10 checks
     check_runtime_lifecycle,
+    # US11 checks
+    check_trust_layer,
 ]
 
 
 def run_all_checks(project_id: str = "omnix") -> List[CheckResult]:
-    """Run all 31 diagnostic checks. Returns a list of CheckResult objects.
+    """Run all 32 diagnostic checks. Returns a list of CheckResult objects.
 
     Never raises — any unhandled exception inside a check is caught and
     reported as a CheckStatus.FAIL for that check.
@@ -2173,6 +2352,7 @@ __all__ = [
     "check_voice_identity",
     "check_runtime_lifecycle",
     "check_strict_operating_rules_present",
+    "check_trust_layer",
     "check_voice_pipeline_status",
     "check_watchdog_status",
     "run_all_checks",

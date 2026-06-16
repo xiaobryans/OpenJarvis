@@ -119,9 +119,9 @@ class TestCheckResultContract:
 
 
 class TestRunAllChecks:
-    def test_returns_exactly_31_results(self):
+    def test_returns_exactly_32_results(self):
         results = run_all_checks(project_id="omnix")
-        assert len(results) == 31
+        assert len(results) == 32
 
     def test_all_results_are_check_result(self):
         results = run_all_checks(project_id="omnix")
@@ -155,11 +155,11 @@ class TestRunAllChecks:
             assert r.project_id == "omnix"
 
     def test_all_check_fns_count(self):
-        assert len(_ALL_CHECK_FNS) == 31
+        assert len(_ALL_CHECK_FNS) == 32
 
     def test_no_exception_on_unknown_project(self):
         results = run_all_checks(project_id="nonexistent_xyz_proj")
-        assert len(results) == 31
+        assert len(results) == 32
 
 
 # ---------------------------------------------------------------------------
