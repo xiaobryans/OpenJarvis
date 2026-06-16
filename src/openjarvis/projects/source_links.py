@@ -39,6 +39,7 @@ Governance rules enforced here:
 from __future__ import annotations
 
 import logging
+import os
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -47,6 +48,29 @@ from typing import Any, Dict, List, Optional
 logger = logging.getLogger(__name__)
 
 _JARVIS_REPO_ROOT = Path(__file__).parent.parent.parent.parent.resolve()
+
+
+def _load_openjarvis_env() -> None:
+    """Load ~/.openjarvis/cloud-keys.env (and local.env if present) into os.environ.
+
+    Uses setdefault so already-set env vars are never overwritten.
+    Never prints or logs values.
+    """
+    base = Path.home() / ".openjarvis"
+    for fname in ("local.env", "cloud-keys.env"):
+        env_file = base / fname
+        if not env_file.is_file():
+            continue
+        try:
+            with open(env_file) as fh:
+                for raw in fh:
+                    line = raw.strip()
+                    if not line or line.startswith("#") or "=" not in line:
+                        continue
+                    k, v = line.split("=", 1)
+                    os.environ.setdefault(k.strip(), v.strip())
+        except OSError:
+            pass
 
 
 # ---------------------------------------------------------------------------
@@ -484,20 +508,30 @@ class ProjectSourceRegistry:
     def _bootstrap_omnix(cls) -> None:
         """Bootstrap OMNIX source links from OMNIX_PROJECT profile.
 
-        OMNIX repo_path=/Users/user/OpenJarvis → local_repo placeholder
-        (points to Jarvis/OpenJarvis codebase, not real OMNIX product).
+        Reads env vars at call time so that values set in cloud-keys.env or
+        local.env (auto-loaded by _load_openjarvis_env) are picked up.
+
+        Priority:
+          JARVIS_PROJECT_OMNIX_REPO_PATH > OMNIX_PROJECT.repo_path
+          OPENCLAW_WORKSPACE_PATH        > "" (not_configured)
+          OPENCLAW_HANDOFF_PATH          > "" (not_configured)
         """
+        _load_openjarvis_env()
         from openjarvis.governance.constitution import OMNIX_PROJECT
 
         project_id = OMNIX_PROJECT.project_id
         sources: List[ProjectSourceLink] = []
 
-        # local_repo — will be detected as placeholder by validator
+        # local_repo — use env var if present, else fall back to profile
+        local_repo_path = (
+            os.environ.get("JARVIS_PROJECT_OMNIX_REPO_PATH", "").strip()
+            or OMNIX_PROJECT.repo_path
+        )
         sources.append(ProjectSourceLink(
             source_id="local_repo",
             project_id=project_id,
             link_type=ProjectSourceLinkType.LOCAL_REPO,
-            path_or_url=OMNIX_PROJECT.repo_path,
+            path_or_url=local_repo_path,
             display_name="OMNIX Local Repository",
         ))
 
@@ -510,7 +544,7 @@ class ProjectSourceRegistry:
             display_name="OMNIX GitHub Remote",
         ))
 
-        # handoff_file — JARVIS_OMNIX_HANDOFF.md (relative to jarvis repo)
+        # handoff_file — primary Jarvis handoff
         handoff_path = ""
         if OMNIX_PROJECT.handoff_paths:
             handoff_path = OMNIX_PROJECT.handoff_paths[0]
@@ -522,21 +556,23 @@ class ProjectSourceRegistry:
             display_name="OMNIX Primary Handoff File",
         ))
 
-        # openclaw_workspace — not configured
+        # openclaw_workspace — use env var if present
+        openclaw_ws = os.environ.get("OPENCLAW_WORKSPACE_PATH", "").strip()
         sources.append(ProjectSourceLink(
             source_id="openclaw_workspace",
             project_id=project_id,
             link_type=ProjectSourceLinkType.OPENCLAW_WORKSPACE,
-            path_or_url="",
+            path_or_url=openclaw_ws,
             display_name="OMNIX OpenClaw Workspace",
         ))
 
-        # openclaw_handoff — not configured
+        # openclaw_handoff — use env var if present
+        openclaw_hf = os.environ.get("OPENCLAW_HANDOFF_PATH", "").strip()
         sources.append(ProjectSourceLink(
             source_id="openclaw_handoff",
             project_id=project_id,
             link_type=ProjectSourceLinkType.OPENCLAW_HANDOFF,
-            path_or_url="",
+            path_or_url=openclaw_hf,
             display_name="OMNIX OpenClaw Handoff",
         ))
 

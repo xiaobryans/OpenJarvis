@@ -247,8 +247,8 @@ class TestGitHubLocalRemoteInfo:
 
 class TestOpenClawStatus:
     def test_not_configured_when_no_env(self, monkeypatch):
-        monkeypatch.delenv("OPENCLAW_WORKSPACE_PATH", raising=False)
-        monkeypatch.delenv("OPENCLAW_HANDOFF_PATH", raising=False)
+        monkeypatch.setenv("OPENCLAW_WORKSPACE_PATH", "")
+        monkeypatch.setenv("OPENCLAW_HANDOFF_PATH", "")
         r = get_openclaw_status()
         assert r["status"] == ConnectorStatus.NOT_CONFIGURED
 
@@ -265,15 +265,15 @@ class TestOpenClawStatus:
         assert r["mutations_allowed"] is False
 
     def test_missing_env_vars_listed(self, monkeypatch):
-        monkeypatch.delenv("OPENCLAW_WORKSPACE_PATH", raising=False)
-        monkeypatch.delenv("OPENCLAW_HANDOFF_PATH", raising=False)
+        monkeypatch.setenv("OPENCLAW_WORKSPACE_PATH", "")
+        monkeypatch.setenv("OPENCLAW_HANDOFF_PATH", "")
         r = get_openclaw_status()
         assert len(r["missing_env_vars"]) >= 1
 
 
 class TestOpenClawHandoffRead:
     def test_ok_false_when_path_not_set(self, monkeypatch):
-        monkeypatch.delenv("OPENCLAW_HANDOFF_PATH", raising=False)
+        monkeypatch.setenv("OPENCLAW_HANDOFF_PATH", "")
         r = read_openclaw_handoff_summary()
         assert r["ok"] is False
         assert "blocker" in r

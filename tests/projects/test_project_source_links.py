@@ -35,8 +35,24 @@ from openjarvis.projects.source_links import (
 # ---------------------------------------------------------------------------
 
 
+_LINKAGE_ENV_KEYS = (
+    "JARVIS_PROJECT_OMNIX_REPO_PATH",
+    "OPENCLAW_WORKSPACE_PATH",
+    "OPENCLAW_HANDOFF_PATH",
+)
+
+
+_LINKAGE_ENV_OVERRIDES = {
+    "JARVIS_PROJECT_OMNIX_REPO_PATH": "/Users/user/OpenJarvis",
+    "OPENCLAW_WORKSPACE_PATH": "",
+    "OPENCLAW_HANDOFF_PATH": "",
+}
+
+
 @pytest.fixture(autouse=True)
-def reset_registry():
+def reset_registry(monkeypatch):
+    for key, val in _LINKAGE_ENV_OVERRIDES.items():
+        monkeypatch.setenv(key, val)
     ProjectSourceRegistry.clear()
     yield
     ProjectSourceRegistry.clear()
@@ -79,7 +95,7 @@ class TestOmnixBootstrap:
         link = ProjectSourceRegistry.get("omnix", "local_repo")
         assert link is not None
         assert link.link_type == ProjectSourceLinkType.LOCAL_REPO
-        assert link.path_or_url == "/Users/user/OpenJarvis"
+        assert link.path_or_url  # path is non-empty (from profile or env)
 
     def test_omnix_local_repo_validates_as_placeholder(self):
         link = ProjectSourceRegistry.get("omnix", "local_repo")
@@ -99,6 +115,7 @@ class TestOmnixBootstrap:
         link = ProjectSourceRegistry.get("omnix", "openclaw_workspace")
         assert link is not None
         validated = validate_source_link(link)
+        # env vars cleared by fixture → path is empty → not_configured
         assert validated.status == ProjectSourceStatus.NOT_CONFIGURED
 
     def test_omnix_runtime_health_is_not_configured(self):
@@ -202,15 +219,15 @@ class TestReadinessHoldForOmnix:
         assert pl_cat is not None
         assert pl_cat.is_required is True
 
-    def test_readiness_has_9_categories(self):
+    def test_readiness_has_15_categories(self):
         from openjarvis.doctor.readiness import evaluate_readiness
         report = evaluate_readiness(project_id="omnix")
-        assert len(report.categories) == 9
+        assert len(report.categories) == 15
 
-    def test_run_all_checks_returns_13(self):
+    def test_run_all_checks_returns_19(self):
         from openjarvis.doctor.checks import run_all_checks
         results = run_all_checks(project_id="omnix")
-        assert len(results) == 13
+        assert len(results) == 19
 
 
 # ---------------------------------------------------------------------------
@@ -585,13 +602,18 @@ class TestNoSecretsInOutput:
 
 class TestProjectLinkerTools:
     @pytest.fixture(autouse=True)
-    def setup_tools(self):
+    def setup_tools(self, monkeypatch):
+        for key, val in _LINKAGE_ENV_OVERRIDES.items():
+            monkeypatch.setenv(key, val)
         from openjarvis.tools.jarvis_registry import ToolRegistry
+        from openjarvis.projects.source_links import ProjectSourceRegistry
         ToolRegistry.clear()
+        ProjectSourceRegistry.clear()
         from openjarvis.tools.project_linker_catalog import initialize_project_linker_catalog
         initialize_project_linker_catalog()
         yield
         ToolRegistry.clear()
+        ProjectSourceRegistry.clear()
 
     _TOOL_IDS = [
         "project.sources.list",

@@ -24,6 +24,8 @@ import subprocess
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from openjarvis.projects.source_links import _load_openjarvis_env as _load_env
+
 
 # ---------------------------------------------------------------------------
 # Status constants
@@ -44,6 +46,7 @@ class ConnectorStatus:
 
 def get_slack_status() -> Dict[str, Any]:
     """Check Slack connector readiness. Never prints token values."""
+    _load_env()
     bot_token_present = bool(
         os.environ.get("OPENCLAW_SLACK_BOT_TOKEN")
         or os.environ.get("JARVIS_SLACK_BOT_TOKEN")
@@ -131,6 +134,7 @@ def draft_slack_test_send(message: str = "Jarvis test message") -> Dict[str, Any
 
 def get_telegram_status() -> Dict[str, Any]:
     """Check Telegram connector readiness. Never prints token values."""
+    _load_env()
     bot_token_present = bool(os.environ.get("JARVIS_TELEGRAM_BOT_TOKEN"))
     chat_id_present = bool(os.environ.get("JARVIS_TELEGRAM_CHAT_ID"))
 
@@ -240,6 +244,7 @@ def get_telegram_approval_preview(action: str, description: str = "") -> Dict[st
 
 def get_web_search_status() -> Dict[str, Any]:
     """Check web search readiness. No fake available status."""
+    _load_env()
     tavily = bool(os.environ.get("TAVILY_API_KEY"))
     serper = bool(os.environ.get("SERPER_API_KEY"))
     brave = bool(os.environ.get("BRAVE_SEARCH_API_KEY"))
@@ -372,6 +377,7 @@ def get_github_local_remote_info() -> Dict[str, Any]:
 
 def get_openclaw_status() -> Dict[str, Any]:
     """Check OpenClaw workspace/handoff readiness. Read-only."""
+    _load_env()
     workspace_path = os.environ.get("OPENCLAW_WORKSPACE_PATH", "")
     handoff_path = os.environ.get("OPENCLAW_HANDOFF_PATH", "")
 
@@ -416,6 +422,7 @@ def get_openclaw_status() -> Dict[str, Any]:
 
 def read_openclaw_handoff_summary() -> Dict[str, Any]:
     """Read OpenClaw handoff file summary. Read-only."""
+    _load_env()
     handoff_path = os.environ.get("OPENCLAW_HANDOFF_PATH", "")
     if not handoff_path:
         return {

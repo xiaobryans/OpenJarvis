@@ -125,6 +125,16 @@ class TestReadinessVerdictConstants:
 
 
 class TestEvaluateReadiness:
+    @pytest.fixture(autouse=True)
+    def reset_linkage_env(self, monkeypatch):
+        monkeypatch.setenv("JARVIS_PROJECT_OMNIX_REPO_PATH", "/Users/user/OpenJarvis")
+        monkeypatch.setenv("OPENCLAW_WORKSPACE_PATH", "")
+        monkeypatch.setenv("OPENCLAW_HANDOFF_PATH", "")
+        from openjarvis.projects.source_links import ProjectSourceRegistry
+        ProjectSourceRegistry.clear()
+        yield
+        ProjectSourceRegistry.clear()
+
     def test_returns_readiness_report(self):
         report = evaluate_readiness(project_id="omnix")
         assert isinstance(report, ReadinessReport)

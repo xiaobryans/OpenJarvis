@@ -415,7 +415,10 @@ class TestHandoffFreshness:
 
 class TestProjectLinkageStatus:
     @pytest.fixture(autouse=True)
-    def reset_source_registry(self):
+    def reset_source_registry(self, monkeypatch):
+        monkeypatch.setenv("JARVIS_PROJECT_OMNIX_REPO_PATH", "/Users/user/OpenJarvis")
+        monkeypatch.setenv("OPENCLAW_WORKSPACE_PATH", "")
+        monkeypatch.setenv("OPENCLAW_HANDOFF_PATH", "")
         from openjarvis.projects.source_links import ProjectSourceRegistry
         ProjectSourceRegistry.clear()
         yield
