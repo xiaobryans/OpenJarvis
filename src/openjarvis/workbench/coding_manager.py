@@ -210,6 +210,54 @@ _FILE_HINTS = {
     "provider": "src/openjarvis/intelligence/model_catalog.py",
 }
 
+_SUBSYSTEM_LABELS: Dict[str, str] = {
+    "routes.py": "PA Chat / API Routes",
+    "workbench_routes": "Workbench Routes",
+    "coding_manager": "Workbench Manager",
+    "notify_routes": "Notification Routes / Events",
+    "notifier.py": "Notifier",
+    "approval_store": "Approval Store",
+    "approval_routes": "Approval Routes",
+    "ApprovalBell": "Frontend Approval UI (macOS/Tauri)",
+    "slack": "Slack Channel / Notifier",
+    "telegram": "Telegram Channel / Notifier",
+    "WorkbenchPage": "Frontend Workbench UI",
+    "ChatArea": "Frontend Chat UI",
+    "model_router": "Model Router",
+    "cost_ledger": "Cost Ledger",
+    "automation_policy": "Guarded Autopilot",
+    "constitution": "Governance / Constitution",
+    "test_us14a": "Tests",
+}
+
+_PLANNING_NEXT_FILES: List[str] = [
+    "src/openjarvis/server/routes.py",
+    "src/openjarvis/server/workbench_routes.py",
+    "src/openjarvis/workbench/coding_manager.py",
+    "src/openjarvis/server/notify_routes.py",
+    "src/openjarvis/mission/notifier.py",
+    "src/openjarvis/tools/approval_store.py",
+    "src/openjarvis/server/approval_routes.py",
+    "src/openjarvis/channels/slack.py",
+    "src/openjarvis/channels/telegram.py",
+    "frontend/src/components/ApprovalBell.tsx",
+    "src/openjarvis/workbench/model_router.py",
+    "src/openjarvis/workbench/cost_ledger.py",
+    "src/openjarvis/autonomy/automation_policy.py",
+    "src/openjarvis/governance/constitution.py",
+    "frontend/src/pages/WorkbenchPage.tsx",
+    "tests/workbench/test_us14a.py",
+    "tests/workbench/test_us14a_planner.py",
+]
+
+
+def _get_subsystem_label(fpath: str) -> str:
+    """Map a file path fragment to a human-readable subsystem label."""
+    for key, label in _SUBSYSTEM_LABELS.items():
+        if key.lower() in fpath.lower():
+            return label
+    return "Other"
+
 
 def classify_prompt(prompt: str) -> str:
     """Classify a prompt into one of six task types.
@@ -735,7 +783,16 @@ class CodingManager:
         p = prompt.lower()
         risks: List[str] = []
         if task_type == "planning_only":
-            risks.append("Insufficient data to verify — discovery phase not yet run")
+            risks.append("Insufficient data to verify — discovery phase not yet run; files not fully inspected")
+            p2 = prompt.lower()
+            if any(w in p2 for w in ("slack", "telegram", "notification")):
+                risks.append("Risk: notification channels must not send messages during dry-run or Plan Only")
+            if any(w in p2 for w in ("autopilot", "guarded")):
+                risks.append("Risk: Guarded Autopilot must enforce approval gates; kill-switch policy must be verified")
+            if any(w in p2 for w in ("chat-to-workbench", "chat to workbench")):
+                risks.append("Risk: Chat-to-Workbench bridge requires idempotent message routing")
+            if any(w in p2 for w in ("model", "router", "routing")):
+                risks.append("Risk: model routing changes may trigger unexpected paid provider calls")
             return risks
         if task_type in ("complex_implementation", "bug_fix"):
             risks.append("Insufficient data to verify — likely affected files not yet read")
@@ -764,7 +821,14 @@ class CodingManager:
     def _identify_gates(self, task_type: str) -> List[str]:
         """Identify approval gates required for the task."""
         if task_type == "planning_only":
-            return ["Gate 0: No writes until explicit approval after plan review"]
+            return [
+                "Gate 0: No writes until explicit approval after plan review",
+                "Gate 1: Implementation plan must reach PLAN_READY_FOR_REVIEW before any file_write",
+                "Gate 2: Each implementation phase requires Discovery review before proceeding",
+                "Gate 3: Manager approval required for git_commit",
+                "Gate 4: Manager approval required for git_push",
+                "Gate 5: No Slack/Telegram test sends without explicit approval",
+            ]
         if task_type in ("complex_implementation", "bug_fix"):
             return [
                 "Gate 1: Discovery review — approve before any file writes",
@@ -1021,6 +1085,8 @@ class CodingManager:
         blocked_at: Optional[Subtask] = None,
     ) -> str:
         """Generate a final markdown report for the task."""
+        if plan.task_type == "planning_only":
+            return self._generate_planning_report(plan, blocked_at=blocked_at)
         lines = [
             f"# Jarvis Coding Workbench — Task Report",
             f"",
@@ -1104,6 +1170,281 @@ class CodingManager:
 
         return "\n".join(lines)
 
+    def _generate_planning_report(
+        self,
+        plan: TaskPlan,
+        blocked_at: Optional[Subtask] = None,
+    ) -> str:
+        """Generate a structured planning artifact for planning_only tasks.
+
+        Produces: implementation phases, likely files by subsystem, files read,
+        recommended next files, risks, validation commands, approval gates,
+        acceptance tests, model routing plan, Slack/Telegram gating,
+        known unknowns, and an explicit PLAN_READY_FOR_REVIEW or
+        HOLD_FOR_MORE_DISCOVERY verdict. Never says ACCEPT.
+        """
+        # Collect files actually read in this session
+        files_read: List[str] = []
+        for st in plan.subtasks:
+            if st.tool_id == "file_read" and st.status == "done":
+                raw = st.params.get("path", "")
+                rel = raw.replace(plan.repo_path + "/", "")
+                files_read.append(rel if rel != raw else raw)
+        files_read_set = set(files_read)
+
+        # Recommended next = likely_files not yet read + standard planning files
+        seen_next: set = set(files_read_set) | set(plan.likely_files)
+        recommended_next: List[str] = [f for f in plan.likely_files if f not in files_read_set]
+        for fpath in _PLANNING_NEXT_FILES:
+            if fpath not in seen_next:
+                recommended_next.append(fpath)
+                seen_next.add(fpath)
+
+        # Group likely_files by subsystem
+        subsystem_files: Dict[str, List[str]] = {}
+        for fpath in plan.likely_files:
+            label = _get_subsystem_label(fpath)
+            subsystem_files.setdefault(label, []).append(fpath)
+
+        # Determine recommendation
+        files_read_count = len(files_read)
+        any_failed = any(s.status == "failed" for s in plan.subtasks)
+        if files_read_count >= 2 and not any_failed and blocked_at is None:
+            recommendation = "PLAN_READY_FOR_REVIEW"
+            rec_note = "Initial discovery complete. Review this plan before implementing."
+        else:
+            recommendation = "HOLD_FOR_MORE_DISCOVERY"
+            rec_note = (
+                "Insufficient data to verify — read more subsystem files before "
+                "implementation begins."
+            )
+
+        lines: List[str] = []
+        lines += ["# Jarvis Workbench — Implementation Plan", ""]
+        lines += [f"**Status**: `{recommendation}`", f"*{rec_note}*", ""]
+
+        lines += ["## Task", ""]
+        lines += [
+            f"- **Prompt**: {plan.prompt}",
+            f"- **Task Type**: `{plan.task_type}`",
+            f"- **Dry-Run**: `{plan.dry_run}`",
+            f"- **Session**: `{plan.session_id}`",
+            f"- **Task ID**: `{plan.task_id}`",
+            f"- **Repo**: `{plan.repo_path}`",
+            "",
+        ]
+
+        if blocked_at:
+            lines += [
+                "## Blocker",
+                "",
+                f"Stopped at subtask [{blocked_at.index}]: `{blocked_at.description}`",
+                f"Error: `{blocked_at.error}`",
+                "",
+            ]
+
+        lines += ["## Files Read in This Session", ""]
+        if files_read:
+            for f in files_read:
+                lines.append(f"- `{f}`")
+        else:
+            lines.append("- Insufficient data to verify — no files read yet")
+        lines.append("")
+
+        lines += ["## Likely Files by Subsystem", ""]
+        if subsystem_files:
+            for subsystem in sorted(subsystem_files.keys()):
+                lines.append(f"**{subsystem}**")
+                for f in subsystem_files[subsystem]:
+                    marker = "✅" if f in files_read_set else "⬜"
+                    lines.append(f"  - {marker} `{f}`")
+                lines.append("")
+        else:
+            lines += ["Insufficient data to verify — no likely files identified from prompt.", ""]
+
+        lines += ["## Recommended Next Files to Inspect", ""]
+        if recommended_next:
+            for f in recommended_next[:16]:
+                lines.append(f"- `{f}`")
+        else:
+            lines.append("- All identified files have been read in this session.")
+        lines.append("")
+
+        lines += ["## Implementation Phases", ""]
+        for ph in self._extract_implementation_phases(plan.prompt):
+            lines.append(f"- {ph}")
+        lines.append("")
+
+        lines += ["## Risks", ""]
+        for r in plan.risks:
+            lines.append(f"- {r}")
+        lines.append("")
+
+        lines += ["## Validation Commands", ""]
+        for v in self._suggest_planning_validation():
+            lines.append(f"- `{v}`")
+        lines.append("")
+
+        lines += ["## Approval Gates", ""]
+        for g in plan.approval_gates:
+            lines.append(f"- {g}")
+        lines.append("")
+
+        lines += ["## Acceptance Tests", ""]
+        for t in self._identify_acceptance_tests(plan.prompt):
+            lines.append(f"- {t}")
+        lines.append("")
+
+        lines += ["## Model Routing / Provider Verification Plan", ""]
+        lines += [
+            "- Verify `MockModelAdapter` is active for all dry-run/Plan-Only runs (zero paid calls)",
+            "- Check `ModelRouter` DB for routing decisions after each subtask",
+            "- Confirm read-only tools route to `local` tier; LLM subtasks to `cloud-cheap`",
+            "- Verify cost ledger records `$0.000000` for Plan-Only sessions",
+            "- Insufficient data to verify — `model_router.py` / provider config not inspected this session",
+            "",
+        ]
+
+        lines += ["## Slack / Telegram Notification Gating Plan", ""]
+        lines += [
+            "- No Slack/Telegram messages must be sent during Plan Only or Dry-Run",
+            "- Dry-run test: run workbench with `dry_run=True`; assert no `channel_bridge.send()` calls",
+            "- Live test: requires explicit Manager approval; scope to a sandbox channel only",
+            "- Integration test: mock `Notifier`; assert `send()` not called in dry-run mode",
+            "- Acceptance gate: Slack/Telegram test sends require Manager approval before execution",
+            "- Insufficient data to verify — `notify_routes.py` / `slack.py` / `telegram.py` not inspected this session",
+            "",
+        ]
+
+        lines += ["## Known Unknowns", ""]
+        for u in self._identify_known_unknowns(plan.prompt, list(files_read_set)):
+            lines.append(f"- Insufficient data to verify — {u}")
+        lines.append("")
+
+        lines += [
+            "## Final Recommendation",
+            "",
+            f"**`{recommendation}`**",
+            "",
+            rec_note,
+            "",
+            "Do not start implementation until this plan has been reviewed and approved.",
+            "",
+            "---",
+            "",
+            f"*Jarvis Coding Workbench | dry_run={plan.dry_run} | {plan.task_type} | session={plan.session_id}*",
+        ]
+
+        return "\n".join(lines)
+
+    def _extract_implementation_phases(self, prompt: str) -> List[str]:
+        """Derive implementation phases from prompt keywords."""
+        p = prompt.lower()
+        phases = [
+            "Phase 1: Discovery & Architecture Review — read all relevant source files, "
+            "map current system state, identify integration points",
+        ]
+        n = 2
+        if any(w in p for w in ("chat-to-workbench", "chat to workbench", "pa chat", "bridge")):
+            phases.append(
+                f"Phase {n}: PA Chat \u2192 Workbench Bridge \u2014 implement chat message routing "
+                "to workbench task queue"
+            )
+            n += 1
+        if any(w in p for w in ("notification", "notify", "unified")):
+            phases.append(
+                f"Phase {n}: Unified Notifications \u2014 implement cross-channel notification "
+                "delivery (macOS, Slack, Telegram)"
+            )
+            n += 1
+        if any(w in p for w in ("autopilot", "guarded")):
+            phases.append(
+                f"Phase {n}: Guarded Autopilot \u2014 implement approval gate enforcement "
+                "with kill-switch policy per governance constitution"
+            )
+            n += 1
+        phases.append(
+            f"Phase {n}: Integration Tests \u2014 add/update targeted tests for each new subsystem"
+        )
+        n += 1
+        phases.append(
+            f"Phase {n}: Frontend Wiring \u2014 update UI (status indicators, approval bells, "
+            "Workbench/Chat bridge status)"
+        )
+        n += 1
+        phases.append(
+            f"Phase {n}: Acceptance & Governance \u2014 run full validation, review against "
+            "constitution, commit + push on Manager approval"
+        )
+        return phases
+
+    def _suggest_planning_validation(self) -> List[str]:
+        """Return validation commands shown in the planning report."""
+        return [
+            ".venv/bin/python -m pytest tests/workbench/test_us14a_planner.py -x -q --tb=short",
+            ".venv/bin/python -m pytest tests/workbench/test_us14a.py -x -q --tb=short",
+            ".venv/bin/python -m pytest tests/workbench/ -q --tb=short",
+            "cd frontend && npm run build",
+        ]
+
+    def _identify_acceptance_tests(self, prompt: str) -> List[str]:
+        """Identify acceptance tests needed for the task."""
+        p = prompt.lower()
+        tests = [
+            ".venv/bin/python -m pytest tests/workbench/test_us14a_planner.py -x -q --tb=short",
+            ".venv/bin/python -m pytest tests/workbench/test_us14a.py -x -q --tb=short",
+        ]
+        if any(w in p for w in ("notification", "notify", "slack", "telegram")):
+            tests.append(
+                "test_notification_dry_run_no_send: assert Notifier.send() not called in dry_run"
+            )
+        if any(w in p for w in ("autopilot", "guarded")):
+            tests.append(
+                "test_guarded_autopilot_approval_gate: assert file_write blocked without approval"
+            )
+        if any(w in p for w in ("chat-to-workbench", "chat to workbench")):
+            tests.append(
+                "test_chat_to_workbench_bridge: assert chat message creates workbench task"
+            )
+        tests.append("E2E dry-run: plan + execute with dry_run=True \u2192 status=done_dry_run, zero writes")
+        tests.append("Frontend build: npm run build \u2192 exit 0")
+        return tests
+
+    def _identify_known_unknowns(self, prompt: str, files_read: List[str]) -> List[str]:
+        """Identify known unknowns from unread subsystem files implied by the prompt."""
+        p = prompt.lower()
+        unknowns: List[str] = []
+        if any(w in p for w in ("notification", "notify")) and not any(
+            "notify" in f or "notifier" in f for f in files_read
+        ):
+            unknowns.append(
+                "notify_routes.py / notifier.py not inspected \u2014 notification API surface unknown"
+            )
+        if "slack" in p and not any("slack" in f for f in files_read):
+            unknowns.append("slack.py not inspected \u2014 Slack message format / rate-limits unknown")
+        if "telegram" in p and not any("telegram" in f for f in files_read):
+            unknowns.append("telegram.py not inspected \u2014 Telegram bot API / polling config unknown")
+        if any(w in p for w in ("autopilot", "guarded")) and not any(
+            "automation" in f or "constitution" in f for f in files_read
+        ):
+            unknowns.append(
+                "automation_policy.py / constitution.py not inspected \u2014 "
+                "Guarded Autopilot approval gate behavior unknown"
+            )
+        if any(w in p for w in ("model", "router", "routing")) and not any(
+            "model_router" in f for f in files_read
+        ):
+            unknowns.append(
+                "model_router.py not inspected \u2014 provider routing / cost behavior unknown"
+            )
+        if "chat" in p and not any(
+            "routes.py" in f or "ChatArea" in f for f in files_read
+        ):
+            unknowns.append("routes.py / ChatArea.tsx not inspected \u2014 PA chat message flow unknown")
+        if not unknowns:
+            unknowns.append("No critical unknowns identified at this discovery depth")
+        return unknowns
+
     # ------------------------------------------------------------------
     # Approval API
     # ------------------------------------------------------------------
@@ -1171,6 +1512,9 @@ __all__ = [
     "Subtask",
     "classify_prompt",
     "_bounded_search_dir",
+    "_get_subsystem_label",
     "_SEARCH_TARGETED_DIRS",
     "_SEARCH_EXCLUDE_DIRS",
+    "_PLANNING_NEXT_FILES",
+    "_SUBSYSTEM_LABELS",
 ]

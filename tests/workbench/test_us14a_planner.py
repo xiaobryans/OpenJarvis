@@ -720,3 +720,152 @@ class TestDryRunGovernanceConsistency:
                 assert st.status == "skipped_dry_run", (
                     f"Tiny marker dry_run must skip {st.tool_id}, got {st.status}"
                 )
+
+
+# ---------------------------------------------------------------------------
+# US14A.1 Plan Synthesis: planning_only Report must be a real planning artifact
+# ---------------------------------------------------------------------------
+
+_US14A1_PLAN_PROMPT = (
+    "US14A.1 IMPLEMENTATION PLAN ONLY — PA Chat-to-Workbench + Unified Notifications"
+    " + Guarded Autopilot\n\nTask:\nCreate a scoped implementation plan for US14A.1."
+    "\n\nDo not edit files yet.\nDo not create files yet.\nDo not run write commands."
+    "\nDo not commit.\nDo not push.\nDo not send Slack or Telegram messages."
+    "\nDo not run production/deploy commands.\nDo not expose secrets."
+    "\n\nReturn a scoped implementation plan only."
+)
+
+
+@pytest.fixture()
+def us14a1_executed_plan(mgr):
+    """Plan + execute the exact US14A.1 prompt; return the executed plan."""
+    plan = mgr.plan(_US14A1_PLAN_PROMPT, dry_run=True)
+    return mgr.execute(plan)
+
+
+class TestPlanSynthesisReport:
+    """Prove the planning_only report produces a real planning artifact."""
+
+    def test_planning_report_has_implementation_phases(self, us14a1_executed_plan):
+        """Plan Only report must contain implementation phases."""
+        report = us14a1_executed_plan.final_report or ""
+        assert "Implementation Phases" in report, (
+            "Planning report must contain '## Implementation Phases'"
+        )
+        assert "Phase 1" in report, (
+            "Planning report must contain at least 'Phase 1'"
+        )
+
+    def test_planning_report_has_risks(self, us14a1_executed_plan):
+        """Plan Only report must contain a Risks section."""
+        report = us14a1_executed_plan.final_report or ""
+        assert "## Risks" in report, "Planning report must contain '## Risks'"
+        assert "Insufficient data to verify" in report or "Risk:" in report, (
+            "Risks section must contain at least one risk entry"
+        )
+
+    def test_planning_report_has_validation_commands(self, us14a1_executed_plan):
+        """Plan Only report must contain validation commands."""
+        report = us14a1_executed_plan.final_report or ""
+        assert "Validation Commands" in report, (
+            "Planning report must contain '## Validation Commands'"
+        )
+        assert "pytest" in report, (
+            "Validation commands must reference pytest"
+        )
+
+    def test_planning_report_has_approval_gates(self, us14a1_executed_plan):
+        """Plan Only report must contain approval gates."""
+        report = us14a1_executed_plan.final_report or ""
+        assert "Approval Gates" in report, (
+            "Planning report must contain '## Approval Gates'"
+        )
+        assert "Gate" in report, (
+            "Approval gates section must list at least one gate"
+        )
+
+    def test_planning_report_has_acceptance_tests(self, us14a1_executed_plan):
+        """Plan Only report must contain acceptance tests."""
+        report = us14a1_executed_plan.final_report or ""
+        assert "Acceptance Tests" in report, (
+            "Planning report must contain '## Acceptance Tests'"
+        )
+
+    def test_planning_report_has_recommended_next_files(self, us14a1_executed_plan):
+        """Plan Only report must contain recommended next files to inspect."""
+        report = us14a1_executed_plan.final_report or ""
+        assert "Recommended Next Files" in report, (
+            "Planning report must contain '## Recommended Next Files to Inspect'"
+        )
+        assert "src/openjarvis" in report or "frontend/src" in report, (
+            "Recommended next files must include OpenJarvis source paths"
+        )
+
+    def test_planning_report_has_model_routing_plan(self, us14a1_executed_plan):
+        """Plan Only report must contain a model routing / provider verification plan."""
+        report = us14a1_executed_plan.final_report or ""
+        assert "Model Routing" in report, (
+            "Planning report must contain '## Model Routing / Provider Verification Plan'"
+        )
+        assert "MockModelAdapter" in report or "paid calls" in report, (
+            "Model routing plan must reference MockModelAdapter or paid call safety"
+        )
+
+    def test_planning_report_has_slack_telegram_gating(self, us14a1_executed_plan):
+        """Plan Only report must contain a Slack/Telegram notification gating plan."""
+        report = us14a1_executed_plan.final_report or ""
+        assert "Slack" in report and "Telegram" in report, (
+            "Planning report must reference both Slack and Telegram"
+        )
+        assert "Gating Plan" in report or "gating" in report.lower(), (
+            "Planning report must contain the notification gating section"
+        )
+
+    def test_planning_report_no_accept_verdict(self, us14a1_executed_plan):
+        """Plan Only report must NOT say bare ACCEPT; must use PLAN_READY_FOR_REVIEW or HOLD_FOR_MORE_DISCOVERY."""
+        report = us14a1_executed_plan.final_report or ""
+        valid_verdicts = ("PLAN_READY_FOR_REVIEW", "HOLD_FOR_MORE_DISCOVERY")
+        assert any(v in report for v in valid_verdicts), (
+            f"Planning report must contain one of {valid_verdicts}, got report starting with: "
+            f"{report[:200]!r}"
+        )
+        assert "Final Verdict" not in report, (
+            "Planning report must not contain generic 'Final Verdict' from the execution summary"
+        )
+
+    def test_planning_report_not_generic_execution_summary(self, mgr):
+        """Tiny marker task must still produce the generic execution report, not a planning artifact."""
+        plan = mgr.plan("Add a self-test fixture marker for E2E proof", dry_run=True)
+        assert plan.task_type == "tiny_marker", (
+            f"Expected tiny_marker, got {plan.task_type}"
+        )
+        plan = mgr.execute(plan)
+        report = plan.final_report or ""
+        assert "Implementation Phases" not in report, (
+            "Tiny marker execution report must NOT contain planning artifact sections"
+        )
+
+    def test_planning_report_has_known_unknowns(self, us14a1_executed_plan):
+        """Plan Only report must contain Known Unknowns section with Insufficient data entries."""
+        report = us14a1_executed_plan.final_report or ""
+        assert "Known Unknowns" in report, (
+            "Planning report must contain '## Known Unknowns'"
+        )
+        assert "Insufficient data to verify" in report, (
+            "Known unknowns must use the standard 'Insufficient data to verify' prefix"
+        )
+
+    def test_planning_report_has_likely_files_by_subsystem(self, us14a1_executed_plan):
+        """Plan Only report must group likely files by subsystem."""
+        report = us14a1_executed_plan.final_report or ""
+        assert "Likely Files by Subsystem" in report, (
+            "Planning report must contain '## Likely Files by Subsystem'"
+        )
+        subsystems_expected = [
+            "Workbench", "Notification", "Slack", "Telegram",
+        ]
+        found = [s for s in subsystems_expected if s in report]
+        assert len(found) >= 2, (
+            f"Planning report must group files into at least 2 subsystems from "
+            f"{subsystems_expected}, found: {found}"
+        )
