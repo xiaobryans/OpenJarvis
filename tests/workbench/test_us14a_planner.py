@@ -449,3 +449,274 @@ class TestUS14A1LikelyFiles:
         assert "file_write" not in [s.tool_id for s in plan.subtasks]
         assert "git_commit" not in [s.tool_id for s in plan.subtasks]
         assert "git_push" not in [s.tool_id for s in plan.subtasks]
+
+
+# ---------------------------------------------------------------------------
+# US14A.1 Preflight: Search scope, timeout handling, dry-run safety
+# ---------------------------------------------------------------------------
+
+
+class TestSearchScopeAndErrorHandling:
+    """Prove that complex/planning_only prompts never search the full repo root."""
+
+    def test_planning_only_no_file_search_subtask(self, mgr):
+        """planning_only prompts must not create a file_search subtask.
+
+        They use file_read of likely files instead to avoid full-repo scans.
+        """
+        plan = mgr.plan(
+            "plan only: review coding_manager logic and planner decomposition patterns",
+            dry_run=True,
+        )
+        assert plan.task_type == "planning_only"
+        tool_ids = [st.tool_id for st in plan.subtasks]
+        assert "file_search" not in tool_ids, (
+            f"planning_only must not create file_search subtask, got: {tool_ids}"
+        )
+
+    def test_complex_no_file_search_subtask(self, mgr):
+        """complex_implementation prompts must not create a file_search subtask.
+
+        They use file_read of likely files instead to avoid full-repo scans.
+        """
+        plan = mgr.plan(
+            "Implement PA Chat-to-Workbench bridge with unified notifications and guarded autopilot."
+            " Plan scoped implementation first.",
+            dry_run=True,
+        )
+        assert plan.task_type == "complex_implementation"
+        tool_ids = [st.tool_id for st in plan.subtasks]
+        assert "file_search" not in tool_ids, (
+            f"complex_implementation must not create file_search subtask, got: {tool_ids}"
+        )
+
+    def test_exact_us14a1_dry_run_prompt_no_file_search(self, mgr):
+        """The exact E2E dry-run prompt must not produce a file_search subtask."""
+        plan = mgr.plan(
+            "Plan US14A.1 PA Chat-to-Workbench + notifications. Do not edit files yet.",
+            dry_run=True,
+        )
+        assert plan.task_type == "planning_only"
+        tool_ids = [st.tool_id for st in plan.subtasks]
+        assert "file_search" not in tool_ids, (
+            f"Exact US14A.1 dry-run prompt must not create file_search, got: {tool_ids}"
+        )
+
+    def test_bug_fix_uses_bounded_dir(self, tmp_path):
+        """bug_fix file_search must use a bounded subdirectory, not the full repo root."""
+        from openjarvis.workbench.coding_manager import CodingManager
+        from openjarvis.workbench.model_router import ModelRouter, MockModelAdapter
+
+        (tmp_path / "src" / "openjarvis" / "server").mkdir(parents=True)
+        router = ModelRouter(
+            db_path=str(tmp_path / "routing.db"),
+            adapter_override=MockModelAdapter(),
+        )
+        mgr = CodingManager(repo_path=str(tmp_path), db_dir=str(tmp_path), model_router=router)
+
+        plan = mgr.plan("Fix the broken search timeout bug in workbench_routes", dry_run=True)
+        search_subtasks = [st for st in plan.subtasks if st.tool_id == "file_search"]
+        assert len(search_subtasks) > 0, "bug_fix must create at least one file_search subtask"
+        for st in search_subtasks:
+            assert st.params["directory"] != str(tmp_path), (
+                f"file_search must not use the full repo root {tmp_path!r}, "
+                f"got directory={st.params['directory']!r}"
+            )
+            assert "exclude_dirs" in st.params, (
+                "file_search params must include exclude_dirs to skip heavy directories"
+            )
+
+    def test_bug_fix_exclude_dirs_present(self, tmp_path):
+        """bug_fix file_search params must include exclude_dirs."""
+        from openjarvis.workbench.coding_manager import CodingManager, _SEARCH_EXCLUDE_DIRS
+        from openjarvis.workbench.model_router import ModelRouter, MockModelAdapter
+
+        (tmp_path / "src" / "openjarvis" / "workbench").mkdir(parents=True)
+        router = ModelRouter(
+            db_path=str(tmp_path / "routing.db"),
+            adapter_override=MockModelAdapter(),
+        )
+        mgr = CodingManager(repo_path=str(tmp_path), db_dir=str(tmp_path), model_router=router)
+
+        plan = mgr.plan("Fix the crash in model_router tier assignment", dry_run=True)
+        search_subtasks = [st for st in plan.subtasks if st.tool_id == "file_search"]
+        for st in search_subtasks:
+            excl = st.params.get("exclude_dirs", [])
+            assert "!.venv" in excl, f"exclude_dirs must contain '!.venv', got: {excl}"
+            assert "!node_modules" in excl, (
+                f"exclude_dirs must contain '!node_modules', got: {excl}"
+            )
+
+    def test_search_timeout_returns_structured_metadata(self):
+        """FileSearchTool timeout must return structured metadata, not a generic string."""
+        import subprocess
+        import unittest.mock as mock
+        from openjarvis.tools.file_search import FileSearchTool
+
+        tool = FileSearchTool()
+        with mock.patch(
+            "subprocess.run",
+            side_effect=subprocess.TimeoutExpired(["rg"], 60),
+        ):
+            result = tool.execute(pattern="TestPattern", directory="/tmp")
+
+        assert not result.success
+        assert "timed out" in result.content.lower(), (
+            f"Timeout error must say 'timed out', got: {result.content!r}"
+        )
+        assert "TestPattern" in result.content, (
+            "Timeout error must include the failing pattern"
+        )
+        assert result.metadata is not None, "Timeout error must include metadata"
+        assert result.metadata.get("error") == "timeout"
+        assert result.metadata.get("pattern") == "TestPattern"
+        assert result.metadata.get("retryable") is True
+        assert "retry_hint" in result.metadata
+        assert "TypeError" not in result.content, (
+            "Timeout error must not be a generic TypeError string"
+        )
+
+    def test_search_timeout_metadata_includes_directory(self):
+        """FileSearchTool timeout metadata must include the failing directory."""
+        import subprocess
+        import unittest.mock as mock
+        from openjarvis.tools.file_search import FileSearchTool
+
+        tool = FileSearchTool()
+        with mock.patch(
+            "subprocess.run",
+            side_effect=subprocess.TimeoutExpired(["rg"], 60),
+        ):
+            result = tool.execute(pattern="Unified|Notifications", directory="/Users/user/OpenJarvis")
+
+        assert result.metadata.get("directory") == "/Users/user/OpenJarvis"
+        assert result.metadata.get("timeout_seconds") == 60
+
+    def test_file_search_default_excludes_heavy_dirs(self):
+        """FileSearchTool default exclude globs must cover all heavy/generated directories."""
+        from openjarvis.tools.file_search import _DEFAULT_EXCLUDE_GLOBS
+
+        required = [
+            "!.venv", "!node_modules", "!.git",
+            "!frontend/node_modules", "!frontend/src-tauri/target",
+            "!target", "!__pycache__", "!.pytest_cache",
+        ]
+        for excl in required:
+            assert excl in _DEFAULT_EXCLUDE_GLOBS, (
+                f"_DEFAULT_EXCLUDE_GLOBS must contain {excl!r}"
+            )
+
+    def test_bounded_search_dir_returns_subdir_when_exists(self, tmp_path):
+        """_bounded_search_dir must return a bounded subdir when it exists."""
+        from openjarvis.workbench.coding_manager import _bounded_search_dir
+
+        (tmp_path / "src" / "openjarvis" / "server").mkdir(parents=True)
+        result = _bounded_search_dir(str(tmp_path))
+        assert result != str(tmp_path), (
+            "_bounded_search_dir must return a subdir when src/openjarvis/server exists"
+        )
+        assert "openjarvis" in result or "server" in result
+
+    def test_bounded_search_dir_fallback_to_repo(self, tmp_path):
+        """_bounded_search_dir must fall back to repo_path when no subdirs exist."""
+        from openjarvis.workbench.coding_manager import _bounded_search_dir
+
+        result = _bounded_search_dir(str(tmp_path))
+        assert result == str(tmp_path), (
+            "_bounded_search_dir must fall back to repo_path when no targeted subdirs exist"
+        )
+
+
+# ---------------------------------------------------------------------------
+# US14A.1 Preflight: Dry-Run mode governance consistency
+# ---------------------------------------------------------------------------
+
+
+class TestDryRunGovernanceConsistency:
+    """Prove Dry-Run mode is consistent and blocks all write/commit/push operations."""
+
+    def test_plan_dry_run_true_matches_request(self, mgr):
+        """plan.dry_run must be True when dry_run=True is passed."""
+        plan = mgr.plan(
+            "Plan US14A.1 PA Chat-to-Workbench + notifications. Do not edit files yet.",
+            dry_run=True,
+        )
+        assert plan.dry_run is True, (
+            f"plan.dry_run must be True when dry_run=True was requested, got {plan.dry_run}"
+        )
+
+    def test_plan_dry_run_false_matches_request(self, mgr):
+        """plan.dry_run must be False when dry_run=False is passed."""
+        plan = mgr.plan(
+            "Plan US14A.1 PA Chat-to-Workbench + notifications. Do not edit files yet.",
+            dry_run=False,
+        )
+        assert plan.dry_run is False
+
+    def test_dry_run_planning_only_no_write_subtasks(self, mgr):
+        """planning_only + dry_run=True must produce zero file_write/commit/push subtasks."""
+        plan = mgr.plan(
+            "Plan US14A.1 PA Chat-to-Workbench + notifications. Do not edit files yet.",
+            dry_run=True,
+        )
+        for st in plan.subtasks:
+            assert st.tool_id not in ("file_write", "git_commit", "git_push"), (
+                f"planning_only plan must not contain {st.tool_id}"
+            )
+
+    def test_dry_run_execute_skips_file_write(self, mgr):
+        """dry_run=True execution must mark file_write subtasks as skipped_dry_run."""
+        plan = mgr.plan("Add a test fixture file", dry_run=True)
+        plan = mgr.execute(plan)
+        for st in plan.subtasks:
+            if st.tool_id == "file_write":
+                assert st.status == "skipped_dry_run", (
+                    f"dry_run must skip file_write, got status={st.status}"
+                )
+
+    def test_dry_run_execute_skips_git_commit(self, mgr):
+        """dry_run=True execution must mark git_commit subtasks as skipped_dry_run."""
+        plan = mgr.plan("Add a test fixture file", dry_run=True)
+        plan = mgr.execute(plan)
+        for st in plan.subtasks:
+            if st.tool_id == "git_commit":
+                assert st.status == "skipped_dry_run", (
+                    f"dry_run must skip git_commit, got status={st.status}"
+                )
+
+    def test_dry_run_execute_skips_git_push(self, mgr):
+        """dry_run=True execution must mark git_push subtasks as skipped_dry_run."""
+        plan = mgr.plan("Add a test fixture file", dry_run=True)
+        plan = mgr.execute(plan)
+        for st in plan.subtasks:
+            if st.tool_id == "git_push":
+                assert st.status == "skipped_dry_run", (
+                    f"dry_run must skip git_push, got status={st.status}"
+                )
+
+    def test_dry_run_planning_only_execute_no_writes(self, mgr):
+        """Executing a planning_only dry_run must complete with zero writes."""
+        plan = mgr.plan(
+            "Plan US14A.1 PA Chat-to-Workbench + notifications. Do not edit files yet.",
+            dry_run=True,
+        )
+        plan = mgr.execute(plan)
+        assert plan.status in ("done_dry_run", "done", "failed", "blocked"), (
+            f"Unexpected plan status: {plan.status}"
+        )
+        for st in plan.subtasks:
+            assert st.tool_id not in ("file_write", "git_commit", "git_push") or \
+                st.status == "skipped_dry_run", (
+                f"Dry-run must not execute {st.tool_id}, got status={st.status}"
+            )
+
+    def test_tiny_marker_dry_run_unchanged_behavior(self, mgr):
+        """Existing tiny marker dry-run behavior must remain intact."""
+        plan = mgr.plan("Add a self-test fixture marker for E2E proof", dry_run=True)
+        assert plan.task_type == "tiny_marker"
+        plan = mgr.execute(plan)
+        for st in plan.subtasks:
+            if st.tool_id in ("git_commit", "git_push"):
+                assert st.status == "skipped_dry_run", (
+                    f"Tiny marker dry_run must skip {st.tool_id}, got {st.status}"
+                )

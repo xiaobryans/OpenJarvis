@@ -89,6 +89,23 @@ interface DoctorCheck {
 // Helpers
 // ---------------------------------------------------------------------------
 
+function describeNetworkError(e: unknown): string {
+  const msg = String(e);
+  if (
+    msg.includes('Load failed') ||
+    msg.includes('Failed to fetch') ||
+    msg.includes('NetworkError') ||
+    msg.includes('network error')
+  ) {
+    return (
+      'Network/timeout error: The backend request failed. This may be caused by a ' +
+      'search scanning a large directory. Check /v1/system/health and try a more ' +
+      'specific prompt or a narrower repo path. (' + msg + ')'
+    );
+  }
+  return msg;
+}
+
 const TASK_TYPE_COLORS: Record<string, string> = {
   tiny_marker: 'text-gray-400',
   documentation: 'text-blue-400',
@@ -363,15 +380,21 @@ function CostPanel({ plan }: { plan: TaskPlan | null }) {
   );
 }
 
-function GovernancePanel({ plan }: { plan: TaskPlan | null }) {
+function GovernancePanel({ plan, dryRun }: { plan: TaskPlan | null; dryRun: boolean }) {
   if (!plan) return null;
+  const modesDiffer = plan.dry_run !== dryRun;
   return (
     <div className="rounded-lg border p-3 space-y-1 text-xs" style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}>
       <div className="flex items-center gap-2 font-medium mb-1" style={{ color: 'var(--color-text-primary)' }}>
         <Shield size={13} /> Governance
       </div>
+      {modesDiffer && (
+        <div className="text-yellow-400 text-xs py-0.5">
+          ⚠ Mode changed — next execute: {dryRun ? 'DRY-RUN' : 'LIVE'}
+        </div>
+      )}
       {[
-        ['Mode', plan.dry_run ? '⏭️ DRY-RUN' : '🔴 LIVE'],
+        ['Mode', dryRun ? '⏭️ DRY-RUN' : '🔴 LIVE'],
         ['Stop on blocker', plan.stop_on_blocker ? '✅ Yes' : '❌ No'],
         ['Workers can commit', '❌ Never (enforced)'],
         ['Approval gate', '✅ Active (commit/push/delete)'],
@@ -452,7 +475,7 @@ export function WorkbenchPage() {
         setError(data.detail ?? 'Plan failed');
       }
     } catch (e) {
-      setError(String(e));
+      setError(describeNetworkError(e));
     } finally {
       setLoading(false);
     }
@@ -484,7 +507,7 @@ export function WorkbenchPage() {
         setError(data.detail ?? 'Execute failed');
       }
     } catch (e) {
-      setError(String(e));
+      setError(describeNetworkError(e));
     } finally {
       setLoading(false);
     }
@@ -510,7 +533,7 @@ export function WorkbenchPage() {
       if (data.ok) setPlan(data.plan);
       else setError(data.detail ?? 'Approve failed');
     } catch (e) {
-      setError(String(e));
+      setError(describeNetworkError(e));
     } finally {
       setLoading(false);
     }
@@ -672,7 +695,7 @@ export function WorkbenchPage() {
 
           {/* Cost panel */}
           <CostPanel plan={plan} />
-          <GovernancePanel plan={plan} />
+          <GovernancePanel plan={plan} dryRun={dryRun} />
 
           {/* Doctor checks */}
           {doctorLoaded && (

@@ -100,6 +100,49 @@ _TINY_MARKER_KEYWORDS = frozenset({"fixture", "self-test", "marker", "e2e proof"
 _DOCUMENTATION_KEYWORDS = frozenset({"readme", "changelog", "documentation"})
 _RESEARCH_KEYWORDS = frozenset({"investigate", "research", "explore", "audit", "survey"})
 
+# Bounded search directories — ordered by specificity; avoids scanning the full repo tree.
+# Used by _bounded_search_dir() to prevent file_search timeouts on large repos.
+_SEARCH_TARGETED_DIRS: tuple = (
+    "src/openjarvis/server",
+    "src/openjarvis/workbench",
+    "src/openjarvis/channels",
+    "src/openjarvis/tools",
+    "src/openjarvis/autonomy",
+    "src/openjarvis/governance",
+    "frontend/src",
+    "src",
+)
+
+# Heavy/generated directories always excluded from file_search scans.
+_SEARCH_EXCLUDE_DIRS: List[str] = [
+    "!.git",
+    "!.venv",
+    "!node_modules",
+    "!frontend/node_modules",
+    "!frontend/src-tauri/target",
+    "!target",
+    "!dist",
+    "!build",
+    "!__pycache__",
+    "!.pytest_cache",
+]
+
+
+def _bounded_search_dir(repo_path: str) -> str:
+    """Return the most targeted existing search directory for the repo.
+
+    Prefers src/openjarvis subdirectories over the full repo root to avoid
+    scanning .venv, node_modules, and other heavy generated directories that
+    cause file_search timeouts.
+    """
+    repo = Path(repo_path)
+    for subdir in _SEARCH_TARGETED_DIRS:
+        candidate = repo / subdir
+        if candidate.is_dir():
+            return str(candidate)
+    return repo_path
+
+
 _FILE_HINTS = {
     # ---- Workbench core ----
     "coding_manager": "src/openjarvis/workbench/coding_manager.py",
@@ -423,18 +466,17 @@ class CodingManager:
         # Step 2: Search for relevant files if prompt mentions patterns
         search_terms = self._extract_search_terms(prompt)
         if search_terms:
-            search_dir = repo_path
-            for candidate in ("src", "lib", "app"):
-                candidate_path = str(Path(repo_path) / candidate)
-                if Path(candidate_path).is_dir():
-                    search_dir = candidate_path
-                    break
+            search_dir = _bounded_search_dir(repo_path)
             st = self._make_subtask(
                 idx=idx,
                 task_id=task_id,
                 description=f"Search codebase for: {', '.join(search_terms[:3])}",
                 tool_id="file_search",
-                params={"pattern": "|".join(search_terms[:3]), "directory": search_dir},
+                params={
+                    "pattern": "|".join(search_terms[:3]),
+                    "directory": search_dir,
+                    "exclude_dirs": _SEARCH_EXCLUDE_DIRS,
+                },
                 session_id=session_id,
             )
             subtasks.append(st)
@@ -570,7 +612,11 @@ class CodingManager:
     def _decompose_planning_only(
         self, prompt: str, task_id: str, repo_path: str, session_id: str = ""
     ) -> List[Subtask]:
-        """Planning-only: discovery only, no file_write/git_commit/git_push."""
+        """Planning-only: discovery only, no file_write/git_commit/git_push.
+
+        Uses file_read of likely files instead of broad file_search to avoid
+        scanning the full repo tree and causing timeouts.
+        """
         subtasks: List[Subtask] = []
         idx = 0
         subtasks.append(self._make_subtask(
@@ -579,12 +625,6 @@ class CodingManager:
         subtasks.append(self._make_subtask(
             idx, task_id, "Generate diff preview of working tree",
             "git_diff", {"repo_path": repo_path}, session_id=session_id)); idx += 1
-        search_terms = self._extract_search_terms(prompt)
-        if search_terms:
-            subtasks.append(self._make_subtask(
-                idx, task_id, f"Search codebase for: {', '.join(search_terms[:3])}",
-                "file_search", {"pattern": "|".join(search_terms[:3]), "directory": repo_path},
-                session_id=session_id)); idx += 1
         for fpath in self._extract_likely_files(prompt, repo_path)[:3]:
             subtasks.append(self._make_subtask(
                 idx, task_id, f"Read likely file: {fpath}",
@@ -595,7 +635,11 @@ class CodingManager:
     def _decompose_complex(
         self, prompt: str, task_id: str, repo_path: str, session_id: str = ""
     ) -> List[Subtask]:
-        """Complex implementation: discovery subtasks first, no default writes."""
+        """Complex implementation: discovery subtasks first, no default writes.
+
+        Uses file_read of likely files instead of broad file_search to avoid
+        scanning the full repo tree and causing timeouts.
+        """
         subtasks: List[Subtask] = []
         idx = 0
         subtasks.append(self._make_subtask(
@@ -604,12 +648,6 @@ class CodingManager:
         subtasks.append(self._make_subtask(
             idx, task_id, "Generate diff preview of working tree",
             "git_diff", {"repo_path": repo_path}, session_id=session_id)); idx += 1
-        search_terms = self._extract_search_terms(prompt)
-        if search_terms:
-            subtasks.append(self._make_subtask(
-                idx, task_id, f"Search codebase for: {', '.join(search_terms[:3])}",
-                "file_search", {"pattern": "|".join(search_terms[:3]), "directory": repo_path},
-                session_id=session_id)); idx += 1
         for fpath in self._extract_likely_files(prompt, repo_path)[:4]:
             subtasks.append(self._make_subtask(
                 idx, task_id, f"Discover: read {fpath}",
@@ -631,9 +669,14 @@ class CodingManager:
             "git_diff", {"repo_path": repo_path}, session_id=session_id)); idx += 1
         search_terms = self._extract_search_terms(prompt)
         if search_terms:
+            bounded_dir = _bounded_search_dir(repo_path)
             subtasks.append(self._make_subtask(
                 idx, task_id, f"Search for bug-relevant patterns: {', '.join(search_terms[:3])}",
-                "file_search", {"pattern": "|".join(search_terms[:3]), "directory": repo_path},
+                "file_search", {
+                    "pattern": "|".join(search_terms[:3]),
+                    "directory": bounded_dir,
+                    "exclude_dirs": _SEARCH_EXCLUDE_DIRS,
+                },
                 session_id=session_id)); idx += 1
         for fpath in self._extract_likely_files(prompt, repo_path)[:3]:
             subtasks.append(self._make_subtask(
@@ -662,9 +705,14 @@ class CodingManager:
             "git_diff", {"repo_path": repo_path}, session_id=session_id)); idx += 1
         search_terms = self._extract_search_terms(prompt)
         if search_terms:
+            bounded_dir = _bounded_search_dir(repo_path)
             subtasks.append(self._make_subtask(
                 idx, task_id, f"Search codebase for: {', '.join(search_terms[:3])}",
-                "file_search", {"pattern": "|".join(search_terms[:3]), "directory": repo_path},
+                "file_search", {
+                    "pattern": "|".join(search_terms[:3]),
+                    "directory": bounded_dir,
+                    "exclude_dirs": _SEARCH_EXCLUDE_DIRS,
+                },
                 session_id=session_id)); idx += 1
         for fpath in self._extract_likely_files(prompt, repo_path)[:3]:
             subtasks.append(self._make_subtask(
@@ -782,7 +830,7 @@ class CodingManager:
         # if earlier subtasks fail and stop_on_blocker halts the loop.
         if plan.dry_run:
             for subtask in plan.subtasks:
-                if subtask.tool_id in ("git_commit", "git_push") and subtask.status == "pending":
+                if subtask.tool_id in ("git_commit", "git_push", "file_write", "file_delete") and subtask.status == "pending":
                     subtask.status = "skipped_dry_run"
                     subtask.output = f"[DRY-RUN] Skipped {subtask.tool_id} — dry-run mode active."
 
@@ -790,8 +838,8 @@ class CodingManager:
             if subtask.status in ("done", "skipped", "skipped_dry_run"):
                 continue
 
-            # Dry-run gate: block commit/push, tag others as dry-run
-            if plan.dry_run and subtask.tool_id in ("git_commit", "git_push"):
+            # Dry-run gate: block writes, commit, push, delete
+            if plan.dry_run and subtask.tool_id in ("git_commit", "git_push", "file_write", "file_delete"):
                 subtask.status = "skipped_dry_run"
                 subtask.output = f"[DRY-RUN] Skipped {subtask.tool_id} — dry-run mode active."
                 logger.info("DRY-RUN: skipping %s", subtask.tool_id)
@@ -1117,4 +1165,12 @@ class CodingManager:
         return [j.to_dict() for j in self._jobs.list_by_task(task_id)]
 
 
-__all__ = ["CodingManager", "TaskPlan", "Subtask", "classify_prompt"]
+__all__ = [
+    "CodingManager",
+    "TaskPlan",
+    "Subtask",
+    "classify_prompt",
+    "_bounded_search_dir",
+    "_SEARCH_TARGETED_DIRS",
+    "_SEARCH_EXCLUDE_DIRS",
+]

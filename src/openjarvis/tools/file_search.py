@@ -13,6 +13,20 @@ from openjarvis.tools._stubs import BaseTool, ToolSpec
 
 _MAX_OUTPUT_BYTES = 102_400
 _MAX_RESULTS = 200
+_SEARCH_TIMEOUT_SECONDS = 60
+
+_DEFAULT_EXCLUDE_GLOBS: List[str] = [
+    "!.git",
+    "!.venv",
+    "!node_modules",
+    "!frontend/node_modules",
+    "!frontend/src-tauri/target",
+    "!target",
+    "!dist",
+    "!build",
+    "!__pycache__",
+    "!.pytest_cache",
+]
 
 
 @ToolRegistry.register("file_search")
@@ -60,6 +74,14 @@ class FileSearchTool(BaseTool):
                         "type": "integer",
                         "description": "Lines of context around matches. Default: 0.",
                     },
+                    "exclude_dirs": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": (
+                            "Glob exclusion patterns (e.g. '!.venv', '!node_modules'). "
+                            "Defaults to excluding heavy/generated directories."
+                        ),
+                    },
                 },
                 "required": ["pattern"],
             },
@@ -82,6 +104,7 @@ class FileSearchTool(BaseTool):
         case_sensitive = params.get("case_sensitive", False)
         max_results = min(int(params.get("max_results", _MAX_RESULTS)), _MAX_RESULTS)
         context_lines = int(params.get("context_lines", 0))
+        exclude_dirs: List[str] = params.get("exclude_dirs", _DEFAULT_EXCLUDE_GLOBS)
 
         dir_path = Path(directory)
         if not dir_path.exists():
@@ -95,10 +118,12 @@ class FileSearchTool(BaseTool):
             return self._run_rg(
                 pattern, str(dir_path), file_glob,
                 fixed_strings, case_sensitive, max_results, context_lines,
+                exclude_dirs,
             )
         return self._run_grep(
             pattern, str(dir_path), file_glob,
             fixed_strings, case_sensitive, max_results, context_lines,
+            exclude_dirs,
         )
 
     def _run_rg(
@@ -110,12 +135,15 @@ class FileSearchTool(BaseTool):
         case_sensitive: bool,
         max_results: int,
         context_lines: int,
+        exclude_dirs: Optional[List[str]] = None,
     ) -> ToolResult:
         cmd: List[str] = ["rg", "--line-number", "--no-heading"]
         if fixed_strings:
             cmd.append("--fixed-strings")
         if not case_sensitive:
             cmd.append("--ignore-case")
+        for excl in (exclude_dirs or _DEFAULT_EXCLUDE_GLOBS):
+            cmd.extend(["--glob", excl])
         if file_glob:
             cmd.extend(["--glob", file_glob])
         if context_lines > 0:
@@ -129,7 +157,7 @@ class FileSearchTool(BaseTool):
                 cmd,
                 capture_output=True,
                 text=True,
-                timeout=60,
+                timeout=_SEARCH_TIMEOUT_SECONDS,
             )
             output = result.stdout
             if len(output) > _MAX_OUTPUT_BYTES:
@@ -148,8 +176,20 @@ class FileSearchTool(BaseTool):
         except subprocess.TimeoutExpired:
             return ToolResult(
                 tool_name="file_search",
-                content="Search timed out after 30 seconds.",
+                content=(
+                    f"Search timed out after {_SEARCH_TIMEOUT_SECONDS} seconds. "
+                    f"Pattern: {pattern!r}, directory: {directory!r}. "
+                    "Use a bounded directory (e.g. src/openjarvis) or a more specific pattern."
+                ),
                 success=False,
+                metadata={
+                    "error": "timeout",
+                    "pattern": pattern,
+                    "directory": directory,
+                    "timeout_seconds": _SEARCH_TIMEOUT_SECONDS,
+                    "retry_hint": "Narrow the directory to src/openjarvis or add exclude_dirs.",
+                    "retryable": True,
+                },
             )
         except Exception as exc:
             return ToolResult(
@@ -167,6 +207,7 @@ class FileSearchTool(BaseTool):
         case_sensitive: bool,
         max_results: int,
         context_lines: int,
+        exclude_dirs: Optional[List[str]] = None,
     ) -> ToolResult:
         cmd: List[str] = ["grep", "-rn"]
         if fixed_strings:
@@ -175,6 +216,9 @@ class FileSearchTool(BaseTool):
             cmd.append("-i")
         if context_lines > 0:
             cmd.extend(["-C", str(context_lines)])
+        for excl in (exclude_dirs or _DEFAULT_EXCLUDE_GLOBS):
+            if excl.startswith("!"):
+                cmd.extend(["--exclude-dir", excl[1:]])
         if file_glob:
             cmd.extend(["--include", file_glob])
         cmd.extend(["-m", str(max_results)])
@@ -186,7 +230,7 @@ class FileSearchTool(BaseTool):
                 cmd,
                 capture_output=True,
                 text=True,
-                timeout=60,
+                timeout=_SEARCH_TIMEOUT_SECONDS,
             )
             output = result.stdout
             if len(output) > _MAX_OUTPUT_BYTES:
@@ -204,8 +248,20 @@ class FileSearchTool(BaseTool):
         except subprocess.TimeoutExpired:
             return ToolResult(
                 tool_name="file_search",
-                content="Search timed out after 30 seconds.",
+                content=(
+                    f"Search timed out after {_SEARCH_TIMEOUT_SECONDS} seconds. "
+                    f"Pattern: {pattern!r}, directory: {directory!r}. "
+                    "Use a bounded directory (e.g. src/openjarvis) or a more specific pattern."
+                ),
                 success=False,
+                metadata={
+                    "error": "timeout",
+                    "pattern": pattern,
+                    "directory": directory,
+                    "timeout_seconds": _SEARCH_TIMEOUT_SECONDS,
+                    "retry_hint": "Narrow the directory to src/openjarvis or add exclude_dirs.",
+                    "retryable": True,
+                },
             )
         except Exception as exc:
             return ToolResult(
@@ -215,4 +271,4 @@ class FileSearchTool(BaseTool):
             )
 
 
-__all__ = ["FileSearchTool"]
+__all__ = ["FileSearchTool", "_DEFAULT_EXCLUDE_GLOBS", "_SEARCH_TIMEOUT_SECONDS"]
