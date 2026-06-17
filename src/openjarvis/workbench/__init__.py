@@ -11,6 +11,16 @@ from openjarvis.workbench.job_queue import JobQueue, Job, JobStatus
 from openjarvis.workbench.cost_ledger import CostLedger, CostEntry
 from openjarvis.workbench.checkpoint import CheckpointStore, Checkpoint
 from openjarvis.workbench.coding_manager import CodingManager, TaskPlan, Subtask
+from openjarvis.workbench.model_router import (
+    ModelRouter,
+    ModelTier,
+    BudgetConfig,
+    ProviderConfig,
+    RoutingDecision,
+    EscalationDecision,
+    EscalationAction,
+    MockModelAdapter,
+)
 
 __all__ = [
     "JobQueue",
@@ -23,4 +33,12 @@ __all__ = [
     "CodingManager",
     "TaskPlan",
     "Subtask",
+    "ModelRouter",
+    "ModelTier",
+    "BudgetConfig",
+    "ProviderConfig",
+    "RoutingDecision",
+    "EscalationDecision",
+    "EscalationAction",
+    "MockModelAdapter",
 ]

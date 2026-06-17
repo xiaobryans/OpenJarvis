@@ -38,6 +38,12 @@ from typing import Any, Dict, List, Optional
 from openjarvis.workbench.job_queue import Job, JobQueue, JobStatus
 from openjarvis.workbench.cost_ledger import CostLedger
 from openjarvis.workbench.checkpoint import CheckpointStore
+from openjarvis.workbench.model_router import (
+    ModelRouter,
+    ModelTier,
+    EscalationAction,
+    MockModelAdapter,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -182,6 +188,7 @@ class CodingManager:
         self,
         repo_path: str = ".",
         db_dir: Optional[str] = None,
+        model_router: Optional[ModelRouter] = None,
     ) -> None:
         self._repo_path = Path(repo_path).resolve()
         db_dir_path = Path(db_dir) if db_dir else Path.home() / ".openjarvis"
@@ -190,6 +197,11 @@ class CodingManager:
         self._jobs = JobQueue(str(db_dir_path / "workbench_jobs.db"))
         self._costs = CostLedger(str(db_dir_path / "workbench_cost.db"))
         self._checkpoints = CheckpointStore(str(db_dir_path / "workbench_checkpoints.db"))
+        # Use MockModelAdapter by default (no real paid calls unless explicitly configured)
+        self._router = model_router or ModelRouter(
+            db_path=str(db_dir_path / "model_routing.db"),
+            adapter_override=MockModelAdapter(),
+        )
 
         # Pending approvals keyed by subtask id
         self._pending_approvals: Dict[str, Subtask] = {}
@@ -214,7 +226,7 @@ class CodingManager:
         task_id = uuid.uuid4().hex[:12]
         effective_repo = Path(repo_path).resolve() if repo_path else self._repo_path
 
-        subtasks = self._decompose(prompt, task_id, str(effective_repo))
+        subtasks = self._decompose(prompt, task_id, str(effective_repo), session_id=session_id)
 
         plan = TaskPlan(
             session_id=session_id,
@@ -246,6 +258,7 @@ class CodingManager:
         prompt: str,
         task_id: str,
         repo_path: str,
+        session_id: str = "",
     ) -> List[Subtask]:
         """Decompose a prompt into a list of subtasks.
 
@@ -263,6 +276,7 @@ class CodingManager:
             description="Inspect repository status and branch",
             tool_id="git_status",
             params={"repo_path": repo_path},
+            session_id=session_id,
         )
         subtasks.append(st)
         idx += 1
@@ -282,6 +296,7 @@ class CodingManager:
                 description=f"Search codebase for: {', '.join(search_terms[:3])}",
                 tool_id="file_search",
                 params={"pattern": "|".join(search_terms[:3]), "directory": search_dir},
+                session_id=session_id,
             )
             subtasks.append(st)
             idx += 1
@@ -293,6 +308,7 @@ class CodingManager:
             description="Generate diff preview of working tree",
             tool_id="git_diff",
             params={"repo_path": repo_path},
+            session_id=session_id,
         )
         subtasks.append(st)
         idx += 1
@@ -307,6 +323,7 @@ class CodingManager:
                     description=f"Write file: {file_path}",
                     tool_id="file_write",
                     params={"path": file_path, "content": content, "create_dirs": True},
+                    session_id=session_id,
                 )
                 subtasks.append(st)
                 idx += 1
@@ -322,6 +339,7 @@ class CodingManager:
                 "working_dir": repo_path,
                 "timeout": 60,
             },
+            session_id=session_id,
         )
         subtasks.append(st)
         idx += 1
@@ -333,6 +351,7 @@ class CodingManager:
             description="Generate post-change diff preview",
             tool_id="git_diff",
             params={"repo_path": repo_path},
+            session_id=session_id,
         )
         subtasks.append(st)
         idx += 1
@@ -348,6 +367,7 @@ class CodingManager:
                 "repo_path": repo_path,
                 "files": ".",
             },
+            session_id=session_id,
         )
         subtasks.append(st)
         idx += 1
@@ -359,6 +379,7 @@ class CodingManager:
             description="Push branch to remote",
             tool_id="git_push",
             params={"repo_path": repo_path, "remote": "fork"},
+            session_id=session_id,
         )
         subtasks.append(st)
         idx += 1
@@ -373,11 +394,23 @@ class CodingManager:
         tool_id: str,
         params: Dict[str, Any],
         is_risky: bool = False,
+        session_id: str = "",
     ) -> Subtask:
         tier = _route_worker_tier(tool_id, is_risky)
         requires_approval = tool_id in _APPROVAL_REQUIRED_TOOLS
+        subtask_id = uuid.uuid4().hex[:12]
+        # Log routing decision via ModelRouter
+        if session_id and task_id:
+            self._router.route(
+                subtask_id=subtask_id,
+                tool_id=tool_id,
+                description=description,
+                session_id=session_id,
+                task_id=task_id,
+                high_trust=tool_id in _HIGH_TRUST_TOOLS,
+            )
         return Subtask(
-            id=uuid.uuid4().hex[:12],
+            id=subtask_id,
             index=idx,
             description=description,
             tool_id=tool_id,
@@ -765,7 +798,16 @@ class CodingManager:
         return [c.to_dict() for c in self._checkpoints.list_checkpoints(session_id)]
 
     def get_cost_summary(self, session_id: str) -> Dict[str, Any]:
-        return self._costs.session_total(session_id)
+        cost = self._costs.session_total(session_id)
+        routing = self._router.session_cost_summary(session_id)
+        cost["routing"] = routing
+        return cost
+
+    def get_routing_log(self, session_id: str) -> List[Dict[str, Any]]:
+        return self._router.get_routing_log(session_id)
+
+    def get_provider_config(self) -> Dict[str, Any]:
+        return self._router.get_provider_config_summary()
 
     def get_jobs(self, task_id: str) -> List[Dict[str, Any]]:
         return [j.to_dict() for j in self._jobs.list_by_task(task_id)]

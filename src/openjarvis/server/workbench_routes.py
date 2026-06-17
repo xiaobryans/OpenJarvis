@@ -313,27 +313,23 @@ async def workbench_doctor(repo_path: str = ".") -> Dict[str, Any]:
     except Exception as exc:
         checks.append(chk("checkpoint_store", "fail", str(exc)))
 
-    # Check 8: file_search tool registered
+    # Check 8: file_search tool instantiable
     try:
-        from openjarvis.tools.catalog import initialize_catalog
-        from openjarvis.tools.jarvis_registry import ToolRegistry
-        initialize_catalog()
-        spec = ToolRegistry.get("file_search")
-        checks.append(chk("tool_file_search", "pass" if spec else "fail",
-                           "file_search registered" if spec else "file_search NOT registered"))
+        from openjarvis.tools.file_search import FileSearchTool
+        t = FileSearchTool()
+        checks.append(chk("tool_file_search", "pass",
+                           "FileSearchTool instantiated, tool_id=%s" % t.tool_id))
     except Exception as exc:
         checks.append(chk("tool_file_search", "fail", str(exc)))
 
-    # Check 9: git_push tool registered
+    # Check 9: git_push tool instantiable
     try:
-        from openjarvis.tools.catalog import initialize_catalog
-        from openjarvis.tools.jarvis_registry import ToolRegistry
-        initialize_catalog()
-        spec = ToolRegistry.get("git_push")
-        checks.append(chk("tool_git_push", "pass" if spec else "warn",
-                           "git_push registered" if spec else "git_push not registered via catalog"))
+        from openjarvis.tools.git_tool import GitPushTool
+        t = GitPushTool()
+        checks.append(chk("tool_git_push", "pass",
+                           "GitPushTool instantiated, tool_id=%s" % t.tool_id))
     except Exception as exc:
-        checks.append(chk("tool_git_push", "warn", str(exc)))
+        checks.append(chk("tool_git_push", "fail", str(exc)))
 
     # Check 10: Governance constitution accessible
     try:
@@ -341,6 +337,24 @@ async def workbench_doctor(repo_path: str = ".") -> Dict[str, Any]:
         checks.append(chk("governance", "pass", f"Verdict enum: {[v.value for v in Verdict]}"))
     except Exception as exc:
         checks.append(chk("governance", "fail", str(exc)))
+
+    # Check 11: ModelRouter accessible with mock adapter
+    try:
+        from openjarvis.workbench.model_router import ModelRouter, MockModelAdapter
+        router = ModelRouter(adapter_override=MockModelAdapter())
+        cfg = router.get_provider_config_summary()
+        checks.append(chk("model_router", "pass",
+                           f"ModelRouter ready, adapter={cfg['adapter']}, key_masked={cfg['openrouter_key_value']=='MASKED'}"))
+    except Exception as exc:
+        checks.append(chk("model_router", "fail", str(exc)))
+
+    # Check 12: Tiered routing policy accessible
+    try:
+        from openjarvis.workbench.model_router import _TOOL_TIER_POLICY, _TASK_CATEGORY_TIERS
+        checks.append(chk("routing_policy", "pass",
+                           f"{len(_TOOL_TIER_POLICY)} tool rules, {len(_TASK_CATEGORY_TIERS)} category rules"))
+    except Exception as exc:
+        checks.append(chk("routing_policy", "fail", str(exc)))
 
     by_status: Dict[str, int] = {}
     for c in checks:
@@ -355,6 +369,27 @@ async def workbench_doctor(repo_path: str = ".") -> Dict[str, Any]:
         "checks": checks,
         "verdict": "ACCEPT" if all_pass else "HOLD",
     }
+
+
+@router.get("/routing-log")
+async def get_routing_log(session_id: str, repo_path: str = ".") -> Dict[str, Any]:
+    """Return routing decisions for a session."""
+    try:
+        mgr = CodingManager(repo_path=repo_path)
+        log = mgr.get_routing_log(session_id)
+        return {"ok": True, "session_id": session_id, "routing_log": log, "count": len(log)}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.get("/provider-config")
+async def get_provider_config(repo_path: str = ".") -> Dict[str, Any]:
+    """Return model provider config summary (key masked)."""
+    try:
+        mgr = CodingManager(repo_path=repo_path)
+        return {"ok": True, "config": mgr.get_provider_config()}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 __all__ = ["router"]
