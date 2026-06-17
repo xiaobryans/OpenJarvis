@@ -335,7 +335,7 @@ class CodingManager:
             description="Run validation / tests",
             tool_id="shell_exec",
             params={
-                "command": "python -m pytest tests/ -x -q --tb=short 2>&1 | head -50 || echo 'No pytest tests found'",
+                "command": "python3 -m pytest tests/ -x -q --tb=short 2>&1 | head -50 || echo 'No pytest tests found'",
                 "working_dir": repo_path,
                 "timeout": 60,
             },
