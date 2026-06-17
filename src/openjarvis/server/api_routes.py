@@ -869,6 +869,114 @@ async def learning_policy(request: Request):
     return result
 
 
+# ---- System health route ----
+
+system_router = APIRouter(tags=["system"])
+
+
+@system_router.get("/v1/system/health")
+async def system_health() -> dict:
+    """Return aggregated system health for Mission Control status panel.
+
+    All statuses are read-only. No secrets are exposed. No external calls.
+    """
+    result: dict = {}
+
+    # Voice
+    try:
+        from openjarvis.autonomy.voice_pipeline import get_voice_status
+        vs = get_voice_status()
+        result["voice"] = {
+            "status": vs.get("voice_status", "unknown"),
+            "readiness": vs.get("voice_readiness", "unknown"),
+            "detail": vs.get("readiness_reason", ""),
+            "stt": vs.get("stt_status", "unknown"),
+            "tts": vs.get("tts_status", "unknown"),
+            "microphone": vs.get("microphone_status", "unknown"),
+            "hotkey": vs.get("hotkey_binding", ""),
+        }
+    except Exception as exc:
+        result["voice"] = {"status": "error", "detail": str(exc)}
+
+    # Connectors
+    try:
+        from openjarvis.autonomy.connector_diagnostics import (
+            get_slack_status, get_telegram_status, get_web_search_status,
+        )
+        slack = get_slack_status()
+        tg = get_telegram_status()
+        web = get_web_search_status()
+        result["connectors"] = {
+            "slack": slack["status"],
+            "telegram": tg["status"],
+            "web_search": web["status"],
+            "web_provider": web.get("provider"),
+        }
+    except Exception as exc:
+        result["connectors"] = {"status": "error", "detail": str(exc)}
+
+    # Queue
+    try:
+        from openjarvis.doctor.checks import check_job_queue
+        q = check_job_queue()
+        result["queue"] = {
+            "status": q.status,
+            "detail": q.summary,
+        }
+    except Exception as exc:
+        result["queue"] = {"status": "error", "detail": str(exc)}
+
+    # Memory
+    try:
+        from openjarvis.doctor.checks import check_memory_store_health
+        mem = check_memory_store_health()
+        result["memory"] = {
+            "status": mem.status,
+            "detail": mem.summary,
+        }
+    except Exception as exc:
+        result["memory"] = {"status": "error", "detail": str(exc)}
+
+    # Trust / evidence
+    try:
+        from openjarvis.doctor.checks import check_trust_layer
+        tr = check_trust_layer()
+        result["trust"] = {
+            "status": tr.status,
+            "detail": tr.summary,
+        }
+    except Exception as exc:
+        result["trust"] = {"status": "error", "detail": str(exc)}
+
+    # Runtime / backend
+    try:
+        from openjarvis.doctor.checks import check_backend_health
+        bh = check_backend_health()
+        result["runtime"] = {
+            "status": bh.status,
+            "detail": bh.summary,
+        }
+    except Exception as exc:
+        result["runtime"] = {"status": "error", "detail": str(exc)}
+
+    # Certification summary
+    try:
+        from openjarvis.doctor.certification import build_certification_matrix
+        from openjarvis.doctor.checks import run_all_checks
+        checks = run_all_checks()
+        matrix = build_certification_matrix(check_results=checks)
+        result["certification"] = {
+            "verdict": matrix.verdict(),
+            "ui_visible_certified": len(matrix.get_ui_visible()),
+            "backend_only_count": len(matrix.get_backend_only()),
+            "hold_blockers": len(matrix.get_hold_blockers()),
+        }
+    except Exception as exc:
+        result["certification"] = {"verdict": "error", "detail": str(exc)}
+
+    return result
+
+
 # ---- Speech routes ----
 
 speech_router = APIRouter(prefix="/v1/speech", tags=["speech"])
@@ -1032,6 +1140,7 @@ def include_all_routes(app) -> None:
     app.include_router(speech_router)
     app.include_router(feedback_router)
     app.include_router(optimize_router)
+    app.include_router(system_router)
 
     # Agent Manager routes (if available)
     try:
@@ -1081,4 +1190,5 @@ __all__ = [
     "speech_router",
     "feedback_router",
     "optimize_router",
+    "system_router",
 ]

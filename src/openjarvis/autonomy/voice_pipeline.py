@@ -193,6 +193,12 @@ def get_stt_status() -> Dict[str, Any]:
     except ImportError:
         pass
 
+    try:
+        from openjarvis.projects.source_links import _load_openjarvis_env
+        _load_openjarvis_env()
+    except Exception:
+        pass
+
     openai_key = os.environ.get("OPENAI_API_KEY", "")
     if openai_key:
         return {

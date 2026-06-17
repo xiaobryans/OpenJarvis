@@ -37,11 +37,21 @@ def _create_backend(
                 compute_type=config.speech.compute_type,
             )
         elif key == "openai":
+            try:
+                from openjarvis.projects.source_links import _load_openjarvis_env
+                _load_openjarvis_env()
+            except Exception:
+                pass
             api_key = os.environ.get("OPENAI_API_KEY", "")
             if not api_key:
                 return None
             return backend_cls(api_key=api_key)
         elif key == "deepgram":
+            try:
+                from openjarvis.projects.source_links import _load_openjarvis_env
+                _load_openjarvis_env()
+            except Exception:
+                pass
             api_key = os.environ.get("DEEPGRAM_API_KEY", "")
             if not api_key:
                 return None
@@ -66,10 +76,10 @@ def get_speech_backend(config: "JarvisConfig") -> Optional["SpeechBackend"]:
     if backend_key != "auto":
         return _create_backend(backend_key, config)
 
-    # Auto-discovery: try each in priority order
+    # Auto-discovery: try each in priority order; skip unhealthy backends
     for key in DISCOVERY_ORDER:
         backend = _create_backend(key, config)
-        if backend is not None:
+        if backend is not None and backend.health():
             return backend
 
     return None

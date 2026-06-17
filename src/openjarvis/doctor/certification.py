@@ -111,13 +111,19 @@ class CertificationMatrix:
     evaluated_at: float = field(default_factory=time.time)
 
     def verdict(self) -> str:
-        """Return hold if any item is hold or insufficient_data, else certified."""
+        """Return hold if any UI-visible item is hold or insufficient_data, else certified.
+
+        V1 daily-driver certification: only ui_visible items gate the verdict.
+        backend_only items with hold status are tracked in get_hold_blockers() but
+        do not block daily-driver certification.
+        """
         for item in self.items:
-            if item.status in (
-                CertificationStatus.HOLD,
-                CertificationStatus.INSUFFICIENT_DATA,
-            ):
-                return "hold"
+            if item.visibility == CertificationVisibility.UI_VISIBLE:
+                if item.status in (
+                    CertificationStatus.HOLD,
+                    CertificationStatus.INSUFFICIENT_DATA,
+                ):
+                    return "hold"
         return "certified"
 
     def get_hold_blockers(self) -> List[CertificationItem]:
@@ -194,6 +200,8 @@ def _status_from_check(
             return CertificationStatus.CERTIFIED
         return CertificationStatus.BACKEND_ONLY
     if check_status in (CheckStatus.WARN, CheckStatus.NOT_CONFIGURED):
+        if default_visibility == CertificationVisibility.UI_VISIBLE:
+            return CertificationStatus.HOLD
         return CertificationStatus.BACKEND_ONLY
     if check_status == CheckStatus.FAIL:
         return CertificationStatus.HOLD
@@ -326,25 +334,26 @@ def build_certification_matrix(
     voice_id_check = _find_check(check_map, "voice_identity")
     if voice_check is None:
         items.append(CertificationItem(
-            name="Voice path (wake-word, hotkey, chatbox fallback)",
+            name="Voice path (wake-word, hotkey, chatbox, mic button)",
             area="voice_path",
             status=CertificationStatus.INSUFFICIENT_DATA,
-            visibility=CertificationVisibility.BACKEND_ONLY,
+            visibility=CertificationVisibility.UI_VISIBLE,
             evidence=INSUFFICIENT_DATA_MSG,
             hold_reason="voice_pipeline_status check missing",
         ))
     else:
         vi_status = voice_id_check.status if voice_id_check else "missing"
-        cert_status = _status_from_check(voice_check.status, CertificationVisibility.BACKEND_ONLY)
+        cert_status = _status_from_check(voice_check.status, CertificationVisibility.UI_VISIBLE)
         items.append(CertificationItem(
-            name="Voice path (wake-word, hotkey, chatbox fallback)",
+            name="Voice path (wake-word, hotkey, chatbox, mic button)",
             area="voice_path",
             status=cert_status,
-            visibility=CertificationVisibility.BACKEND_ONLY,
+            visibility=CertificationVisibility.UI_VISIBLE,
             evidence=(
                 f"voice_pipeline={voice_check.status}: {voice_check.summary}; "
                 f"voice_identity={vi_status}; "
-                f"manual chatbox fallback: always available (text input)"
+                f"UI: Chat mic button (/v1/speech/transcribe), Cmd+Shift+Space overlay hotkey; "
+                f"manual chatbox: always available"
             ),
         ))
 
@@ -356,22 +365,22 @@ def build_certification_matrix(
             name="Connector health (Slack, Telegram, Tavily)",
             area="connector_health",
             status=CertificationStatus.INSUFFICIENT_DATA,
-            visibility=CertificationVisibility.BACKEND_ONLY,
+            visibility=CertificationVisibility.UI_VISIBLE,
             evidence=INSUFFICIENT_DATA_MSG,
             hold_reason="connector_readiness check missing",
         ))
     else:
         mon_status = conn_mon_check.status if conn_mon_check else "missing"
-        cert_status = _status_from_check(conn_check.status, CertificationVisibility.BACKEND_ONLY)
+        cert_status = _status_from_check(conn_check.status, CertificationVisibility.UI_VISIBLE)
         items.append(CertificationItem(
             name="Connector health (Slack, Telegram, Tavily)",
             area="connector_health",
             status=cert_status,
-            visibility=CertificationVisibility.BACKEND_ONLY,
+            visibility=CertificationVisibility.UI_VISIBLE,
             evidence=(
                 f"connector_readiness={conn_check.status}: {conn_check.summary}; "
                 f"connector_health_monitor={mon_status}; "
-                f"backend-only: no connector panel in app UI"
+                f"UI: Mission Control Slack/Telegram notification bells (/v1/notify/status)"
             ),
         ))
 

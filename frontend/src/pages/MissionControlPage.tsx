@@ -266,6 +266,9 @@ export function MissionControlPage() {
   // Notification status
   const [notifyStatus, setNotifyStatus] = useState<NotifyStatus | null>(null);
 
+  // System health
+  const [sysHealth, setSysHealth] = useState<Record<string, any> | null>(null);
+
   // Run mission pass
   const [running, setRunning] = useState(false);
   const [lastRunResult, setLastRunResult] = useState<RunResult | null>(null);
@@ -346,6 +349,15 @@ export function MissionControlPage() {
       // silent
     } finally {
       setAgentsLoading(false);
+    }
+  }, []);
+
+  const fetchSystemHealth = useCallback(async () => {
+    try {
+      const resp = await apiFetch('/v1/system/health');
+      if (resp.ok) setSysHealth(await resp.json());
+    } catch {
+      // silent
     }
   }, []);
 
@@ -434,6 +446,13 @@ export function MissionControlPage() {
   useEffect(() => {
     fetchNotifyStatus();
   }, [fetchNotifyStatus]);
+
+  // Poll system health every 60 s
+  useEffect(() => {
+    fetchSystemHealth();
+    const id = setInterval(fetchSystemHealth, 60_000);
+    return () => clearInterval(id);
+  }, [fetchSystemHealth]);
 
   // Fetch tools / skills / memory once on mount
   useEffect(() => {
@@ -667,6 +686,60 @@ export function MissionControlPage() {
             )}
           </div>
         </div>
+
+        {/* ── System Health Panel ── */}
+        {sysHealth && (
+          <div
+            className="rounded-xl p-3"
+            style={{ background: 'var(--color-bg-secondary)', border: '1px solid var(--color-border)' }}
+          >
+            <div className="flex items-center gap-2 mb-2">
+              <CheckCircle2 size={13} style={{ color: 'var(--color-accent)' }} />
+              <span className="text-xs font-semibold" style={{ color: 'var(--color-text-secondary)' }}>System Health</span>
+              {sysHealth.certification?.verdict === 'certified' && (
+                <span className="ml-auto text-xs px-2 py-0.5 rounded-full" style={{ background: '#22c55e22', color: '#22c55e', border: '1px solid #22c55e44' }}>V1 daily-driver certified</span>
+              )}
+              {sysHealth.certification?.verdict === 'hold' && (
+                <span className="ml-auto text-xs px-2 py-0.5 rounded-full" style={{ background: '#f9731622', color: '#f97316', border: '1px solid #f9731644' }}>HOLD</span>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {([
+                { key: 'runtime',    label: 'Runtime',    val: sysHealth.runtime?.status },
+                { key: 'voice',      label: 'Voice',      val: sysHealth.voice?.readiness ?? sysHealth.voice?.status },
+                { key: 'connectors', label: 'Slack',      val: sysHealth.connectors?.slack },
+                { key: 'connectors', label: 'Telegram',   val: sysHealth.connectors?.telegram },
+                { key: 'connectors', label: 'Web Search', val: sysHealth.connectors?.web_search },
+                { key: 'queue',      label: 'Queue',      val: sysHealth.queue?.status },
+                { key: 'memory',     label: 'Memory',     val: sysHealth.memory?.status },
+                { key: 'trust',      label: 'Trust',      val: sysHealth.trust?.status },
+              ] as { key: string; label: string; val?: string }[]).map(({ label, val }, i) => {
+                const v = (val ?? 'unknown').toLowerCase();
+                const color =
+                  v === 'pass' || v === 'ready' || v === 'configured' || v === 'ready_pending_test_approval' || v === 'configured_not_started'
+                    ? '#22c55e'
+                    : v === 'warn' || v === 'partial' || v === 'degraded'
+                    ? '#f59e0b'
+                    : v === 'fail' || v === 'hold' || v === 'not_configured' || v === 'error'
+                    ? '#ef4444'
+                    : 'var(--color-text-tertiary)';
+                return (
+                  <span
+                    key={`${label}-${i}`}
+                    className="flex items-center gap-1 px-2 py-1 rounded-full text-xs"
+                    style={{ background: `${color}18`, color, border: `1px solid ${color}44` }}
+                    title={val ?? 'unknown'}
+                  >
+                    <span
+                      style={{ width: 6, height: 6, borderRadius: '50%', background: color, display: 'inline-block', flexShrink: 0 }}
+                    />
+                    {label}
+                  </span>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* ── Top row: Mission list + Detail ── */}
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">

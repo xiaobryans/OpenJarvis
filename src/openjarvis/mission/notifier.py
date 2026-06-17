@@ -47,7 +47,16 @@ class SlackNotifier:
     """
 
     def __init__(self) -> None:
-        self._token: Optional[str] = os.environ.get(_SLACK_TOKEN_ENV, "").strip() or None
+        try:
+            from openjarvis.projects.source_links import _load_openjarvis_env
+            _load_openjarvis_env()
+        except Exception:
+            pass
+        self._token: Optional[str] = (
+            os.environ.get(_SLACK_TOKEN_ENV, "").strip()
+            or os.environ.get("JARVIS_SLACK_BOT_TOKEN", "").strip()
+            or None
+        )
         self._channel: str = (
             os.environ.get(_SLACK_CHANNEL_ENV, "").strip()
             or _SLACK_DEFAULT_CHANNEL
@@ -118,6 +127,11 @@ class TelegramNotifier:
     """
 
     def __init__(self) -> None:
+        try:
+            from openjarvis.projects.source_links import _load_openjarvis_env
+            _load_openjarvis_env()
+        except Exception:
+            pass
         self._token: Optional[str] = os.environ.get(_TELEGRAM_TOKEN_ENV, "").strip() or None
         self._chat_id: Optional[str] = os.environ.get(_TELEGRAM_CHAT_ID_ENV, "").strip() or None
 
