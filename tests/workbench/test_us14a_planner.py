@@ -1150,10 +1150,289 @@ class TestExplicitFileDiscovery:
             "- `src/openjarvis/workbench/model_router.py`\n"
             "Do not edit files."
         )
-        plan = mgr.plan(prompt, dry_run=True)
+        plan = mgr.plan(prompt, dry_run=True, stop_on_blocker=False)
         plan = mgr.execute(plan)
         report = plan.final_report or ""
-        assert "PLAN_READY_FOR_REVIEW" in report, (
-            f"Report must return PLAN_READY_FOR_REVIEW when all requested existing files "
-            f"were read; got: {report[:300]!r}"
+        assert "READY_FOR_IMPLEMENTATION_APPROVAL" in report, (
+            f"Report must return READY_FOR_IMPLEMENTATION_APPROVAL when all requested "
+            f"existing files were read; got: {report[:300]!r}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# US14A.1 Architecture Synthesis Remediation tests
+# ---------------------------------------------------------------------------
+
+_ADDENDUM_PROMPT = (
+    "US14A.1 IMPLEMENTATION READINESS ADDENDUM \u2014 SOURCE-DERIVED ARCHITECTURE PLAN\n\n"
+    "Read these files only if they exist:\n\n"
+    "- `src/openjarvis/tools/approval_store.py`\n"
+    "- `src/openjarvis/channels/slack.py`\n"
+    "- `src/openjarvis/channels/telegram.py`\n"
+    "- `frontend/src/components/ApprovalBell.tsx`\n"
+    "- `src/openjarvis/autonomy/automation_policy.py`\n"
+    "- `src/openjarvis/governance/constitution.py`\n"
+    "- `src/openjarvis/workbench/model_router.py`\n"
+    "- `src/openjarvis/workbench/cost_ledger.py`\n"
+    "- `src/openjarvis/intelligence/model_catalog.py`\n"
+    "- `src/openjarvis/server/routes.py`\n"
+    "- `src/openjarvis/server/workbench_routes.py`\n"
+    "- `src/openjarvis/server/channel_bridge.py`\n"
+    "- `src/openjarvis/server/notify_routes.py`\n"
+    "- `src/openjarvis/workbench/coding_manager.py`\n"
+    "- `src/openjarvis/mission/notifier.py`\n"
+    "- `src/openjarvis/server/approval_routes.py`\n"
+    "- `frontend/src/pages/WorkbenchPage.tsx`\n"
+    "- `tests/workbench/test_us14a.py`\n"
+    "- `tests/workbench/test_us14a_planner.py`\n\n"
+    "Do not edit files.\n"
+    "Do not create files.\n"
+    "Do not delete files.\n"
+    "Do not commit.\n"
+    "Do not push.\n"
+    "Do not send Slack or Telegram messages.\n"
+    "Return an implementation-readiness architecture plan with final recommendation "
+    "exactly one of: READY_FOR_IMPLEMENTATION_APPROVAL, HOLD_FOR_MORE_DISCOVERY, or UNSAFE."
+)
+
+_VALID_VERDICTS = {
+    "READY_FOR_IMPLEMENTATION_APPROVAL",
+    "HOLD_FOR_MORE_DISCOVERY",
+    "UNSAFE",
+}
+
+
+def _make_mgr_with_files(tmp_path, file_paths, content="# stub"):
+    """Create a CodingManager whose repo_path is tmp_path with specified files pre-created."""
+    from openjarvis.workbench.coding_manager import CodingManager
+    from openjarvis.workbench.model_router import ModelRouter, MockModelAdapter
+
+    for fpath in file_paths:
+        full = tmp_path / fpath
+        full.parent.mkdir(parents=True, exist_ok=True)
+        full.write_text(content)
+    router = ModelRouter(db_path=str(tmp_path / "r.db"), adapter_override=MockModelAdapter())
+    return CodingManager(repo_path=str(tmp_path), db_dir=str(tmp_path), model_router=router)
+
+
+def _execute_addendum(mgr, prompt=None):
+    """Plan + execute the addendum prompt and return the final report.
+
+    Uses stop_on_blocker=False so that git_status/git_diff failures in
+    non-git tmp_path repos don't halt execution before file_read subtasks run.
+    """
+    p = prompt or _ADDENDUM_PROMPT
+    plan = mgr.plan(p, dry_run=True, stop_on_blocker=False)
+    plan = mgr.execute(plan)
+    return plan, plan.final_report or ""
+
+
+class TestArchitectureSynthesis:
+    """Prove source-derived report sections and correct verdict terminology."""
+
+    def test_verdict_not_plan_ready_for_review(self, mgr):
+        """PLAN_READY_FOR_REVIEW must not appear in implementation-readiness reports."""
+        _, report = _execute_addendum(mgr)
+        assert "PLAN_READY_FOR_REVIEW" not in report, (
+            "Report must NOT use PLAN_READY_FOR_REVIEW for implementation-readiness prompts"
+        )
+
+    def test_verdict_is_valid_three_option(self, mgr):
+        """Final recommendation must be exactly one of the three valid verdicts."""
+        _, report = _execute_addendum(mgr)
+        assert any(v in report for v in _VALID_VERDICTS), (
+            f"Report must use one of {_VALID_VERDICTS}, got report start: {report[:300]!r}"
+        )
+
+    def test_verdict_in_status_banner(self, mgr):
+        """**Status** line must use one of the three valid verdicts."""
+        _, report = _execute_addendum(mgr)
+        status_line = next(
+            (l for l in report.splitlines() if l.startswith("**Status**")), ""
+        )
+        assert any(v in status_line for v in _VALID_VERDICTS), (
+            f"Status banner must contain a valid verdict, got: {status_line!r}"
+        )
+
+    def test_no_contradiction_for_inspected_files(self, tmp_path):
+        """Report must not say a file was not inspected when it was actually read."""
+        files = [
+            "src/openjarvis/workbench/model_router.py",
+            "src/openjarvis/channels/slack.py",
+            "src/openjarvis/channels/telegram.py",
+            "src/openjarvis/mission/notifier.py",
+        ]
+        mgr = _make_mgr_with_files(tmp_path, files)
+        prompt = (
+            "Read these files:\n"
+            + "".join(f"- `{f}`\n" for f in files)
+            + "Do not edit files."
+        )
+        plan, report = _execute_addendum(mgr, prompt)
+        reads_done = {
+            st.params.get("path", "").replace(str(tmp_path) + "/", "")
+            for st in plan.subtasks if st.tool_id == "file_read" and st.status == "done"
+        }
+        for fpath in reads_done:
+            fname = fpath.split("/")[-1]
+            assert f"{fname} not inspected" not in report, (
+                f"Report must NOT say '{fname} not inspected' after reading it; "
+                f"reads_done={reads_done}"
+            )
+
+    def test_report_has_architecture_map_section(self, tmp_path):
+        """Report must include a 'Current Architecture Map' section."""
+        mgr = _make_mgr_with_files(tmp_path, ["src/openjarvis/workbench/coding_manager.py"])
+        prompt = (
+            "Read these files:\n"
+            "- `src/openjarvis/workbench/coding_manager.py`\n"
+            "Do not edit files."
+        )
+        _, report = _execute_addendum(mgr, prompt)
+        assert "Current Architecture Map" in report, (
+            "Report must contain '## Current Architecture Map' section"
+        )
+
+    def test_report_has_files_likely_to_change(self, tmp_path):
+        """Report must include 'Files Likely to Change' section."""
+        mgr = _make_mgr_with_files(tmp_path, ["src/openjarvis/server/routes.py"])
+        prompt = (
+            "Read these files:\n"
+            "- `src/openjarvis/server/routes.py`\n"
+            "Do not edit files."
+        )
+        _, report = _execute_addendum(mgr, prompt)
+        assert "Files Likely to Change" in report, (
+            "Report must contain '## Files Likely to Change' section"
+        )
+
+    def test_report_has_new_files_likely_needed(self, mgr):
+        """Report must include 'New Files Likely Needed' section."""
+        _, report = _execute_addendum(mgr)
+        assert "New Files Likely Needed" in report, (
+            "Report must contain '## New Files Likely Needed' section"
+        )
+
+    def test_report_has_backend_api_plan(self, tmp_path):
+        """Report must include 'Backend / API Implementation Plan' section."""
+        mgr = _make_mgr_with_files(tmp_path, ["src/openjarvis/server/routes.py"])
+        prompt = (
+            "Read these files:\n- `src/openjarvis/server/routes.py`\nDo not edit files."
+        )
+        _, report = _execute_addendum(mgr, prompt)
+        assert "Backend" in report and "Implementation Plan" in report, (
+            "Report must contain a backend/API implementation plan section"
+        )
+
+    def test_report_has_frontend_plan(self, tmp_path):
+        """Report must include 'Frontend Implementation Plan' section."""
+        mgr = _make_mgr_with_files(tmp_path, ["frontend/src/pages/WorkbenchPage.tsx"])
+        prompt = (
+            "Read these files:\n"
+            "- `frontend/src/pages/WorkbenchPage.tsx`\n"
+            "Do not edit files."
+        )
+        _, report = _execute_addendum(mgr, prompt)
+        assert "Frontend" in report and "Implementation Plan" in report, (
+            "Report must contain a frontend implementation plan section"
+        )
+
+    def test_report_has_notification_event_plan(self, tmp_path):
+        """Report must include 'Notification / Event Implementation Plan' section."""
+        mgr = _make_mgr_with_files(tmp_path, ["src/openjarvis/mission/notifier.py"])
+        prompt = (
+            "Read these files:\n- `src/openjarvis/mission/notifier.py`\nDo not edit files."
+        )
+        _, report = _execute_addendum(mgr, prompt)
+        assert "Notification" in report and "Event" in report, (
+            "Report must contain a Notification/Event Implementation Plan section"
+        )
+
+    def test_report_has_slack_telegram_gating_plan(self, tmp_path):
+        """Report must include 'Slack / Telegram Notification Gating Plan' section."""
+        mgr = _make_mgr_with_files(tmp_path, ["src/openjarvis/channels/slack.py"])
+        prompt = (
+            "Read these files:\n- `src/openjarvis/channels/slack.py`\nDo not edit files."
+        )
+        _, report = _execute_addendum(mgr, prompt)
+        assert "Slack" in report and "Telegram" in report and "Gating" in report, (
+            "Report must contain a Slack/Telegram Gating Plan section"
+        )
+
+    def test_report_has_model_routing_plan(self, tmp_path):
+        """Report must include 'Model Routing / Provider Verification Plan' section."""
+        mgr = _make_mgr_with_files(tmp_path, ["src/openjarvis/workbench/model_router.py"])
+        prompt = (
+            "Read these files:\n"
+            "- `src/openjarvis/workbench/model_router.py`\n"
+            "Do not edit files."
+        )
+        _, report = _execute_addendum(mgr, prompt)
+        assert "Model Routing" in report, (
+            "Report must contain '## Model Routing / Provider Verification Plan'"
+        )
+
+    def test_report_has_approval_autopilot_plan(self, tmp_path):
+        """Report must include 'Approval / Autopilot Policy Plan' section."""
+        mgr = _make_mgr_with_files(tmp_path, ["src/openjarvis/tools/approval_store.py"])
+        prompt = (
+            "Read these files:\n"
+            "- `src/openjarvis/tools/approval_store.py`\n"
+            "Do not edit files."
+        )
+        _, report = _execute_addendum(mgr, prompt)
+        assert "Approval" in report and "Autopilot" in report and "Policy" in report, (
+            "Report must contain '## Approval / Autopilot Policy Plan'"
+        )
+
+    def test_report_has_tests_section(self, tmp_path):
+        """Report must include a 'Tests to Add / Update' section."""
+        mgr = _make_mgr_with_files(tmp_path, ["tests/workbench/test_us14a.py"])
+        prompt = (
+            "Read these files:\n- `tests/workbench/test_us14a.py`\nDo not edit files."
+        )
+        _, report = _execute_addendum(mgr, prompt)
+        assert "Tests to Add" in report or "Tests to add" in report, (
+            "Report must contain '## Tests to Add / Update'"
+        )
+
+    def test_report_has_validation_commands(self, mgr):
+        """Report must include 'Validation Commands' section."""
+        _, report = _execute_addendum(mgr)
+        assert "Validation Commands" in report, (
+            "Report must contain '## Validation Commands'"
+        )
+
+    def test_hold_when_no_files_read(self, mgr):
+        """Report must return HOLD_FOR_MORE_DISCOVERY when no explicit files could be read."""
+        _, report = _execute_addendum(mgr)
+        assert "**Status**: `HOLD_FOR_MORE_DISCOVERY`" in report, (
+            "When no files exist in tmp_path, all are missing → HOLD_FOR_MORE_DISCOVERY"
+        )
+
+    def test_ready_for_approval_when_all_read(self, tmp_path):
+        """Report must return READY_FOR_IMPLEMENTATION_APPROVAL when all requested files are read."""
+        listed = [
+            "src/openjarvis/channels/slack.py",
+            "src/openjarvis/server/routes.py",
+            "src/openjarvis/workbench/model_router.py",
+            "tests/workbench/test_us14a.py",
+        ]
+        mgr = _make_mgr_with_files(tmp_path, listed)
+        prompt = (
+            "Read these files:\n"
+            + "".join(f"- `{f}`\n" for f in listed)
+            + "Do not edit files."
+        )
+        plan, report = _execute_addendum(mgr, prompt)
+        assert "**Status**: `READY_FOR_IMPLEMENTATION_APPROVAL`" in report, (
+            f"Must return READY_FOR_IMPLEMENTATION_APPROVAL when all files read; "
+            f"got: {report[:400]!r}"
+        )
+
+    def test_no_plan_ready_for_review_anywhere_in_addendum(self, mgr):
+        """PLAN_READY_FOR_REVIEW must not appear anywhere in an addendum-style prompt report."""
+        _, report = _execute_addendum(mgr)
+        assert "PLAN_READY_FOR_REVIEW" not in report, (
+            "PLAN_READY_FOR_REVIEW is a retired verdict; must not appear in any report"
         )

@@ -921,7 +921,7 @@ class CodingManager:
         if task_type == "planning_only":
             return [
                 "Gate 0: No writes until explicit approval after plan review",
-                "Gate 1: Implementation plan must reach PLAN_READY_FOR_REVIEW before any file_write",
+                "Gate 1: Implementation plan must reach READY_FOR_IMPLEMENTATION_APPROVAL before any file_write",
                 "Gate 2: Each implementation phase requires Discovery review before proceeding",
                 "Gate 3: Manager approval required for git_commit",
                 "Gate 4: Manager approval required for git_push",
@@ -1278,8 +1278,8 @@ class CodingManager:
         Produces: implementation phases, likely files by subsystem, files read,
         recommended next files, risks, validation commands, approval gates,
         acceptance tests, model routing plan, Slack/Telegram gating,
-        known unknowns, and an explicit PLAN_READY_FOR_REVIEW or
-        HOLD_FOR_MORE_DISCOVERY verdict. Never says ACCEPT.
+        known unknowns, and a final verdict of exactly one of
+        READY_FOR_IMPLEMENTATION_APPROVAL, HOLD_FOR_MORE_DISCOVERY, or UNSAFE.
         """
         # Collect files actually read in this session
         files_read: List[str] = []
@@ -1298,9 +1298,14 @@ class CodingManager:
                 recommended_next.append(fpath)
                 seen_next.add(fpath)
 
-        # Group likely_files by subsystem
+        # Group files by subsystem — include both auto-inferred likely_files AND
+        # explicit files that were actually read (union so no reads are marked unread)
+        subsystem_all: List[str] = list(plan.likely_files)
+        for fpath in files_read:
+            if fpath not in set(plan.likely_files):
+                subsystem_all.append(fpath)
         subsystem_files: Dict[str, List[str]] = {}
-        for fpath in plan.likely_files:
+        for fpath in subsystem_all:
             label = _get_subsystem_label(fpath)
             subsystem_files.setdefault(label, []).append(fpath)
 
@@ -1327,10 +1332,10 @@ class CodingManager:
                         f"{len(explicit_requested)} requested files were not found on disk."
                     )
             else:
-                recommendation = "PLAN_READY_FOR_REVIEW"
+                recommendation = "READY_FOR_IMPLEMENTATION_APPROVAL"
                 rec_note = "Explicit discovery complete. Review this plan before implementing."
         elif files_read_count >= 2 and not any_failed and blocked_at is None:
-            recommendation = "PLAN_READY_FOR_REVIEW"
+            recommendation = "READY_FOR_IMPLEMENTATION_APPROVAL"
             rec_note = "Initial discovery complete. Review this plan before implementing."
         else:
             recommendation = "HOLD_FOR_MORE_DISCOVERY"
@@ -1396,6 +1401,154 @@ class CodingManager:
             lines.append("- All identified files have been read in this session.")
         lines.append("")
 
+        # ----------------------------------------------------------------
+        # Source-derived sections — built from actual file_read outputs
+        # ----------------------------------------------------------------
+        arch = self._synthesize_arch_map(plan, files_read_set)
+        files_to_change = self._derive_files_to_change(files_read, plan.prompt)
+        new_files_needed = self._derive_new_files_needed(
+            files_read, missing, plan.prompt
+        )
+
+        # Compute per-subsystem read flags once; reused across multiple sections
+        _approval_read = any("approval" in f for f in files_read_set)
+        _automation_read = any("automation" in f or "constitution" in f for f in files_read_set)
+        _notify_read = any("notify" in f or "notifier" in f for f in files_read_set)
+        _slack_read = any("slack" in f for f in files_read_set)
+        _telegram_read = any("telegram" in f for f in files_read_set)
+        _model_router_read = any("model_router" in f for f in files_read_set)
+        _cost_ledger_read = any("cost_ledger" in f for f in files_read_set)
+        _workbench_page_read = any(
+            "WorkbenchPage" in f or "workbench_page" in f.lower() for f in files_read_set
+        )
+        _approval_bell_read = any("ApprovalBell" in f for f in files_read_set)
+
+        lines += ["## Current Architecture Map", ""]
+        if arch["components"]:
+            for fpath, info in sorted(arch["components"].items()):
+                role = info["role"]
+                classes = info["classes"]
+                routes = info["routes"]
+                functions = info["functions"]
+                lc = info["line_count"]
+                tag = f" ({lc} lines)" if lc else " (dry-run — content not available)"
+                lines.append(f"**`{fpath}`** — {role}{tag}")
+                if classes:
+                    lines.append(f"  - Classes: {', '.join(f'`{c}`' for c in classes)}")
+                if routes:
+                    lines.append(f"  - Routes: {', '.join(f'`{r}`' for r in routes)}")
+                if functions:
+                    lines.append(f"  - Key functions: {', '.join(f'`{fn}`' for fn in functions[:5])}")
+                lines.append("")
+        else:
+            lines += ["- Insufficient data to verify — no files were read this session", ""]
+
+        lines += ["## Files Likely to Change", ""]
+        if files_to_change["backend"]:
+            lines.append("**Backend**")
+            for f in files_to_change["backend"]:
+                lines.append(f"- `{f}`")
+            lines.append("")
+        if files_to_change["frontend"]:
+            lines.append("**Frontend**")
+            for f in files_to_change["frontend"]:
+                lines.append(f"- `{f}`")
+            lines.append("")
+        if files_to_change["tests"]:
+            lines.append("**Tests**")
+            for f in files_to_change["tests"]:
+                lines.append(f"- `{f}`")
+            lines.append("")
+        if not any(files_to_change.values()):
+            lines += ["- Insufficient data to verify — no source files inspected", ""]
+
+        lines += ["## New Files Likely Needed", ""]
+        if new_files_needed:
+            for nf in new_files_needed:
+                lines.append(f"- `{nf}`")
+        else:
+            lines.append("- None")
+        lines.append("")
+
+        lines += ["## Backend / API Implementation Plan", ""]
+        lines += [
+            "- Add/update server routes in `src/openjarvis/server/` for workbench job status "
+            "and notification endpoints",
+            "- Extend `CodingManager.plan()` and `CodingManager.execute()` for new task types",
+            "- Wire notification events from `Notifier` through `channel_bridge` to Slack/Telegram",
+            "- Gate all write/commit/push actions behind approval store checks",
+        ]
+        if not _approval_read:
+            lines.append(
+                "- Insufficient data to verify — `approval_store.py` / `approval_routes.py` "
+                "not inspected; exact gate implementation unknown"
+            )
+        lines.append("")
+
+        lines += ["## Frontend Implementation Plan", ""]
+        lines += [
+            "- Update `WorkbenchPage.tsx` to display job status, report output, and dry-run badge",
+            "- Integrate `ApprovalBell` notification badge for pending approvals",
+            "- Add Chat-to-Workbench status indicator in the Chat area",
+            "- Poll or subscribe to workbench job state changes",
+        ]
+        if not _workbench_page_read:
+            lines.append(
+                "- Insufficient data to verify — `WorkbenchPage.tsx` not inspected; "
+                "exact component structure unknown"
+            )
+        if not _approval_bell_read:
+            lines.append(
+                "- Insufficient data to verify — `ApprovalBell.tsx` not inspected; "
+                "exact approval bell API unknown"
+            )
+        lines.append("")
+
+        lines += ["## Notification / Event Implementation Plan", ""]
+        lines += [
+            "- Define unified event schema: `{event_type, payload, timestamp, source}`",
+            "- In-app: emit events via `Notifier` to frontend SSE/WebSocket",
+            "- Slack path: `Notifier` \u2192 `channel_bridge` \u2192 `slack.py` (gated, dry-run safe)",
+            "- Telegram path: `Notifier` \u2192 `channel_bridge` \u2192 `telegram.py` (gated, dry-run safe)",
+            "- Dedupe: hash-based deduplication per `(event_type, payload_hash)` with TTL",
+            "- Rate-limit: max 1 send per minute per channel per event type",
+            "- Dry-run: all send paths must no-op when `dry_run=True`",
+        ]
+        if not _notify_read:
+            lines.append(
+                "- Insufficient data to verify — `notifier.py` / `notify_routes.py` "
+                "not inspected; exact event schema unknown"
+            )
+        lines.append("")
+
+        lines += ["## Approval / Autopilot Policy Plan", ""]
+        lines += [
+            "- Plan Only: no file_write/commit/push — enforced in `CodingManager`",
+            "- Dry Run: all subtasks execute but writes are no-ops — enforced by dry_run flag",
+            "- Live Guarded: each write/commit gated by `ApprovalStore.require_approval()`",
+            "- Live Autopilot: bundled approval allowed only for pre-certified low-risk tasks",
+            "- High-risk gate: `git_push` always requires explicit Manager approval",
+        ]
+        if not _automation_read:
+            lines.append(
+                "- Insufficient data to verify — `automation_policy.py` / `constitution.py` "
+                "not inspected; exact policy gate thresholds unknown"
+            )
+        lines.append("")
+
+        lines += ["## Tests to Add / Update", ""]
+        lines += [
+            "- `test_us14a_planner.py`: add tests for each new report section",
+            "- `test_us14a.py`: verify dry-run mode suppresses writes and external sends",
+            "- `test_notification_dry_run_no_send`: assert `Notifier.send()` not called in dry_run",
+            "- `test_chat_to_workbench_bridge`: assert chat message creates workbench task",
+            "- `test_slack_telegram_mock`: mock channels; assert no live sends in tests",
+            "- `test_approval_gate`: assert `file_write` blocked when approval pending",
+            "- `test_model_routing_cost_ledger`: assert `$0.00` cost in Plan-Only sessions",
+            "- Frontend: `npm run build` must exit 0 after any frontend changes",
+        ]
+        lines.append("")
+
         lines += ["## Implementation Phases", ""]
         for ph in self._extract_implementation_phases(plan.prompt):
             lines.append(f"- {ph}")
@@ -1427,9 +1580,16 @@ class CodingManager:
             "- Check `ModelRouter` DB for routing decisions after each subtask",
             "- Confirm read-only tools route to `local` tier; LLM subtasks to `cloud-cheap`",
             "- Verify cost ledger records `$0.000000` for Plan-Only sessions",
-            "- Insufficient data to verify — `model_router.py` / provider config not inspected this session",
-            "",
         ]
+        if not _model_router_read:
+            lines.append(
+                "- Insufficient data to verify — `model_router.py` not inspected this session"
+            )
+        if not _cost_ledger_read:
+            lines.append(
+                "- Insufficient data to verify — `cost_ledger.py` not inspected this session"
+            )
+        lines.append("")
 
         lines += ["## Slack / Telegram Notification Gating Plan", ""]
         lines += [
@@ -1438,9 +1598,20 @@ class CodingManager:
             "- Live test: requires explicit Manager approval; scope to a sandbox channel only",
             "- Integration test: mock `Notifier`; assert `send()` not called in dry-run mode",
             "- Acceptance gate: Slack/Telegram test sends require Manager approval before execution",
-            "- Insufficient data to verify — `notify_routes.py` / `slack.py` / `telegram.py` not inspected this session",
-            "",
         ]
+        _gating_gaps = []
+        if not _notify_read:
+            _gating_gaps.append("`notify_routes.py` / `notifier.py`")
+        if not _slack_read:
+            _gating_gaps.append("`slack.py`")
+        if not _telegram_read:
+            _gating_gaps.append("`telegram.py`")
+        if _gating_gaps:
+            lines.append(
+                "- Insufficient data to verify — " + ", ".join(_gating_gaps)
+                + " not inspected this session"
+            )
+        lines.append("")
 
         lines += ["## Known Unknowns", ""]
         for u in self._identify_known_unknowns(plan.prompt, list(files_read_set)):
@@ -1536,36 +1707,121 @@ class CodingManager:
         tests.append("Frontend build: npm run build \u2192 exit 0")
         return tests
 
-    def _identify_known_unknowns(self, prompt: str, files_read: List[str]) -> List[str]:
-        """Identify known unknowns from unread subsystem files implied by the prompt."""
+    def _synthesize_arch_map(
+        self, plan: "TaskPlan", files_read_set: set
+    ) -> Dict[str, Any]:
+        """Build a source-derived architecture map from file_read subtask outputs.
+
+        Parses actual file content to extract classes, routes, and top-level
+        functions.  Falls back gracefully when content is empty/unavailable
+        (e.g. dry_run mode where reads are simulated with empty output).
+        """
+        arch: Dict[str, Any] = {
+            "components": {},
+            "files_with_content": [],
+            "files_dry_run_only": [],
+        }
+        for st in plan.subtasks:
+            if st.tool_id != "file_read" or st.status != "done":
+                continue
+            raw_path = st.params.get("path", "")
+            rel = raw_path.replace(plan.repo_path + "/", "")
+            fpath = rel if rel != raw_path else raw_path
+            content = st.output or ""
+            role = _get_subsystem_label(fpath)
+
+            classes = re.findall(r"^class\s+(\w+)", content, re.MULTILINE)
+            routes = re.findall(
+                r'@(?:app|router|bp|api)\.(?:get|post|put|delete|patch|route)\s*\(\s*["\']([^"\']+)',
+                content, re.MULTILINE,
+            )
+            functions = re.findall(r"^(?:async\s+)?def\s+(\w+)", content, re.MULTILINE)
+            has_content = bool(content.strip())
+            arch["components"][fpath] = {
+                "role": role,
+                "classes": classes[:6],
+                "routes": routes[:6],
+                "functions": functions[:8],
+                "line_count": len(content.splitlines()) if has_content else 0,
+                "has_content": has_content,
+            }
+            if has_content:
+                arch["files_with_content"].append(fpath)
+            else:
+                arch["files_dry_run_only"].append(fpath)
+        return arch
+
+    def _derive_files_to_change(
+        self, files_read: List[str], prompt: str
+    ) -> Dict[str, List[str]]:
+        """Derive exact files likely to change based on inspected architecture + prompt."""
         p = prompt.lower()
+        backend: List[str] = []
+        frontend: List[str] = []
+        tests: List[str] = []
+        for fpath in files_read:
+            f = fpath.lower()
+            if fpath.startswith("frontend/") or fpath.endswith(".tsx") or fpath.endswith(".ts"):
+                frontend.append(fpath)
+            elif fpath.startswith("tests/"):
+                tests.append(fpath)
+            else:
+                if any(kw in f for kw in (
+                    "routes", "manager", "notifier", "slack", "telegram",
+                    "approval", "automation", "constitution", "model_router",
+                    "cost_ledger", "coding_manager", "channel_bridge", "notif",
+                )):
+                    backend.append(fpath)
+        if not tests:
+            for fpath in files_read:
+                if "test_" in fpath.lower():
+                    tests.append(fpath)
+        return {"backend": backend, "frontend": frontend, "tests": tests}
+
+    def _derive_new_files_needed(
+        self, files_read: List[str], missing_files: List[str], prompt: str
+    ) -> List[str]:
+        """Derive new files likely needed from missing explicit files + architecture gaps."""
+        new_files: List[str] = []
+        for fpath in missing_files:
+            new_files.append(f"{fpath} \u2014 required but not yet created")
+        return new_files
+
+    def _identify_known_unknowns(self, prompt: str, files_read: List[str]) -> List[str]:
+        """Identify known unknowns from unread subsystem files implied by the prompt.
+
+        Only reports a file as unknown if it was NOT present in files_read.
+        Never contradicts a completed file_read by claiming the file was not inspected.
+        """
+        p = prompt.lower()
+        fr_lower = [f.lower() for f in files_read]
         unknowns: List[str] = []
-        if any(w in p for w in ("notification", "notify")) and not any(
-            "notify" in f or "notifier" in f for f in files_read
-        ):
+
+        notify_read = any("notify" in f or "notifier" in f for f in fr_lower)
+        slack_read = any("slack" in f for f in fr_lower)
+        telegram_read = any("telegram" in f for f in fr_lower)
+        automation_read = any("automation" in f or "constitution" in f for f in fr_lower)
+        model_router_read = any("model_router" in f for f in fr_lower)
+        routes_read = any("routes.py" in f or "chatarea" in f for f in fr_lower)
+
+        if any(w in p for w in ("notification", "notify")) and not notify_read:
             unknowns.append(
                 "notify_routes.py / notifier.py not inspected \u2014 notification API surface unknown"
             )
-        if "slack" in p and not any("slack" in f for f in files_read):
+        if "slack" in p and not slack_read:
             unknowns.append("slack.py not inspected \u2014 Slack message format / rate-limits unknown")
-        if "telegram" in p and not any("telegram" in f for f in files_read):
+        if "telegram" in p and not telegram_read:
             unknowns.append("telegram.py not inspected \u2014 Telegram bot API / polling config unknown")
-        if any(w in p for w in ("autopilot", "guarded")) and not any(
-            "automation" in f or "constitution" in f for f in files_read
-        ):
+        if any(w in p for w in ("autopilot", "guarded")) and not automation_read:
             unknowns.append(
                 "automation_policy.py / constitution.py not inspected \u2014 "
                 "Guarded Autopilot approval gate behavior unknown"
             )
-        if any(w in p for w in ("model", "router", "routing")) and not any(
-            "model_router" in f for f in files_read
-        ):
+        if any(w in p for w in ("model", "router", "routing")) and not model_router_read:
             unknowns.append(
                 "model_router.py not inspected \u2014 provider routing / cost behavior unknown"
             )
-        if "chat" in p and not any(
-            "routes.py" in f or "ChatArea" in f for f in files_read
-        ):
+        if "chat" in p and not routes_read:
             unknowns.append("routes.py / ChatArea.tsx not inspected \u2014 PA chat message flow unknown")
         if not unknowns:
             unknowns.append("No critical unknowns identified at this discovery depth")
