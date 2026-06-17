@@ -113,20 +113,18 @@ class CertificationMatrix:
     evaluated_at: float = field(default_factory=time.time)
 
     def verdict(self) -> str:
-        """Return hold if any required_for_v1=True item has hold or insufficient_data status.
+        """Return hold unless every required_for_v1=True item is certified (ui_visible).
 
-        V1 daily-driver certification gates on ALL required_for_v1=True items regardless
-        of visibility.  A required item may be certified (ui_visible + check PASS) or
-        backend_only (backend PASS, not yet surfaced in UI) — both are acceptable.
-        HOLD or INSUFFICIENT_DATA on any required item blocks the daily-driver verdict.
-        Non-required items (meta/audit areas) never gate the verdict.
+        V1 daily-driver certification rule:
+          - required_for_v1=True items MUST be status=certified (implies ui_visible + check PASS).
+          - Any required item that is backend_only, hold, fail, or insufficient_data blocks
+            the daily-driver verdict and returns "hold".
+          - required_for_v1=False meta/audit items (e.g. backend_only_vs_ui_visible,
+            remaining_hold_blockers) never gate the verdict regardless of their status.
         """
         for item in self.items:
             if item.required_for_v1:
-                if item.status in (
-                    CertificationStatus.HOLD,
-                    CertificationStatus.INSUFFICIENT_DATA,
-                ):
+                if item.status != CertificationStatus.CERTIFIED:
                     return "hold"
         return "certified"
 

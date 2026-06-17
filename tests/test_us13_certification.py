@@ -297,16 +297,42 @@ class TestCertificationMatrixVerdict:
                 status=CertificationStatus.CERTIFIED,
                 visibility=CertificationVisibility.UI_VISIBLE,
                 evidence="evidence1",
+                required_for_v1=True,
             ),
             CertificationItem(
                 name="ok2", area="area2",
                 status=CertificationStatus.BACKEND_ONLY,
                 visibility=CertificationVisibility.BACKEND_ONLY,
                 evidence="evidence2",
+                required_for_v1=False,
             ),
         ]
         matrix = CertificationMatrix(head="abc123", project_id="omnix", items=items, failure_modes=[])
         assert matrix.verdict() == "certified"
+
+    def test_required_backend_only_status_blocks_verdict(self):
+        from openjarvis.doctor.certification import (
+            CertificationItem, CertificationMatrix,
+            CertificationStatus, CertificationVisibility,
+        )
+        items = [
+            CertificationItem(
+                name="ok", area="ok_area",
+                status=CertificationStatus.CERTIFIED,
+                visibility=CertificationVisibility.UI_VISIBLE,
+                evidence="ok",
+                required_for_v1=True,
+            ),
+            CertificationItem(
+                name="required_backend", area="required_backend_area",
+                status=CertificationStatus.BACKEND_ONLY,
+                visibility=CertificationVisibility.BACKEND_ONLY,
+                evidence="backend only",
+                required_for_v1=True,
+            ),
+        ]
+        matrix = CertificationMatrix(head="abc123", project_id="omnix", items=items, failure_modes=[])
+        assert matrix.verdict() == "hold"
 
 
 # ---------------------------------------------------------------------------
