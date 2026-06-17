@@ -1061,6 +1061,11 @@ class CodingManager:
 
         # Validation output: collect shell_exec output
         plan.validation_output = self._collect_validation_output(plan)
+
+        hold_reasons = self._implementation_hold_reasons(plan)
+        if hold_reasons and plan.status in ("done", "done_dry_run"):
+            plan.status = "blocked"
+
         plan.final_report = self._generate_report(plan)
 
         self._checkpoints.save_checkpoint(
@@ -1177,6 +1182,109 @@ class CodingManager:
                 return subtask.output
         return None
 
+    @staticmethod
+    def _non_empty_diff_output(content: Optional[str]) -> bool:
+        """Return True when a git diff-like output contains real changes."""
+        if not content:
+            return False
+        stripped = content.strip()
+        if not stripped:
+            return False
+        return stripped not in {"(no output)", "No changes", "No changes."}
+
+    @staticmethod
+    def _validation_blocker_reason(output: Optional[str]) -> Optional[str]:
+        """Return a HOLD reason when validation did not actually run."""
+        if not output:
+            return None
+        lower = output.lower()
+        markers = (
+            "no pytest found",
+            "no module named pytest",
+            "missing test runner",
+            "pytest: command not found",
+            "fatal python error",
+            "bad file descriptor",
+            "can't initialize sys standard streams",
+        )
+        for marker in markers:
+            if marker in lower:
+                return marker
+        return None
+
+    @staticmethod
+    def _validation_status(output: Optional[str]) -> str:
+        """Summarize validation state for final reports."""
+        if not output:
+            return "not_run"
+        blocker = CodingManager._validation_blocker_reason(output)
+        if blocker:
+            return f"blocked: {blocker}"
+        lower = output.lower()
+        if " passed" in lower and " failed" not in lower and "error" not in lower:
+            return "passed"
+        if " failed" in lower or " error" in lower or "traceback" in lower:
+            return "failed"
+        return "completed"
+
+    @staticmethod
+    def _git_changed_files(repo_path: str) -> str:
+        """Return current working-tree changed files, best-effort/read-only."""
+        try:
+            proc = subprocess.run(
+                ["git", "diff", "--name-status"],
+                cwd=repo_path,
+                text=True,
+                capture_output=True,
+                timeout=10,
+            )
+            if proc.returncode == 0:
+                return proc.stdout.strip()
+        except Exception:
+            pass
+        return ""
+
+    def _implementation_evidence(self, plan: TaskPlan) -> Dict[str, Any]:
+        """Collect implementation evidence for non-planning task reports."""
+        file_write_done = any(
+            st.tool_id == "file_write" and st.status == "done"
+            for st in plan.subtasks
+        )
+        file_write_count = sum(1 for st in plan.subtasks if st.tool_id == "file_write")
+        git_changed_files = self._git_changed_files(plan.repo_path)
+        diff_preview_has_changes = self._non_empty_diff_output(plan.diff_preview)
+        git_diff_has_changes = bool(git_changed_files.strip())
+        validation_status = self._validation_status(plan.validation_output)
+
+        return {
+            "file_write_subtasks": file_write_count,
+            "file_write_done": file_write_done,
+            "git_diff_has_changes": git_diff_has_changes,
+            "diff_preview_has_changes": diff_preview_has_changes,
+            "changed_files": git_changed_files,
+            "validation_status": validation_status,
+        }
+
+    def _implementation_hold_reasons(self, plan: TaskPlan) -> List[str]:
+        """Return reasons a non-planning task must be HOLD despite done subtasks."""
+        reasons: List[str] = []
+
+        validation_blocker = self._validation_blocker_reason(plan.validation_output)
+        if validation_blocker:
+            reasons.append(f"validation unavailable: {validation_blocker}")
+
+        if plan.task_type in ("bug_fix", "complex_implementation") and not plan.dry_run:
+            evidence = self._implementation_evidence(plan)
+            has_implementation = (
+                evidence["file_write_done"]
+                or evidence["git_diff_has_changes"]
+                or evidence["diff_preview_has_changes"]
+            )
+            if not has_implementation:
+                reasons.append("implementation did not run; no files were edited")
+
+        return reasons
+
     def _generate_report(
         self,
         plan: TaskPlan,
@@ -1252,6 +1360,35 @@ class CodingManager:
                 f"",
             ])
 
+        implementation_evidence = self._implementation_evidence(plan)
+        hold_reasons = self._implementation_hold_reasons(plan)
+        final_verdict = (
+            "ACCEPT"
+            if plan.status in ("done", "done_dry_run") and not hold_reasons
+            else "HOLD"
+        )
+
+        lines.extend([
+            f"## Implementation Evidence",
+            f"",
+            f"- file_write subtasks: **{implementation_evidence['file_write_subtasks']}**",
+            f"- file_write completed: **{implementation_evidence['file_write_done']}**",
+            f"- git diff has changes: **{implementation_evidence['git_diff_has_changes']}**",
+            f"- diff preview has changes: **{implementation_evidence['diff_preview_has_changes']}**",
+            f"- changed files: `{implementation_evidence['changed_files'] or '(none)'}`",
+            f"- validation status: **{implementation_evidence['validation_status']}**",
+            f"",
+        ])
+
+        if hold_reasons:
+            lines.extend([
+                f"## Hold Reasons",
+                f"",
+            ])
+            for reason in hold_reasons:
+                lines.append(f"- {reason}")
+            lines.append("")
+
         lines.extend([
             f"## Governance",
             f"",
@@ -1263,7 +1400,7 @@ class CodingManager:
             f"",
             f"## Final Verdict",
             f"",
-            f"{'ACCEPT' if plan.status in ('done', 'done_dry_run') else 'HOLD'}",
+            final_verdict,
         ])
 
         return "\n".join(lines)

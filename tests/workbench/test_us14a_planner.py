@@ -1436,3 +1436,96 @@ class TestArchitectureSynthesis:
         assert "PLAN_READY_FOR_REVIEW" not in report, (
             "PLAN_READY_FOR_REVIEW is a retired verdict; must not appear in any report"
         )
+
+
+# ---------------------------------------------------------------------------
+# US14A.1 execution safety: no false ACCEPT when implementation did not occur
+# ---------------------------------------------------------------------------
+
+def _make_execution_safety_plan(tmp_path, *, task_type="bug_fix", validation_output="1 passed"):
+    from openjarvis.workbench.coding_manager import CodingManager, Subtask, TaskPlan
+
+    mgr = CodingManager(repo_path=str(tmp_path), db_dir=str(tmp_path / ".openjarvis-test"))
+    plan = TaskPlan(
+        session_id="safety001",
+        task_id="task001",
+        prompt="Fix Workbench execution safety by editing files",
+        repo_path=str(tmp_path),
+        subtasks=[
+            Subtask(
+                id="s1",
+                index=0,
+                description="Run validation / tests",
+                tool_id="shell_exec",
+                params={},
+                worker_tier="cloud-cheap",
+                requires_approval=False,
+                status="done",
+                output=validation_output,
+            )
+        ],
+        dry_run=False,
+        stop_on_blocker=True,
+        status="done",
+        task_type=task_type,
+        validation_output=validation_output,
+    )
+    return mgr, plan
+
+
+def test_us14a1_bug_fix_no_write_no_diff_returns_hold(tmp_path):
+    mgr, plan = _make_execution_safety_plan(tmp_path, task_type="bug_fix")
+    report = mgr._generate_report(plan)
+    assert "## Implementation Evidence" in report
+    assert "implementation did not run; no files were edited" in report
+    assert "## Final Verdict\n\nHOLD" in report
+
+
+def test_us14a1_complex_implementation_no_write_no_diff_returns_hold(tmp_path):
+    mgr, plan = _make_execution_safety_plan(tmp_path, task_type="complex_implementation")
+    report = mgr._generate_report(plan)
+    assert "implementation did not run; no files were edited" in report
+    assert "## Final Verdict\n\nHOLD" in report
+
+
+def test_us14a1_validation_no_pytest_found_returns_hold(tmp_path):
+    mgr, plan = _make_execution_safety_plan(
+        tmp_path,
+        task_type="bug_fix",
+        validation_output="No pytest found",
+    )
+    report = mgr._generate_report(plan)
+    assert "validation unavailable: no pytest found" in report
+    assert "validation status: **blocked: no pytest found**" in report
+    assert "## Final Verdict\n\nHOLD" in report
+
+
+def test_us14a1_validation_no_module_named_pytest_returns_hold(tmp_path):
+    mgr, plan = _make_execution_safety_plan(
+        tmp_path,
+        task_type="bug_fix",
+        validation_output="/usr/bin/python3: No module named pytest",
+    )
+    report = mgr._generate_report(plan)
+    assert "validation unavailable: no module named pytest" in report
+    assert "## Final Verdict\n\nHOLD" in report
+
+
+def test_us14a1_validation_bad_file_descriptor_returns_hold(tmp_path):
+    mgr, plan = _make_execution_safety_plan(
+        tmp_path,
+        task_type="bug_fix",
+        validation_output="Fatal Python error: init_sys_streams\nOSError: [Errno 9] Bad file descriptor",
+    )
+    report = mgr._generate_report(plan)
+    assert "validation unavailable: fatal python error" in report
+    assert "## Final Verdict\n\nHOLD" in report
+
+
+def test_us14a1_report_includes_implementation_evidence_section(tmp_path):
+    mgr, plan = _make_execution_safety_plan(tmp_path, task_type="bug_fix")
+    report = mgr._generate_report(plan)
+    assert "## Implementation Evidence" in report
+    assert "file_write subtasks:" in report
+    assert "git diff has changes:" in report
+    assert "validation status:" in report
