@@ -670,8 +670,14 @@ _TOOL_DEFS = [
             project_scope=[],
             enabled=True,
             configured=bool(
-                os.environ.get("OPENCLAW_SLACK_BOT_TOKEN", "")
-                and not os.environ.get("OPENCLAW_SLACK_BOT_TOKEN", "").startswith("<")
+                (
+                    os.environ.get("OPENCLAW_SLACK_BOT_TOKEN", "")
+                    or os.environ.get("JARVIS_SLACK_BOT_TOKEN", "")
+                )
+                and not (
+                    os.environ.get("OPENCLAW_SLACK_BOT_TOKEN", "")
+                    or os.environ.get("JARVIS_SLACK_BOT_TOKEN", "")
+                ).startswith("<")
             ),
             approval_required=True,
             owning_agent_id="manager",
@@ -679,18 +685,30 @@ _TOOL_DEFS = [
             implementation_status=(
                 ToolStatus.AVAILABLE
                 if (
-                    os.environ.get("OPENCLAW_SLACK_BOT_TOKEN", "")
-                    and not os.environ.get("OPENCLAW_SLACK_BOT_TOKEN", "").startswith("<")
+                    (
+                        os.environ.get("OPENCLAW_SLACK_BOT_TOKEN", "")
+                        or os.environ.get("JARVIS_SLACK_BOT_TOKEN", "")
+                    )
+                    and not (
+                        os.environ.get("OPENCLAW_SLACK_BOT_TOKEN", "")
+                        or os.environ.get("JARVIS_SLACK_BOT_TOKEN", "")
+                    ).startswith("<")
                 )
                 else ToolStatus.NOT_CONFIGURED
             ),
             blocker=(
                 ""
                 if (
-                    os.environ.get("OPENCLAW_SLACK_BOT_TOKEN", "")
-                    and not os.environ.get("OPENCLAW_SLACK_BOT_TOKEN", "").startswith("<")
+                    (
+                        os.environ.get("OPENCLAW_SLACK_BOT_TOKEN", "")
+                        or os.environ.get("JARVIS_SLACK_BOT_TOKEN", "")
+                    )
+                    and not (
+                        os.environ.get("OPENCLAW_SLACK_BOT_TOKEN", "")
+                        or os.environ.get("JARVIS_SLACK_BOT_TOKEN", "")
+                    ).startswith("<")
                 )
-                else "OPENCLAW_SLACK_BOT_TOKEN not set or placeholder"
+                else "OPENCLAW_SLACK_BOT_TOKEN or JARVIS_SLACK_BOT_TOKEN not set or placeholder"
             ),
         ),
         _exec_slack_notify_mission,
