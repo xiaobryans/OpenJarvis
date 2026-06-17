@@ -9,6 +9,7 @@ import { AgentsPage } from './pages/AgentsPage';
 import { DataSourcesPage } from './pages/DataSourcesPage';
 import { LogsPage } from './pages/LogsPage';
 import { MissionControlPage } from './pages/MissionControlPage';
+import { WorkbenchPage } from './pages/WorkbenchPage';
 import { CommandPalette } from './components/CommandPalette';
 import { SetupScreen } from './components/SetupScreen';
 import { Toaster } from './components/ui/sonner';
@@ -194,6 +195,7 @@ export default function App() {
           <Route path="agents" element={<AgentsPage />} />
           <Route path="logs" element={<LogsPage />} />
           <Route path="mission-control" element={<MissionControlPage />} />
+          <Route path="workbench" element={<WorkbenchPage />} />
         </Route>
       </Routes>
       <Toaster position="bottom-right" />

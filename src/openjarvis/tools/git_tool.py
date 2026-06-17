@@ -7,7 +7,7 @@ import shutil
 import subprocess
 from typing import Any
 
-from openjarvis._rust_bridge import get_rust_module
+from openjarvis._rust_bridge import get_rust_module, RUST_AVAILABLE
 from openjarvis.core.registry import ToolRegistry
 from openjarvis.core.types import ToolResult
 from openjarvis.tools._stubs import BaseTool, ToolSpec
@@ -139,21 +139,19 @@ class GitStatusTool(BaseTool):
 
     def execute(self, **params: Any) -> ToolResult:
         repo_path = params.get("repo_path", ".")
-        _rust = get_rust_module()
-        try:
-            output = _rust.GitStatusTool().execute(repo_path)
-            return ToolResult(
-                tool_name="git_status",
-                content=output or "(no output)",
-                success=True,
-                metadata={"returncode": 0},
-            )
-        except Exception as exc:
-            return ToolResult(
-                tool_name="git_status",
-                content=f"Git status error: {exc}",
-                success=False,
-            )
+        if RUST_AVAILABLE:
+            try:
+                _rust = get_rust_module()
+                output = _rust.GitStatusTool().execute(repo_path)
+                return ToolResult(
+                    tool_name="git_status",
+                    content=output or "(no output)",
+                    success=True,
+                    metadata={"returncode": 0},
+                )
+            except Exception as exc:
+                logger.debug("Rust git_status fallback to CLI: %s", exc)
+        return _run_git(["git", "status", "--porcelain"], cwd=repo_path)
 
 
 # ---------------------------------------------------------------------------
@@ -208,9 +206,9 @@ class GitDiffTool(BaseTool):
         staged = params.get("staged", False)
         file_path = params.get("path")
 
-        _rust = get_rust_module()
-        if not staged and not file_path:
+        if RUST_AVAILABLE and not staged and not file_path:
             try:
+                _rust = get_rust_module()
                 output = _rust.GitDiffTool().execute(repo_path)
                 return ToolResult(
                     tool_name="git_diff",
@@ -219,11 +217,7 @@ class GitDiffTool(BaseTool):
                     metadata={"returncode": 0},
                 )
             except Exception as exc:
-                return ToolResult(
-                    tool_name="git_diff",
-                    content=f"Git diff error: {exc}",
-                    success=False,
-                )
+                logger.debug("Rust git_diff fallback to CLI: %s", exc)
 
         cmd = ["git", "diff"]
         if staged:
@@ -371,17 +365,18 @@ class GitLogTool(BaseTool):
         count = params.get("count", 10)
         oneline = params.get("oneline", True)
 
-        _rust = get_rust_module()
-        try:
-            output = _rust.GitLogTool().execute(repo_path, count)
-            return ToolResult(
-                tool_name="git_log",
-                content=output or "(no output)",
-                success=True,
-                metadata={"returncode": 0},
-            )
-        except Exception as exc:
-            logger.debug("Rust git_log fallback to CLI: %s", exc)
+        if RUST_AVAILABLE:
+            try:
+                _rust = get_rust_module()
+                output = _rust.GitLogTool().execute(repo_path, count)
+                return ToolResult(
+                    tool_name="git_log",
+                    content=output or "(no output)",
+                    success=True,
+                    metadata={"returncode": 0},
+                )
+            except Exception as exc:
+                logger.debug("Rust git_log fallback to CLI: %s", exc)
 
         cmd = ["git", "log", f"-{count}"]
         if oneline:
@@ -390,4 +385,157 @@ class GitLogTool(BaseTool):
         return _run_git(cmd, cwd=repo_path)
 
 
-__all__ = ["GitStatusTool", "GitDiffTool", "GitCommitTool", "GitLogTool"]
+@ToolRegistry.register("git_push")
+class GitPushTool(BaseTool):
+    """Push a local branch to a remote — always requires confirmation."""
+
+    tool_id = "git_push"
+
+    @property
+    def spec(self) -> ToolSpec:
+        return ToolSpec(
+            name="git_push",
+            description=(
+                "Push the current or named branch to a remote."
+                " Always requires Manager approval gate before execution."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "repo_path": {
+                        "type": "string",
+                        "description": "Path to the git repository. Default: current directory.",
+                    },
+                    "remote": {
+                        "type": "string",
+                        "description": "Remote name. Default: origin.",
+                    },
+                    "branch": {
+                        "type": "string",
+                        "description": "Branch to push. Default: current branch.",
+                    },
+                    "force": {
+                        "type": "boolean",
+                        "description": "Force push (--force-with-lease). Default: false.",
+                    },
+                    "set_upstream": {
+                        "type": "boolean",
+                        "description": "Set upstream tracking (-u). Default: false.",
+                    },
+                    "dry_run": {
+                        "type": "boolean",
+                        "description": "Dry-run mode — validate without actually pushing. Default: false.",
+                    },
+                },
+                "required": [],
+            },
+            category="vcs",
+            required_capabilities=["file:write"],
+            requires_confirmation=True,
+        )
+
+    def execute(self, **params: Any) -> ToolResult:
+        repo_path = params.get("repo_path", ".")
+        remote = params.get("remote", "origin")
+        branch = params.get("branch")
+        force = params.get("force", False)
+        set_upstream = params.get("set_upstream", False)
+        dry_run = params.get("dry_run", False)
+
+        err = _check_git()
+        if err:
+            return ToolResult(tool_name="git_push", content=err, success=False)
+
+        cmd = ["git", "push"]
+
+        if dry_run:
+            cmd.append("--dry-run")
+
+        if force:
+            cmd.append("--force-with-lease")
+
+        if set_upstream:
+            cmd.append("-u")
+
+        cmd.append(remote)
+
+        if branch:
+            cmd.append(branch)
+
+        result = _run_git(cmd, cwd=repo_path)
+        if dry_run and result.success:
+            result = ToolResult(
+                tool_name="git_push",
+                content=f"[DRY-RUN] {result.content}",
+                success=True,
+                metadata={**(result.metadata or {}), "dry_run": True},
+            )
+        return result
+
+
+@ToolRegistry.register("git_branch")
+class GitBranchTool(BaseTool):
+    """List, create, or switch git branches."""
+
+    tool_id = "git_branch"
+
+    @property
+    def spec(self) -> ToolSpec:
+        return ToolSpec(
+            name="git_branch",
+            description="List branches, create a new branch, or check the current branch.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "repo_path": {
+                        "type": "string",
+                        "description": "Path to the git repository. Default: current directory.",
+                    },
+                    "action": {
+                        "type": "string",
+                        "description": (
+                            "Action: 'list' (default), 'current', 'create'."
+                        ),
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "Branch name for 'create' action.",
+                    },
+                },
+                "required": [],
+            },
+            category="vcs",
+            required_capabilities=["file:read"],
+        )
+
+    def execute(self, **params: Any) -> ToolResult:
+        repo_path = params.get("repo_path", ".")
+        action = params.get("action", "list")
+
+        err = _check_git()
+        if err:
+            return ToolResult(tool_name="git_branch", content=err, success=False)
+
+        if action == "current":
+            return _run_git(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=repo_path)
+        elif action == "create":
+            name = params.get("name", "")
+            if not name:
+                return ToolResult(
+                    tool_name="git_branch",
+                    content="Branch name required for 'create' action.",
+                    success=False,
+                )
+            return _run_git(["git", "checkout", "-b", name], cwd=repo_path)
+        else:
+            return _run_git(["git", "branch", "-a"], cwd=repo_path)
+
+
+__all__ = [
+    "GitStatusTool",
+    "GitDiffTool",
+    "GitCommitTool",
+    "GitLogTool",
+    "GitPushTool",
+    "GitBranchTool",
+]

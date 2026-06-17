@@ -19,6 +19,7 @@ import {
   Database,
   Cloud,
   Target,
+  Code2,
 } from 'lucide-react';
 import { ConversationList } from './ConversationList';
 import { useAppStore } from '../../lib/store';
@@ -60,6 +61,7 @@ export function Sidebar() {
     { path: '/', icon: MessageSquare, label: 'Chat' },
     { path: '/dashboard', icon: BarChart3, label: 'Dashboard' },
     { path: '/mission-control', icon: Target, label: 'Mission Control' },
+    { path: '/workbench', icon: Code2, label: 'Workbench' },
     { path: '/data-sources', icon: Database, label: 'Data Sources' },
     { path: '/agents', icon: Bot, label: 'Agents' },
     { path: '/logs', icon: ScrollText, label: 'Logs' },
