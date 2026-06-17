@@ -1325,20 +1325,34 @@ class CodingManager:
 
     @staticmethod
     def _git_changed_files(repo_path: str) -> str:
-        """Return current working-tree changed files, best-effort/read-only."""
+        """Return tracked and untracked changed files for report evidence."""
+        if not repo_path:
+            return []
         try:
-            proc = subprocess.run(
-                ["git", "diff", "--name-status"],
+            result = subprocess.run(
+                ["git", "status", "--short", "--untracked-files=all"],
                 cwd=repo_path,
                 text=True,
                 capture_output=True,
                 timeout=10,
+                check=False,
             )
-            if proc.returncode == 0:
-                return proc.stdout.strip()
+            changed: List[str] = []
+            for line in (result.stdout or "").splitlines():
+                raw = line.strip()
+                if not raw:
+                    continue
+                # Short status format is usually: "XY path".
+                # Example tracked: " M src/file.py"
+                # Example untracked: "?? tests/probe.txt"
+                fpath = raw[3:] if len(raw) > 3 else raw
+                if " -> " in fpath:
+                    fpath = fpath.split(" -> ", 1)[1]
+                if fpath:
+                    changed.append(fpath.strip())
+            return "\n".join(changed)
         except Exception:
-            pass
-        return ""
+            return ""
 
     def _implementation_evidence(self, plan: TaskPlan) -> Dict[str, Any]:
         """Collect implementation evidence for non-planning task reports."""

@@ -1617,3 +1617,24 @@ OPENJARVIS_FILE
     plan = mgr.plan(prompt, dry_run=False)
 
     assert "file_write" not in [s.tool_id for s in plan.subtasks]
+
+
+def test_us14a1_git_changed_files_includes_untracked_files(tmp_path):
+    import subprocess
+
+    from openjarvis.workbench.coding_manager import CodingManager
+
+    subprocess.run(
+        ["git", "init"],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    probe = tmp_path / "probe.txt"
+    probe.write_text("untracked probe\n")
+
+    changed = CodingManager._git_changed_files(str(tmp_path))
+
+    assert "probe.txt" in changed
