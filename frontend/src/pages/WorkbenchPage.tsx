@@ -453,6 +453,44 @@ function ApprovalStatusPanel({ plan }: { plan: TaskPlan | null }) {
   );
 }
 
+function LocalNotificationsPanel({
+  permission,
+  approvalQueueCount,
+  onEnable,
+}: {
+  permission: string;
+  approvalQueueCount: number | null;
+  onEnable: () => void;
+}) {
+  return (
+    <div className="rounded-lg border p-3 space-y-2" style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}>
+      <div className="flex items-center justify-between">
+        <div className="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>Local Alerts</div>
+        <div className="text-[10px] uppercase tracking-wide" style={{ color: 'var(--color-text-tertiary)' }}>Device only</div>
+      </div>
+
+      <div className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+        Notifications are local to this app/device. Slack and Telegram are not used here.
+      </div>
+
+      <div className="text-[11px]" style={{ color: 'var(--color-text-tertiary)' }}>
+        Permission: {permission}. Global approval queue: {approvalQueueCount === null ? 'unknown' : approvalQueueCount}.
+      </div>
+
+      {permission === 'default' && (
+        <button
+          type="button"
+          onClick={onEnable}
+          className="text-xs rounded-md px-2 py-1 border"
+          style={{ borderColor: 'var(--color-border)', color: 'var(--color-text-primary)' }}
+        >
+          Enable local notifications
+        </button>
+      )}
+    </div>
+  );
+}
+
 function WorkbenchEventsPanel({ events }: { events: WorkbenchStatusEvent[] }) {
   const latest = events[0];
 
@@ -522,6 +560,8 @@ export function WorkbenchPage() {
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'subtasks' | 'diff' | 'validation' | 'report'>('subtasks');
   const [workbenchEvents, setWorkbenchEvents] = useState<WorkbenchStatusEvent[]>([]);
+  const [localNotifyPermission, setLocalNotifyPermission] = useState<string>('unknown');
+  const [approvalQueueCount, setApprovalQueueCount] = useState<number | null>(null);
 
   // Diff panel
   const [liveDiff, setLiveDiff] = useState('');
@@ -534,6 +574,19 @@ export function WorkbenchPage() {
   const promptRef = useRef<HTMLTextAreaElement>(null);
   const lastStatusSnapshotRef = useRef<string>('');
 
+  const notifyLocally = useCallback((title: string, body: string) => {
+    if (!('Notification' in window)) {
+      setLocalNotifyPermission('unsupported');
+      return;
+    }
+
+    setLocalNotifyPermission(window.Notification.permission);
+
+    if (window.Notification.permission === 'granted') {
+      new window.Notification(title, { body });
+    }
+  }, []);
+
   const pushWorkbenchEvent = useCallback((title: string, detail: string, tone: WorkbenchStatusEvent['tone'] = 'info') => {
     const event: WorkbenchStatusEvent = {
       id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
@@ -543,6 +596,18 @@ export function WorkbenchPage() {
       tone,
     };
     setWorkbenchEvents((prev) => [event, ...prev].slice(0, 8));
+
+    if (tone === 'warning' || tone === 'error' || tone === 'success') {
+      notifyLocally(title, detail);
+    }
+  }, [notifyLocally]);
+
+  useEffect(() => {
+    if ('Notification' in window) {
+      setLocalNotifyPermission(window.Notification.permission);
+    } else {
+      setLocalNotifyPermission('unsupported');
+    }
   }, []);
 
   useEffect(() => {
@@ -613,6 +678,32 @@ export function WorkbenchPage() {
     };
   }, [plan?.session_id, pushWorkbenchEvent]);
 
+  // Poll global approval queue for Workbench visibility only.
+  useEffect(() => {
+    let cancelled = false;
+
+    const pollApprovalQueue = async () => {
+      try {
+        const res = await apiFetch('/v1/approvals/pending');
+        const data = await res.json();
+        if (cancelled || !res.ok) return;
+
+        const items = Array.isArray(data) ? data : Array.isArray(data.approvals) ? data.approvals : [];
+        setApprovalQueueCount(items.length);
+      } catch {
+        setApprovalQueueCount(null);
+      }
+    };
+
+    pollApprovalQueue();
+    const timer = window.setInterval(pollApprovalQueue, 10000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, []);
+
   // Run doctor on mount
   useEffect(() => {
     apiFetch(`/v1/workbench/doctor?repo_path=${encodeURIComponent(repoPath)}`)
@@ -620,6 +711,20 @@ export function WorkbenchPage() {
       .then((d) => { setDoctorChecks(d.checks ?? []); setDoctorLoaded(true); })
       .catch(() => setDoctorLoaded(true));
   }, [repoPath]);
+
+  const handleEnableLocalNotifications = useCallback(async () => {
+    if (!('Notification' in window)) {
+      setLocalNotifyPermission('unsupported');
+      return;
+    }
+
+    const permission = await window.Notification.requestPermission();
+    setLocalNotifyPermission(permission);
+
+    if (permission === 'granted') {
+      notifyLocally('OpenJarvis Workbench alerts enabled', 'You will receive local Workbench status alerts on this device.');
+    }
+  }, [notifyLocally]);
 
   const handlePlan = useCallback(async () => {
     if (!prompt.trim()) return;
@@ -777,6 +882,11 @@ export function WorkbenchPage() {
           <RepoStatusPanel repoPath={repoPath} />
           <WorkbenchEventsPanel events={workbenchEvents} />
           <ApprovalStatusPanel plan={plan} />
+          <LocalNotificationsPanel
+            permission={localNotifyPermission}
+            approvalQueueCount={approvalQueueCount}
+            onEnable={handleEnableLocalNotifications}
+          />
 
           {/* Mode toggles */}
           <div className="flex gap-2">
