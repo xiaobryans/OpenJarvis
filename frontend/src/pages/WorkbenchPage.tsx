@@ -82,6 +82,14 @@ interface WorkbenchFrontdoorPayload {
   createdAt?: number;
 }
 
+interface WorkbenchStatusEvent {
+  id: string;
+  at: number;
+  title: string;
+  detail: string;
+  tone: 'info' | 'success' | 'warning' | 'error';
+}
+
 interface RepoStatus {
   ok: boolean;
   repo_path: string;
@@ -420,6 +428,45 @@ function GovernancePanel({ plan, dryRun }: { plan: TaskPlan | null; dryRun: bool
   );
 }
 
+function WorkbenchEventsPanel({ events }: { events: WorkbenchStatusEvent[] }) {
+  const latest = events[0];
+
+  return (
+    <div className="rounded-lg border p-3 space-y-2" style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}>
+      <div className="flex items-center justify-between">
+        <div className="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>Task Events</div>
+        <div className="text-[10px] uppercase tracking-wide" style={{ color: 'var(--color-text-tertiary)' }}>
+          In-app only
+        </div>
+      </div>
+      {latest ? (
+        <div className="space-y-1">
+          <div className="text-xs font-medium" style={{ color: latest.tone === 'error' ? '#f87171' : latest.tone === 'warning' ? '#facc15' : latest.tone === 'success' ? '#4ade80' : 'var(--color-accent)' }}>
+            {latest.title}
+          </div>
+          <div className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>{latest.detail}</div>
+          <div className="text-[10px]" style={{ color: 'var(--color-text-tertiary)' }}>
+            {new Date(latest.at).toLocaleTimeString()}
+          </div>
+        </div>
+      ) : (
+        <div className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+          Workbench task events will appear here. Slack/Telegram sends are not used.
+        </div>
+      )}
+      {events.length > 1 && (
+        <div className="space-y-1 pt-1 border-t" style={{ borderColor: 'var(--color-border)' }}>
+          {events.slice(1, 4).map((event) => (
+            <div key={event.id} className="text-[11px]" style={{ color: 'var(--color-text-secondary)' }}>
+              {new Date(event.at).toLocaleTimeString()} — {event.title}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function FinalReportPanel({ report }: { report: string }) {
   return (
     <div className="rounded-lg border" style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}>
@@ -449,6 +496,7 @@ export function WorkbenchPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'subtasks' | 'diff' | 'validation' | 'report'>('subtasks');
+  const [workbenchEvents, setWorkbenchEvents] = useState<WorkbenchStatusEvent[]>([]);
 
   // Diff panel
   const [liveDiff, setLiveDiff] = useState('');
@@ -459,6 +507,18 @@ export function WorkbenchPage() {
   const [doctorLoaded, setDoctorLoaded] = useState(false);
 
   const promptRef = useRef<HTMLTextAreaElement>(null);
+  const lastStatusSnapshotRef = useRef<string>('');
+
+  const pushWorkbenchEvent = useCallback((title: string, detail: string, tone: WorkbenchStatusEvent['tone'] = 'info') => {
+    const event: WorkbenchStatusEvent = {
+      id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      at: Date.now(),
+      title,
+      detail,
+      tone,
+    };
+    setWorkbenchEvents((prev) => [event, ...prev].slice(0, 8));
+  }, []);
 
   useEffect(() => {
     const raw = window.localStorage.getItem(WORKBENCH_FRONTDOOR_KEY);
@@ -473,6 +533,14 @@ export function WorkbenchPage() {
       if (payload.plan && typeof payload.plan.session_id === 'string') {
         setPlan(payload.plan);
         setActiveTab('subtasks');
+        lastStatusSnapshotRef.current = '';
+        setWorkbenchEvents([{
+          id: `frontdoor-${Date.now()}`,
+          at: Date.now(),
+          title: 'Workbench plan created',
+          detail: `Dry-run plan ${payload.plan.session_id} was opened from Chat.`,
+          tone: 'success',
+        }]);
       }
     } catch {
       // Ignore malformed local handoff payloads.
@@ -480,6 +548,45 @@ export function WorkbenchPage() {
       window.localStorage.removeItem(WORKBENCH_FRONTDOOR_KEY);
     }
   }, []);
+
+  // Poll current Workbench task status for local in-app notifications only.
+  useEffect(() => {
+    if (!plan?.session_id) return;
+
+    let cancelled = false;
+    const pollStatus = async () => {
+      try {
+        const res = await apiFetch(`/v1/workbench/status/${encodeURIComponent(plan.session_id)}`);
+        const data = await res.json();
+        if (cancelled || !res.ok || !data.ok || !data.plan) return;
+
+        const nextPlan = data.plan as TaskPlan;
+        const snapshot = [
+          nextPlan.status,
+          ...(nextPlan.subtasks ?? []).map((s) => `${s.id}:${s.status}`),
+        ].join('|');
+
+        if (snapshot !== lastStatusSnapshotRef.current) {
+          lastStatusSnapshotRef.current = snapshot;
+          setPlan(nextPlan);
+          pushWorkbenchEvent(
+            'Workbench status updated',
+            `Session ${nextPlan.session_id} is ${nextPlan.status}.`,
+            nextPlan.status === 'done' ? 'success' : nextPlan.status === 'failed' || nextPlan.status === 'blocked' ? 'error' : 'info',
+          );
+        }
+      } catch {
+        // Status polling is best-effort and local UI only.
+      }
+    };
+
+    pollStatus();
+    const timer = window.setInterval(pollStatus, 3000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [plan?.session_id, pushWorkbenchEvent]);
 
   // Run doctor on mount
   useEffect(() => {
@@ -503,6 +610,8 @@ export function WorkbenchPage() {
       if (data.ok) {
         setPlan(data.plan);
         setActiveTab('subtasks');
+        lastStatusSnapshotRef.current = '';
+        pushWorkbenchEvent('Workbench plan created', `Session ${data.plan.session_id} is ready for review.`, 'success');
       } else {
         setError(data.detail ?? 'Plan failed');
       }
@@ -511,7 +620,7 @@ export function WorkbenchPage() {
     } finally {
       setLoading(false);
     }
-  }, [prompt, repoPath, dryRun, stopOnBlocker]);
+  }, [prompt, repoPath, dryRun, stopOnBlocker, pushWorkbenchEvent]);
 
   const handleExecute = useCallback(async () => {
     if (!prompt.trim()) return;
@@ -535,6 +644,8 @@ export function WorkbenchPage() {
       if (data.ok) {
         setPlan(data.plan);
         setActiveTab('subtasks');
+        lastStatusSnapshotRef.current = '';
+        pushWorkbenchEvent('Workbench execution updated', `Session ${data.plan.session_id} is ${data.plan.status}.`, data.plan.status === 'done' ? 'success' : 'info');
       } else {
         setError(data.detail ?? 'Execute failed');
       }
@@ -543,7 +654,7 @@ export function WorkbenchPage() {
     } finally {
       setLoading(false);
     }
-  }, [prompt, repoPath, dryRun, stopOnBlocker, plan]);
+  }, [prompt, repoPath, dryRun, stopOnBlocker, plan, pushWorkbenchEvent]);
 
   const handleApprove = useCallback(async (subtaskId: string) => {
     if (!plan) return;
@@ -639,6 +750,7 @@ export function WorkbenchPage() {
           </div>
 
           <RepoStatusPanel repoPath={repoPath} />
+          <WorkbenchEventsPanel events={workbenchEvents} />
 
           {/* Mode toggles */}
           <div className="flex gap-2">
