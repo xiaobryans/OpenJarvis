@@ -393,3 +393,45 @@ async def get_provider_config(repo_path: str = ".") -> Dict[str, Any]:
 
 
 __all__ = ["router"]
+
+
+@router.get("/autopilot/guard")
+def workbench_autopilot_guard() -> dict:
+    """Read-only Workbench autopilot guard policy.
+
+    This endpoint exposes policy state for UI visibility only.
+    It does not execute tasks, approve actions, bypass approval gates,
+    send notifications, commit, push, delete, deploy, or access secrets.
+    """
+    protected_actions = [
+        "shell_exec",
+        "git_commit",
+        "git_push",
+        "file_delete",
+        "deploy",
+        "external_notify_slack",
+        "external_notify_telegram",
+        "secrets_access",
+        "paid_model_escalation",
+    ]
+    return {
+        "ok": True,
+        "mode": "guarded_preview",
+        "autopilot_runtime_enabled": False,
+        "disabled_by_default": True,
+        "can_execute_without_approval": False,
+        "approval_bypass_allowed": False,
+        "protected_actions": protected_actions,
+        "allowed_without_approval": [
+            "read_only_inspection",
+            "planning",
+            "status_check",
+            "local_ui_update",
+        ],
+        "notes": [
+            "Autopilot controls are visible but runtime execution is disabled.",
+            "Manager approval gates still apply.",
+            "No Slack/Telegram sends are triggered by this endpoint.",
+            "No commit, push, shell execution, deploy, delete, or secrets access is allowed here.",
+        ],
+    }

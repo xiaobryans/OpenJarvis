@@ -90,6 +90,18 @@ interface WorkbenchStatusEvent {
   tone: 'info' | 'success' | 'warning' | 'error';
 }
 
+interface AutopilotGuardPolicy {
+  ok: boolean;
+  mode: string;
+  autopilot_runtime_enabled: boolean;
+  disabled_by_default: boolean;
+  can_execute_without_approval: boolean;
+  approval_bypass_allowed: boolean;
+  protected_actions: string[];
+  allowed_without_approval: string[];
+  notes: string[];
+}
+
 interface RepoStatus {
   ok: boolean;
   repo_path: string;
@@ -453,6 +465,55 @@ function ApprovalStatusPanel({ plan }: { plan: TaskPlan | null }) {
   );
 }
 
+function AutopilotGuardPanel({
+  policy,
+  enabled,
+  acknowledged,
+  onEnabledChange,
+  onAcknowledgedChange,
+}: {
+  policy: AutopilotGuardPolicy | null;
+  enabled: boolean;
+  acknowledged: boolean;
+  onEnabledChange: (enabled: boolean) => void;
+  onAcknowledgedChange: (acknowledged: boolean) => void;
+}) {
+  const armed = enabled && acknowledged && policy?.ok === true;
+
+  return (
+    <div className="rounded-lg border p-3 space-y-2" style={{ borderColor: armed ? '#facc15' : 'var(--color-border)', background: 'var(--color-bg-secondary)' }}>
+      <div className="flex items-center justify-between">
+        <div className="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>Autopilot Guard</div>
+        <div className="text-[10px] uppercase tracking-wide" style={{ color: armed ? '#facc15' : 'var(--color-text-tertiary)' }}>
+          Guarded preview
+        </div>
+      </div>
+
+      <div className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+        Backend policy: {policy?.mode ?? 'not loaded'}. Runtime enabled: {policy?.autopilot_runtime_enabled ? 'yes' : 'no'}.
+      </div>
+
+      <label className="flex items-center gap-2 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+        <input type="checkbox" checked={enabled} onChange={(event) => onEnabledChange(event.target.checked)} />
+        Show autopilot preview controls
+      </label>
+
+      <label className="flex items-center gap-2 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+        <input type="checkbox" checked={acknowledged} onChange={(event) => onAcknowledgedChange(event.target.checked)} />
+        I understand approval gates still apply
+      </label>
+
+      <div className="text-[11px]" style={{ color: armed ? '#facc15' : 'var(--color-text-tertiary)' }}>
+        State: {armed ? 'Preview armed only. No autonomous execution endpoint is enabled.' : 'Off'}
+      </div>
+
+      <div className="text-[11px]" style={{ color: 'var(--color-text-tertiary)' }}>
+        Protected: {(policy?.protected_actions ?? ['commit', 'push', 'shell', 'delete', 'external sends']).slice(0, 6).join(', ')}
+      </div>
+    </div>
+  );
+}
+
 function LocalNotificationsPanel({
   permission,
   approvalQueueCount,
@@ -562,6 +623,9 @@ export function WorkbenchPage() {
   const [workbenchEvents, setWorkbenchEvents] = useState<WorkbenchStatusEvent[]>([]);
   const [localNotifyPermission, setLocalNotifyPermission] = useState<string>('unknown');
   const [approvalQueueCount, setApprovalQueueCount] = useState<number | null>(null);
+  const [autopilotGuardPolicy, setAutopilotGuardPolicy] = useState<AutopilotGuardPolicy | null>(null);
+  const [autopilotPreviewEnabled, setAutopilotPreviewEnabled] = useState(false);
+  const [autopilotAcknowledged, setAutopilotAcknowledged] = useState(false);
 
   // Diff panel
   const [liveDiff, setLiveDiff] = useState('');
@@ -677,6 +741,28 @@ export function WorkbenchPage() {
       window.clearInterval(timer);
     };
   }, [plan?.session_id, pushWorkbenchEvent]);
+
+  // Load guarded autopilot policy for visibility only.
+  useEffect(() => {
+    let cancelled = false;
+
+    apiFetch('/v1/workbench/autopilot/guard')
+      .then((res) => res.json())
+      .then((data) => {
+        if (!cancelled && data?.ok) {
+          setAutopilotGuardPolicy(data);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setAutopilotGuardPolicy(null);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Poll global approval queue for Workbench visibility only.
   useEffect(() => {
@@ -886,6 +972,13 @@ export function WorkbenchPage() {
             permission={localNotifyPermission}
             approvalQueueCount={approvalQueueCount}
             onEnable={handleEnableLocalNotifications}
+          />
+          <AutopilotGuardPanel
+            policy={autopilotGuardPolicy}
+            enabled={autopilotPreviewEnabled}
+            acknowledged={autopilotAcknowledged}
+            onEnabledChange={setAutopilotPreviewEnabled}
+            onAcknowledgedChange={setAutopilotAcknowledged}
           />
 
           {/* Mode toggles */}
