@@ -101,6 +101,28 @@ _TINY_MARKER_KEYWORDS = frozenset({"fixture", "self-test", "marker", "e2e proof"
 _DOCUMENTATION_KEYWORDS = frozenset({"readme", "changelog", "documentation"})
 _RESEARCH_KEYWORDS = frozenset({"investigate", "research", "explore", "audit", "survey"})
 
+_EXPLICIT_TASK_TYPES = frozenset({
+    "planning_only",
+    "tiny_marker",
+    "documentation",
+    "bug_fix",
+    "complex_implementation",
+    "research",
+})
+_EXPLICIT_TASK_TYPE_RE = re.compile(
+    r"(?im)^\s*(?:[-*]\s*)?task\s+type\s*:\s*`?([a-z_]+)`?\s*$"
+)
+
+
+def _explicit_task_type_override(prompt: str) -> Optional[str]:
+    """Return an explicit Task Type override when the prompt declares one."""
+    for match in _EXPLICIT_TASK_TYPE_RE.finditer(prompt):
+        task_type = match.group(1).strip().lower()
+        if task_type in _EXPLICIT_TASK_TYPES:
+            return task_type
+    return None
+
+
 # Bounded search directories — ordered by specificity; avoids scanning the full repo tree.
 # Used by _bounded_search_dir() to prevent file_search timeouts on large repos.
 _SEARCH_TARGETED_DIRS: tuple = (
@@ -361,6 +383,10 @@ def classify_prompt(prompt: str) -> str:
     Returns one of: planning_only, tiny_marker, documentation,
     bug_fix, complex_implementation, research.
     """
+    explicit_task_type = _explicit_task_type_override(prompt)
+    if explicit_task_type:
+        return explicit_task_type
+
     p = prompt.lower()
     if any(phrase in p for phrase in _PLAN_ONLY_PHRASES):
         return "planning_only"

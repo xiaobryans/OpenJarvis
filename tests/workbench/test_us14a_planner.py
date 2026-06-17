@@ -131,6 +131,27 @@ class TestPlanOnlyPrompt:
         assert "git_commit" not in tool_ids
         assert "git_push" not in tool_ids
 
+    def test_explicit_task_type_planning_only_overrides_complex_us14a1_prompt(self, mgr):
+        prompt = """US14A.1 IMPLEMENTATION PLAN — PA CHAT FRONT DOOR + NOTIFICATIONS + APPROVAL/AUTOPILOT
+
+Task Type: planning_only
+
+Goal:
+Produce a changed-file-only implementation plan for US14A.1: PA Chat Front Door + Notifications + Approval/Autopilot before original US14.
+
+Required changed-file-only discovery:
+- Do not modify files.
+- Do not create files.
+- Do not commit.
+- Do not push.
+"""
+        plan = mgr.plan(prompt, dry_run=False)
+        assert plan.task_type == "planning_only"
+        tool_ids = [st.tool_id for st in plan.subtasks]
+        assert "file_write" not in tool_ids
+        assert "git_commit" not in tool_ids
+        assert "git_push" not in tool_ids
+
 
 # ---------------------------------------------------------------------------
 # Test 4: Tiny marker prompt still uses fixture workflow
@@ -319,6 +340,18 @@ class TestClassifyPrompt:
         from openjarvis.workbench.coding_manager import classify_prompt
         assert classify_prompt("plan only — do not edit any files") == "planning_only"
         assert classify_prompt("do not write files yet, planning only") == "planning_only"
+
+    def test_classify_explicit_task_type_planning_only_overrides_complex_keywords(self):
+        from openjarvis.workbench.coding_manager import classify_prompt
+
+        prompt = """US14A.1 IMPLEMENTATION PLAN — PA CHAT FRONT DOOR + NOTIFICATIONS + APPROVAL/AUTOPILOT
+
+Task Type: planning_only
+
+Goal:
+Produce a changed-file-only implementation plan for US14A.1: PA Chat Front Door + Notifications + Approval/Autopilot before original US14.
+"""
+        assert classify_prompt(prompt) == "planning_only"
 
     def test_classify_tiny_marker(self):
         from openjarvis.workbench.coding_manager import classify_prompt
