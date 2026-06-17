@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import subprocess
 import time
 import uuid
@@ -259,6 +260,66 @@ def _get_subsystem_label(fpath: str) -> str:
     return "Other"
 
 
+_FILE_EXTENSIONS: frozenset = frozenset({
+    "py", "ts", "tsx", "js", "jsx", "json", "yaml", "yml", "toml", "md",
+    "txt", "sh", "cfg", "ini", "db", "sql", "lock", "env", "html", "css",
+    "rs", "go", "rb", "swift", "java", "kt", "c", "h", "cpp", "hpp",
+})
+
+# Matches backtick-quoted paths that contain no whitespace and have a file extension
+_EXPLICIT_BACKTICK_RE = re.compile(r'`([^\s`\n]+\.[a-zA-Z0-9]{1,8})`')
+# Matches plain bullet-listed paths (dash or asterisk) not in backticks.
+# Uses lookahead for line-end so consecutive bullets are all matched.
+_EXPLICIT_BULLET_RE = re.compile(
+    r'(?:^|\n)[ \t]*[-*]\s+([^\s`\n\[\](){}]+\.[a-zA-Z0-9]{1,8})[ \t]*(?=\n|$)'
+)
+
+
+def _is_safe_repo_relative(fpath: str) -> bool:
+    """Return True only if fpath is a safe repo-relative file path.
+
+    Rejects absolute paths, tilde paths, traversal attempts, and strings
+    that look like code identifiers rather than file paths.
+    """
+    if not fpath or fpath.startswith("/") or fpath.startswith("~") or fpath.startswith("\\"):
+        return False
+    parts = fpath.replace("\\", "/").split("/")
+    if ".." in parts:
+        return False
+    last = parts[-1]
+    if "." not in last:
+        return False
+    ext = last.rsplit(".", 1)[-1].lower()
+    if "/" not in fpath and ext not in _FILE_EXTENSIONS:
+        return False
+    return True
+
+
+def _extract_explicit_files(prompt: str) -> List[str]:
+    """Extract explicit repo-relative file paths from a prompt.
+
+    Recognises backtick-quoted paths (``path/to/file.py``) and plain
+    bullet-listed paths (``- path/to/file.py``).  Returns a deduplicated
+    list of safe repo-relative paths in order of first appearance.
+    """
+    seen: set = set()
+    results: List[str] = []
+
+    for match in _EXPLICIT_BACKTICK_RE.finditer(prompt):
+        fpath = match.group(1).strip()
+        if _is_safe_repo_relative(fpath) and fpath not in seen:
+            seen.add(fpath)
+            results.append(fpath)
+
+    for match in _EXPLICIT_BULLET_RE.finditer(prompt):
+        fpath = match.group(1).strip()
+        if _is_safe_repo_relative(fpath) and fpath not in seen:
+            seen.add(fpath)
+            results.append(fpath)
+
+    return results
+
+
 def classify_prompt(prompt: str) -> str:
     """Classify a prompt into one of six task types.
 
@@ -351,6 +412,8 @@ class TaskPlan:
     risks: List[str] = field(default_factory=list)
     validation_commands: List[str] = field(default_factory=list)
     approval_gates: List[str] = field(default_factory=list)
+    explicit_files: List[str] = field(default_factory=list)
+    missing_files: List[str] = field(default_factory=list)
     created_at: float = field(default_factory=time.time)
     finished_at: Optional[float] = None
     total_cost_usd: float = 0.0
@@ -373,6 +436,8 @@ class TaskPlan:
             "risks": self.risks,
             "validation_commands": self.validation_commands,
             "approval_gates": self.approval_gates,
+            "explicit_files": self.explicit_files,
+            "missing_files": self.missing_files,
             "created_at": self.created_at,
             "finished_at": self.finished_at,
             "total_cost_usd": self.total_cost_usd,
@@ -442,6 +507,19 @@ class CodingManager:
         task_type = classify_prompt(prompt)
         subtasks = self._decompose(prompt, task_id, str(effective_repo), session_id=session_id, task_type=task_type)
 
+        # Compute explicit files listed in the prompt and which are missing on disk
+        _explicit_files = _extract_explicit_files(prompt)
+        _repo_base = Path(str(effective_repo)).resolve()
+        _missing_files: List[str] = []
+        for _fpath in _explicit_files:
+            _full = (_repo_base / _fpath).resolve()
+            try:
+                _full.relative_to(_repo_base)
+            except ValueError:
+                continue  # outside repo — skip silently
+            if not _full.exists():
+                _missing_files.append(_fpath)
+
         plan = TaskPlan(
             session_id=session_id,
             task_id=task_id,
@@ -455,6 +533,8 @@ class CodingManager:
             risks=self._assess_risks(prompt, task_type),
             validation_commands=self._suggest_validation(prompt, task_type, str(effective_repo)),
             approval_gates=self._identify_gates(task_type),
+            explicit_files=_explicit_files,
+            missing_files=_missing_files,
         )
 
         self._checkpoints.save_checkpoint(
@@ -662,8 +742,10 @@ class CodingManager:
     ) -> List[Subtask]:
         """Planning-only: discovery only, no file_write/git_commit/git_push.
 
-        Uses file_read of likely files instead of broad file_search to avoid
-        scanning the full repo tree and causing timeouts.
+        When the prompt contains explicit repo-relative file paths (backtick-
+        quoted or bullet-listed), creates file_read subtasks for every existing
+        file.  Falls back to auto-inferred likely files when no explicit paths
+        are found.  Never adds file_search to avoid full-repo scan timeouts.
         """
         subtasks: List[Subtask] = []
         idx = 0
@@ -673,11 +755,27 @@ class CodingManager:
         subtasks.append(self._make_subtask(
             idx, task_id, "Generate diff preview of working tree",
             "git_diff", {"repo_path": repo_path}, session_id=session_id)); idx += 1
-        for fpath in self._extract_likely_files(prompt, repo_path)[:3]:
-            subtasks.append(self._make_subtask(
-                idx, task_id, f"Read likely file: {fpath}",
-                "file_read", {"path": str(Path(repo_path) / fpath)},
-                session_id=session_id)); idx += 1
+
+        explicit = _extract_explicit_files(prompt)
+        if explicit:
+            repo_base = Path(repo_path).resolve()
+            for fpath in explicit:
+                full = (repo_base / fpath).resolve()
+                try:
+                    full.relative_to(repo_base)
+                except ValueError:
+                    continue  # outside repo — skip
+                if full.exists():
+                    subtasks.append(self._make_subtask(
+                        idx, task_id, f"Read explicit file: {fpath}",
+                        "file_read", {"path": str(full)},
+                        session_id=session_id)); idx += 1
+        else:
+            for fpath in self._extract_likely_files(prompt, repo_path)[:3]:
+                subtasks.append(self._make_subtask(
+                    idx, task_id, f"Read likely file: {fpath}",
+                    "file_read", {"path": str(Path(repo_path) / fpath)},
+                    session_id=session_id)); idx += 1
         return subtasks
 
     def _decompose_complex(
@@ -1209,7 +1307,29 @@ class CodingManager:
         # Determine recommendation
         files_read_count = len(files_read)
         any_failed = any(s.status == "failed" for s in plan.subtasks)
-        if files_read_count >= 2 and not any_failed and blocked_at is None:
+        explicit_requested = getattr(plan, "explicit_files", [])
+        missing = getattr(plan, "missing_files", [])
+        missing_set = set(missing)
+
+        if explicit_requested:
+            existing_explicit = [f for f in explicit_requested if f not in missing_set]
+            unread_existing = [f for f in existing_explicit if f not in files_read_set]
+            if unread_existing or missing:
+                recommendation = "HOLD_FOR_MORE_DISCOVERY"
+                if unread_existing:
+                    rec_note = (
+                        f"Insufficient data to verify — {len(unread_existing)} of "
+                        f"{len(existing_explicit)} requested existing files were not read."
+                    )
+                else:
+                    rec_note = (
+                        f"Insufficient data to verify — {len(missing)} of "
+                        f"{len(explicit_requested)} requested files were not found on disk."
+                    )
+            else:
+                recommendation = "PLAN_READY_FOR_REVIEW"
+                rec_note = "Explicit discovery complete. Review this plan before implementing."
+        elif files_read_count >= 2 and not any_failed and blocked_at is None:
             recommendation = "PLAN_READY_FOR_REVIEW"
             rec_note = "Initial discovery complete. Review this plan before implementing."
         else:
@@ -1250,6 +1370,12 @@ class CodingManager:
         else:
             lines.append("- Insufficient data to verify — no files read yet")
         lines.append("")
+
+        if missing:
+            lines += ["## Missing Files (Requested But Not Found on Disk)", ""]
+            for f in missing:
+                lines.append(f"- Insufficient data to verify — file not found: `{f}`")
+            lines.append("")
 
         lines += ["## Likely Files by Subsystem", ""]
         if subsystem_files:
@@ -1513,8 +1639,11 @@ __all__ = [
     "classify_prompt",
     "_bounded_search_dir",
     "_get_subsystem_label",
+    "_extract_explicit_files",
+    "_is_safe_repo_relative",
     "_SEARCH_TARGETED_DIRS",
     "_SEARCH_EXCLUDE_DIRS",
     "_PLANNING_NEXT_FILES",
     "_SUBSYSTEM_LABELS",
+    "_FILE_EXTENSIONS",
 ]

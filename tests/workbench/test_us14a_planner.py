@@ -869,3 +869,291 @@ class TestPlanSynthesisReport:
             f"Planning report must group files into at least 2 subsystems from "
             f"{subsystems_expected}, found: {found}"
         )
+
+
+# ---------------------------------------------------------------------------
+# US14A.1 Discovery Planner: explicit file lists must be extracted and read
+# ---------------------------------------------------------------------------
+
+_US14A1_PHASE1_PROMPT = (
+    "US14A.1 PHASE 1 DISCOVERY \u2014 READ-ONLY ARCHITECTURE REVIEW\n\n"
+    "Read these files only if they exist:\n\n"
+    "- `src/openjarvis/tools/approval_store.py`\n"
+    "- `src/openjarvis/channels/slack.py`\n"
+    "- `src/openjarvis/channels/telegram.py`\n"
+    "- `frontend/src/components/ApprovalBell.tsx`\n"
+    "- `src/openjarvis/autonomy/automation_policy.py`\n"
+    "- `src/openjarvis/governance/constitution.py`\n"
+    "- `src/openjarvis/workbench/model_router.py`\n"
+    "- `src/openjarvis/workbench/cost_ledger.py`\n"
+    "- `src/openjarvis/intelligence/model_catalog.py`\n"
+    "- `src/openjarvis/server/routes.py`\n"
+    "- `src/openjarvis/workbench/coding_manager.py`\n"
+    "- `src/openjarvis/mission/notifier.py`\n"
+    "- `src/openjarvis/server/approval_routes.py`\n"
+    "- `frontend/src/pages/WorkbenchPage.tsx`\n"
+    "- `tests/workbench/test_us14a.py`\n"
+    "- `tests/workbench/test_us14a_planner.py`\n\n"
+    "Do not edit files.\n"
+    "Do not create files.\n"
+    "Do not delete files.\n"
+    "Do not commit.\n"
+    "Do not push.\n"
+    "Do not send Slack or Telegram messages.\n"
+    "Return a read-only architecture discovery report."
+)
+
+_PHASE1_LISTED_FILES = [
+    "src/openjarvis/tools/approval_store.py",
+    "src/openjarvis/channels/slack.py",
+    "src/openjarvis/channels/telegram.py",
+    "frontend/src/components/ApprovalBell.tsx",
+    "src/openjarvis/autonomy/automation_policy.py",
+    "src/openjarvis/governance/constitution.py",
+    "src/openjarvis/workbench/model_router.py",
+    "src/openjarvis/workbench/cost_ledger.py",
+    "src/openjarvis/intelligence/model_catalog.py",
+    "src/openjarvis/server/routes.py",
+    "src/openjarvis/workbench/coding_manager.py",
+    "src/openjarvis/mission/notifier.py",
+    "src/openjarvis/server/approval_routes.py",
+    "frontend/src/pages/WorkbenchPage.tsx",
+    "tests/workbench/test_us14a.py",
+    "tests/workbench/test_us14a_planner.py",
+]
+
+
+class TestExplicitFileDiscovery:
+    """Prove that explicit file paths in prompts are extracted, read, and reported."""
+
+    def test_extract_explicit_files_backtick(self):
+        """Backtick-quoted paths must be extracted from a prompt."""
+        from openjarvis.workbench.coding_manager import _extract_explicit_files
+
+        prompt = (
+            "Read these files:\n"
+            "- `src/openjarvis/channels/slack.py`\n"
+            "- `frontend/src/pages/WorkbenchPage.tsx`\n"
+            "Do not edit."
+        )
+        result = _extract_explicit_files(prompt)
+        assert "src/openjarvis/channels/slack.py" in result, (
+            f"Must extract backtick path 'src/openjarvis/channels/slack.py', got: {result}"
+        )
+        assert "frontend/src/pages/WorkbenchPage.tsx" in result, (
+            f"Must extract backtick path 'frontend/src/pages/WorkbenchPage.tsx', got: {result}"
+        )
+
+    def test_extract_explicit_files_bullet(self):
+        """Plain bullet-listed repo-relative paths must be extracted."""
+        from openjarvis.workbench.coding_manager import _extract_explicit_files
+
+        prompt = (
+            "Read these files:\n"
+            "- src/openjarvis/workbench/coding_manager.py\n"
+            "- src/openjarvis/workbench/model_router.py\n"
+            "Return only a report."
+        )
+        result = _extract_explicit_files(prompt)
+        assert "src/openjarvis/workbench/coding_manager.py" in result, (
+            f"Must extract plain bullet path 'coding_manager.py', got: {result}"
+        )
+        assert "src/openjarvis/workbench/model_router.py" in result, (
+            f"Must extract plain bullet path 'model_router.py', got: {result}"
+        )
+
+    def test_explicit_files_become_file_read_subtasks(self, tmp_path):
+        """Existing explicit files must become file_read subtasks in the plan."""
+        from openjarvis.workbench.coding_manager import CodingManager
+        from openjarvis.workbench.model_router import ModelRouter, MockModelAdapter
+
+        existing = [
+            "src/openjarvis/channels/slack.py",
+            "src/openjarvis/workbench/model_router.py",
+        ]
+        for fpath in existing:
+            full = tmp_path / fpath
+            full.parent.mkdir(parents=True, exist_ok=True)
+            full.write_text("# stub")
+
+        router = ModelRouter(db_path=str(tmp_path / "r.db"), adapter_override=MockModelAdapter())
+        mgr = CodingManager(repo_path=str(tmp_path), db_dir=str(tmp_path), model_router=router)
+
+        plan = mgr.plan(
+            "Read these files:\n"
+            "- `src/openjarvis/channels/slack.py`\n"
+            "- `src/openjarvis/workbench/model_router.py`\n"
+            "Do not edit files.",
+            dry_run=True,
+        )
+        file_read_paths = {
+            st.params.get("path", "").replace(str(tmp_path) + "/", "")
+            for st in plan.subtasks if st.tool_id == "file_read"
+        }
+        for fpath in existing:
+            assert fpath in file_read_paths, (
+                f"Explicit file {fpath!r} must become a file_read subtask, "
+                f"got file_read paths: {sorted(file_read_paths)}"
+            )
+
+    def test_missing_explicit_files_in_report(self, mgr):
+        """Files requested but not on disk must appear in the report as 'file not found'."""
+        plan = mgr.plan(_US14A1_PHASE1_PROMPT, dry_run=True)
+        plan = mgr.execute(plan)
+        report = plan.final_report or ""
+        assert "Missing Files" in report, (
+            "Report must contain '## Missing Files (Requested But Not Found on Disk)'"
+        )
+        assert "file not found" in report, (
+            "Missing files must be labelled 'file not found' in the report"
+        )
+        assert any(f in report for f in _PHASE1_LISTED_FILES), (
+            "Report must mention at least one of the explicitly listed files"
+        )
+
+    def test_paths_outside_repo_are_rejected(self):
+        """Absolute paths, tilde paths, and traversal paths must be rejected."""
+        from openjarvis.workbench.coding_manager import _is_safe_repo_relative
+
+        assert not _is_safe_repo_relative("/etc/passwd"), "absolute path must be rejected"
+        assert not _is_safe_repo_relative("~/config.py"), "tilde path must be rejected"
+        assert not _is_safe_repo_relative("../secrets.env"), "traversal must be rejected"
+        assert not _is_safe_repo_relative("../../etc/hosts"), "double traversal must be rejected"
+        assert not _is_safe_repo_relative(""), "empty string must be rejected"
+        assert not _is_safe_repo_relative("HOLD_FOR_MORE_DISCOVERY"), (
+            "identifier without extension+slash must be rejected"
+        )
+        # These must pass
+        assert _is_safe_repo_relative("src/openjarvis/channels/slack.py")
+        assert _is_safe_repo_relative("frontend/src/pages/WorkbenchPage.tsx")
+        assert _is_safe_repo_relative("tests/workbench/test_us14a.py")
+
+    def test_us14a1_phase1_reads_all_existing_files(self, tmp_path):
+        """US14A.1 Phase 1 prompt must create file_read subtasks for all existing listed files."""
+        from openjarvis.workbench.coding_manager import CodingManager
+        from openjarvis.workbench.model_router import ModelRouter, MockModelAdapter
+
+        existing = [
+            "src/openjarvis/channels/slack.py",
+            "src/openjarvis/channels/telegram.py",
+            "src/openjarvis/workbench/model_router.py",
+            "src/openjarvis/workbench/cost_ledger.py",
+            "src/openjarvis/server/routes.py",
+        ]
+        for fpath in existing:
+            full = tmp_path / fpath
+            full.parent.mkdir(parents=True, exist_ok=True)
+            full.write_text("# stub")
+
+        router = ModelRouter(db_path=str(tmp_path / "r.db"), adapter_override=MockModelAdapter())
+        mgr = CodingManager(repo_path=str(tmp_path), db_dir=str(tmp_path), model_router=router)
+
+        plan = mgr.plan(_US14A1_PHASE1_PROMPT, dry_run=True)
+        file_read_paths = {
+            st.params.get("path", "").replace(str(tmp_path) + "/", "")
+            for st in plan.subtasks if st.tool_id == "file_read"
+        }
+        for fpath in existing:
+            assert fpath in file_read_paths, (
+                f"Phase 1 prompt must read existing file {fpath!r}, "
+                f"got file_read paths: {sorted(file_read_paths)}"
+            )
+
+    def test_explicit_file_prompt_no_file_search(self, mgr):
+        """Phase 1 explicit-file-list prompt must not add a file_search subtask."""
+        plan = mgr.plan(_US14A1_PHASE1_PROMPT, dry_run=True)
+        tool_ids = [st.tool_id for st in plan.subtasks]
+        assert "file_search" not in tool_ids, (
+            f"Phase 1 discovery prompt must not add file_search, got subtasks: {tool_ids}"
+        )
+
+    def test_explicit_file_prompt_no_writes(self, mgr):
+        """Phase 1 explicit-file-list prompt must not add write/commit/push subtasks."""
+        plan = mgr.plan(_US14A1_PHASE1_PROMPT, dry_run=True)
+        forbidden = {"file_write", "file_delete", "git_commit", "git_push"}
+        present = {st.tool_id for st in plan.subtasks} & forbidden
+        assert not present, (
+            f"Phase 1 prompt must not add write/commit/push subtasks, found: {present}"
+        )
+
+    def test_report_lists_files_inspected(self, tmp_path):
+        """Report must list files actually read under 'Files Read in This Session'."""
+        from openjarvis.workbench.coding_manager import CodingManager
+        from openjarvis.workbench.model_router import ModelRouter, MockModelAdapter
+
+        fpath = "src/openjarvis/workbench/coding_manager.py"
+        full = tmp_path / fpath
+        full.parent.mkdir(parents=True, exist_ok=True)
+        full.write_text("# stub")
+
+        router = ModelRouter(db_path=str(tmp_path / "r.db"), adapter_override=MockModelAdapter())
+        mgr = CodingManager(repo_path=str(tmp_path), db_dir=str(tmp_path), model_router=router)
+
+        plan = mgr.plan(
+            f"Read these files:\n- `{fpath}`\nDo not edit files.", dry_run=True
+        )
+        plan = mgr.execute(plan)
+        report = plan.final_report or ""
+        assert "Files Read in This Session" in report, (
+            "Report must contain '## Files Read in This Session'"
+        )
+        assert fpath in report, (
+            f"Report must list the file that was read: {fpath!r}"
+        )
+
+    def test_report_lists_missing_files(self, mgr):
+        """Report must list files requested but not found under 'Missing Files'."""
+        plan = mgr.plan(_US14A1_PHASE1_PROMPT, dry_run=True)
+        plan = mgr.execute(plan)
+        report = plan.final_report or ""
+        assert "Missing Files" in report, (
+            "Report must contain '## Missing Files (Requested But Not Found on Disk)'"
+        )
+        assert "Insufficient data to verify" in report, (
+            "Missing files must use the 'Insufficient data to verify' prefix"
+        )
+
+    def test_report_hold_when_not_all_read(self, mgr):
+        """Report must return HOLD_FOR_MORE_DISCOVERY when requested files are missing."""
+        plan = mgr.plan(_US14A1_PHASE1_PROMPT, dry_run=True)
+        plan = mgr.execute(plan)
+        report = plan.final_report or ""
+        assert "HOLD_FOR_MORE_DISCOVERY" in report, (
+            f"Report must return HOLD_FOR_MORE_DISCOVERY when listed files are missing; "
+            f"got report start: {report[:300]!r}"
+        )
+        # The **Status** banner must say HOLD, not PLAN_READY (gates may reference it as a noun)
+        assert "**Status**: `PLAN_READY_FOR_REVIEW`" not in report, (
+            "Report Status banner must not say PLAN_READY_FOR_REVIEW when discovery is incomplete"
+        )
+
+    def test_report_plan_ready_when_all_read(self, tmp_path):
+        """Report must return PLAN_READY_FOR_REVIEW when all requested existing files are read."""
+        from openjarvis.workbench.coding_manager import CodingManager
+        from openjarvis.workbench.model_router import ModelRouter, MockModelAdapter
+
+        listed = [
+            "src/openjarvis/channels/slack.py",
+            "src/openjarvis/workbench/model_router.py",
+        ]
+        for fpath in listed:
+            full = tmp_path / fpath
+            full.parent.mkdir(parents=True, exist_ok=True)
+            full.write_text("# stub")
+
+        router = ModelRouter(db_path=str(tmp_path / "r.db"), adapter_override=MockModelAdapter())
+        mgr = CodingManager(repo_path=str(tmp_path), db_dir=str(tmp_path), model_router=router)
+
+        prompt = (
+            "Read these files:\n"
+            "- `src/openjarvis/channels/slack.py`\n"
+            "- `src/openjarvis/workbench/model_router.py`\n"
+            "Do not edit files."
+        )
+        plan = mgr.plan(prompt, dry_run=True)
+        plan = mgr.execute(plan)
+        report = plan.final_report or ""
+        assert "PLAN_READY_FOR_REVIEW" in report, (
+            f"Report must return PLAN_READY_FOR_REVIEW when all requested existing files "
+            f"were read; got: {report[:300]!r}"
+        )
