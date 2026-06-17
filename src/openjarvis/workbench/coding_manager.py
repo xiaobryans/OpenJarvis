@@ -78,6 +78,65 @@ _APPROVAL_REQUIRED_TOOLS = frozenset({
 })
 
 
+# ---------------------------------------------------------------------------
+# Prompt classification
+# ---------------------------------------------------------------------------
+
+_PLAN_ONLY_PHRASES = (
+    "plan only", "do not edit", "do not write", "no edit files",
+    "planning only", "plan-only", "don't edit", "don't write",
+)
+_COMPLEX_IMPL_KEYWORDS = frozenset({
+    "implement", "feature", "sprint", "notification", "autopilot",
+    "bridge", "us14a.1", "us14b", "us15", "remediation", "planner",
+    "pa chat", "workbench route", "prompt classification",
+    "task decomposition", "implementation plan",
+})
+_BUG_FIX_KEYWORDS = frozenset({
+    "fix", "bug", "broken", "regression", "incorrect", "wrong",
+    "failing", "defect", "crash",
+})
+_TINY_MARKER_KEYWORDS = frozenset({"fixture", "self-test", "marker", "e2e proof"})
+_DOCUMENTATION_KEYWORDS = frozenset({"readme", "changelog", "documentation"})
+_RESEARCH_KEYWORDS = frozenset({"investigate", "research", "explore", "audit", "survey"})
+
+_FILE_HINTS = {
+    "coding_manager": "src/openjarvis/workbench/coding_manager.py",
+    "workbench_routes": "src/openjarvis/server/workbench_routes.py",
+    "workbench route": "src/openjarvis/server/workbench_routes.py",
+    "model_router": "src/openjarvis/workbench/model_router.py",
+    "workbenchpage": "frontend/src/pages/WorkbenchPage.tsx",
+    "planner": "src/openjarvis/workbench/coding_manager.py",
+    "job_queue": "src/openjarvis/workbench/job_queue.py",
+    "checkpoint": "src/openjarvis/workbench/checkpoint.py",
+    "cost_ledger": "src/openjarvis/workbench/cost_ledger.py",
+    "constitution": "src/openjarvis/governance/constitution.py",
+    "test_us14a": "tests/workbench/test_us14a.py",
+}
+
+
+def classify_prompt(prompt: str) -> str:
+    """Classify a prompt into one of six task types.
+
+    Returns one of: planning_only, tiny_marker, documentation,
+    bug_fix, complex_implementation, research.
+    """
+    p = prompt.lower()
+    if any(phrase in p for phrase in _PLAN_ONLY_PHRASES):
+        return "planning_only"
+    if any(k in p for k in _TINY_MARKER_KEYWORDS) and not any(k in p for k in _COMPLEX_IMPL_KEYWORDS):
+        return "tiny_marker"
+    if any(k in p for k in _RESEARCH_KEYWORDS) and not any(k in p for k in _COMPLEX_IMPL_KEYWORDS):
+        return "research"
+    if any(k in p for k in _DOCUMENTATION_KEYWORDS) and not any(k in p for k in _COMPLEX_IMPL_KEYWORDS):
+        return "documentation"
+    if any(k in p for k in _BUG_FIX_KEYWORDS):
+        return "bug_fix"
+    if any(k in p for k in _COMPLEX_IMPL_KEYWORDS):
+        return "complex_implementation"
+    return "tiny_marker"
+
+
 def _route_worker_tier(tool_id: str, is_risky: bool = False) -> str:
     """Determine the appropriate worker tier for a given tool."""
     if tool_id in _HIGH_TRUST_TOOLS:
@@ -140,9 +199,14 @@ class TaskPlan:
     dry_run: bool
     stop_on_blocker: bool
     status: str = "planned"
+    task_type: str = "tiny_marker"
     final_report: Optional[str] = None
     diff_preview: Optional[str] = None
     validation_output: Optional[str] = None
+    likely_files: List[str] = field(default_factory=list)
+    risks: List[str] = field(default_factory=list)
+    validation_commands: List[str] = field(default_factory=list)
+    approval_gates: List[str] = field(default_factory=list)
     created_at: float = field(default_factory=time.time)
     finished_at: Optional[float] = None
     total_cost_usd: float = 0.0
@@ -160,6 +224,11 @@ class TaskPlan:
             "final_report": self.final_report,
             "diff_preview": self.diff_preview,
             "validation_output": self.validation_output,
+            "task_type": self.task_type,
+            "likely_files": self.likely_files,
+            "risks": self.risks,
+            "validation_commands": self.validation_commands,
+            "approval_gates": self.approval_gates,
             "created_at": self.created_at,
             "finished_at": self.finished_at,
             "total_cost_usd": self.total_cost_usd,
@@ -226,7 +295,8 @@ class CodingManager:
         task_id = uuid.uuid4().hex[:12]
         effective_repo = Path(repo_path).resolve() if repo_path else self._repo_path
 
-        subtasks = self._decompose(prompt, task_id, str(effective_repo), session_id=session_id)
+        task_type = classify_prompt(prompt)
+        subtasks = self._decompose(prompt, task_id, str(effective_repo), session_id=session_id, task_type=task_type)
 
         plan = TaskPlan(
             session_id=session_id,
@@ -236,6 +306,11 @@ class CodingManager:
             subtasks=subtasks,
             dry_run=dry_run,
             stop_on_blocker=stop_on_blocker,
+            task_type=task_type,
+            likely_files=self._extract_likely_files(prompt, str(effective_repo)),
+            risks=self._assess_risks(prompt, task_type),
+            validation_commands=self._suggest_validation(prompt, task_type, str(effective_repo)),
+            approval_gates=self._identify_gates(task_type),
         )
 
         self._checkpoints.save_checkpoint(
@@ -259,6 +334,7 @@ class CodingManager:
         task_id: str,
         repo_path: str,
         session_id: str = "",
+        task_type: Optional[str] = None,
     ) -> List[Subtask]:
         """Decompose a prompt into a list of subtasks.
 
@@ -266,6 +342,16 @@ class CodingManager:
         itself — the planner is deterministic to keep costs at zero).
         LLM calls happen only during worker execution of each subtask.
         """
+        if task_type is None:
+            task_type = classify_prompt(prompt)
+        if task_type == "planning_only":
+            return self._decompose_planning_only(prompt, task_id, repo_path, session_id)
+        if task_type == "complex_implementation":
+            return self._decompose_complex(prompt, task_id, repo_path, session_id)
+        if task_type == "bug_fix":
+            return self._decompose_bug_fix(prompt, task_id, repo_path, session_id)
+        if task_type in ("research", "documentation"):
+            return self._decompose_discovery_only(prompt, task_id, repo_path, session_id)
         subtasks: List[Subtask] = []
         idx = 0
 
@@ -427,6 +513,168 @@ class CodingManager:
             if len(w) > 5 and w.isidentifier():
                 terms.append(w)
         return terms[:5]
+
+    def _decompose_planning_only(
+        self, prompt: str, task_id: str, repo_path: str, session_id: str = ""
+    ) -> List[Subtask]:
+        """Planning-only: discovery only, no file_write/git_commit/git_push."""
+        subtasks: List[Subtask] = []
+        idx = 0
+        subtasks.append(self._make_subtask(
+            idx, task_id, "Inspect repository status and branch",
+            "git_status", {"repo_path": repo_path}, session_id=session_id)); idx += 1
+        subtasks.append(self._make_subtask(
+            idx, task_id, "Generate diff preview of working tree",
+            "git_diff", {"repo_path": repo_path}, session_id=session_id)); idx += 1
+        search_terms = self._extract_search_terms(prompt)
+        if search_terms:
+            subtasks.append(self._make_subtask(
+                idx, task_id, f"Search codebase for: {', '.join(search_terms[:3])}",
+                "file_search", {"pattern": "|".join(search_terms[:3]), "directory": repo_path},
+                session_id=session_id)); idx += 1
+        for fpath in self._extract_likely_files(prompt, repo_path)[:3]:
+            subtasks.append(self._make_subtask(
+                idx, task_id, f"Read likely file: {fpath}",
+                "file_read", {"path": str(Path(repo_path) / fpath)},
+                session_id=session_id)); idx += 1
+        return subtasks
+
+    def _decompose_complex(
+        self, prompt: str, task_id: str, repo_path: str, session_id: str = ""
+    ) -> List[Subtask]:
+        """Complex implementation: discovery subtasks first, no default writes."""
+        subtasks: List[Subtask] = []
+        idx = 0
+        subtasks.append(self._make_subtask(
+            idx, task_id, "Inspect repository status and branch",
+            "git_status", {"repo_path": repo_path}, session_id=session_id)); idx += 1
+        subtasks.append(self._make_subtask(
+            idx, task_id, "Generate diff preview of working tree",
+            "git_diff", {"repo_path": repo_path}, session_id=session_id)); idx += 1
+        search_terms = self._extract_search_terms(prompt)
+        if search_terms:
+            subtasks.append(self._make_subtask(
+                idx, task_id, f"Search codebase for: {', '.join(search_terms[:3])}",
+                "file_search", {"pattern": "|".join(search_terms[:3]), "directory": repo_path},
+                session_id=session_id)); idx += 1
+        for fpath in self._extract_likely_files(prompt, repo_path)[:4]:
+            subtasks.append(self._make_subtask(
+                idx, task_id, f"Discover: read {fpath}",
+                "file_read", {"path": str(Path(repo_path) / fpath)},
+                session_id=session_id)); idx += 1
+        return subtasks
+
+    def _decompose_bug_fix(
+        self, prompt: str, task_id: str, repo_path: str, session_id: str = ""
+    ) -> List[Subtask]:
+        """Bug fix: targeted discovery + validation, no default writes."""
+        subtasks: List[Subtask] = []
+        idx = 0
+        subtasks.append(self._make_subtask(
+            idx, task_id, "Inspect repository status and branch",
+            "git_status", {"repo_path": repo_path}, session_id=session_id)); idx += 1
+        subtasks.append(self._make_subtask(
+            idx, task_id, "Generate diff preview of working tree",
+            "git_diff", {"repo_path": repo_path}, session_id=session_id)); idx += 1
+        search_terms = self._extract_search_terms(prompt)
+        if search_terms:
+            subtasks.append(self._make_subtask(
+                idx, task_id, f"Search for bug-relevant patterns: {', '.join(search_terms[:3])}",
+                "file_search", {"pattern": "|".join(search_terms[:3]), "directory": repo_path},
+                session_id=session_id)); idx += 1
+        for fpath in self._extract_likely_files(prompt, repo_path)[:3]:
+            subtasks.append(self._make_subtask(
+                idx, task_id, f"Read likely buggy file: {fpath}",
+                "file_read", {"path": str(Path(repo_path) / fpath)},
+                session_id=session_id)); idx += 1
+        subtasks.append(self._make_subtask(
+            idx, task_id, "Run validation / tests",
+            "shell_exec", {
+                "command": "( .venv/bin/python3 -m pytest tests/workbench/ -x -q --tb=short 2>&1 || python3 -m pytest tests/workbench/ -x -q --tb=short 2>&1 || echo 'No pytest found' ) | head -50",
+                "working_dir": repo_path, "timeout": 60,
+            }, session_id=session_id)); idx += 1
+        return subtasks
+
+    def _decompose_discovery_only(
+        self, prompt: str, task_id: str, repo_path: str, session_id: str = ""
+    ) -> List[Subtask]:
+        """Research/documentation: read-only discovery, no writes or validation."""
+        subtasks: List[Subtask] = []
+        idx = 0
+        subtasks.append(self._make_subtask(
+            idx, task_id, "Inspect repository status and branch",
+            "git_status", {"repo_path": repo_path}, session_id=session_id)); idx += 1
+        subtasks.append(self._make_subtask(
+            idx, task_id, "Generate diff preview of working tree",
+            "git_diff", {"repo_path": repo_path}, session_id=session_id)); idx += 1
+        search_terms = self._extract_search_terms(prompt)
+        if search_terms:
+            subtasks.append(self._make_subtask(
+                idx, task_id, f"Search codebase for: {', '.join(search_terms[:3])}",
+                "file_search", {"pattern": "|".join(search_terms[:3]), "directory": repo_path},
+                session_id=session_id)); idx += 1
+        for fpath in self._extract_likely_files(prompt, repo_path)[:3]:
+            subtasks.append(self._make_subtask(
+                idx, task_id, f"Read: {fpath}",
+                "file_read", {"path": str(Path(repo_path) / fpath)},
+                session_id=session_id)); idx += 1
+        return subtasks
+
+    def _extract_likely_files(self, prompt: str, repo_path: str) -> List[str]:
+        """Return likely relevant file paths from keyword hints in the prompt."""
+        p = prompt.lower()
+        files = []
+        for keyword, fpath in _FILE_HINTS.items():
+            if keyword in p:
+                files.append(fpath)
+        return list(dict.fromkeys(files))
+
+    def _assess_risks(self, prompt: str, task_type: str) -> List[str]:
+        """Identify risks for the task."""
+        p = prompt.lower()
+        risks: List[str] = []
+        if task_type == "planning_only":
+            risks.append("Insufficient data to verify — discovery phase not yet run")
+            return risks
+        if task_type in ("complex_implementation", "bug_fix"):
+            risks.append("Insufficient data to verify — likely affected files not yet read")
+            risks.append("Risk: unintended side effects in adjacent modules")
+            if any(w in p for w in ("route", "api", "endpoint")):
+                risks.append("Risk: API contract change may break frontend")
+            if any(w in p for w in ("planner", "decompose", "classify")):
+                risks.append("Risk: planner change may break existing test_us14a tests")
+            if any(w in p for w in ("notification", "autopilot", "bridge")):
+                risks.append("Risk: new async subsystems require integration tests")
+        return risks
+
+    def _suggest_validation(self, prompt: str, task_type: str, repo_path: str) -> List[str]:
+        """Suggest validation commands for the task."""
+        if task_type == "planning_only":
+            return ["(no execution — plan only)"]
+        base = "python -m pytest tests/workbench/ -x -q --tb=short"
+        if task_type in ("complex_implementation", "bug_fix"):
+            return [
+                "python -m pytest tests/workbench/test_us14a_planner.py -x -q --tb=short",
+                "python -m pytest tests/workbench/test_us14a.py -x -q --tb=short",
+                base,
+            ]
+        return [base]
+
+    def _identify_gates(self, task_type: str) -> List[str]:
+        """Identify approval gates required for the task."""
+        if task_type == "planning_only":
+            return ["Gate 0: No writes until explicit approval after plan review"]
+        if task_type in ("complex_implementation", "bug_fix"):
+            return [
+                "Gate 1: Discovery review — approve before any file writes",
+                "Gate 2: Implementation plan review — approve before execution",
+                "Gate 3: Manager approval required for git_commit",
+                "Gate 4: Manager approval required for git_push",
+            ]
+        return [
+            "Gate 1: Manager approval required for git_commit",
+            "Gate 2: Manager approval required for git_push",
+        ]
 
     def _suggests_file_change(self, prompt: str) -> bool:
         keywords = ["add", "create", "write", "edit", "modify", "update", "insert", "fixture", "test"]
@@ -683,6 +931,7 @@ class CodingManager:
             f"",
             f"- **Session**: `{plan.session_id}`",
             f"- **Task ID**: `{plan.task_id}`",
+            f"- **Task Type**: `{plan.task_type}`",
             f"- **Prompt**: {plan.prompt}",
             f"- **Repo**: `{plan.repo_path}`",
             f"- **Dry-Run**: {plan.dry_run}",
@@ -815,4 +1064,4 @@ class CodingManager:
         return [j.to_dict() for j in self._jobs.list_by_task(task_id)]
 
 
-__all__ = ["CodingManager", "TaskPlan", "Subtask"]
+__all__ = ["CodingManager", "TaskPlan", "Subtask", "classify_prompt"]

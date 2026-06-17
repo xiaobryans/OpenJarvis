@@ -1,0 +1,350 @@
+"""Tests proving the Workbench planner correctly classifies prompts and generates
+scoped plans — US14A planner remediation.
+
+Test coverage:
+1. Complex prompt does NOT default to test_us14a_fixture.py
+2. Complex prompt creates discovery/planning subtasks before write subtasks
+3. "Plan only / do not edit files" prompt creates no file_write/commit/push subtasks
+4. Tiny marker prompt may still use fixture workflow
+5. Bug fix prompt identifies likely relevant files from prompt keywords
+6. Planner output includes risks, validation commands, and approval gates for complex prompts
+7. Existing small live-task behavior is not broken
+8. Routing/cost ledger still records decisions
+"""
+import tempfile
+from pathlib import Path
+
+import pytest
+
+
+# ---------------------------------------------------------------------------
+# Shared fixtures
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture()
+def mgr(tmp_path):
+    from openjarvis.workbench.coding_manager import CodingManager
+    from openjarvis.workbench.model_router import ModelRouter, MockModelAdapter
+
+    router = ModelRouter(
+        db_path=str(tmp_path / "routing.db"),
+        adapter_override=MockModelAdapter(),
+    )
+    return CodingManager(
+        repo_path=str(tmp_path),
+        db_dir=str(tmp_path),
+        model_router=router,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Test 1: Complex prompt does NOT write test_us14a_fixture.py
+# ---------------------------------------------------------------------------
+
+
+class TestComplexPromptNoFixtureFile:
+    def test_complex_prompt_not_fixture_marker(self, mgr):
+        """Complex implementation prompt must not produce a file_write to the fixture path."""
+        plan = mgr.plan(
+            "Plan and implement the US14A.1 PA Chat-to-Workbench bridge feature",
+            dry_run=True,
+        )
+        write_paths = [
+            st.params.get("path", "")
+            for st in plan.subtasks
+            if st.tool_id == "file_write"
+        ]
+        assert not any("test_us14a_fixture" in p for p in write_paths), (
+            f"Complex prompt produced file_write to fixture path: {write_paths}"
+        )
+
+    def test_complex_prompt_task_type(self, mgr):
+        plan = mgr.plan("Implement the notification autopilot bridge feature", dry_run=True)
+        assert plan.task_type == "complex_implementation"
+
+
+# ---------------------------------------------------------------------------
+# Test 2: Complex prompt creates discovery subtasks before any write subtasks
+# ---------------------------------------------------------------------------
+
+
+class TestComplexPromptDiscoveryFirst:
+    def test_discovery_subtasks_precede_writes(self, mgr):
+        """Complex prompt: discovery (git_status, file_search, file_read) must precede writes."""
+        plan = mgr.plan("Implement US14A.1 PA Chat-to-Workbench bridge", dry_run=True)
+        tool_ids = [st.tool_id for st in plan.subtasks]
+        write_indices = [i for i, t in enumerate(tool_ids) if t == "file_write"]
+        read_indices = [
+            i for i, t in enumerate(tool_ids)
+            if t in ("file_read", "file_search", "git_status", "git_diff")
+        ]
+        if write_indices:
+            assert min(read_indices) < min(write_indices), (
+                "Discovery subtasks must precede write subtasks"
+            )
+        else:
+            assert len(read_indices) > 0, "Complex prompt must have discovery subtasks"
+
+    def test_complex_prompt_has_no_default_file_write(self, mgr):
+        """Complex implementation prompts must NOT generate a file_write by default."""
+        plan = mgr.plan("Implement the sprint remediation planner", dry_run=True)
+        tool_ids = [st.tool_id for st in plan.subtasks]
+        assert "file_write" not in tool_ids, (
+            "Complex prompt must not include file_write without approval"
+        )
+
+    def test_complex_prompt_no_commit_or_push(self, mgr):
+        """Complex implementation prompts must NOT include git_commit or git_push by default."""
+        plan = mgr.plan("Implement the US14B notification autopilot feature", dry_run=True)
+        tool_ids = [st.tool_id for st in plan.subtasks]
+        assert "git_commit" not in tool_ids
+        assert "git_push" not in tool_ids
+
+
+# ---------------------------------------------------------------------------
+# Test 3: "Plan only" prompt creates no file_write, git_commit, or git_push
+# ---------------------------------------------------------------------------
+
+
+class TestPlanOnlyPrompt:
+    def test_plan_only_no_writes(self, mgr):
+        """'Do not edit files yet' prompt must produce no file_write/commit/push subtasks."""
+        plan = mgr.plan(
+            "Plan US14A.1 PA Chat-to-Workbench + notifications. Do not edit files yet.",
+            dry_run=True,
+        )
+        tool_ids = [st.tool_id for st in plan.subtasks]
+        assert "file_write" not in tool_ids, "plan_only must not have file_write"
+        assert "git_commit" not in tool_ids, "plan_only must not have git_commit"
+        assert "git_push" not in tool_ids, "plan_only must not have git_push"
+
+    def test_plan_only_task_type(self, mgr):
+        plan = mgr.plan("Plan only — do not write any files", dry_run=True)
+        assert plan.task_type == "planning_only"
+
+    def test_planning_only_phrase_variant(self, mgr):
+        plan = mgr.plan("plan only: review coding_manager planner logic", dry_run=True)
+        assert plan.task_type == "planning_only"
+        tool_ids = [st.tool_id for st in plan.subtasks]
+        assert "file_write" not in tool_ids
+        assert "git_commit" not in tool_ids
+        assert "git_push" not in tool_ids
+
+
+# ---------------------------------------------------------------------------
+# Test 4: Tiny marker prompt still uses fixture workflow
+# ---------------------------------------------------------------------------
+
+
+class TestTinyMarkerPrompt:
+    def test_tiny_marker_task_type(self, mgr):
+        """Tiny marker prompts must be classified as tiny_marker."""
+        plan = mgr.plan("Add a US14A self-test fixture and marker", dry_run=True)
+        assert plan.task_type == "tiny_marker"
+
+    def test_tiny_marker_still_produces_subtasks(self, mgr):
+        """Tiny marker prompt must still produce a real subtask plan."""
+        plan = mgr.plan("Add self-test fixture", dry_run=True)
+        assert len(plan.subtasks) > 0
+        assert plan.subtasks[0].tool_id == "git_status"
+
+    def test_tiny_marker_may_write_fixture(self, mgr):
+        """Tiny marker workflow is allowed to produce a file_write to the fixture path."""
+        plan = mgr.plan("Add a self-test fixture marker for E2E proof", dry_run=True)
+        tool_ids = [st.tool_id for st in plan.subtasks]
+        assert plan.task_type == "tiny_marker"
+        assert "git_status" in tool_ids
+
+
+# ---------------------------------------------------------------------------
+# Test 5: Bug fix prompt identifies likely relevant files
+# ---------------------------------------------------------------------------
+
+
+class TestBugFixPrompt:
+    def test_bug_fix_identifies_coding_manager(self, mgr):
+        """Bug fix prompt mentioning coding_manager must identify that file."""
+        plan = mgr.plan(
+            "Fix the bug in coding_manager planner where complex prompts default to fixture marker",
+            dry_run=True,
+        )
+        assert plan.task_type == "bug_fix"
+        assert any("coding_manager" in f for f in plan.likely_files), (
+            f"Expected coding_manager in likely_files, got: {plan.likely_files}"
+        )
+
+    def test_bug_fix_identifies_workbench_routes(self, mgr):
+        """Bug fix prompt mentioning workbench_routes must identify that file."""
+        plan = mgr.plan(
+            "Fix the broken endpoint in workbench_routes that returns 500",
+            dry_run=True,
+        )
+        assert plan.task_type == "bug_fix"
+        assert any("workbench" in f for f in plan.likely_files)
+
+    def test_bug_fix_has_validation_subtask(self, mgr):
+        """Bug fix plans must include a validation subtask."""
+        plan = mgr.plan("Fix the regression in model_router tier assignment", dry_run=True)
+        tool_ids = [st.tool_id for st in plan.subtasks]
+        assert "shell_exec" in tool_ids, "Bug fix plan must include validation step"
+
+    def test_bug_fix_no_default_commit(self, mgr):
+        """Bug fix plans must not include git_commit by default."""
+        plan = mgr.plan("Fix the crash in cost_ledger when session is empty", dry_run=True)
+        tool_ids = [st.tool_id for st in plan.subtasks]
+        assert "git_commit" not in tool_ids
+        assert "git_push" not in tool_ids
+
+
+# ---------------------------------------------------------------------------
+# Test 6: Complex prompts include risks, validation commands, approval gates
+# ---------------------------------------------------------------------------
+
+
+class TestComplexPlanningMetadata:
+    def test_complex_has_risks(self, mgr):
+        """Complex implementation plans must include risk assessments."""
+        plan = mgr.plan("Implement US14A.1 PA Chat-to-Workbench bridge", dry_run=True)
+        assert len(plan.risks) > 0, "Complex plan must have risk assessments"
+
+    def test_complex_has_validation_commands(self, mgr):
+        """Complex implementation plans must include validation commands."""
+        plan = mgr.plan("Implement the notification autopilot feature", dry_run=True)
+        assert len(plan.validation_commands) > 0
+
+    def test_complex_has_approval_gates(self, mgr):
+        """Complex implementation plans must include approval gates."""
+        plan = mgr.plan("Implement the remediation planner logic", dry_run=True)
+        assert len(plan.approval_gates) > 0
+        assert any("Gate" in g for g in plan.approval_gates)
+
+    def test_planning_only_risk_mentions_insufficient_data(self, mgr):
+        """Planning-only risk assessment must flag insufficient data."""
+        plan = mgr.plan("Plan only — describe planner decomposition", dry_run=True)
+        assert any("Insufficient data" in r for r in plan.risks)
+
+    def test_complex_risk_mentions_insufficient_data(self, mgr):
+        """Complex plan risk assessment must flag insufficient data until discovery."""
+        plan = mgr.plan("Implement the US14B feature sprint", dry_run=True)
+        assert any("Insufficient data" in r for r in plan.risks)
+
+
+# ---------------------------------------------------------------------------
+# Test 7: Existing small live-task behavior is not broken
+# ---------------------------------------------------------------------------
+
+
+class TestSmallTaskBehaviorUnchanged:
+    def test_small_task_git_status_first(self, mgr):
+        """All plans must start with git_status."""
+        for prompt in ("Add a test fixture", "Review changes", "Inspect repo status"):
+            plan = mgr.plan(prompt, dry_run=True)
+            assert plan.subtasks[0].tool_id == "git_status", (
+                f"First subtask must be git_status for prompt: {prompt!r}"
+            )
+
+    def test_tiny_marker_has_commit_push(self, mgr):
+        """Tiny marker prompts must still include commit and push in the plan."""
+        plan = mgr.plan("Add a test fixture file", dry_run=True)
+        tool_ids = [st.tool_id for st in plan.subtasks]
+        assert "git_commit" in tool_ids
+        assert "git_push" in tool_ids
+
+    def test_dry_run_skips_commit_push_for_tiny_marker(self, mgr):
+        """Dry-run must still skip commit/push even for tiny marker plans."""
+        plan = mgr.plan("Add fixture", dry_run=True)
+        plan = mgr.execute(plan)
+        for st in plan.subtasks:
+            if st.tool_id in ("git_commit", "git_push"):
+                assert st.status == "skipped_dry_run", (
+                    f"Expected skipped_dry_run for {st.tool_id}, got {st.status}"
+                )
+
+    def test_plan_returns_task_plan_instance(self, mgr):
+        """plan() must return a TaskPlan instance with required fields."""
+        from openjarvis.workbench.coding_manager import TaskPlan
+        plan = mgr.plan("Add a test fixture", dry_run=True)
+        assert isinstance(plan, TaskPlan)
+        assert plan.session_id
+        assert plan.task_id
+        assert len(plan.subtasks) > 0
+
+
+# ---------------------------------------------------------------------------
+# Test 8: Routing/cost ledger still records decisions
+# ---------------------------------------------------------------------------
+
+
+class TestRoutingLedgerIntegrity:
+    def test_complex_plan_produces_routing_log(self, mgr):
+        """Routing log must be populated for complex plans."""
+        plan = mgr.plan("Implement the US14A.1 feature sprint", dry_run=True)
+        log = mgr.get_routing_log(plan.session_id)
+        assert len(log) > 0, "Routing log must have entries after planning"
+
+    def test_planning_only_produces_routing_log(self, mgr):
+        """Routing log must be populated even for plan-only prompts."""
+        plan = mgr.plan("Plan only — review the planner logic", dry_run=True)
+        log = mgr.get_routing_log(plan.session_id)
+        assert len(log) > 0
+
+    def test_bug_fix_produces_routing_log(self, mgr):
+        """Routing log must be populated for bug fix plans."""
+        plan = mgr.plan("Fix the broken model_router tier assignment", dry_run=True)
+        log = mgr.get_routing_log(plan.session_id)
+        assert len(log) > 0
+
+    def test_routing_log_has_git_status_local(self, mgr):
+        """git_status subtasks must always route to local tier."""
+        plan = mgr.plan("Add a test fixture", dry_run=True)
+        log = mgr.get_routing_log(plan.session_id)
+        tiers = {e["tool_id"]: e["assigned_tier"] for e in log}
+        assert tiers.get("git_status") == "local"
+
+    def test_cost_summary_includes_routing(self, mgr):
+        """Cost summary must include routing section after any plan."""
+        plan = mgr.plan("Implement the notification autopilot", dry_run=True)
+        summary = mgr.get_cost_summary(plan.session_id)
+        assert "routing" in summary
+
+
+# ---------------------------------------------------------------------------
+# Standalone: classify_prompt unit tests
+# ---------------------------------------------------------------------------
+
+
+class TestClassifyPrompt:
+    def test_classify_plan_only(self):
+        from openjarvis.workbench.coding_manager import classify_prompt
+        assert classify_prompt("plan only — do not edit any files") == "planning_only"
+        assert classify_prompt("do not write files yet, planning only") == "planning_only"
+
+    def test_classify_tiny_marker(self):
+        from openjarvis.workbench.coding_manager import classify_prompt
+        assert classify_prompt("Add a self-test fixture marker") == "tiny_marker"
+        assert classify_prompt("Add US14A e2e proof marker") == "tiny_marker"
+
+    def test_classify_bug_fix(self):
+        from openjarvis.workbench.coding_manager import classify_prompt
+        assert classify_prompt("Fix the broken route in workbench_routes") == "bug_fix"
+        assert classify_prompt("Fix regression in cost_ledger") == "bug_fix"
+
+    def test_classify_complex_implementation(self):
+        from openjarvis.workbench.coding_manager import classify_prompt
+        assert classify_prompt("Implement US14A.1 PA Chat bridge") == "complex_implementation"
+        assert classify_prompt("Implement the notification autopilot feature") == "complex_implementation"
+
+    def test_classify_research(self):
+        from openjarvis.workbench.coding_manager import classify_prompt
+        assert classify_prompt("Research the model_router escalation logic") == "research"
+        assert classify_prompt("Investigate the model tier routing behavior") == "research"
+
+    def test_classify_documentation(self):
+        from openjarvis.workbench.coding_manager import classify_prompt
+        assert classify_prompt("Update the README with workbench usage") == "documentation"
+
+    def test_complex_overrides_marker(self):
+        from openjarvis.workbench.coding_manager import classify_prompt
+        result = classify_prompt("Implement us14a.1 bridge with self-test marker")
+        assert result == "complex_implementation"

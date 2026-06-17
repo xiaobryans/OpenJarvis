@@ -58,9 +58,14 @@ interface TaskPlan {
   dry_run: boolean;
   stop_on_blocker: boolean;
   status: string;
+  task_type?: string;
   final_report?: string;
   diff_preview?: string;
   validation_output?: string;
+  likely_files?: string[];
+  risks?: string[];
+  validation_commands?: string[];
+  approval_gates?: string[];
   created_at: number;
   finished_at?: number;
   total_cost_usd: number;
@@ -83,6 +88,24 @@ interface DoctorCheck {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+const TASK_TYPE_COLORS: Record<string, string> = {
+  tiny_marker: 'text-gray-400',
+  documentation: 'text-blue-400',
+  bug_fix: 'text-orange-400',
+  complex_implementation: 'text-purple-400',
+  planning_only: 'text-cyan-400',
+  research: 'text-teal-400',
+};
+
+const TASK_TYPE_LABELS: Record<string, string> = {
+  tiny_marker: 'Tiny Task',
+  documentation: 'Documentation',
+  bug_fix: 'Bug Fix',
+  complex_implementation: 'Complex Implementation',
+  planning_only: 'Planning Only',
+  research: 'Research',
+};
 
 const TIER_COLORS: Record<string, string> = {
   local: 'text-green-400',
@@ -224,6 +247,55 @@ function SubtaskRow({ subtask, onApprove, sessionId }: {
               <Unlock size={11} /> Approve &amp; Execute
             </button>
           )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PlanningDetailsPanel({ plan }: { plan: TaskPlan }) {
+  const show = plan.task_type && plan.task_type !== 'tiny_marker';
+  if (!show) return null;
+  const isPlanOnly = plan.task_type === 'planning_only';
+  return (
+    <div className="rounded-lg border p-3 space-y-2 text-xs mb-2" style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}>
+      <div className="flex items-center gap-2 font-medium" style={{ color: 'var(--color-text-primary)' }}>
+        <Layers size={12} />
+        <span>Planning Details</span>
+        {isPlanOnly && (
+          <span className="ml-auto text-cyan-400 font-medium">⚠ Plan Only — no writes until approved</span>
+        )}
+      </div>
+      {(plan.likely_files?.length ?? 0) > 0 && (
+        <div>
+          <div className="text-xs font-medium mb-0.5" style={{ color: 'var(--color-text-secondary)' }}>Likely Files</div>
+          {plan.likely_files!.map((f) => (
+            <div key={f} className="font-mono text-blue-400 text-xs">{f}</div>
+          ))}
+        </div>
+      )}
+      {(plan.risks?.length ?? 0) > 0 && (
+        <div>
+          <div className="text-xs font-medium mb-0.5 text-yellow-400">Risks</div>
+          {plan.risks!.map((r) => (
+            <div key={r} className="text-yellow-300 text-xs">{r}</div>
+          ))}
+        </div>
+      )}
+      {(plan.validation_commands?.length ?? 0) > 0 && (
+        <div>
+          <div className="text-xs font-medium mb-0.5 text-green-400">Validation Commands</div>
+          {plan.validation_commands!.map((c) => (
+            <div key={c} className="font-mono text-green-300 text-xs">{c}</div>
+          ))}
+        </div>
+      )}
+      {(plan.approval_gates?.length ?? 0) > 0 && (
+        <div>
+          <div className="text-xs font-medium mb-0.5" style={{ color: 'var(--color-text-secondary)' }}>Approval Gates</div>
+          {plan.approval_gates!.map((g) => (
+            <div key={g} className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>{g}</div>
+          ))}
         </div>
       )}
     </div>
@@ -628,6 +700,14 @@ export function WorkbenchPage() {
               <span className={`font-mono font-bold ${statusColor}`}>{plan.status.toUpperCase()}</span>
               <span style={{ color: 'var(--color-text-secondary)' }}>Session: <code className="text-blue-300">{plan.session_id}</code></span>
               <span style={{ color: 'var(--color-text-secondary)' }}>Task: <code className="text-blue-300">{plan.task_id}</code></span>
+              {plan.task_type && (
+                <span
+                  className={`px-2 py-0.5 rounded font-mono text-xs ${TASK_TYPE_COLORS[plan.task_type] ?? 'text-gray-400'}`}
+                  style={{ background: 'var(--color-bg-tertiary)' }}
+                >
+                  {TASK_TYPE_LABELS[plan.task_type] ?? plan.task_type}
+                </span>
+              )}
               <span className="ml-auto font-mono" style={{ color: 'var(--color-text-secondary)' }}>
                 {formatCost(plan.total_cost_usd)}
               </span>
@@ -675,6 +755,7 @@ export function WorkbenchPage() {
                 )}
                 {plan && (
                   <div className="space-y-1.5">
+                    <PlanningDetailsPanel plan={plan} />
                     <div className="text-xs font-medium mb-2 flex items-center gap-2" style={{ color: 'var(--color-text-secondary)' }}>
                       <Cpu size={12} />
                       {plan.subtasks.length} subtasks &bull; routed by Jarvis Manager
