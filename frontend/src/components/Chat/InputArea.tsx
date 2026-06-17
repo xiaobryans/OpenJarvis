@@ -1,12 +1,16 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { Send, Square, Paperclip, Search } from 'lucide-react';
+import { useNavigate } from 'react-router';
+import { Send, Square, Paperclip, Search, Code2, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAppStore, generateId } from '../../lib/store';
 import { streamChat, streamResearch } from '../../lib/sse';
-import { fetchSavings, getBase } from '../../lib/api';
+import { apiFetch, fetchSavings, getBase } from '../../lib/api';
 import { listConnectors, getSyncStatus } from '../../lib/connectors-api';
 import { MicButton } from './MicButton';
 import { useSpeech } from '../../hooks/useSpeech';
+const WORKBENCH_FRONTDOOR_KEY = 'openjarvis-workbench-frontdoor';
+const DEFAULT_WORKBENCH_REPO = '/Users/user/OpenJarvis';
+
 import type {
   ChatMessage,
   MessageTelemetry,
@@ -96,6 +100,8 @@ export function InputArea() {
   const deepResearch = useAppStore((s) => s.deepResearch);
   const setDeepResearch = useAppStore((s) => s.setDeepResearch);
   const corpusSync = useResearchCorpusSync(deepResearch);
+  const navigate = useNavigate();
+  const [workbenchPlanning, setWorkbenchPlanning] = useState(false);
 
   const { state: speechState, available: speechAvailable, startRecording, stopRecording } = useSpeech();
 
@@ -523,6 +529,49 @@ export function InputArea() {
     maxTokens,
   ]);
 
+  const planInWorkbench = useCallback(async () => {
+    const content = input.trim();
+    if (!content || streamState.isStreaming || workbenchPlanning) return;
+
+    setWorkbenchPlanning(true);
+    try {
+      const res = await apiFetch('/v1/workbench/plan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt: content,
+          repo_path: DEFAULT_WORKBENCH_REPO,
+          dry_run: true,
+          stop_on_blocker: true,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok || !data.plan) {
+        throw new Error(data?.detail ?? `Workbench plan failed (${res.status})`);
+      }
+
+      window.localStorage.setItem(
+        WORKBENCH_FRONTDOOR_KEY,
+        JSON.stringify({
+          prompt: content,
+          repoPath: DEFAULT_WORKBENCH_REPO,
+          dryRun: true,
+          stopOnBlocker: true,
+          plan: data.plan,
+          createdAt: Date.now(),
+        }),
+      );
+
+      toast.success('Workbench plan created');
+      navigate('/workbench');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Workbench plan failed';
+      toast.error(message);
+    } finally {
+      setWorkbenchPlanning(false);
+    }
+  }, [input, navigate, streamState.isStreaming, workbenchPlanning]);
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -594,6 +643,20 @@ export function InputArea() {
           </button>
         ) : (
           <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={planInWorkbench}
+              disabled={!input.trim() || streamState.isStreaming || workbenchPlanning}
+              title="Create a dry-run Workbench plan from this prompt"
+              className="p-2 rounded-xl transition-colors shrink-0 cursor-pointer disabled:opacity-30 disabled:cursor-default"
+              style={{
+                background: input.trim() ? 'var(--color-bg-secondary)' : 'var(--color-bg-tertiary)',
+                border: '1px solid var(--color-border)',
+                color: input.trim() ? 'var(--color-accent)' : 'var(--color-text-tertiary)',
+              }}
+            >
+              {workbenchPlanning ? <Loader2 size={16} className="animate-spin" /> : <Code2 size={16} />}
+            </button>
             <MicButton
               state={speechState}
               onClick={handleMicClick}

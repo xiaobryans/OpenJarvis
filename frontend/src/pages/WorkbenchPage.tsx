@@ -71,6 +71,17 @@ interface TaskPlan {
   total_cost_usd: number;
 }
 
+const WORKBENCH_FRONTDOOR_KEY = 'openjarvis-workbench-frontdoor';
+
+interface WorkbenchFrontdoorPayload {
+  prompt?: string;
+  repoPath?: string;
+  dryRun?: boolean;
+  stopOnBlocker?: boolean;
+  plan?: TaskPlan;
+  createdAt?: number;
+}
+
 interface RepoStatus {
   ok: boolean;
   repo_path: string;
@@ -448,6 +459,27 @@ export function WorkbenchPage() {
   const [doctorLoaded, setDoctorLoaded] = useState(false);
 
   const promptRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    const raw = window.localStorage.getItem(WORKBENCH_FRONTDOOR_KEY);
+    if (!raw) return;
+
+    try {
+      const payload = JSON.parse(raw) as WorkbenchFrontdoorPayload;
+      if (typeof payload.prompt === 'string') setPrompt(payload.prompt);
+      if (typeof payload.repoPath === 'string') setRepoPath(payload.repoPath);
+      if (typeof payload.dryRun === 'boolean') setDryRun(payload.dryRun);
+      if (typeof payload.stopOnBlocker === 'boolean') setStopOnBlocker(payload.stopOnBlocker);
+      if (payload.plan && typeof payload.plan.session_id === 'string') {
+        setPlan(payload.plan);
+        setActiveTab('subtasks');
+      }
+    } catch {
+      // Ignore malformed local handoff payloads.
+    } finally {
+      window.localStorage.removeItem(WORKBENCH_FRONTDOOR_KEY);
+    }
+  }, []);
 
   // Run doctor on mount
   useEffect(() => {
