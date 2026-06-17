@@ -335,7 +335,7 @@ class CodingManager:
             description="Run validation / tests",
             tool_id="shell_exec",
             params={
-                "command": "( .venv/bin/pytest tests/workbench/ -x -q --tb=short 2>&1 || pytest tests/workbench/ -x -q --tb=short 2>&1 || echo 'No pytest found' ) | head -50",
+                "command": "( .venv/bin/python3 -m pytest tests/workbench/ -x -q --tb=short 2>&1 || python3 -m pytest tests/workbench/ -x -q --tb=short 2>&1 || echo 'No pytest found' ) | head -50",
                 "working_dir": repo_path,
                 "timeout": 60,
             },
