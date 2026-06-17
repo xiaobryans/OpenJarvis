@@ -72,6 +72,7 @@ class CertificationItem:
     visibility: str
     evidence: str
     hold_reason: Optional[str] = None
+    required_for_v1: bool = True
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -81,6 +82,7 @@ class CertificationItem:
             "visibility": self.visibility,
             "evidence": self.evidence,
             "hold_reason": self.hold_reason,
+            "required_for_v1": self.required_for_v1,
         }
 
 
@@ -111,14 +113,16 @@ class CertificationMatrix:
     evaluated_at: float = field(default_factory=time.time)
 
     def verdict(self) -> str:
-        """Return hold if any UI-visible item is hold or insufficient_data, else certified.
+        """Return hold if any required_for_v1=True item has hold or insufficient_data status.
 
-        V1 daily-driver certification: only ui_visible items gate the verdict.
-        backend_only items with hold status are tracked in get_hold_blockers() but
-        do not block daily-driver certification.
+        V1 daily-driver certification gates on ALL required_for_v1=True items regardless
+        of visibility.  A required item may be certified (ui_visible + check PASS) or
+        backend_only (backend PASS, not yet surfaced in UI) — both are acceptable.
+        HOLD or INSUFFICIENT_DATA on any required item blocks the daily-driver verdict.
+        Non-required items (meta/audit areas) never gate the verdict.
         """
         for item in self.items:
-            if item.visibility == CertificationVisibility.UI_VISIBLE:
+            if item.required_for_v1:
                 if item.status in (
                     CertificationStatus.HOLD,
                     CertificationStatus.INSUFFICIENT_DATA,
@@ -148,7 +152,11 @@ class CertificationMatrix:
             and i.status == CertificationStatus.CERTIFIED
         ]
 
+    def get_required_for_v1(self) -> List[CertificationItem]:
+        return [i for i in self.items if i.required_for_v1]
+
     def to_dict(self) -> Dict[str, Any]:
+        required = self.get_required_for_v1()
         return {
             "head": self.head,
             "project_id": self.project_id,
@@ -159,6 +167,18 @@ class CertificationMatrix:
             "hold_blockers": [i.to_dict() for i in self.get_hold_blockers()],
             "backend_only": [i.to_dict() for i in self.get_backend_only()],
             "ui_visible": [i.to_dict() for i in self.get_ui_visible()],
+            "required_for_v1_total": len(required),
+            "required_for_v1_certified": len(
+                [i for i in required if i.status == CertificationStatus.CERTIFIED]
+            ),
+            "required_for_v1_backend_only": len(
+                [i for i in required if i.status == CertificationStatus.BACKEND_ONLY]
+            ),
+            "required_for_v1_hold": len(
+                [i for i in required if i.status in (
+                    CertificationStatus.HOLD, CertificationStatus.INSUFFICIENT_DATA
+                )]
+            ),
         }
 
 
@@ -391,21 +411,23 @@ def build_certification_matrix(
             name="Queue / retry / stalled-job visibility",
             area="queue_retry_stalled_job_visibility",
             status=CertificationStatus.INSUFFICIENT_DATA,
-            visibility=CertificationVisibility.BACKEND_ONLY,
+            visibility=CertificationVisibility.UI_VISIBLE,
             evidence=INSUFFICIENT_DATA_MSG,
             hold_reason="job_queue check missing",
+            required_for_v1=True,
         ))
     else:
-        cert_status = _status_from_check(queue_check.status, CertificationVisibility.BACKEND_ONLY)
+        cert_status = _status_from_check(queue_check.status, CertificationVisibility.UI_VISIBLE)
         items.append(CertificationItem(
             name="Queue / retry / stalled-job visibility",
             area="queue_retry_stalled_job_visibility",
             status=cert_status,
-            visibility=CertificationVisibility.BACKEND_ONLY,
+            visibility=CertificationVisibility.UI_VISIBLE,
             evidence=(
                 f"job_queue={queue_check.status}: {queue_check.summary}; "
-                f"backend-only: no queue panel in app UI"
+                f"UI: Mission Control system health panel (/v1/system/health queue.status)"
             ),
+            required_for_v1=True,
         ))
 
     # --- 6. Alert limiting / escalation ---
@@ -416,23 +438,25 @@ def build_certification_matrix(
             name="Alert limiting / escalation",
             area="alert_limiting_escalation",
             status=CertificationStatus.INSUFFICIENT_DATA,
-            visibility=CertificationVisibility.BACKEND_ONLY,
+            visibility=CertificationVisibility.UI_VISIBLE,
             evidence=INSUFFICIENT_DATA_MSG,
             hold_reason="alert_rate_limiter check missing",
+            required_for_v1=True,
         ))
     else:
         as_status = alert_status_check.status if alert_status_check else "missing"
-        cert_status = _status_from_check(alert_check.status, CertificationVisibility.BACKEND_ONLY)
+        cert_status = _status_from_check(alert_check.status, CertificationVisibility.UI_VISIBLE)
         items.append(CertificationItem(
             name="Alert limiting / escalation",
             area="alert_limiting_escalation",
             status=cert_status,
-            visibility=CertificationVisibility.BACKEND_ONLY,
+            visibility=CertificationVisibility.UI_VISIBLE,
             evidence=(
                 f"alert_rate_limiter={alert_check.status}: {alert_check.summary}; "
                 f"alert_status={as_status}; "
-                f"backend-only: no alert panel in app UI"
+                f"UI: Mission Control system health panel (/v1/system/health alert.status)"
             ),
+            required_for_v1=True,
         ))
 
     # --- 7. Memory / context behavior ---
@@ -443,23 +467,25 @@ def build_certification_matrix(
             name="Memory / context behavior",
             area="memory_context_behavior",
             status=CertificationStatus.INSUFFICIENT_DATA,
-            visibility=CertificationVisibility.BACKEND_ONLY,
+            visibility=CertificationVisibility.UI_VISIBLE,
             evidence=INSUFFICIENT_DATA_MSG,
             hold_reason="memory_store_health check missing",
+            required_for_v1=True,
         ))
     else:
         mb_status = mem_backup_check.status if mem_backup_check else "missing"
-        cert_status = _status_from_check(mem_check.status, CertificationVisibility.BACKEND_ONLY)
+        cert_status = _status_from_check(mem_check.status, CertificationVisibility.UI_VISIBLE)
         items.append(CertificationItem(
             name="Memory / context behavior",
             area="memory_context_behavior",
             status=cert_status,
-            visibility=CertificationVisibility.BACKEND_ONLY,
+            visibility=CertificationVisibility.UI_VISIBLE,
             evidence=(
                 f"memory_store={mem_check.status}: {mem_check.summary}; "
                 f"memory_backup={mb_status}; "
-                f"backend-only: no memory browser in app UI"
+                f"UI: Mission Control system health panel (/v1/system/health memory.status)"
             ),
+            required_for_v1=True,
         ))
 
     # --- 8. Trust / evidence layer ---
@@ -469,21 +495,23 @@ def build_certification_matrix(
             name="Trust / evidence layer",
             area="trust_evidence_layer",
             status=CertificationStatus.INSUFFICIENT_DATA,
-            visibility=CertificationVisibility.BACKEND_ONLY,
+            visibility=CertificationVisibility.UI_VISIBLE,
             evidence=INSUFFICIENT_DATA_MSG,
             hold_reason="trust_layer check missing",
+            required_for_v1=True,
         ))
     else:
-        cert_status = _status_from_check(trust_check.status, CertificationVisibility.BACKEND_ONLY)
+        cert_status = _status_from_check(trust_check.status, CertificationVisibility.UI_VISIBLE)
         items.append(CertificationItem(
             name="Trust / evidence layer",
             area="trust_evidence_layer",
             status=cert_status,
-            visibility=CertificationVisibility.BACKEND_ONLY,
+            visibility=CertificationVisibility.UI_VISIBLE,
             evidence=(
                 f"trust_layer={trust_check.status}: {trust_check.summary}; "
-                f"backend-only: no trust panel in app UI"
+                f"UI: Mission Control system health panel (/v1/system/health trust.status)"
             ),
+            required_for_v1=True,
         ))
 
     # --- 9. Action approval / risk clarity ---
@@ -552,16 +580,18 @@ def build_certification_matrix(
             items.append(CertificationItem(
                 name="Degraded / blocked / insufficient-data behavior",
                 area="degraded_blocked_insufficient_data_behavior",
-                status=CertificationStatus.BACKEND_ONLY,
-                visibility=CertificationVisibility.BACKEND_ONLY,
+                status=CertificationStatus.CERTIFIED,
+                visibility=CertificationVisibility.UI_VISIBLE,
                 evidence=(
                     f"inject_guard={inject_check.status}; "
                     f"rollback_policy={rollback_check.status}; "
                     f"budget_guard={budget_check.status}; "
+                    f"UI: Mission Control system health panel (/v1/system/health degraded.status); "
                     f"degraded connectors return not_configured/warn; "
                     f"blocked actions return hard_gate outcome; "
                     f"missing evidence returns INSUFFICIENT_DATA_MSG (this module)"
                 ),
+                required_for_v1=True,
             ))
         else:
             failed_ids = [
@@ -573,12 +603,13 @@ def build_certification_matrix(
                 name="Degraded / blocked / insufficient-data behavior",
                 area="degraded_blocked_insufficient_data_behavior",
                 status=CertificationStatus.HOLD,
-                visibility=CertificationVisibility.BACKEND_ONLY,
+                visibility=CertificationVisibility.UI_VISIBLE,
                 evidence=f"failed checks: {failed_ids}",
                 hold_reason="hardening layer check failed",
+                required_for_v1=True,
             ))
 
-    # --- 11. Backend-only vs UI-visible capabilities ---
+    # --- 11. Backend-only vs UI-visible capabilities (meta audit — not required for V1 gate) ---
     packaged_check = _find_check(check_map, "packaged_app_build_metadata")
     if packaged_check is None:
         items.append(CertificationItem(
@@ -588,6 +619,7 @@ def build_certification_matrix(
             visibility=CertificationVisibility.BACKEND_ONLY,
             evidence=INSUFFICIENT_DATA_MSG,
             hold_reason="packaged_app_build_metadata check missing",
+            required_for_v1=False,
         ))
     else:
         items.append(CertificationItem(
@@ -597,14 +629,14 @@ def build_certification_matrix(
             visibility=CertificationVisibility.BACKEND_ONLY,
             evidence=(
                 f"packaged_app={packaged_check.status}: {packaged_check.summary}; "
-                f"UI-visible: Chat, Dashboard, Mission Control (missions/tasks/approvals/agents/notify); "
-                f"backend-only: US9-US13 capabilities (secrets, budget, queue, rollback, "
-                f"inject-guard, voice-identity, connector-monitor, alert-limiter, "
-                f"memory-backup, dogfood, runtime-lifecycle, trust, certification)"
+                f"UI-visible: Chat, Dashboard, Mission Control (missions/tasks/approvals/agents/notify/system-health); "
+                f"backend-only: secrets, voice-identity, connector-monitor, "
+                f"memory-backup, dogfood, runtime-lifecycle, certification"
             ),
+            required_for_v1=False,
         ))
 
-    # --- 12. Remaining HOLD blockers ---
+    # --- 12. Remaining HOLD blockers (meta tracking — not required for V1 gate) ---
     linkage_check = _find_check(check_map, "project_linkage_status")
     if linkage_check is None:
         items.append(CertificationItem(
@@ -614,6 +646,7 @@ def build_certification_matrix(
             visibility=CertificationVisibility.BACKEND_ONLY,
             evidence=INSUFFICIENT_DATA_MSG,
             hold_reason="project_linkage_status check missing",
+            required_for_v1=False,
         ))
     else:
         if linkage_check.status == CheckStatus.FAIL:
@@ -628,6 +661,7 @@ def build_certification_matrix(
                     f"real OMNIX source not configured"
                 ),
                 hold_reason="project_linkage FAIL: OMNIX placeholder not resolved",
+                required_for_v1=False,
             ))
         else:
             items.append(CertificationItem(
@@ -636,6 +670,7 @@ def build_certification_matrix(
                 status=CertificationStatus.BACKEND_ONLY,
                 visibility=CertificationVisibility.BACKEND_ONLY,
                 evidence=f"project_linkage={linkage_check.status}: {linkage_check.summary}",
+                required_for_v1=False,
             ))
 
     # --- Failure-mode certification ---

@@ -713,6 +713,8 @@ export function MissionControlPage() {
                 { key: 'queue',      label: 'Queue',      val: sysHealth.queue?.status },
                 { key: 'memory',     label: 'Memory',     val: sysHealth.memory?.status },
                 { key: 'trust',      label: 'Trust',      val: sysHealth.trust?.status },
+                { key: 'alert',      label: 'Alerts',     val: sysHealth.alert?.status },
+                { key: 'degraded',   label: 'Hardening',  val: sysHealth.degraded?.status },
               ] as { key: string; label: string; val?: string }[]).map(({ label, val }, i) => {
                 const v = (val ?? 'unknown').toLowerCase();
                 const color =

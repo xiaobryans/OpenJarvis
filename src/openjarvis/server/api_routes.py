@@ -948,6 +948,35 @@ async def system_health() -> dict:
     except Exception as exc:
         result["trust"] = {"status": "error", "detail": str(exc)}
 
+    # Alert rate-limiter
+    try:
+        from openjarvis.doctor.checks import check_alert_rate_limiter
+        al = check_alert_rate_limiter()
+        result["alert"] = {
+            "status": al.status,
+            "detail": al.summary,
+        }
+    except Exception as exc:
+        result["alert"] = {"status": "error", "detail": str(exc)}
+
+    # Degraded / blocked / hardening
+    try:
+        from openjarvis.doctor.checks import (
+            check_inject_guard, check_rollback_policy, check_budget_guard,
+        )
+        ig = check_inject_guard()
+        rp = check_rollback_policy()
+        bg = check_budget_guard()
+        all_pass = all(c.status == "pass" for c in [ig, rp, bg])
+        result["degraded"] = {
+            "status": "pass" if all_pass else "warn",
+            "inject_guard": ig.status,
+            "rollback_policy": rp.status,
+            "budget_guard": bg.status,
+        }
+    except Exception as exc:
+        result["degraded"] = {"status": "error", "detail": str(exc)}
+
     # Runtime / backend
     try:
         from openjarvis.doctor.checks import check_backend_health
@@ -965,10 +994,21 @@ async def system_health() -> dict:
         from openjarvis.doctor.checks import run_all_checks
         checks = run_all_checks()
         matrix = build_certification_matrix(check_results=checks)
+        required = matrix.get_required_for_v1()
         result["certification"] = {
             "verdict": matrix.verdict(),
-            "ui_visible_certified": len(matrix.get_ui_visible()),
-            "backend_only_count": len(matrix.get_backend_only()),
+            "required_for_v1_total": len(required),
+            "required_for_v1_certified": len(
+                [i for i in required if i.status == "certified"]
+            ),
+            "required_for_v1_backend_only": len(
+                [i for i in required if i.status == "backend_only"]
+            ),
+            "required_for_v1_hold": len(
+                [i for i in required
+                 if i.status in ("hold", "insufficient_data_to_verify")]
+            ),
+            "non_required_backend_only": len(matrix.get_backend_only()),
             "hold_blockers": len(matrix.get_hold_blockers()),
         }
     except Exception as exc:

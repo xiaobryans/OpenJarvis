@@ -220,7 +220,7 @@ class TestCertificationMatrixVerdict:
         matrix = CertificationMatrix(head="abc123", project_id="omnix", items=items, failure_modes=[])
         assert matrix.verdict() == "hold"
 
-    def test_backend_only_hold_does_not_block_daily_driver_verdict(self):
+    def test_non_required_hold_does_not_block_daily_driver_verdict(self):
         from openjarvis.doctor.certification import (
             CertificationItem, CertificationMatrix,
             CertificationStatus, CertificationVisibility,
@@ -231,17 +231,44 @@ class TestCertificationMatrixVerdict:
                 status=CertificationStatus.CERTIFIED,
                 visibility=CertificationVisibility.UI_VISIBLE,
                 evidence="ok",
+                required_for_v1=True,
             ),
             CertificationItem(
-                name="backend_hold", area="backend_area",
+                name="meta_hold", area="meta_area",
                 status=CertificationStatus.HOLD,
                 visibility=CertificationVisibility.BACKEND_ONLY,
                 evidence="check failed",
-                hold_reason="backend only failure",
+                hold_reason="meta failure — not required for V1 gate",
+                required_for_v1=False,
             ),
         ]
         matrix = CertificationMatrix(head="abc123", project_id="omnix", items=items, failure_modes=[])
         assert matrix.verdict() == "certified"
+
+    def test_required_backend_only_hold_blocks_verdict(self):
+        from openjarvis.doctor.certification import (
+            CertificationItem, CertificationMatrix,
+            CertificationStatus, CertificationVisibility,
+        )
+        items = [
+            CertificationItem(
+                name="ok", area="ok_area",
+                status=CertificationStatus.CERTIFIED,
+                visibility=CertificationVisibility.UI_VISIBLE,
+                evidence="ok",
+                required_for_v1=True,
+            ),
+            CertificationItem(
+                name="required_hold", area="required_area",
+                status=CertificationStatus.HOLD,
+                visibility=CertificationVisibility.BACKEND_ONLY,
+                evidence="check failed",
+                hold_reason="required capability failed",
+                required_for_v1=True,
+            ),
+        ]
+        matrix = CertificationMatrix(head="abc123", project_id="omnix", items=items, failure_modes=[])
+        assert matrix.verdict() == "hold"
 
     def test_hold_when_ui_visible_item_insufficient_data(self):
         from openjarvis.doctor.certification import (
@@ -446,10 +473,10 @@ class TestBackendOnlyVsUIVisible:
         items = {i.area: i for i in shared_matrix.items}
         assert items["connector_health"].visibility == CertificationVisibility.UI_VISIBLE
 
-    def test_trust_layer_is_backend_only(self, shared_matrix):
+    def test_trust_layer_is_ui_visible(self, shared_matrix):
         from openjarvis.doctor.certification import CertificationVisibility
         items = {i.area: i for i in shared_matrix.items}
-        assert items["trust_evidence_layer"].visibility == CertificationVisibility.BACKEND_ONLY
+        assert items["trust_evidence_layer"].visibility == CertificationVisibility.UI_VISIBLE
 
     def test_get_backend_only_nonempty(self, shared_matrix):
         assert len(shared_matrix.get_backend_only()) > 0
