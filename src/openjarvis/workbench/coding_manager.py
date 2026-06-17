@@ -155,6 +155,11 @@ _FILE_HINTS = {
     "governance": "src/openjarvis/governance/constitution.py",
     "policies": "src/openjarvis/governance/policies.py",
     # ---- Model routing / provider / cost ----
+    "routing": "src/openjarvis/workbench/model_router.py",
+    "model routing": "src/openjarvis/workbench/model_router.py",
+    "model router": "src/openjarvis/workbench/model_router.py",
+    "ledger": "src/openjarvis/workbench/cost_ledger.py",
+    "cost ledger": "src/openjarvis/workbench/cost_ledger.py",
     "cost_calculator": "src/openjarvis/server/cost_calculator.py",
     "cost calculator": "src/openjarvis/server/cost_calculator.py",
     "model catalog": "src/openjarvis/intelligence/model_catalog.py",

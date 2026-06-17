@@ -419,19 +419,22 @@ class TestUS14A1LikelyFiles:
             f"Expected approval/governance files in likely_files, got: {plan.likely_files}"
         )
 
-    def test_model_routing_prompt_returns_router_or_ledger(self, mgr):
-        """Model routing/provider prompt must return model_router or cost_ledger files."""
+    def test_model_routing_prompt_returns_router_and_ledger(self, mgr):
+        """Model routing prompt must return model_router, cost_ledger, and model_catalog."""
         plan = mgr.plan(
             "Investigate model routing provider cost ledger decisions",
             dry_run=True,
         )
-        assert len(plan.likely_files) > 0
-        routing_files = [
-            f for f in plan.likely_files
-            if any(kw in f for kw in ("model_router", "cost_ledger", "model_catalog", "cost_calculator"))
-        ]
-        assert len(routing_files) > 0, (
-            f"Expected model_router/cost files in likely_files, got: {plan.likely_files}"
+        assert len(plan.likely_files) > 0, f"likely_files must not be empty"
+        lf = plan.likely_files
+        assert any("model_router" in f for f in lf), (
+            f"Expected model_router.py in likely_files, got: {lf}"
+        )
+        assert any("cost_ledger" in f for f in lf), (
+            f"Expected cost_ledger.py in likely_files, got: {lf}"
+        )
+        assert any("model_catalog" in f for f in lf), (
+            f"Expected model_catalog.py in likely_files, got: {lf}"
         )
 
     def test_complex_impl_prompt_likely_files_non_empty(self, mgr):
