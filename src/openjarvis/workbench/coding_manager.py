@@ -335,7 +335,7 @@ class CodingManager:
             description="Run validation / tests",
             tool_id="shell_exec",
             params={
-                "command": "PYTEST=$(command -v .venv/bin/pytest 2>/dev/null || command -v pytest 2>/dev/null || echo python3 -m pytest); $PYTEST tests/workbench/ -x -q --tb=short 2>&1 | head -50 || echo 'No pytest found'",
+                "command": "( .venv/bin/pytest tests/workbench/ -x -q --tb=short 2>&1 || pytest tests/workbench/ -x -q --tb=short 2>&1 || echo 'No pytest found' ) | head -50",
                 "working_dir": repo_path,
                 "timeout": 60,
             },
@@ -434,15 +434,17 @@ class CodingManager:
 
     def _infer_file_change(self, prompt: str, repo_path: str) -> tuple[str, str]:
         """Infer a file path and content from the prompt (heuristic fallback)."""
+        import time as _time
+        _ts = _time.strftime("%Y%m%dT%H%M%S")
         prompt_lower = prompt.lower()
         if "fixture" in prompt_lower or "self-test" in prompt_lower or "marker" in prompt_lower:
             file_path = str(Path(repo_path) / "tests" / "workbench" / "test_us14a_fixture.py")
             content = (
                 '"""US14A self-test fixture — added by Jarvis Coding Workbench."""\n\n'
-                "US14A_MARKER = \"Jarvis Coding Workbench E2E proof\"\n\n\n"
+                f"US14A_MARKER = \"Jarvis Coding Workbench E2E proof {_ts}\"\n\n\n"
                 "def test_us14a_marker():\n"
                 '    """Verify US14A marker is present."""\n'
-                "    assert US14A_MARKER == \"Jarvis Coding Workbench E2E proof\"\n"
+                "    assert US14A_MARKER.startswith(\"Jarvis Coding Workbench E2E proof\")\n"
             )
             return file_path, content
         if "readme" in prompt_lower:
