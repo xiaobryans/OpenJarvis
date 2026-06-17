@@ -274,6 +274,17 @@ _EXPLICIT_BULLET_RE = re.compile(
     r'(?:^|\n)[ \t]*[-*]\s+([^\s`\n\[\](){}]+\.[a-zA-Z0-9]{1,8})[ \t]*(?=\n|$)'
 )
 
+# Explicit implementation file blocks.
+#
+# Format:
+#   <<<OPENJARVIS_FILE:relative/path.py
+#   ...complete file content...
+#   OPENJARVIS_FILE
+_EXPLICIT_FILE_BLOCK_RE = re.compile(
+    r'<<<OPENJARVIS_FILE:([^\n\r]+)\r?\n(.*?)\r?\nOPENJARVIS_FILE',
+    re.DOTALL,
+)
+
 
 def _is_safe_repo_relative(fpath: str) -> bool:
     """Return True only if fpath is a safe repo-relative file path.
@@ -316,6 +327,30 @@ def _extract_explicit_files(prompt: str) -> List[str]:
         if _is_safe_repo_relative(fpath) and fpath not in seen:
             seen.add(fpath)
             results.append(fpath)
+
+    return results
+
+
+def _extract_explicit_file_blocks(prompt: str) -> List[Dict[str, str]]:
+    """Extract explicit file-write blocks from a prompt.
+
+    Workbench writes only the exact content supplied in explicit
+    OPENJARVIS_FILE blocks, to safe repo-relative paths.
+    """
+    results: List[Dict[str, str]] = []
+    seen: set = set()
+
+    for match in _EXPLICIT_FILE_BLOCK_RE.finditer(prompt):
+        fpath = match.group(1).strip()
+        content = match.group(2)
+
+        if not _is_safe_repo_relative(fpath):
+            continue
+        if fpath in seen:
+            continue
+
+        seen.add(fpath)
+        results.append({"path": fpath, "content": content})
 
     return results
 
@@ -737,6 +772,43 @@ class CodingManager:
                 terms.append(w)
         return terms[:5]
 
+    def _append_explicit_file_write_subtasks(
+        self,
+        subtasks: List[Subtask],
+        idx: int,
+        task_id: str,
+        repo_path: str,
+        session_id: str,
+        prompt: str,
+    ) -> int:
+        """Append file_write subtasks for explicit OPENJARVIS_FILE blocks only."""
+        repo_base = Path(repo_path).resolve()
+
+        for block in _extract_explicit_file_blocks(prompt):
+            rel_path = block["path"]
+            full_path = (repo_base / rel_path).resolve()
+
+            try:
+                full_path.relative_to(repo_base)
+            except ValueError:
+                continue
+
+            subtasks.append(self._make_subtask(
+                idx,
+                task_id,
+                f"Apply explicit file block: {rel_path}",
+                "file_write",
+                {
+                    "path": str(full_path),
+                    "content": block["content"],
+                    "create_dirs": True,
+                },
+                session_id=session_id,
+            ))
+            idx += 1
+
+        return idx
+
     def _decompose_planning_only(
         self, prompt: str, task_id: str, repo_path: str, session_id: str = ""
     ) -> List[Subtask]:
@@ -799,6 +871,18 @@ class CodingManager:
                 idx, task_id, f"Discover: read {fpath}",
                 "file_read", {"path": str(Path(repo_path) / fpath)},
                 session_id=session_id)); idx += 1
+
+        before_writes = idx
+        idx = self._append_explicit_file_write_subtasks(
+            subtasks, idx, task_id, repo_path, session_id, prompt
+        )
+
+        if idx > before_writes:
+            subtasks.append(self._make_subtask(
+                idx, task_id, "Generate post-change diff preview",
+                "git_diff", {"repo_path": repo_path},
+                session_id=session_id)); idx += 1
+
         return subtasks
 
     def _decompose_bug_fix(
@@ -829,6 +913,18 @@ class CodingManager:
                 idx, task_id, f"Read likely buggy file: {fpath}",
                 "file_read", {"path": str(Path(repo_path) / fpath)},
                 session_id=session_id)); idx += 1
+
+        before_writes = idx
+        idx = self._append_explicit_file_write_subtasks(
+            subtasks, idx, task_id, repo_path, session_id, prompt
+        )
+
+        if idx > before_writes:
+            subtasks.append(self._make_subtask(
+                idx, task_id, "Generate post-change diff preview",
+                "git_diff", {"repo_path": repo_path},
+                session_id=session_id)); idx += 1
+
         subtasks.append(self._make_subtask(
             idx, task_id, "Run validation / tests",
             "shell_exec", {

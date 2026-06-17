@@ -1529,3 +1529,91 @@ def test_us14a1_report_includes_implementation_evidence_section(tmp_path):
     assert "file_write subtasks:" in report
     assert "git diff has changes:" in report
     assert "validation status:" in report
+
+# ---------------------------------------------------------------------------
+# US14A.1 explicit file-block implementation capability
+# ---------------------------------------------------------------------------
+
+def test_us14a1_extract_explicit_file_blocks():
+    from openjarvis.workbench.coding_manager import _extract_explicit_file_blocks
+
+    prompt = """Fix this file.
+
+<<<OPENJARVIS_FILE:tests/workbench/generated_example.py
+VALUE = 42
+
+def test_value():
+    assert VALUE == 42
+OPENJARVIS_FILE
+"""
+    blocks = _extract_explicit_file_blocks(prompt)
+
+    assert blocks == [
+        {
+            "path": "tests/workbench/generated_example.py",
+            "content": "VALUE = 42\n\ndef test_value():\n    assert VALUE == 42",
+        }
+    ]
+
+
+def test_us14a1_explicit_file_block_adds_file_write_for_bug_fix(mgr):
+    prompt = """Fix generated module by applying the explicit file block.
+
+<<<OPENJARVIS_FILE:tests/workbench/generated_bug_fix.py
+VALUE = "bug-fix"
+
+def test_value():
+    assert VALUE == "bug-fix"
+OPENJARVIS_FILE
+"""
+    plan = mgr.plan(prompt, dry_run=False)
+
+    assert plan.task_type == "bug_fix"
+    writes = [s for s in plan.subtasks if s.tool_id == "file_write"]
+    assert len(writes) == 1
+    assert writes[0].params["path"].endswith("tests/workbench/generated_bug_fix.py")
+    assert 'VALUE = "bug-fix"' in writes[0].params["content"]
+
+
+def test_us14a1_explicit_file_block_adds_file_write_for_complex_implementation(mgr):
+    prompt = """Implement generated module by applying the explicit file block.
+
+<<<OPENJARVIS_FILE:tests/workbench/generated_complex_impl.py
+VALUE = "complex"
+
+def test_value():
+    assert VALUE == "complex"
+OPENJARVIS_FILE
+"""
+    plan = mgr.plan(prompt, dry_run=False)
+
+    assert plan.task_type == "complex_implementation"
+    writes = [s for s in plan.subtasks if s.tool_id == "file_write"]
+    assert len(writes) == 1
+    assert writes[0].params["path"].endswith("tests/workbench/generated_complex_impl.py")
+    assert 'VALUE = "complex"' in writes[0].params["content"]
+
+
+def test_us14a1_plan_only_ignores_explicit_file_blocks(mgr):
+    prompt = """Plan only. Do not edit files.
+
+<<<OPENJARVIS_FILE:tests/workbench/should_not_write.py
+VALUE = "nope"
+OPENJARVIS_FILE
+"""
+    plan = mgr.plan(prompt, dry_run=False)
+
+    assert plan.task_type == "planning_only"
+    assert "file_write" not in [s.tool_id for s in plan.subtasks]
+
+
+def test_us14a1_rejects_unsafe_explicit_file_block_path(mgr):
+    prompt = """Fix generated module.
+
+<<<OPENJARVIS_FILE:../outside.py
+VALUE = "unsafe"
+OPENJARVIS_FILE
+"""
+    plan = mgr.plan(prompt, dry_run=False)
+
+    assert "file_write" not in [s.tool_id for s in plan.subtasks]
