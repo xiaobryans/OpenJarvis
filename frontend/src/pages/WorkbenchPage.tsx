@@ -428,6 +428,31 @@ function GovernancePanel({ plan, dryRun }: { plan: TaskPlan | null; dryRun: bool
   );
 }
 
+function ApprovalStatusPanel({ plan }: { plan: TaskPlan | null }) {
+  const subtasks = plan?.subtasks ?? [];
+  const required = subtasks.filter((s) => s.requires_approval).length;
+  const awaiting = subtasks.filter((s) => s.status === 'awaiting_approval').length;
+
+  return (
+    <div className="rounded-lg border p-3 space-y-2" style={{ borderColor: 'var(--color-border)', background: 'var(--color-bg-secondary)' }}>
+      <div className="flex items-center justify-between">
+        <div className="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>Approval Status</div>
+        <div className="text-[10px] uppercase tracking-wide" style={{ color: 'var(--color-text-tertiary)' }}>Manager gated</div>
+      </div>
+      <div className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+        {awaiting > 0
+          ? `${awaiting} subtask${awaiting === 1 ? '' : 's'} waiting for approval.`
+          : required > 0
+            ? `${required} approval-gated subtask${required === 1 ? '' : 's'} identified.`
+            : 'No approval-gated subtasks in the current plan.'}
+      </div>
+      <div className="text-[11px]" style={{ color: 'var(--color-text-tertiary)' }}>
+        Visibility only. This does not approve, execute, push, send, or enable autopilot.
+      </div>
+    </div>
+  );
+}
+
 function WorkbenchEventsPanel({ events }: { events: WorkbenchStatusEvent[] }) {
   const latest = events[0];
 
@@ -751,6 +776,7 @@ export function WorkbenchPage() {
 
           <RepoStatusPanel repoPath={repoPath} />
           <WorkbenchEventsPanel events={workbenchEvents} />
+          <ApprovalStatusPanel plan={plan} />
 
           {/* Mode toggles */}
           <div className="flex gap-2">
