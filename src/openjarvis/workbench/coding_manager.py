@@ -101,6 +101,7 @@ _DOCUMENTATION_KEYWORDS = frozenset({"readme", "changelog", "documentation"})
 _RESEARCH_KEYWORDS = frozenset({"investigate", "research", "explore", "audit", "survey"})
 
 _FILE_HINTS = {
+    # ---- Workbench core ----
     "coding_manager": "src/openjarvis/workbench/coding_manager.py",
     "workbench_routes": "src/openjarvis/server/workbench_routes.py",
     "workbench route": "src/openjarvis/server/workbench_routes.py",
@@ -112,6 +113,53 @@ _FILE_HINTS = {
     "cost_ledger": "src/openjarvis/workbench/cost_ledger.py",
     "constitution": "src/openjarvis/governance/constitution.py",
     "test_us14a": "tests/workbench/test_us14a.py",
+    # ---- PA Chat / chat message handling ----
+    "pa chat": "src/openjarvis/server/routes.py",
+    "chat-to-workbench": "src/openjarvis/server/workbench_routes.py",
+    "chat to workbench": "src/openjarvis/server/workbench_routes.py",
+    "chat completion": "src/openjarvis/server/routes.py",
+    "chat route": "src/openjarvis/server/routes.py",
+    "chat area": "frontend/src/components/Chat/ChatArea.tsx",
+    "chatarea": "frontend/src/components/Chat/ChatArea.tsx",
+    "input area": "frontend/src/components/Chat/InputArea.tsx",
+    # ---- Bridge ----
+    "bridge": "src/openjarvis/server/channel_bridge.py",
+    "channel_bridge": "src/openjarvis/server/channel_bridge.py",
+    "stream_bridge": "src/openjarvis/server/stream_bridge.py",
+    "ws_bridge": "src/openjarvis/server/ws_bridge.py",
+    # ---- Notifications ----
+    "notification": "src/openjarvis/server/notify_routes.py",
+    "notifier": "src/openjarvis/mission/notifier.py",
+    "notify_routes": "src/openjarvis/server/notify_routes.py",
+    "chat notification": "src/openjarvis/cli/_chat_notifications.py",
+    # ---- Approval queue ----
+    "approval": "src/openjarvis/tools/approval_store.py",
+    "approval_store": "src/openjarvis/tools/approval_store.py",
+    "approval_routes": "src/openjarvis/server/approval_routes.py",
+    "approval route": "src/openjarvis/server/approval_routes.py",
+    "approval bell": "frontend/src/components/ApprovalBell.tsx",
+    # ---- Slack notifications ----
+    "slack": "src/openjarvis/channels/slack.py",
+    "slack_daemon": "src/openjarvis/channels/slack_daemon.py",
+    "slack_connector": "src/openjarvis/connectors/slack_connector.py",
+    "slack connector": "src/openjarvis/connectors/slack_connector.py",
+    # ---- Telegram notifications ----
+    "telegram": "src/openjarvis/channels/telegram.py",
+    # ---- macOS/Tauri notifications ----
+    "tauri notification": "frontend/src/components/ApprovalBell.tsx",
+    "macos notification": "frontend/src/components/ApprovalBell.tsx",
+    # ---- Guarded autopilot / approval policy ----
+    "autopilot": "src/openjarvis/autonomy/automation_policy.py",
+    "automation_policy": "src/openjarvis/autonomy/automation_policy.py",
+    "guarded": "src/openjarvis/governance/constitution.py",
+    "governance": "src/openjarvis/governance/constitution.py",
+    "policies": "src/openjarvis/governance/policies.py",
+    # ---- Model routing / provider / cost ----
+    "cost_calculator": "src/openjarvis/server/cost_calculator.py",
+    "cost calculator": "src/openjarvis/server/cost_calculator.py",
+    "model catalog": "src/openjarvis/intelligence/model_catalog.py",
+    "model_catalog": "src/openjarvis/intelligence/model_catalog.py",
+    "provider": "src/openjarvis/intelligence/model_catalog.py",
 }
 
 

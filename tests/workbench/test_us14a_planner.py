@@ -348,3 +348,101 @@ class TestClassifyPrompt:
         from openjarvis.workbench.coding_manager import classify_prompt
         result = classify_prompt("Implement us14a.1 bridge with self-test marker")
         assert result == "complex_implementation"
+
+
+# ---------------------------------------------------------------------------
+# Tests for US14A.1 likely-files hints (new in follow-up)
+# ---------------------------------------------------------------------------
+
+
+class TestUS14A1LikelyFiles:
+    """Prove that US14A.1-relevant prompts return non-empty likely_files."""
+
+    def test_pa_chat_workbench_prompt_non_empty_likely_files(self, mgr):
+        """PA Chat-to-Workbench prompt must return non-empty likely_files."""
+        plan = mgr.plan(
+            "Plan US14A.1 PA Chat-to-Workbench + notifications. Do not edit files yet.",
+            dry_run=True,
+        )
+        assert len(plan.likely_files) > 0, (
+            "PA Chat-to-Workbench prompt must return non-empty likely_files"
+        )
+
+    def test_pa_chat_workbench_includes_routes_or_workbench(self, mgr):
+        """PA Chat-to-Workbench prompt must identify chat routes or workbench routes."""
+        plan = mgr.plan(
+            "Plan US14A.1 PA Chat-to-Workbench + notifications. Do not edit files yet.",
+            dry_run=True,
+        )
+        relevant = [f for f in plan.likely_files if "route" in f or "workbench" in f or "chat" in f.lower()]
+        assert len(relevant) > 0, (
+            f"Expected chat/workbench route files in likely_files, got: {plan.likely_files}"
+        )
+
+    def test_exact_us14a1_prompt_not_empty(self, mgr):
+        """The exact US14A.1 prompt must not return likely_files: []."""
+        plan = mgr.plan(
+            "Plan US14A.1 PA Chat-to-Workbench + notifications. Do not edit files yet.",
+            dry_run=True,
+        )
+        assert plan.likely_files != [], (
+            "Exact US14A.1 prompt returned empty likely_files"
+        )
+
+    def test_notifications_prompt_returns_notification_files(self, mgr):
+        """Notifications prompt must return relevant notification/Slack/Telegram files."""
+        plan = mgr.plan(
+            "Add Slack and Telegram notification events for workbench approval queue",
+            dry_run=True,
+        )
+        assert len(plan.likely_files) > 0
+        notification_files = [
+            f for f in plan.likely_files
+            if any(kw in f for kw in ("slack", "telegram", "notify", "notif"))
+        ]
+        assert len(notification_files) > 0, (
+            f"Expected slack/telegram/notify files in likely_files, got: {plan.likely_files}"
+        )
+
+    def test_autopilot_approval_prompt_returns_governance_files(self, mgr):
+        """Autopilot/approval prompt must return relevant approval/governance files."""
+        plan = mgr.plan(
+            "Plan guarded autopilot with approval policy for workbench tasks",
+            dry_run=True,
+        )
+        assert len(plan.likely_files) > 0
+        governance_files = [
+            f for f in plan.likely_files
+            if any(kw in f for kw in ("approval", "autopilot", "automati", "governance", "constitution", "polic"))
+        ]
+        assert len(governance_files) > 0, (
+            f"Expected approval/governance files in likely_files, got: {plan.likely_files}"
+        )
+
+    def test_model_routing_prompt_returns_router_or_ledger(self, mgr):
+        """Model routing/provider prompt must return model_router or cost_ledger files."""
+        plan = mgr.plan(
+            "Investigate model routing provider cost ledger decisions",
+            dry_run=True,
+        )
+        assert len(plan.likely_files) > 0
+        routing_files = [
+            f for f in plan.likely_files
+            if any(kw in f for kw in ("model_router", "cost_ledger", "model_catalog", "cost_calculator"))
+        ]
+        assert len(routing_files) > 0, (
+            f"Expected model_router/cost files in likely_files, got: {plan.likely_files}"
+        )
+
+    def test_complex_impl_prompt_likely_files_non_empty(self, mgr):
+        """Complex implementation bridge/notification/autopilot prompt must have non-empty likely_files."""
+        plan = mgr.plan(
+            "Implement PA Chat-to-Workbench bridge with unified notifications and guarded autopilot."
+            " Plan scoped implementation first.",
+            dry_run=True,
+        )
+        assert plan.task_type == "complex_implementation"
+        assert len(plan.likely_files) > 0
+        assert "file_write" not in [s.tool_id for s in plan.subtasks]
+        assert "git_commit" not in [s.tool_id for s in plan.subtasks]
+        assert "git_push" not in [s.tool_id for s in plan.subtasks]
