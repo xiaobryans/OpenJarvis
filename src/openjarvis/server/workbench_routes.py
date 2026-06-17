@@ -371,22 +371,22 @@ async def workbench_doctor(repo_path: str = ".") -> Dict[str, Any]:
     }
 
 
-@router.get("/routing-log")
+@router.get("/v1/workbench/routing-log")
 async def get_routing_log(session_id: str, repo_path: str = ".") -> Dict[str, Any]:
     """Return routing decisions for a session."""
     try:
-        mgr = CodingManager(repo_path=repo_path)
+        mgr = _get_manager(repo_path)
         log = mgr.get_routing_log(session_id)
         return {"ok": True, "session_id": session_id, "routing_log": log, "count": len(log)}
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 
 
-@router.get("/provider-config")
+@router.get("/v1/workbench/provider-config")
 async def get_provider_config(repo_path: str = ".") -> Dict[str, Any]:
     """Return model provider config summary (key masked)."""
     try:
-        mgr = CodingManager(repo_path=repo_path)
+        mgr = _get_manager(repo_path)
         return {"ok": True, "config": mgr.get_provider_config()}
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
