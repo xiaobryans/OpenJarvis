@@ -1,8 +1,13 @@
-"""Jarvis Voice Conversation Loop — full back-and-forth voice conversation.
+"""Jarvis Voice Conversation Loop — full assistant-grade voice conversation.
 
-Flow per turn:
-  wake-word detected → record command audio → STT → route to Jarvis
-  → TTS speaks response → return to wake-word listening
+Flow per session:
+  wake-word detected
+    → immediate time-based greeting (TTS)
+    → active conversation session:
+        record command → STT → check stop phrase → route to Jarvis → TTS
+        → follow-up listening (no wake-word needed for next turn)
+        → repeat until timeout or stop phrase
+    → return to wake-word-only listening
 
 Architecture (no duplicates):
   - Wake-word: WakeWordBridge (isolated .wake_worker_venv subprocess)
@@ -11,22 +16,82 @@ Architecture (no duplicates):
   - Jarvis query: existing engine + security via get_engine() + setup_security()
   - TTS: existing TTS path (macOS say / OpenAI TTS)
   - Safety: setup_security() always called — no approval gates bypassed
+  - Events: SSE-ready event queue for UI state/transcript/latency streaming
 
-"Always-on" means wake-word detection only. Audio is only recorded and
-transcribed AFTER the wake word fires, not continuously.
+"Always-on" means wake-word detection only.  Audio is only recorded
+and transcribed AFTER the wake-word fires or during the active
+conversation session — never continuously.
+
+Platform support:
+  macOS (founder platform): SUPPORTED
+    - Wake-word: .wake_worker_venv / openwakeword
+    - TTS: macOS built-in 'say' command
+  Windows/Linux: NOT_PROVEN — require equivalent wake-word + TTS setup.
 """
 
 from __future__ import annotations
 
+import collections
 import io
 import logging
 import os
+import queue
 import subprocess
 import threading
+import time
 import wave
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Stop phrases — end the active session and return to wake-word-only listening
+# ---------------------------------------------------------------------------
+
+STOP_PHRASES: List[str] = [
+    "stop listening",
+    "stop",
+    "cancel",
+    "that's all",
+    "thats all",
+    "go back to sleep",
+    "go to sleep",
+    "goodbye",
+    "goodbye jarvis",
+    "sleep",
+    "exit",
+    "quit",
+]
+
+
+# ---------------------------------------------------------------------------
+# Time-of-day greeting
+# ---------------------------------------------------------------------------
+
+
+def time_of_day_greeting(name: str = "Bryan") -> str:
+    """Return a time-appropriate greeting for the user.
+
+    Uses local wall-clock time so Bryan hears the correct greeting
+    regardless of server timezone.
+    """
+    hour = time.localtime().tm_hour
+    if 5 <= hour < 12:
+        period = "morning"
+    elif 12 <= hour < 17:
+        period = "afternoon"
+    elif 17 <= hour < 21:
+        period = "evening"
+    else:
+        period = "night"
+
+    greetings = {
+        "morning": f"Good morning {name}, what do you need?",
+        "afternoon": f"Good afternoon {name}, what are you looking to do?",
+        "evening": f"Good evening {name}, how can I help?",
+        "night": f"Hi {name}, I'm here. What do you need?",
+    }
+    return greetings[period]
 
 
 # ---------------------------------------------------------------------------
@@ -277,18 +342,19 @@ def speak_response(text: str) -> None:
 
 
 class VoiceConversationLoop:
-    """Full Jarvis voice conversation loop.
+    """Full Jarvis voice conversation loop with session mode.
 
-    Always-on means: wake-word detection is always-on.
-    Audio is only recorded AFTER a wake-word fires, not continuously.
-
-    States:
-      idle       — loop not started
-      listening  — waiting for wake-word (normal always-on state)
-      recording  — microphone recording after wake-word fired
-      transcribing — STT running on recorded audio
-      processing — routing text through Jarvis engine
-      speaking   — TTS playing response
+    Privacy model (always-on = wake-word only):
+      WAKE_LISTENING    — waiting for "hey jarvis" (mic open for wake-word only)
+      WAKE_DETECTED     — wake-word just fired
+      ACKNOWLEDGING     — speaking time-based greeting (TTS)
+      ACTIVE_CONVERSATION — session open; follow-up turns need no wake-word
+      RECORDING         — microphone recording the user's command
+      TRANSCRIBING      — STT running on recorded audio
+      THINKING          — routing text through Jarvis engine
+      SPEAKING          — TTS playing response
+      FOLLOW_UP_LISTENING — brief pause between session turns
+      IDLE              — loop not started / stopped
     """
 
     def __init__(
@@ -298,12 +364,18 @@ class VoiceConversationLoop:
         auto_restart: bool = False,
         debug: bool = False,
         on_state_change: Optional[Callable[[str], None]] = None,
+        session_timeout: float = 30.0,
+        stop_phrases: Optional[List[str]] = None,
+        user_name: str = "Bryan",
     ) -> None:
         self._record_seconds = record_seconds
         self._language = language
         self._auto_restart = auto_restart
         self._debug = debug
         self._on_state_change = on_state_change
+        self._session_timeout = session_timeout
+        self._stop_phrases = {p.lower() for p in (stop_phrases or STOP_PHRASES)}
+        self._user_name = user_name
 
         from openjarvis.autonomy.wakeword_bridge import WakeWordBridge
         self._bridge = WakeWordBridge()
@@ -312,6 +384,46 @@ class VoiceConversationLoop:
         self._lock = threading.Lock()
         self._turns = 0
 
+        # Event queue — SSE consumers subscribe to this
+        self._event_subscribers: List[queue.Queue] = []
+        self._events_history: collections.deque = collections.deque(maxlen=200)
+
+    # ------------------------------------------------------------------ #
+    # Event bus (SSE-ready)                                                 #
+    # ------------------------------------------------------------------ #
+
+    def _emit_event(self, event: Dict[str, Any]) -> None:
+        """Emit a structured event to all subscribers and history."""
+        event.setdefault("ts", time.time())
+        self._events_history.append(event)
+        with self._lock:
+            subs = list(self._event_subscribers)
+        for q in subs:
+            try:
+                q.put_nowait(event)
+            except queue.Full:
+                pass
+
+    def _emit_latency(self, stage: str, value_ms: float) -> None:
+        self._emit_event({"type": "latency", "stage": stage, "value_ms": round(value_ms, 1)})
+
+    def subscribe_events(self) -> queue.Queue:
+        """Subscribe to the event stream. Returns a queue; consume until None sentinel."""
+        q: queue.Queue = queue.Queue(maxsize=512)
+        with self._lock:
+            self._event_subscribers.append(q)
+        return q
+
+    def unsubscribe_events(self, q: queue.Queue) -> None:
+        with self._lock:
+            try:
+                self._event_subscribers.remove(q)
+            except ValueError:
+                pass
+
+    def get_events_history(self) -> List[Dict[str, Any]]:
+        return list(self._events_history)
+
     # ------------------------------------------------------------------ #
     # Internal helpers                                                      #
     # ------------------------------------------------------------------ #
@@ -319,20 +431,26 @@ class VoiceConversationLoop:
     def _set_state(self, state: str) -> None:
         with self._lock:
             self._state = state
+        self._emit_event({"type": "state", "state": state})
         if self._on_state_change:
             try:
                 self._on_state_change(state)
             except Exception as exc:
                 logger.debug("on_state_change raised: %s", exc)
 
-    def _on_wake(self, event: Any) -> None:
-        """Wake-word callback — transitions from listening to recording.
+    def _is_stop_phrase(self, text: str) -> bool:
+        """Return True if the transcript exactly matches a session-stop phrase."""
+        t = text.lower().strip().rstrip(".,!?")
+        return t in self._stop_phrases
 
-        Ignores the event if a turn is already being processed, preventing
-        double-triggers during STT / engine / TTS.
+    def _on_wake(self, event: Any) -> None:
+        """Wake-word callback — transitions from wake_listening to recording.
+
+        Ignores the event if a session is already in progress (double-trigger
+        prevention during STT / engine / TTS processing).
         """
         with self._lock:
-            if self._state != "listening":
+            if self._state not in ("listening", "wake_listening"):
                 logger.debug(
                     "Wake-word ignored (state=%s — already processing)", self._state
                 )
@@ -341,72 +459,163 @@ class VoiceConversationLoop:
 
         model = getattr(event, "model", "unknown")
         score = getattr(event, "score", 0.0)
-        logger.info("Wake word fired: model=%s score=%.3f — starting command recording", model, score)
-        threading.Thread(target=self._process_turn, daemon=True, name="jarvis-voice-turn").start()
+        logger.info("Wake word fired: model=%s score=%.3f", model, score)
+        self._emit_event({
+            "type": "state",
+            "state": "wake_detected",
+            "model": str(model),
+            "score": float(score),
+        })
+        threading.Thread(
+            target=self._process_turn,
+            daemon=True,
+            name="jarvis-voice-turn",
+        ).start()
 
     def _process_turn(self) -> None:
-        """One conversation turn: record → STT → Jarvis → TTS → back to listening."""
+        """Full conversation session: greeting → [record→STT→Jarvis→TTS] loop.
+
+        A single call handles the entire session (greeting + all follow-up turns
+        until timeout or stop phrase).  This method is called in a daemon thread.
+        Always returns to state='listening' in the finally block.
+        """
         try:
-            # 1. Record command audio
-            self._set_state("recording")
-            audio = record_command_audio(
-                duration_seconds=self._record_seconds,
-                sample_rate=16000,
-            )
-
-            # 2. STT — uses existing speech backend path
-            self._set_state("transcribing")
+            # ---------------------------------------------------------- #
+            # 1. Immediate acknowledgement (TTS greeting before recording) #
+            # ---------------------------------------------------------- #
+            _wake_ts = time.time()
+            self._set_state("acknowledging")
             try:
-                text = transcribe_command(audio, language=self._language)
+                greet = time_of_day_greeting(self._user_name)
+                speak_response(greet)
+                logger.info("Acknowledged: %r", greet)
             except Exception as exc:
-                logger.error("STT failed: %s", exc)
-                return
-            if not text.strip():
-                logger.info("Empty STT transcript — skipping turn")
-                return
-            logger.info("Command: %r", text)
+                logger.debug("Acknowledgement TTS failed (non-fatal): %s", exc)
+            _ack_done_ts = time.time()
+            self._emit_latency("wake_to_ack_ms", (_ack_done_ts - _wake_ts) * 1000)
 
-            # 3. Route through normal Jarvis path (with security)
-            self._set_state("processing")
-            try:
-                response = query_jarvis_text(text)
-            except Exception as exc:
-                logger.error("Jarvis query failed: %s", exc)
-                response = "I encountered an error processing your request."
+            # ---------------------------------------------------------- #
+            # 2. Active conversation session loop                          #
+            # ---------------------------------------------------------- #
+            self._set_state("active_conversation")
+            session_deadline = time.time() + self._session_timeout
+            first_turn = True
 
-            if not response.strip():
-                logger.warning("Empty response from Jarvis")
-                return
-            logger.info("Response: %r", response[:120])
+            while True:
+                if not first_turn:
+                    # Follow-up turn — no wake-word needed
+                    self._set_state("follow_up_listening")
+                    if time.time() > session_deadline:
+                        logger.info("Session timeout — returning to wake listening")
+                        break
+                    # Brief pause to give user a moment to start speaking
+                    time.sleep(0.4)
+                first_turn = False
 
-            # 4. TTS — uses existing TTS path
-            self._set_state("speaking")
-            try:
-                speak_response(response)
-            except Exception as exc:
-                logger.error("TTS failed: %s", exc)
+                # ------------------------------------------------------ #
+                # 3. Record command audio                                   #
+                # ------------------------------------------------------ #
+                _rec_start = time.time()
+                self._set_state("recording")
+                self._emit_event({
+                    "type": "interim_transcript",
+                    "text": f"Recording... ({self._record_seconds:.0f}s)",
+                })
+                try:
+                    audio = record_command_audio(
+                        duration_seconds=self._record_seconds,
+                        sample_rate=16000,
+                    )
+                except Exception as exc:
+                    logger.error("Recording failed: %s", exc)
+                    break
+                _rec_end = time.time()
+                self._emit_latency("wake_to_record_start_ms", (_rec_start - _wake_ts) * 1000)
 
-            with self._lock:
-                self._turns += 1
+                # ------------------------------------------------------ #
+                # 4. STT — existing speech backend path                    #
+                # ------------------------------------------------------ #
+                _stt_start = time.time()
+                self._set_state("transcribing")
+                self._emit_event({"type": "interim_transcript", "text": "Transcribing..."})
+                try:
+                    text = transcribe_command(audio, language=self._language)
+                except Exception as exc:
+                    logger.error("STT failed: %s", exc)
+                    break
+                _stt_end = time.time()
+                self._emit_latency("stt_duration_ms", (_stt_end - _stt_start) * 1000)
+                self._emit_latency("speech_end_to_stt_final_ms", (_stt_end - _rec_end) * 1000)
+
+                if not text.strip():
+                    logger.info("Empty transcript — ending session")
+                    break
+
+                logger.info("Transcript: %r", text)
+                self._emit_event({"type": "transcript", "text": text})
+
+                # ------------------------------------------------------ #
+                # 5. Stop-phrase check                                     #
+                # ------------------------------------------------------ #
+                if self._is_stop_phrase(text):
+                    logger.info("Stop phrase detected: %r", text)
+                    try:
+                        speak_response("Going back to sleep. Say 'hey jarvis' when you need me.")
+                    except Exception:
+                        pass
+                    self._emit_event({"type": "state", "state": "session_ended", "reason": "stop_phrase"})
+                    break
+
+                # ------------------------------------------------------ #
+                # 6. Route through normal Jarvis path (with security)      #
+                # ------------------------------------------------------ #
+                _model_start = time.time()
+                self._set_state("thinking")
+                try:
+                    response = query_jarvis_text(text)
+                except Exception as exc:
+                    logger.error("Jarvis query failed: %s", exc)
+                    response = "I encountered an error processing your request."
+                _model_end = time.time()
+                self._emit_latency("model_duration_ms", (_model_end - _model_start) * 1000)
+
+                if not response.strip():
+                    response = "I don't have a response for that."
+                logger.info("Response: %r", response[:120])
+                self._emit_event({"type": "response", "text": response})
+
+                # ------------------------------------------------------ #
+                # 7. TTS — existing TTS path                               #
+                # ------------------------------------------------------ #
+                _tts_start = time.time()
+                self._set_state("speaking")
+                try:
+                    speak_response(response)
+                except Exception as exc:
+                    logger.error("TTS failed: %s", exc)
+                _tts_end = time.time()
+                self._emit_latency("tts_start_ms", (_tts_start - _model_end) * 1000)
+                self._emit_latency("total_turn_ms", (_tts_end - _wake_ts) * 1000)
+
+                with self._lock:
+                    self._turns += 1
+
+                # Reset session deadline after each successful response
+                session_deadline = time.time() + self._session_timeout
 
         except Exception as exc:
-            logger.error("Voice turn error: %s", exc)
+            logger.error("Voice session error: %s", exc)
+            self._emit_event({"type": "error", "message": str(exc)})
         finally:
-            # Always return to listening after each turn
+            # Always return to wake-word-only listening after session ends
             self._set_state("listening")
 
     # ------------------------------------------------------------------ #
     # Public interface                                                       #
     # ------------------------------------------------------------------ #
 
-    def start(
-        self,
-        debug: bool = False,
-    ) -> Dict[str, Any]:
-        """Start the wake-word bridge and register the conversation callback.
-
-        Returns the bridge start result dict (ok, worker_pid, socket, ...).
-        """
+    def start(self, debug: bool = False) -> Dict[str, Any]:
+        """Start wake-word bridge and register the conversation callback."""
         self._bridge.register_callback(self._on_wake)
         result = self._bridge.start(auto_restart=self._auto_restart, debug=debug or self._debug)
         if result.get("ok"):
@@ -417,6 +626,8 @@ class VoiceConversationLoop:
         """Stop the wake-word bridge and conversation loop."""
         self._bridge.stop()
         self._set_state("idle")
+        # Sentinel to unblock SSE consumers
+        self._emit_event({"type": "stopped"})
 
     def status(self) -> Dict[str, Any]:
         """Return loop state + bridge status."""
@@ -428,12 +639,15 @@ class VoiceConversationLoop:
             "turns_completed": turns,
             "record_seconds": self._record_seconds,
             "language": self._language,
+            "session_timeout": self._session_timeout,
             "bridge": self._bridge.status(),
         }
 
 
 __all__ = [
     "VoiceConversationLoop",
+    "STOP_PHRASES",
+    "time_of_day_greeting",
     "record_command_audio",
     "transcribe_command",
     "query_jarvis_text",

@@ -17,6 +17,7 @@ import { useAppStore } from './lib/store';
 import { fetchModels, fetchServerInfo, fetchSavings, submitSavings, isTauri } from './lib/api';
 import { OptInModal } from './components/OptInModal';
 import { UpdateChecker } from './components/Desktop/UpdateChecker';
+import { VoiceOverlay } from './components/VoiceOverlay';
 import { track, hashId } from './lib/analytics';
 
 export default function App() {
@@ -203,6 +204,7 @@ export default function App() {
       {optInModalOpen && (
         <OptInModal onClose={() => setOptInModalOpen(false)} />
       )}
+      <VoiceOverlay />
     </>
   );
 }

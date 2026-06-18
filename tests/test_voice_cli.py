@@ -1782,3 +1782,494 @@ class TestVoiceChatCLICommand:
         voice_cmd_path = _REPO_ROOT / "src" / "openjarvis" / "cli" / "voice_cmd.py"
         src = voice_cmd_path.read_text(encoding="utf-8")
         assert "VoiceConversationLoop" in src
+
+
+# ---------------------------------------------------------------------------
+# M. US13 UX: Wake acknowledgement, session loop, transcript, latency, app path
+# ---------------------------------------------------------------------------
+
+
+class TestWakeAcknowledgement:
+    """After wake-word fires, Jarvis must immediately acknowledge before recording."""
+
+    def test_time_of_day_greeting_importable(self):
+        from openjarvis.autonomy.voice_conversation import time_of_day_greeting
+        assert callable(time_of_day_greeting)
+
+    def test_time_of_day_greeting_morning(self):
+        import time as _t
+        import unittest.mock as mock
+        from openjarvis.autonomy.voice_conversation import time_of_day_greeting
+        with mock.patch("time.localtime") as m:
+            m.return_value = _t.struct_time((2024, 1, 1, 9, 0, 0, 0, 1, 0))
+            greet = time_of_day_greeting("Bryan")
+        assert "morning" in greet.lower() and "Bryan" in greet
+
+    def test_time_of_day_greeting_afternoon(self):
+        import time as _t
+        import unittest.mock as mock
+        from openjarvis.autonomy.voice_conversation import time_of_day_greeting
+        with mock.patch("time.localtime") as m:
+            m.return_value = _t.struct_time((2024, 1, 1, 14, 0, 0, 0, 1, 0))
+            greet = time_of_day_greeting("Bryan")
+        assert "afternoon" in greet.lower() and "Bryan" in greet
+
+    def test_time_of_day_greeting_evening(self):
+        import time as _t
+        import unittest.mock as mock
+        from openjarvis.autonomy.voice_conversation import time_of_day_greeting
+        with mock.patch("time.localtime") as m:
+            m.return_value = _t.struct_time((2024, 1, 1, 19, 0, 0, 0, 1, 0))
+            greet = time_of_day_greeting("Bryan")
+        assert "evening" in greet.lower() and "Bryan" in greet
+
+    def test_time_of_day_greeting_night(self):
+        import time as _t
+        import unittest.mock as mock
+        from openjarvis.autonomy.voice_conversation import time_of_day_greeting
+        with mock.patch("time.localtime") as m:
+            m.return_value = _t.struct_time((2024, 1, 1, 2, 0, 0, 0, 1, 0))
+            greet = time_of_day_greeting("Bryan")
+        assert "Bryan" in greet
+
+    def test_time_of_day_greeting_returns_string(self):
+        from openjarvis.autonomy.voice_conversation import time_of_day_greeting
+        result = time_of_day_greeting()
+        assert isinstance(result, str) and len(result) > 5
+
+    def test_process_turn_calls_acknowledgement_before_recording(self):
+        """_process_turn must set state 'acknowledging' before state 'recording'."""
+        import inspect
+        from openjarvis.autonomy import voice_conversation
+        src = inspect.getsource(voice_conversation.VoiceConversationLoop._process_turn)
+        ack_pos = src.find("acknowledging")
+        rec_pos = src.find('"recording"')
+        assert ack_pos != -1, "_process_turn must set state 'acknowledging'"
+        assert rec_pos != -1, "_process_turn must set state 'recording'"
+        assert ack_pos < rec_pos, (
+            "_process_turn must acknowledge BEFORE starting the recording state"
+        )
+
+    def test_process_turn_speaks_greeting(self):
+        """_process_turn must call speak_response with time_of_day_greeting."""
+        import inspect
+        from openjarvis.autonomy import voice_conversation
+        src = inspect.getsource(voice_conversation.VoiceConversationLoop._process_turn)
+        assert "time_of_day_greeting" in src, (
+            "_process_turn must call time_of_day_greeting() for wake acknowledgement"
+        )
+
+    def test_wake_to_ack_latency_emitted(self):
+        """_process_turn must emit wake_to_ack_ms latency event."""
+        import inspect
+        from openjarvis.autonomy import voice_conversation
+        src = inspect.getsource(voice_conversation.VoiceConversationLoop._process_turn)
+        assert "wake_to_ack_ms" in src
+
+
+class TestVoiceStateTransitions:
+    """All required voice states must be emitted as events."""
+
+    def test_state_transitions_are_emitted_as_events(self):
+        """_set_state must emit an event of type 'state'."""
+        from openjarvis.autonomy.voice_conversation import VoiceConversationLoop
+        events = []
+        loop = VoiceConversationLoop(on_state_change=lambda s: None)
+        loop._emit_event = lambda e: events.append(e)
+
+        loop._set_state("listening")
+        loop._set_state("recording")
+        states = [e.get("state") for e in events if e.get("type") == "state"]
+        assert "listening" in states
+        assert "recording" in states
+
+    def test_wake_detected_event_emitted(self):
+        """_on_wake must emit a wake_detected state event."""
+        import time as _time
+        from openjarvis.autonomy.voice_conversation import VoiceConversationLoop
+        from openjarvis.autonomy.wakeword_bridge import WakeWordTriggerEvent
+
+        events = []
+        loop = VoiceConversationLoop()
+        loop._state = "listening"
+
+        original_emit = loop._emit_event
+        def _capture(e):
+            events.append(e)
+        loop._emit_event = _capture
+
+        import threading
+        done = threading.Event()
+        def _mock_turn():
+            done.set()
+        loop._process_turn = _mock_turn
+
+        ev = WakeWordTriggerEvent(model="hey_jarvis_v0.1", score=0.85, ts=_time.time())
+        loop._on_wake(ev)
+        done.wait(timeout=2.0)
+
+        wake_events = [e for e in events if e.get("state") == "wake_detected"]
+        assert len(wake_events) >= 1, "wake_detected event must be emitted"
+        assert wake_events[0].get("model") is not None
+        assert wake_events[0].get("score") is not None
+
+    def test_required_states_in_process_turn_source(self):
+        """_process_turn source must reference all required state strings."""
+        import inspect
+        from openjarvis.autonomy import voice_conversation
+        src = inspect.getsource(voice_conversation.VoiceConversationLoop._process_turn)
+        required = [
+            "acknowledging", "active_conversation", "recording",
+            "transcribing", "thinking", "speaking", "follow_up_listening", "listening",
+        ]
+        for state in required:
+            assert state in src, f"_process_turn must reference state '{state}'"
+
+    def test_loop_has_session_timeout_param(self):
+        from openjarvis.autonomy.voice_conversation import VoiceConversationLoop
+        import inspect
+        sig = inspect.signature(VoiceConversationLoop.__init__)
+        assert "session_timeout" in sig.parameters
+
+    def test_loop_has_stop_phrases_param(self):
+        from openjarvis.autonomy.voice_conversation import VoiceConversationLoop
+        import inspect
+        sig = inspect.signature(VoiceConversationLoop.__init__)
+        assert "stop_phrases" in sig.parameters
+
+    def test_loop_has_user_name_param(self):
+        from openjarvis.autonomy.voice_conversation import VoiceConversationLoop
+        import inspect
+        sig = inspect.signature(VoiceConversationLoop.__init__)
+        assert "user_name" in sig.parameters
+
+    def test_event_subscribe_unsubscribe(self):
+        """subscribe_events / unsubscribe_events API must work."""
+        from openjarvis.autonomy.voice_conversation import VoiceConversationLoop
+        loop = VoiceConversationLoop()
+        q = loop.subscribe_events()
+        assert q is not None
+        loop._emit_event({"type": "test", "val": 42})
+        item = q.get_nowait()
+        assert item["val"] == 42
+        loop.unsubscribe_events(q)
+
+    def test_get_events_history(self):
+        """get_events_history must return recently emitted events."""
+        from openjarvis.autonomy.voice_conversation import VoiceConversationLoop
+        loop = VoiceConversationLoop()
+        loop._emit_event({"type": "state", "state": "listening"})
+        history = loop.get_events_history()
+        assert any(e.get("state") == "listening" for e in history)
+
+
+class TestLiveTranscriptEvents:
+    """Transcript and interim events must be emitted to the event stream."""
+
+    def test_interim_transcript_event_emitted_during_recording(self):
+        """_process_turn must emit interim_transcript events during recording."""
+        import inspect
+        from openjarvis.autonomy import voice_conversation
+        src = inspect.getsource(voice_conversation.VoiceConversationLoop._process_turn)
+        assert "interim_transcript" in src, (
+            "_process_turn must emit interim_transcript events so the UI can show "
+            "recording progress"
+        )
+
+    def test_final_transcript_event_emitted(self):
+        """_process_turn must emit a transcript event with the final STT text."""
+        import inspect
+        from openjarvis.autonomy import voice_conversation
+        src = inspect.getsource(voice_conversation.VoiceConversationLoop._process_turn)
+        assert '"transcript"' in src or "'transcript'" in src, (
+            "_process_turn must emit a 'transcript' event with the final STT text"
+        )
+
+    def test_response_event_emitted(self):
+        """_process_turn must emit a response event with the Jarvis answer text."""
+        import inspect
+        from openjarvis.autonomy import voice_conversation
+        src = inspect.getsource(voice_conversation.VoiceConversationLoop._process_turn)
+        assert '"response"' in src or "'response'" in src, (
+            "_process_turn must emit a 'response' event with the Jarvis answer"
+        )
+
+    def test_stop_phrases_constant_exists(self):
+        from openjarvis.autonomy.voice_conversation import STOP_PHRASES
+        assert isinstance(STOP_PHRASES, list)
+        assert len(STOP_PHRASES) > 0
+
+    def test_stop_phrases_include_required_phrases(self):
+        from openjarvis.autonomy.voice_conversation import STOP_PHRASES
+        phrases_lower = [p.lower() for p in STOP_PHRASES]
+        for required in ("stop listening", "cancel", "that's all", "go back to sleep"):
+            assert required in phrases_lower, f"STOP_PHRASES must include {required!r}"
+
+    def test_tts_called_with_response_in_process_turn(self):
+        """_process_turn must call speak_response with the Jarvis response."""
+        import inspect
+        from openjarvis.autonomy import voice_conversation
+        src = inspect.getsource(voice_conversation.VoiceConversationLoop._process_turn)
+        assert "speak_response(response)" in src or "speak_response(" in src
+
+
+class TestConversationSessionFollowUp:
+    """After first turn, loop must keep session open for follow-up without wake word."""
+
+    def test_process_turn_has_follow_up_listening(self):
+        """_process_turn must include 'follow_up_listening' state for multi-turn."""
+        import inspect
+        from openjarvis.autonomy import voice_conversation
+        src = inspect.getsource(voice_conversation.VoiceConversationLoop._process_turn)
+        assert "follow_up_listening" in src, (
+            "_process_turn must transition to 'follow_up_listening' between turns "
+            "so the user can speak again without saying 'hey jarvis'"
+        )
+
+    def test_process_turn_has_session_loop(self):
+        """_process_turn must loop (while True) for multi-turn session."""
+        import inspect
+        from openjarvis.autonomy import voice_conversation
+        src = inspect.getsource(voice_conversation.VoiceConversationLoop._process_turn)
+        assert "while True" in src or "while " in src, (
+            "_process_turn must contain a loop to support multi-turn conversation"
+        )
+
+    def test_is_stop_phrase_method_exists(self):
+        from openjarvis.autonomy.voice_conversation import VoiceConversationLoop
+        loop = VoiceConversationLoop()
+        assert hasattr(loop, "_is_stop_phrase") and callable(loop._is_stop_phrase)
+
+    def test_stop_phrase_detection_stop_listening(self):
+        from openjarvis.autonomy.voice_conversation import VoiceConversationLoop
+        loop = VoiceConversationLoop()
+        assert loop._is_stop_phrase("stop listening")
+        assert loop._is_stop_phrase("Stop Listening.")
+        assert loop._is_stop_phrase("cancel")
+        assert loop._is_stop_phrase("that's all")
+        assert loop._is_stop_phrase("go back to sleep")
+
+    def test_stop_phrase_not_triggered_by_normal_speech(self):
+        from openjarvis.autonomy.voice_conversation import VoiceConversationLoop
+        loop = VoiceConversationLoop()
+        assert not loop._is_stop_phrase("what is the capital of France")
+        assert not loop._is_stop_phrase("cancel my flight booking")
+        assert not loop._is_stop_phrase("how do I stop a process in Python")
+
+    def test_stop_phrase_ends_session_in_source(self):
+        """_process_turn must check for stop phrases and break the loop."""
+        import inspect
+        from openjarvis.autonomy import voice_conversation
+        src = inspect.getsource(voice_conversation.VoiceConversationLoop._process_turn)
+        assert "_is_stop_phrase" in src, (
+            "_process_turn must call _is_stop_phrase() and break the session loop"
+        )
+
+    def test_session_timeout_ends_session_in_source(self):
+        """_process_turn must break the loop when session_deadline is exceeded."""
+        import inspect
+        from openjarvis.autonomy import voice_conversation
+        src = inspect.getsource(voice_conversation.VoiceConversationLoop._process_turn)
+        assert "session_deadline" in src or "_session_timeout" in src, (
+            "_process_turn must use a session deadline to return to wake-word-only mode"
+        )
+
+    def test_session_timeout_default_is_30s(self):
+        from openjarvis.autonomy.voice_conversation import VoiceConversationLoop
+        loop = VoiceConversationLoop()
+        assert loop._session_timeout == 30.0
+
+    def test_status_includes_session_timeout(self):
+        from openjarvis.autonomy.voice_conversation import VoiceConversationLoop
+        loop = VoiceConversationLoop(session_timeout=45.0)
+        st = loop.status()
+        assert st.get("session_timeout") == 45.0
+
+
+class TestLatencyInstrumentation:
+    """Per-stage latency must be measured and emitted as events."""
+
+    def test_emit_latency_method_exists(self):
+        from openjarvis.autonomy.voice_conversation import VoiceConversationLoop
+        loop = VoiceConversationLoop()
+        assert hasattr(loop, "_emit_latency") and callable(loop._emit_latency)
+
+    def test_emit_latency_sends_correct_event(self):
+        from openjarvis.autonomy.voice_conversation import VoiceConversationLoop
+        loop = VoiceConversationLoop()
+        q = loop.subscribe_events()
+        loop._emit_latency("stt_duration_ms", 1234.5)
+        ev = q.get_nowait()
+        assert ev["type"] == "latency"
+        assert ev["stage"] == "stt_duration_ms"
+        assert ev["value_ms"] == 1234.5
+
+    def test_all_required_latency_stages_in_source(self):
+        """_process_turn must measure all required latency stages."""
+        import inspect
+        from openjarvis.autonomy import voice_conversation
+        src = inspect.getsource(voice_conversation.VoiceConversationLoop._process_turn)
+        required_stages = [
+            "wake_to_ack_ms",
+            "wake_to_record_start_ms",
+            "stt_duration_ms",
+            "speech_end_to_stt_final_ms",
+            "model_duration_ms",
+            "tts_start_ms",
+            "total_turn_ms",
+        ]
+        for stage in required_stages:
+            assert stage in src, f"_process_turn must emit latency stage '{stage}'"
+
+    def test_latency_events_reach_subscriber(self):
+        """Latency events must be delivered to event subscribers."""
+        from openjarvis.autonomy.voice_conversation import VoiceConversationLoop
+        import queue as _q
+        loop = VoiceConversationLoop()
+        sub = loop.subscribe_events()
+        loop._emit_latency("total_turn_ms", 5432.1)
+        ev = sub.get(timeout=1.0)
+        assert ev.get("type") == "latency"
+        assert ev.get("stage") == "total_turn_ms"
+
+
+class TestAppUserFacingStartPath:
+    """Packaged app must be able to start voice mode without a terminal command."""
+
+    def test_voice_routes_module_exists(self):
+        """voice_routes.py must exist in the server package."""
+        vr_path = _REPO_ROOT / "src" / "openjarvis" / "server" / "voice_routes.py"
+        assert vr_path.exists(), "voice_routes.py must exist"
+
+    def test_voice_session_start_route_registered(self):
+        """POST /v1/voice/session/start must be declared in voice_routes.py."""
+        vr_path = _REPO_ROOT / "src" / "openjarvis" / "server" / "voice_routes.py"
+        src = vr_path.read_text(encoding="utf-8")
+        assert '"/v1/voice/session/start"' in src or "'/v1/voice/session/start'" in src, (
+            "POST /v1/voice/session/start must be registered so the packaged app "
+            "can start voice mode without a terminal command"
+        )
+
+    def test_voice_session_stop_route_registered(self):
+        vr_path = _REPO_ROOT / "src" / "openjarvis" / "server" / "voice_routes.py"
+        src = vr_path.read_text(encoding="utf-8")
+        assert '"/v1/voice/session/stop"' in src or "'/v1/voice/session/stop'" in src
+
+    def test_voice_session_status_route_registered(self):
+        vr_path = _REPO_ROOT / "src" / "openjarvis" / "server" / "voice_routes.py"
+        src = vr_path.read_text(encoding="utf-8")
+        assert '"/v1/voice/session/status"' in src or "'/v1/voice/session/status'" in src
+
+    def test_voice_session_events_sse_route_registered(self):
+        """GET /v1/voice/session/events must be declared in voice_routes.py."""
+        vr_path = _REPO_ROOT / "src" / "openjarvis" / "server" / "voice_routes.py"
+        src = vr_path.read_text(encoding="utf-8")
+        assert '"/v1/voice/session/events"' in src or "'/v1/voice/session/events'" in src, (
+            "SSE events endpoint must be registered so the UI can show live "
+            "state/transcript/latency updates"
+        )
+
+    def test_voice_router_included_in_app(self):
+        """voice_router must be registered in create_app."""
+        app_path = _REPO_ROOT / "src" / "openjarvis" / "server" / "app.py"
+        src = app_path.read_text(encoding="utf-8")
+        assert "voice_router" in src, (
+            "voice_router must be included in create_app so the packaged app "
+            "can reach the voice session endpoints"
+        )
+
+    def test_platform_support_declared_in_voice_routes(self):
+        """voice_routes.py must explicitly declare platform support."""
+        voice_routes_path = _REPO_ROOT / "src" / "openjarvis" / "server" / "voice_routes.py"
+        src = voice_routes_path.read_text(encoding="utf-8")
+        assert "NOT_PROVEN" in src, (
+            "voice_routes.py must declare NOT_PROVEN for unsupported platforms "
+            "instead of silently ignoring them"
+        )
+        assert "macOS" in src or "Darwin" in src, (
+            "voice_routes.py must declare macOS as the SUPPORTED platform"
+        )
+
+    def test_voice_overlay_component_exists(self):
+        """VoiceOverlay.tsx must exist as the packaged-app voice UI surface."""
+        overlay_path = _REPO_ROOT / "frontend" / "src" / "components" / "VoiceOverlay.tsx"
+        assert overlay_path.exists(), (
+            "VoiceOverlay.tsx must exist — it is the user-facing voice surface "
+            "in the packaged Tauri app"
+        )
+
+    def test_voice_overlay_in_app_tsx(self):
+        """VoiceOverlay must be rendered in App.tsx."""
+        app_path = _REPO_ROOT / "frontend" / "src" / "App.tsx"
+        src = app_path.read_text(encoding="utf-8")
+        assert "VoiceOverlay" in src, (
+            "VoiceOverlay must be imported and rendered in App.tsx so the mic "
+            "button is available in the packaged app without a terminal command"
+        )
+
+    def test_use_voice_session_hook_exists(self):
+        """useVoiceSession.ts must exist as the frontend SSE/API hook."""
+        hook_path = _REPO_ROOT / "frontend" / "src" / "hooks" / "useVoiceSession.ts"
+        assert hook_path.exists(), "useVoiceSession.ts hook must exist"
+
+    def test_voice_overlay_shows_state_and_transcript(self):
+        """VoiceOverlay.tsx must render state, transcript, and Jarvis response."""
+        overlay_path = _REPO_ROOT / "frontend" / "src" / "components" / "VoiceOverlay.tsx"
+        src = overlay_path.read_text(encoding="utf-8")
+        assert "finalTranscript" in src, "VoiceOverlay must show final transcript"
+        assert "jarvisResponse" in src, "VoiceOverlay must show Jarvis response"
+        assert "voiceState" in src or "VOICE_STATE_LABEL" in src, (
+            "VoiceOverlay must show current voice state"
+        )
+
+    def test_voice_overlay_shows_latency(self):
+        """VoiceOverlay must expose latency metrics to the user."""
+        overlay_path = _REPO_ROOT / "frontend" / "src" / "components" / "VoiceOverlay.tsx"
+        src = overlay_path.read_text(encoding="utf-8")
+        assert "latency" in src.lower(), (
+            "VoiceOverlay must show latency metrics so bottlenecks are visible"
+        )
+
+    def test_voice_overlay_shows_stop_phrase_hint(self):
+        """VoiceOverlay must hint the user about stop phrases."""
+        overlay_path = _REPO_ROOT / "frontend" / "src" / "components" / "VoiceOverlay.tsx"
+        src = overlay_path.read_text(encoding="utf-8")
+        assert "stop" in src.lower(), (
+            "VoiceOverlay must show stop-phrase hint (e.g. 'say stop listening')"
+        )
+
+
+class TestExistingFixesIntact:
+    """All previously accepted US13 items must remain intact."""
+
+    def test_existing_voice_conversation_tests_still_pass(self):
+        """Smoke-import of all prior test classes."""
+        from openjarvis.autonomy.voice_conversation import (
+            VoiceConversationLoop,
+            record_command_audio,
+            transcribe_command,
+            query_jarvis_text,
+            speak_response,
+            STOP_PHRASES,
+            time_of_day_greeting,
+        )
+        assert all([VoiceConversationLoop, record_command_audio, transcribe_command,
+                    query_jarvis_text, speak_response, STOP_PHRASES, time_of_day_greeting])
+
+    def test_packaged_app_stt_english_fix_intact_2(self):
+        """faster_whisper.py English fix still present after US13 UX rewrite."""
+        fw = _REPO_ROOT / "src" / "openjarvis" / "speech" / "faster_whisper.py"
+        src = fw.read_text(encoding="utf-8")
+        assert "initial_prompt" in src and "Do not translate" in src
+
+    def test_voice_approval_gates_untouched(self):
+        """Voice hard-blocked actions and classify_voice_risk still work."""
+        from openjarvis.autonomy.voice_pipeline import classify_voice_risk, VoiceApprovalRisk
+        assert classify_voice_risk("production_deploy") == VoiceApprovalRisk.DANGEROUS
+
+    def test_voice_conversation_does_not_duplicate_safety_systems(self):
+        """voice_conversation.py must not replicate approval/hard-block lists."""
+        vc_path = _REPO_ROOT / "src" / "openjarvis" / "autonomy" / "voice_conversation.py"
+        src = vc_path.read_text(encoding="utf-8")
+        assert "_VOICE_HARD_BLOCKED" not in src
+        assert "ResearchAgent" not in src

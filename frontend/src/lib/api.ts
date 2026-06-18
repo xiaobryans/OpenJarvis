@@ -1174,3 +1174,52 @@ export async function fetchVoiceStatus(): Promise<VoiceStatus | null> {
     return null;
   }
 }
+
+// ---------------------------------------------------------------------------
+// Voice session API (packaged-app user-facing start path)
+// ---------------------------------------------------------------------------
+
+export interface VoiceSessionStartOpts {
+  record_seconds?: number;
+  language?: string;
+  session_timeout?: number;
+  threshold?: number;
+  auto_restart?: boolean;
+  debug?: boolean;
+  user_name?: string;
+}
+
+export async function startVoiceSession(opts: VoiceSessionStartOpts = {}): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const res = await apiFetch('/v1/voice/session/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        record_seconds: opts.record_seconds ?? 5.0,
+        language: opts.language ?? 'en',
+        session_timeout: opts.session_timeout ?? 30.0,
+        auto_restart: opts.auto_restart ?? false,
+        debug: opts.debug ?? false,
+        user_name: opts.user_name ?? 'Bryan',
+        ...(opts.threshold !== undefined ? { threshold: opts.threshold } : {}),
+      }),
+    });
+    return res.json();
+  } catch (e) {
+    return { ok: false, error: String(e) };
+  }
+}
+
+export async function stopVoiceSession(): Promise<void> {
+  await apiFetch('/v1/voice/session/stop', { method: 'POST' }).catch(() => {});
+}
+
+export async function fetchVoiceSessionStatus(): Promise<Record<string, unknown> | null> {
+  try {
+    const res = await apiFetch('/v1/voice/session/status');
+    if (!res.ok) return null;
+    return res.json();
+  } catch {
+    return null;
+  }
+}

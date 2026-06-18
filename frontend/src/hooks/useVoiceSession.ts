@@ -1,0 +1,241 @@
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { getBase, authHeaders } from '../lib/api';
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+export type VoiceState =
+  | 'idle'
+  | 'listening'
+  | 'wake_listening'
+  | 'wake_detected'
+  | 'acknowledging'
+  | 'active_conversation'
+  | 'recording'
+  | 'transcribing'
+  | 'thinking'
+  | 'speaking'
+  | 'follow_up_listening'
+  | 'session_ended'
+  | 'stopped'
+  | 'error';
+
+export interface VoiceEvent {
+  type: 'state' | 'interim_transcript' | 'transcript' | 'response' | 'latency' | 'error' | 'stopped';
+  state?: VoiceState;
+  text?: string;
+  stage?: string;
+  value_ms?: number;
+  message?: string;
+  model?: string;
+  score?: number;
+  reason?: string;
+  ts?: number;
+}
+
+export interface LatencyMap {
+  wake_to_ack_ms?: number;
+  wake_to_record_start_ms?: number;
+  stt_duration_ms?: number;
+  speech_end_to_stt_final_ms?: number;
+  model_duration_ms?: number;
+  tts_start_ms?: number;
+  total_turn_ms?: number;
+}
+
+export interface VoiceSessionState {
+  voiceState: VoiceState;
+  interimTranscript: string;
+  finalTranscript: string;
+  jarvisResponse: string;
+  latency: LatencyMap;
+  error: string | null;
+  turnsCompleted: number;
+  isActive: boolean;
+}
+
+export interface VoiceSessionActions {
+  start: (opts?: { recordSeconds?: number; language?: string; sessionTimeout?: number }) => Promise<void>;
+  stop: () => Promise<void>;
+}
+
+// ---------------------------------------------------------------------------
+// Label map for UI display
+// ---------------------------------------------------------------------------
+
+export const VOICE_STATE_LABEL: Record<VoiceState, string> = {
+  idle: 'Voice Off',
+  listening: 'Listening for "Hey Jarvis"…',
+  wake_listening: 'Listening for "Hey Jarvis"…',
+  wake_detected: 'Wake word detected!',
+  acknowledging: 'Jarvis is greeting you…',
+  active_conversation: 'Conversation active',
+  recording: 'Recording your command…',
+  transcribing: 'Transcribing…',
+  thinking: 'Jarvis is thinking…',
+  speaking: 'Jarvis is speaking…',
+  follow_up_listening: 'Listening for follow-up…',
+  session_ended: 'Session ended',
+  stopped: 'Voice Off',
+  error: 'Error',
+};
+
+// ---------------------------------------------------------------------------
+// Hook
+// ---------------------------------------------------------------------------
+
+export function useVoiceSession(): VoiceSessionState & VoiceSessionActions {
+  const [voiceState, setVoiceState] = useState<VoiceState>('idle');
+  const [interimTranscript, setInterimTranscript] = useState('');
+  const [finalTranscript, setFinalTranscript] = useState('');
+  const [jarvisResponse, setJarvisResponse] = useState('');
+  const [latency, setLatency] = useState<LatencyMap>({});
+  const [error, setError] = useState<string | null>(null);
+  const [turnsCompleted, setTurnsCompleted] = useState(0);
+  const [isActive, setIsActive] = useState(false);
+
+  const esRef = useRef<EventSource | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+
+  const connectSSE = useCallback(() => {
+    if (esRef.current) {
+      esRef.current.close();
+    }
+    const base = getBase();
+    const url = `${base}/v1/voice/session/events`;
+    const hdrs = authHeaders();
+    // EventSource doesn't support custom headers — use fetch-based SSE
+    const ac = new AbortController();
+    abortRef.current = ac;
+
+    (async () => {
+      try {
+        const res = await fetch(url, {
+          headers: hdrs,
+          signal: ac.signal,
+        });
+        if (!res.ok || !res.body) return;
+        const reader = res.body.getReader();
+        const dec = new TextDecoder();
+        let buf = '';
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buf += dec.decode(value, { stream: true });
+          const lines = buf.split('\n');
+          buf = lines.pop() ?? '';
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              try {
+                const ev: VoiceEvent = JSON.parse(line.slice(6));
+                handleEvent(ev);
+              } catch {
+                // ignore parse errors
+              }
+            }
+          }
+        }
+      } catch {
+        // connection closed / aborted
+      }
+    })();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleEvent = useCallback((ev: VoiceEvent) => {
+    if (ev.type === 'state' && ev.state) {
+      setVoiceState(ev.state);
+      if (ev.state === 'recording') {
+        setInterimTranscript('');
+        setFinalTranscript('');
+        setJarvisResponse('');
+      }
+    }
+    if (ev.type === 'interim_transcript' && ev.text) {
+      setInterimTranscript(ev.text);
+    }
+    if (ev.type === 'transcript' && ev.text) {
+      setFinalTranscript(ev.text);
+      setInterimTranscript('');
+    }
+    if (ev.type === 'response' && ev.text) {
+      setJarvisResponse(ev.text);
+      setTurnsCompleted((n) => n + 1);
+    }
+    if (ev.type === 'latency' && ev.stage && ev.value_ms !== undefined) {
+      setLatency((prev) => ({ ...prev, [ev.stage!]: ev.value_ms }));
+    }
+    if (ev.type === 'error' && ev.message) {
+      setError(ev.message);
+    }
+    if (ev.type === 'stopped') {
+      setVoiceState('idle');
+      setIsActive(false);
+    }
+  }, []);
+
+  // Re-connect SSE when active
+  useEffect(() => {
+    if (!isActive) return;
+    connectSSE();
+    return () => {
+      abortRef.current?.abort();
+    };
+  }, [isActive, connectSSE]);
+
+  const start = useCallback(async (opts?: {
+    recordSeconds?: number;
+    language?: string;
+    sessionTimeout?: number;
+  }) => {
+    setError(null);
+    setVoiceState('listening');
+    setFinalTranscript('');
+    setJarvisResponse('');
+    setInterimTranscript('');
+    setLatency({});
+    setTurnsCompleted(0);
+
+    const body = {
+      record_seconds: opts?.recordSeconds ?? 5.0,
+      language: opts?.language ?? 'en',
+      session_timeout: opts?.sessionTimeout ?? 30.0,
+    };
+
+    const res = await fetch(`${getBase()}/v1/voice/session/start`, {
+      method: 'POST',
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (!data.ok) {
+      setError(data.error ?? 'Failed to start voice session');
+      setVoiceState('error');
+      return;
+    }
+    setIsActive(true);
+  }, []);
+
+  const stop = useCallback(async () => {
+    abortRef.current?.abort();
+    await fetch(`${getBase()}/v1/voice/session/stop`, {
+      method: 'POST',
+      headers: authHeaders(),
+    }).catch(() => {});
+    setIsActive(false);
+    setVoiceState('idle');
+  }, []);
+
+  return {
+    voiceState,
+    interimTranscript,
+    finalTranscript,
+    jarvisResponse,
+    latency,
+    error,
+    turnsCompleted,
+    isActive,
+    start,
+    stop,
+  };
+}
