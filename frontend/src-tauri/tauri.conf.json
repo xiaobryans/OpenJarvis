@@ -48,7 +48,10 @@
       "exceptionDomain": "",
       "frameworks": [],
       "providerShortName": null,
-      "signingIdentity": "-"
+      "signingIdentity": "-",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "OpenJarvis needs microphone access for speech-to-text transcription."
+      }
     },
     "windows": {
       "certificateThumbprint": null,

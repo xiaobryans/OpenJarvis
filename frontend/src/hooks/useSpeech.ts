@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { transcribeAudio, fetchSpeechHealth } from '../lib/api';
+import { transcribeAudio, fetchSpeechHealth, isTauri } from '../lib/api';
 
 export type SpeechState = 'idle' | 'recording' | 'transcribing';
 
@@ -22,7 +22,11 @@ export function useSpeech() {
     setError(null);
 
     if (!navigator.mediaDevices?.getUserMedia) {
-      setError('Microphone not supported in this browser');
+      setError(
+        isTauri()
+          ? 'Microphone API unavailable in packaged app — relaunch OpenJarvis after granting mic access in System Settings → Privacy & Security → Microphone'
+          : 'Microphone not supported in this browser'
+      );
       return;
     }
 
@@ -41,7 +45,26 @@ export function useSpeech() {
       mediaRecorderRef.current = recorder;
       setState('recording');
     } catch (err) {
-      setError('Microphone access denied');
+      const domErr = err as DOMException;
+      const name = domErr?.name ?? '';
+      const message = domErr?.message ?? '';
+      let msg: string;
+      if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
+        msg = isTauri()
+          ? 'Microphone permission denied — open System Settings → Privacy & Security → Microphone, enable OpenJarvis, then relaunch'
+          : 'Microphone access denied';
+      } else if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
+        msg = 'No microphone found — check your audio input device';
+      } else if (name === 'NotSupportedError' || message.toLowerCase().includes('not available')) {
+        msg = isTauri()
+          ? 'Microphone permission missing — open System Settings → Privacy & Security → Microphone, enable OpenJarvis, then relaunch'
+          : 'Microphone not supported in this browser';
+      } else {
+        msg = isTauri()
+          ? `Microphone unavailable in packaged app: ${message || name || 'unknown error'}`
+          : 'Microphone access denied';
+      }
+      setError(msg);
       setState('idle');
     }
   }, []);

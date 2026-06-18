@@ -692,3 +692,194 @@ class TestReadinessHonesty:
         assert "8000" in combined or "lsof" in combined or "jarvis stop" in combined, (
             "jarvis voice status must show port conflict guidance"
         )
+
+
+# ---------------------------------------------------------------------------
+# I. Packaged-app mic fix (US13 — WKWebView / Tauri microphone blocker)
+# ---------------------------------------------------------------------------
+
+
+class TestPackagedAppMicFix:
+    """Verify all config, entitlement, and frontend changes required to
+    unblock microphone access in the macOS packaged Tauri app."""
+
+    # ------------------------------------------------------------------ #
+    # 1. tauri.conf.json — NSMicrophoneUsageDescription                   #
+    # ------------------------------------------------------------------ #
+
+    def test_tauri_conf_has_NSMicrophoneUsageDescription(self):
+        """tauri.conf.json must contain NSMicrophoneUsageDescription.
+
+        macOS Privacy framework requires this key in Info.plist for ANY app
+        that calls microphone APIs (including WKWebView getUserMedia).
+        Without it the system silently rejects the request and the user sees
+        'microphone is not available for this browser'.
+        """
+        import json
+        tauri_conf = _REPO_ROOT / "frontend" / "src-tauri" / "tauri.conf.json"
+        conf = json.loads(tauri_conf.read_text(encoding="utf-8"))
+        info_plist = (
+            conf.get("bundle", {})
+                .get("macOS", {})
+                .get("infoPlist", {})
+        )
+        assert "NSMicrophoneUsageDescription" in info_plist, (
+            "bundle.macOS.infoPlist must contain NSMicrophoneUsageDescription. "
+            "Without it macOS will not show the permission dialog and getUserMedia "
+            "fails with 'microphone is not available for this browser'."
+        )
+        desc = info_plist["NSMicrophoneUsageDescription"]
+        assert isinstance(desc, str) and len(desc) > 10, (
+            f"NSMicrophoneUsageDescription must be a non-empty string, got: {desc!r}"
+        )
+
+    def test_tauri_conf_NSMicrophoneUsageDescription_mentions_transcription(self):
+        """Usage description should mention speech/transcription so TCC shows a meaningful reason."""
+        import json
+        tauri_conf = _REPO_ROOT / "frontend" / "src-tauri" / "tauri.conf.json"
+        conf = json.loads(tauri_conf.read_text(encoding="utf-8"))
+        desc = (
+            conf.get("bundle", {})
+                .get("macOS", {})
+                .get("infoPlist", {})
+                .get("NSMicrophoneUsageDescription", "")
+        )
+        assert any(kw in desc.lower() for kw in ("speech", "transcri", "voice", "microphone")), (
+            f"NSMicrophoneUsageDescription should mention speech/transcription. Got: {desc!r}"
+        )
+
+    # ------------------------------------------------------------------ #
+    # 2. Entitlements.plist — audio-input entitlement                     #
+    # ------------------------------------------------------------------ #
+
+    def test_entitlements_has_audio_input(self):
+        """Entitlements.plist must contain com.apple.security.device.audio-input.
+
+        Belt-and-suspenders alongside NSMicrophoneUsageDescription. Some macOS
+        versions check this entitlement during Privacy enforcement.
+        """
+        entitlements = _REPO_ROOT / "frontend" / "src-tauri" / "Entitlements.plist"
+        src = entitlements.read_text(encoding="utf-8")
+        assert "com.apple.security.device.audio-input" in src, (
+            "Entitlements.plist must include com.apple.security.device.audio-input. "
+            "Required for notarization and some macOS Privacy checks."
+        )
+
+    def test_entitlements_audio_input_is_true(self):
+        """audio-input entitlement must be <true/>, not <false/>."""
+        entitlements = _REPO_ROOT / "frontend" / "src-tauri" / "Entitlements.plist"
+        src = entitlements.read_text(encoding="utf-8")
+        idx = src.find("com.apple.security.device.audio-input")
+        assert idx != -1
+        # The <true/> tag must follow the key, not <false/>
+        after = src[idx:idx + 120]
+        assert "<true/>" in after, (
+            "com.apple.security.device.audio-input must be <true/>, not <false/>"
+        )
+
+    # ------------------------------------------------------------------ #
+    # 3. useSpeech.ts — imports isTauri                                    #
+    # ------------------------------------------------------------------ #
+
+    def test_useSpeech_imports_isTauri(self):
+        """useSpeech.ts must import isTauri so it can detect Tauri context."""
+        hook = _REPO_ROOT / "frontend" / "src" / "hooks" / "useSpeech.ts"
+        src = hook.read_text(encoding="utf-8")
+        assert "isTauri" in src, (
+            "useSpeech.ts must import and use isTauri() to detect packaged-app context."
+        )
+
+    def test_useSpeech_isTauri_imported_from_api(self):
+        """isTauri must be imported from '../lib/api'."""
+        hook = _REPO_ROOT / "frontend" / "src" / "hooks" / "useSpeech.ts"
+        src = hook.read_text(encoding="utf-8")
+        assert "isTauri" in src and "../lib/api" in src, (
+            "useSpeech.ts must import isTauri from '../lib/api'."
+        )
+
+    # ------------------------------------------------------------------ #
+    # 4. useSpeech.ts — actionable Tauri error messages                   #
+    # ------------------------------------------------------------------ #
+
+    def test_useSpeech_has_system_settings_privacy_message(self):
+        """useSpeech.ts must show 'System Settings' path for Tauri mic errors.
+
+        'microphone is not available for this browser' is not actionable.
+        The user must be told exactly where to grant the permission.
+        """
+        hook = _REPO_ROOT / "frontend" / "src" / "hooks" / "useSpeech.ts"
+        src = hook.read_text(encoding="utf-8")
+        assert "System Settings" in src, (
+            "useSpeech.ts must tell the user to go to System Settings when mic "
+            "fails in the packaged Tauri app."
+        )
+
+    def test_useSpeech_has_not_allowed_error_branch(self):
+        """useSpeech.ts must handle NotAllowedError (user explicitly denied mic)."""
+        hook = _REPO_ROOT / "frontend" / "src" / "hooks" / "useSpeech.ts"
+        src = hook.read_text(encoding="utf-8")
+        assert "NotAllowedError" in src, (
+            "useSpeech.ts must handle NotAllowedError separately so the Tauri "
+            "packaged app shows an actionable 'open System Settings' message."
+        )
+
+    def test_useSpeech_has_not_supported_error_branch(self):
+        """useSpeech.ts must handle NotSupportedError (missing NSMicrophoneUsageDescription)."""
+        hook = _REPO_ROOT / "frontend" / "src" / "hooks" / "useSpeech.ts"
+        src = hook.read_text(encoding="utf-8")
+        assert "NotSupportedError" in src, (
+            "useSpeech.ts must handle NotSupportedError — this is the error WKWebView "
+            "throws when NSMicrophoneUsageDescription is missing."
+        )
+
+    def test_useSpeech_tauri_NotAllowed_message_has_relaunch(self):
+        """Tauri NotAllowedError message must say 'relaunch' so user knows the fix."""
+        hook = _REPO_ROOT / "frontend" / "src" / "hooks" / "useSpeech.ts"
+        src = hook.read_text(encoding="utf-8")
+        assert "relaunch" in src, (
+            "useSpeech.ts must tell the user to relaunch OpenJarvis after granting "
+            "mic permission (required because WKWebView caches the denial)."
+        )
+
+    def test_useSpeech_browser_path_still_preserved(self):
+        """Browser path must still say 'Microphone access denied' (not removed)."""
+        hook = _REPO_ROOT / "frontend" / "src" / "hooks" / "useSpeech.ts"
+        src = hook.read_text(encoding="utf-8")
+        assert "Microphone access denied" in src, (
+            "useSpeech.ts must keep the browser 'Microphone access denied' path "
+            "for non-Tauri users — do not break localhost/browser mic."
+        )
+
+    def test_useSpeech_not_available_message_branch(self):
+        """useSpeech.ts must handle 'not available' DOMException message substring."""
+        hook = _REPO_ROOT / "frontend" / "src" / "hooks" / "useSpeech.ts"
+        src = hook.read_text(encoding="utf-8")
+        assert "not available" in src, (
+            "useSpeech.ts must catch DOMException messages containing 'not available' "
+            "— this is the exact substring WebKit uses in the packaged app error."
+        )
+
+    # ------------------------------------------------------------------ #
+    # 5. US13 docs must not mark packaged-app mic as accepted              #
+    # ------------------------------------------------------------------ #
+
+    def test_us13_docs_do_not_claim_packaged_app_accepted(self):
+        """US13 docs must not claim packaged-app mic transcription is ACCEPT before proof."""
+        docs = list((_REPO_ROOT / "docs").glob("*US13*"))
+        for doc in docs:
+            src = doc.read_text(encoding="utf-8")
+            lowered = src.lower()
+            # Doc must not claim packaged-app path is accepted/proven
+            forbidden_phrases = [
+                "packaged app mic: accept",
+                "packaged-app mic: accept",
+                "tauri mic: accept",
+                "verdict: accept",  # only forbidden if combined with packaged mic claim
+            ]
+            # We only flag if "ACCEPT" appears right next to "packaged" claim
+            if "packaged" in lowered and "accept" in lowered:
+                # Ensure it's not claiming ACCEPT for the packaged mic specifically
+                assert "packaged app mic" not in lowered or "hold" in lowered, (
+                    f"{doc.name}: must not claim packaged-app mic is ACCEPT before live proof. "
+                    "US13 verdict must remain HOLD until Bryan proves mic transcription in packaged app."
+                )
