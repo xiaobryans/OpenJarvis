@@ -2432,3 +2432,26 @@ class TestWakeDrivenNotMicClickDriven:
             "The state badge must distinguish between wake-listening, active, "
             "and failed states"
         )
+
+    def test_voice_routes_returns_specific_error_codes(self):
+        """voice_routes.py must return error_code field for structured error handling."""
+        routes_path = _REPO_ROOT / "src" / "openjarvis" / "server" / "voice_routes.py"
+        src = routes_path.read_text(encoding="utf-8")
+        assert "error_code" in src, (
+            "voice_routes.py must include error_code in error responses "
+            "so the frontend can display specific failure causes"
+        )
+        # Check for specific error codes
+        for code in ("wake_worker_missing", "stt_not_configured", "loop_start_failed", "platform_not_supported"):
+            assert code in src, f"voice_routes.py must define error_code '{code}'"
+
+    def test_frontend_displays_error_code_in_badge(self):
+        """useVoiceSession must extract error_code and include it in error state."""
+        hook_path = _REPO_ROOT / "frontend" / "src" / "hooks" / "useVoiceSession.ts"
+        src = hook_path.read_text(encoding="utf-8")
+        assert "error_code" in src, (
+            "useVoiceSession must extract error_code from backend response"
+        )
+        assert "network_error" in src, (
+            "useVoiceSession must handle network errors with a specific error code"
+        )

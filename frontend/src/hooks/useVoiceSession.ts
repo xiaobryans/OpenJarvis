@@ -222,7 +222,9 @@ export function useVoiceSession(): VoiceSessionState & VoiceSessionActions {
       const data = await res.json();
       if (!data.ok) {
         if (!silent) {
-          setError(data.error ?? 'Failed to start voice session');
+          const errorCode = data.error_code || 'unknown';
+          const errorMsg = data.error || 'Failed to start voice session';
+          setError(`${errorCode}: ${errorMsg}`);
           setVoiceState('error');
         }
         return false;
@@ -231,7 +233,7 @@ export function useVoiceSession(): VoiceSessionState & VoiceSessionActions {
       return true;
     } catch (e) {
       if (!silent) {
-        setError(String(e));
+        setError(`network_error: ${String(e)}`);
         setVoiceState('error');
       }
       return false;

@@ -105,6 +105,7 @@ async def start_voice_session(req: VoiceStartRequest) -> Dict[str, Any]:
     if plat["status"] == "NOT_PROVEN":
         return {
             "ok": False,
+            "error_code": "platform_not_supported",
             "error": f"Voice conversation is NOT_PROVEN on {plat['platform']}. "
                      "Only macOS is currently supported.",
             "platform_support": plat,
@@ -114,7 +115,11 @@ async def start_voice_session(req: VoiceStartRequest) -> Dict[str, Any]:
         from openjarvis.autonomy.voice_conversation import VoiceConversationLoop
         from openjarvis.autonomy.wakeword_bridge import WakeWordBridge
     except ImportError as exc:
-        return {"ok": False, "error": f"voice_conversation module not available: {exc}"}
+        return {
+            "ok": False,
+            "error_code": "module_import_failed",
+            "error": f"voice_conversation module not available: {exc}",
+        }
 
     import os as _os
 
@@ -140,6 +145,7 @@ async def start_voice_session(req: VoiceStartRequest) -> Dict[str, Any]:
         if not _check_bridge.is_available():
             return {
                 "ok": False,
+                "error_code": "wake_worker_missing",
                 "error": (
                     "Wake-word worker venv not found. "
                     "Run: uv venv .wake_worker_venv --python 3.12 && "
@@ -154,10 +160,15 @@ async def start_voice_session(req: VoiceStartRequest) -> Dict[str, Any]:
             if vs.get("stt_status") == "not_configured":
                 return {
                     "ok": False,
+                    "error_code": "stt_not_configured",
                     "error": "STT not configured. Install faster-whisper or set OPENAI_API_KEY.",
                 }
-        except Exception:
-            pass
+        except Exception as exc:
+            return {
+                "ok": False,
+                "error_code": "stt_check_failed",
+                "error": f"STT status check failed: {exc}",
+            }
 
         if req.threshold is not None:
             _os.environ["JARVIS_WAKEWORD_THRESHOLD"] = str(req.threshold)
@@ -175,7 +186,11 @@ async def start_voice_session(req: VoiceStartRequest) -> Dict[str, Any]:
 
         result = loop.start(debug=req.debug)
         if not result.get("ok"):
-            return {"ok": False, "error": result.get("error", "Failed to start worker")}
+            return {
+                "ok": False,
+                "error_code": "loop_start_failed",
+                "error": result.get("error", "Failed to start worker"),
+            }
 
         _global_session = loop
 

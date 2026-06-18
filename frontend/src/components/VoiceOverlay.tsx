@@ -390,9 +390,11 @@ export function VoiceOverlay() {
             />
             {autoStartFailed
               ? 'Voice unavailable'
-              : isRunning
-                ? VOICE_STATE_LABEL[voiceState] ?? voiceState
-                : 'Voice off'}
+              : error
+                ? `Error: ${error.split(':')[0]}` // Show error_code prefix
+                : isRunning
+                  ? VOICE_STATE_LABEL[voiceState] ?? voiceState
+                  : 'Voice off'}
             <ChevronUp size={10} />
           </button>
         )}
