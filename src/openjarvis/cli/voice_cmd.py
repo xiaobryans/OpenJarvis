@@ -433,4 +433,204 @@ def voice_test_stt() -> None:
     click.echo("STT config check passed.")
 
 
+# ---------------------------------------------------------------------------
+# jarvis voice chat  (full back-and-forth conversation loop)
+# ---------------------------------------------------------------------------
+
+
+@voice.command("chat")
+@click.option(
+    "--record-seconds",
+    type=float,
+    default=5.0,
+    show_default=True,
+    help="Seconds of audio to record after wake-word fires.",
+)
+@click.option(
+    "--language",
+    default="en",
+    show_default=True,
+    help="STT language code (default: en, prevents Malay/Indonesian misdetection).",
+)
+@click.option(
+    "--auto-restart",
+    is_flag=True,
+    default=False,
+    help="Automatically restart wake-word worker on crash (up to 5 times).",
+)
+@click.option(
+    "--debug",
+    "debug_mode",
+    is_flag=True,
+    default=False,
+    help="Show worker output, per-frame scores, and STT/engine debug logs.",
+)
+@click.option(
+    "--threshold",
+    type=float,
+    default=None,
+    help="Override wake-word detection threshold (default 0.3, range 0.1–1.0).",
+)
+def voice_chat(
+    record_seconds: float,
+    language: str,
+    auto_restart: bool,
+    debug_mode: bool,
+    threshold: float | None,
+) -> None:
+    """Full Jarvis voice conversation loop.
+
+    \b
+    Flow per turn:
+      1. Say 'hey jarvis'  → wake-word detected
+      2. Jarvis records your command (--record-seconds duration)
+      3. STT transcribes the command
+      4. Text is routed through the normal Jarvis chat/model/action path
+      5. Response is spoken via TTS
+      6. Returns to wake-word listening for the next turn
+
+    \b
+    Requirements:
+      - .wake_worker_venv with openwakeword + sounddevice installed
+      - STT: faster-whisper (pip install faster-whisper) OR OPENAI_API_KEY
+      - TTS: macOS 'say' command (built-in) or OPENAI_API_KEY
+      - Inference: Ollama running or API key configured
+
+    \b
+    Example:
+      jarvis voice chat
+      jarvis voice chat --record-seconds 6 --debug
+    """
+    import os as _os
+    import time as _time
+
+    try:
+        from openjarvis.autonomy.voice_conversation import VoiceConversationLoop
+        from openjarvis.autonomy.voice_pipeline import get_voice_status
+        from openjarvis.autonomy.wakeword_bridge import WakeWordBridge
+    except ImportError as exc:
+        click.echo(f"ERROR: voice conversation module not available: {exc}", err=True)
+        sys.exit(1)
+
+    # Set env overrides before starting bridge
+    if threshold is not None:
+        _os.environ["JARVIS_WAKEWORD_THRESHOLD"] = str(threshold)
+    if debug_mode:
+        _os.environ["JARVIS_WAKEWORD_DEBUG"] = "1"
+
+    # Pre-flight: wake-word worker venv must exist
+    _bridge_check = WakeWordBridge()
+    if not _bridge_check.is_available():
+        click.echo("ERROR: wake-word worker venv not found.", err=True)
+        click.echo("", err=True)
+        click.echo("Setup steps:", err=True)
+        click.echo("  uv venv .wake_worker_venv --python 3.12", err=True)
+        click.echo(
+            "  uv pip install --python .wake_worker_venv/bin/python openwakeword sounddevice",
+            err=True,
+        )
+        click.echo("", err=True)
+        click.echo("Then retry: jarvis voice chat", err=True)
+        sys.exit(1)
+
+    # Advisory checks — STT is mandatory for conversation, TTS is a warning
+    try:
+        vs = get_voice_status()
+        stt = vs.get("stt_status", "not_configured")
+        tts = vs.get("tts_status", "not_configured")
+        mic = vs.get("microphone_status", "unknown")
+        if mic != "granted":
+            click.echo(
+                f"WARNING: microphone_status={mic!r}. "
+                "Grant mic permission in System Settings > Privacy & Security.",
+                err=True,
+            )
+        if stt == "not_configured":
+            click.echo(
+                "ERROR: STT not configured. Voice conversation requires STT.",
+                err=True,
+            )
+            click.echo("  Fix: pip install faster-whisper  OR  set OPENAI_API_KEY", err=True)
+            sys.exit(1)
+        if tts == "not_configured":
+            click.echo(
+                "WARNING: TTS not configured — responses will not be spoken.",
+                err=True,
+            )
+    except Exception:
+        pass
+
+    click.echo()
+    click.echo("Starting Jarvis voice conversation loop...")
+    click.echo(f"  Record duration : {record_seconds}s after wake-word")
+    click.echo(f"  STT language    : {language}")
+    click.echo(f"  Threshold       : {threshold or 0.3}")
+    if debug_mode:
+        click.echo("  Debug mode      : on")
+    click.echo("  Say 'hey jarvis' to start each turn.")
+    click.echo("  Press Ctrl+C to stop.")
+    click.echo()
+
+    def _on_state(state: str) -> None:
+        ts = _time.strftime("%H:%M:%S")
+        labels = {
+            "listening": "Listening for 'hey jarvis'...",
+            "recording": f"Wake word detected — recording command ({record_seconds}s)...",
+            "transcribing": "Transcribing command via STT...",
+            "processing": "Routing to Jarvis...",
+            "speaking": "Speaking response via TTS...",
+        }
+        label = labels.get(state, state)
+        click.echo(f"  [{ts}] {label}")
+
+    loop = VoiceConversationLoop(
+        record_seconds=record_seconds,
+        language=language,
+        auto_restart=auto_restart,
+        debug=debug_mode,
+        on_state_change=_on_state,
+    )
+
+    result = loop.start(debug=debug_mode)
+    if not result.get("ok"):
+        err_msg = result.get("error", "unknown error")
+        click.echo(f"ERROR: {err_msg}", err=True)
+        click.echo("Re-run with: jarvis voice chat --debug", err=True)
+        sys.exit(1)
+
+    pid = result.get("worker_pid", "?")
+    socket_path = result.get("socket", "/tmp/jarvis_wakeword.sock")
+    click.echo(f"  Worker pid      : {pid}")
+    click.echo(f"  Socket          : {socket_path}")
+    click.echo()
+
+    _ready_shown = [False]
+
+    try:
+        while True:
+            _time.sleep(0.5)
+            st = loop.status()
+            bridge_st = st.get("bridge", {})
+            if not _ready_shown[0] and bridge_st.get("worker_ready"):
+                _ready_shown[0] = True
+                mdl = bridge_st.get("true_wakeword_model", "unknown")
+                thr = bridge_st.get("worker_threshold", threshold or 0.3)
+                click.echo(f"  Worker ready: model={mdl!r} threshold={thr}")
+                click.echo("  Say 'hey jarvis' to begin your first turn.")
+                click.echo()
+            if not bridge_st.get("worker_running") and not auto_restart:
+                click.echo("Worker stopped unexpectedly.", err=True)
+                click.echo("  Re-run with: jarvis voice chat --debug", err=True)
+                break
+    except KeyboardInterrupt:
+        click.echo("\nStopping voice conversation loop...")
+    finally:
+        loop.stop()
+        st = loop.status()
+        click.echo(
+            f"Voice conversation stopped. "
+            f"Turns completed: {st.get('turns_completed', 0)}"
+        )
+
+
 __all__ = ["voice"]

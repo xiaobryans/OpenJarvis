@@ -1,6 +1,6 @@
 """US14A self-test fixture — added by Jarvis Coding Workbench."""
 
-US14A_MARKER = "Jarvis Coding Workbench E2E proof 20260617T195133"
+US14A_MARKER = "Jarvis Coding Workbench E2E proof 20260618T145136"
 
 
 def test_us14a_marker():

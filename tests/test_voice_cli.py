@@ -1293,3 +1293,492 @@ class TestSTTLanguageFix:
                 os.environ.pop("JARVIS_STT_LANGUAGE", None)
             else:
                 os.environ["JARVIS_STT_LANGUAGE"] = original
+
+
+# ---------------------------------------------------------------------------
+# L. US13 Voice Conversation Loop (full back-and-forth loop)
+# ---------------------------------------------------------------------------
+
+
+class TestVoiceConversationModule:
+    """voice_conversation.py — module-level structure and import tests."""
+
+    def test_module_importable(self):
+        """voice_conversation module must be importable."""
+        from openjarvis.autonomy.voice_conversation import VoiceConversationLoop
+        assert VoiceConversationLoop is not None
+
+    def test_all_public_symbols_importable(self):
+        """All __all__ symbols must be importable."""
+        from openjarvis.autonomy import voice_conversation
+        for name in voice_conversation.__all__:
+            obj = getattr(voice_conversation, name, None)
+            assert obj is not None, f"voice_conversation.{name} not found"
+
+    def test_voice_conversation_loop_class_exists(self):
+        from openjarvis.autonomy.voice_conversation import VoiceConversationLoop
+        assert callable(VoiceConversationLoop)
+
+    def test_record_command_audio_callable(self):
+        from openjarvis.autonomy.voice_conversation import record_command_audio
+        import inspect
+        sig = inspect.signature(record_command_audio)
+        assert "duration_seconds" in sig.parameters
+
+    def test_transcribe_command_callable(self):
+        from openjarvis.autonomy.voice_conversation import transcribe_command
+        import inspect
+        sig = inspect.signature(transcribe_command)
+        assert "audio_bytes" in sig.parameters
+        assert "language" in sig.parameters
+
+    def test_query_jarvis_text_callable(self):
+        from openjarvis.autonomy.voice_conversation import query_jarvis_text
+        import inspect
+        sig = inspect.signature(query_jarvis_text)
+        assert "text" in sig.parameters
+
+    def test_speak_response_callable(self):
+        from openjarvis.autonomy.voice_conversation import speak_response
+        import inspect
+        sig = inspect.signature(speak_response)
+        assert "text" in sig.parameters
+
+
+class TestVoiceConversationLoopStructure:
+    """VoiceConversationLoop state machine and API structure."""
+
+    def _make_loop(self, **kw):
+        from openjarvis.autonomy.voice_conversation import VoiceConversationLoop
+        return VoiceConversationLoop(**kw)
+
+    def test_loop_has_start_method(self):
+        loop = self._make_loop()
+        assert hasattr(loop, "start") and callable(loop.start)
+
+    def test_loop_has_stop_method(self):
+        loop = self._make_loop()
+        assert hasattr(loop, "stop") and callable(loop.stop)
+
+    def test_loop_has_status_method(self):
+        loop = self._make_loop()
+        assert hasattr(loop, "status") and callable(loop.status)
+
+    def test_loop_has_on_wake_callback(self):
+        loop = self._make_loop()
+        assert hasattr(loop, "_on_wake") and callable(loop._on_wake)
+
+    def test_loop_has_process_turn(self):
+        loop = self._make_loop()
+        assert hasattr(loop, "_process_turn") and callable(loop._process_turn)
+
+    def test_loop_initial_state_is_idle(self):
+        loop = self._make_loop()
+        assert loop._state == "idle"
+
+    def test_loop_language_defaults_to_en(self):
+        """Language must default to 'en' (prevents Malay/Indonesian misdetection)."""
+        loop = self._make_loop()
+        assert loop._language == "en", (
+            "VoiceConversationLoop must default to language='en'. "
+            "Without this, short English commands may be misidentified as Malay."
+        )
+
+    def test_loop_status_returns_required_fields(self):
+        loop = self._make_loop()
+        st = loop.status()
+        for field in ("loop_state", "turns_completed", "record_seconds", "language", "bridge"):
+            assert field in st, f"status() missing field: {field}"
+
+    def test_loop_status_turns_starts_at_zero(self):
+        loop = self._make_loop()
+        assert loop.status()["turns_completed"] == 0
+
+    def test_loop_set_state_updates_state(self):
+        loop = self._make_loop()
+        loop._set_state("listening")
+        assert loop._state == "listening"
+
+    def test_loop_set_state_calls_callback(self):
+        states = []
+        loop = self._make_loop(on_state_change=states.append)
+        loop._set_state("recording")
+        assert "recording" in states
+
+    def test_loop_default_record_seconds_is_five(self):
+        loop = self._make_loop()
+        assert loop._record_seconds == 5.0
+
+
+class TestWakeWordTriggersRecording:
+    """Wake-word event must transition loop from listening to recording."""
+
+    def test_on_wake_sets_state_to_recording(self):
+        """_on_wake must change state from listening to recording."""
+        import threading
+        import time
+        from openjarvis.autonomy.voice_conversation import VoiceConversationLoop
+        from openjarvis.autonomy.wakeword_bridge import WakeWordTriggerEvent
+
+        loop = VoiceConversationLoop()
+        loop._state = "listening"
+
+        turn_started = threading.Event()
+
+        def _mock_process_turn():
+            turn_started.set()
+            loop._set_state("listening")
+
+        loop._process_turn = _mock_process_turn
+        ev = WakeWordTriggerEvent(model="hey_jarvis_v0.1", score=0.9, ts=time.time())
+        loop._on_wake(ev)
+        turn_started.wait(timeout=2.0)
+        assert turn_started.is_set(), "Wake-word callback must start _process_turn thread"
+
+    def test_on_wake_ignored_when_not_listening(self):
+        """Wake-word event must be ignored if state is not 'listening'."""
+        import time
+        from openjarvis.autonomy.voice_conversation import VoiceConversationLoop
+        from openjarvis.autonomy.wakeword_bridge import WakeWordTriggerEvent
+
+        loop = VoiceConversationLoop()
+        loop._state = "processing"
+
+        threads_started = []
+        original_thread_start = None
+
+        import threading as _threading
+        ev = WakeWordTriggerEvent(model="hey_jarvis_v0.1", score=0.9, ts=time.time())
+        loop._on_wake(ev)
+        assert loop._state == "processing", (
+            "State must remain 'processing' — double-trigger must be ignored"
+        )
+
+    def test_on_wake_records_after_wake_word(self):
+        """_process_turn must set state to 'recording' as its first step."""
+        import inspect
+        from openjarvis.autonomy import voice_conversation
+        src = inspect.getsource(voice_conversation.VoiceConversationLoop._process_turn)
+        assert "recording" in src, (
+            "_process_turn must set state to 'recording' after wake-word fires"
+        )
+
+
+class TestCommandRecordingFeedsSTT:
+    """record_command_audio output feeds existing STT path."""
+
+    def test_transcribe_command_uses_stt_status_check(self):
+        """transcribe_command must use get_stt_status() to pick backend."""
+        import inspect
+        from openjarvis.autonomy import voice_conversation
+        src = inspect.getsource(voice_conversation.transcribe_command)
+        assert "get_stt_status" in src, (
+            "transcribe_command must call get_stt_status() to pick the configured backend"
+        )
+
+    def test_transcribe_command_uses_faster_whisper_backend(self):
+        """transcribe_command must use FasterWhisperBackend for faster_whisper engine."""
+        import inspect
+        from openjarvis.autonomy import voice_conversation
+        src = inspect.getsource(voice_conversation.transcribe_command)
+        assert "FasterWhisperBackend" in src
+
+    def test_transcribe_command_uses_openai_whisper_backend(self):
+        """transcribe_command must use OpenAIWhisperBackend for openai_whisper engine."""
+        import inspect
+        from openjarvis.autonomy import voice_conversation
+        src = inspect.getsource(voice_conversation.transcribe_command)
+        assert "OpenAIWhisperBackend" in src
+
+    def test_transcribe_command_defaults_language_en(self):
+        """transcribe_command must default language to 'en'."""
+        import inspect
+        from openjarvis.autonomy.voice_conversation import transcribe_command
+        sig = inspect.signature(transcribe_command)
+        assert sig.parameters["language"].default == "en", (
+            "transcribe_command language default must be 'en' to prevent "
+            "Malay/Indonesian misdetection on short English clips"
+        )
+
+    def test_transcribe_command_passes_language_to_backend(self):
+        """transcribe_command must pass language kwarg to the STT backend."""
+        import inspect
+        from openjarvis.autonomy import voice_conversation
+        src = inspect.getsource(voice_conversation.transcribe_command)
+        assert "language=language" in src
+
+    def test_record_command_audio_returns_wav_format(self):
+        """record_command_audio must return WAV bytes (not raw PCM)."""
+        import inspect
+        from openjarvis.autonomy import voice_conversation
+        src = inspect.getsource(voice_conversation.record_command_audio)
+        assert "wave.open" in src, (
+            "record_command_audio must write a WAV file — STT backends expect WAV"
+        )
+
+    def test_packaged_app_stt_english_fix_intact(self):
+        """Existing STT English fixes (initial_prompt, language='en') must not be broken."""
+        backend = _REPO_ROOT / "src" / "openjarvis" / "speech" / "faster_whisper.py"
+        src = backend.read_text(encoding="utf-8")
+        assert "initial_prompt" in src and "Do not translate" in src, (
+            "faster_whisper.py initial_prompt English fix must remain intact"
+        )
+        backend_oa = _REPO_ROOT / "src" / "openjarvis" / "speech" / "openai_whisper.py"
+        src_oa = backend_oa.read_text(encoding="utf-8")
+        assert "Do not translate" in src_oa, (
+            "openai_whisper.py English prompt hint must remain intact"
+        )
+
+
+class TestSTTRoutesToJarvisPath:
+    """STT output must route through the normal Jarvis chat/model/action path."""
+
+    def test_query_jarvis_text_uses_get_engine(self):
+        """query_jarvis_text must use get_engine() — not a duplicate engine."""
+        import inspect
+        from openjarvis.autonomy import voice_conversation
+        src = inspect.getsource(voice_conversation.query_jarvis_text)
+        assert "get_engine" in src, (
+            "query_jarvis_text must call get_engine() from the existing engine module"
+        )
+
+    def test_query_jarvis_text_uses_load_config(self):
+        """query_jarvis_text must use load_config() for config."""
+        import inspect
+        from openjarvis.autonomy import voice_conversation
+        src = inspect.getsource(voice_conversation.query_jarvis_text)
+        assert "load_config" in src
+
+    def test_query_jarvis_text_uses_engine_generate(self):
+        """query_jarvis_text must call engine.generate() — the normal inference path."""
+        import inspect
+        from openjarvis.autonomy import voice_conversation
+        src = inspect.getsource(voice_conversation.query_jarvis_text)
+        assert "engine.generate" in src
+
+    def test_query_jarvis_text_respects_default_agent(self):
+        """query_jarvis_text must use the configured default_agent if set."""
+        import inspect
+        from openjarvis.autonomy import voice_conversation
+        src = inspect.getsource(voice_conversation.query_jarvis_text)
+        assert "default_agent" in src, (
+            "query_jarvis_text must respect config.agent.default_agent"
+        )
+
+    def test_no_duplicate_planner_in_voice_conversation(self):
+        """voice_conversation must not define its own planner or orchestrator."""
+        import inspect
+        from openjarvis.autonomy import voice_conversation
+        src = inspect.getsource(voice_conversation)
+        assert "ResearchAgent" not in src, "Must not duplicate the ResearchAgent"
+        assert "OrchestratorAgent" not in src, "Must not duplicate the OrchestratorAgent"
+        assert "PlannerAgent" not in src, "Must not duplicate the PlannerAgent"
+
+
+class TestTTSCalledWithResponse:
+    """speak_response must use the existing TTS path."""
+
+    def test_speak_response_uses_get_tts_status(self):
+        """speak_response must call get_tts_status() from voice_pipeline."""
+        import inspect
+        from openjarvis.autonomy import voice_conversation
+        src = inspect.getsource(voice_conversation.speak_response)
+        assert "get_tts_status" in src
+
+    def test_speak_response_uses_macos_say(self):
+        """speak_response must invoke 'say' on macOS."""
+        import inspect
+        from openjarvis.autonomy import voice_conversation
+        src = inspect.getsource(voice_conversation.speak_response)
+        assert '"say"' in src or "'say'" in src
+
+    def test_process_turn_calls_speak_response(self):
+        """_process_turn must call speak_response() with the Jarvis response."""
+        import inspect
+        from openjarvis.autonomy import voice_conversation
+        src = inspect.getsource(voice_conversation.VoiceConversationLoop._process_turn)
+        assert "speak_response" in src, (
+            "_process_turn must call speak_response() with the Jarvis response"
+        )
+
+
+class TestLoopReturnsToListening:
+    """After each turn, the loop must return to listening state."""
+
+    def test_process_turn_returns_to_listening_in_finally(self):
+        """_process_turn must set state to 'listening' in a finally block."""
+        import inspect
+        from openjarvis.autonomy import voice_conversation
+        src = inspect.getsource(voice_conversation.VoiceConversationLoop._process_turn)
+        assert "finally" in src, (
+            "_process_turn must use finally: to guarantee return to listening"
+        )
+        assert "listening" in src, (
+            "_process_turn finally block must set state to 'listening'"
+        )
+
+    def test_loop_returns_to_listening_after_mock_turn(self):
+        """After _process_turn finishes, loop state must be 'listening'."""
+        import threading
+        import time
+        from openjarvis.autonomy.voice_conversation import VoiceConversationLoop
+        from openjarvis.autonomy.wakeword_bridge import WakeWordTriggerEvent
+
+        loop = VoiceConversationLoop()
+        loop._state = "listening"
+
+        done = threading.Event()
+
+        def _mock_turn():
+            try:
+                pass
+            finally:
+                loop._set_state("listening")
+                done.set()
+
+        loop._process_turn = _mock_turn
+        ev = WakeWordTriggerEvent(model="hey_jarvis_v0.1", score=0.9, ts=time.time())
+        loop._on_wake(ev)
+        done.wait(timeout=3.0)
+        assert loop._state == "listening", (
+            f"Loop state must be 'listening' after turn, got {loop._state!r}"
+        )
+
+    def test_loop_increments_turns_after_turn(self):
+        """_turns counter must increment after each completed turn."""
+        import inspect
+        from openjarvis.autonomy import voice_conversation
+        src = inspect.getsource(voice_conversation.VoiceConversationLoop._process_turn)
+        assert "_turns" in src, (
+            "_process_turn must increment _turns after each completed turn"
+        )
+
+
+class TestSafetyApprovalGates:
+    """Safety/approval gates must not be bypassed for voice commands."""
+
+    def test_query_jarvis_text_calls_setup_security(self):
+        """query_jarvis_text must call setup_security() before any inference.
+
+        This ensures the voice path goes through the same security layer as
+        the CLI (jarvis ask / jarvis chat). Approval gates, capability policy,
+        and hard-blocked action classes all remain active.
+        """
+        import inspect
+        from openjarvis.autonomy import voice_conversation
+        src = inspect.getsource(voice_conversation.query_jarvis_text)
+        assert "setup_security" in src, (
+            "query_jarvis_text MUST call setup_security() — "
+            "this is the safety gate that prevents voice from bypassing "
+            "approval policies, hard-blocked actions, and capability checks."
+        )
+
+    def test_query_jarvis_text_uses_security_engine(self):
+        """query_jarvis_text must use sec.engine, not the raw engine."""
+        import inspect
+        from openjarvis.autonomy import voice_conversation
+        src = inspect.getsource(voice_conversation.query_jarvis_text)
+        assert "sec.engine" in src, (
+            "query_jarvis_text must replace engine with sec.engine — "
+            "the raw engine bypasses security middleware"
+        )
+
+    def test_voice_hard_blocked_actions_still_blocked(self):
+        """Voice hard-blocked action classes must remain blocked."""
+        from openjarvis.autonomy.voice_pipeline import (
+            classify_voice_risk,
+            VoiceApprovalRisk,
+        )
+        for action in ("production_deploy", "billing_change", "secrets_mutation"):
+            risk = classify_voice_risk(action)
+            assert risk == VoiceApprovalRisk.DANGEROUS, (
+                f"Action {action!r} must remain DANGEROUS/hard-blocked for voice"
+            )
+
+    def test_issue_approval_challenge_still_raises_for_hard_blocked(self):
+        """issue_approval_challenge must still raise for hard-blocked actions."""
+        from openjarvis.autonomy.voice_pipeline import issue_approval_challenge
+        import pytest
+        with pytest.raises(ValueError, match="voice-hard-blocked"):
+            issue_approval_challenge("production_deploy", "Deploy to prod")
+
+    def test_voice_conversation_module_does_not_bypass_security(self):
+        """voice_conversation.py must not import voice_hard_blocked or bypass gates."""
+        import inspect
+        from openjarvis.autonomy import voice_conversation
+        src = inspect.getsource(voice_conversation)
+        assert "_VOICE_HARD_BLOCKED" not in src, (
+            "voice_conversation.py must not access _VOICE_HARD_BLOCKED — "
+            "do not replicate or bypass the approval gate list"
+        )
+
+
+class TestVoiceChatCLICommand:
+    """'jarvis voice chat' CLI command registration and help tests."""
+
+    def test_voice_chat_subcommand_registered(self):
+        """'chat' subcommand must be registered in the voice group."""
+        from openjarvis.cli.voice_cmd import voice
+        assert "chat" in voice.commands, (
+            "'chat' must be registered as a subcommand of 'jarvis voice'"
+        )
+
+    def test_voice_chat_help_exits_zero(self):
+        r = _run_cli("voice", "chat", "--help")
+        assert r.returncode == 0, f"voice chat --help failed:\n{r.stderr}"
+
+    def test_voice_chat_help_mentions_hey_jarvis(self):
+        r = _run_cli("voice", "chat", "--help")
+        combined = r.stdout + r.stderr
+        assert "hey jarvis" in combined.lower() or "wake" in combined.lower()
+
+    def test_voice_chat_help_mentions_record_seconds(self):
+        r = _run_cli("voice", "chat", "--help")
+        assert "--record-seconds" in r.stdout
+
+    def test_voice_chat_help_mentions_language(self):
+        r = _run_cli("voice", "chat", "--help")
+        assert "--language" in r.stdout
+
+    def test_voice_chat_help_mentions_threshold(self):
+        r = _run_cli("voice", "chat", "--help")
+        assert "--threshold" in r.stdout
+
+    def test_voice_chat_help_mentions_debug(self):
+        r = _run_cli("voice", "chat", "--help")
+        assert "--debug" in r.stdout
+
+    def test_voice_help_mentions_chat(self):
+        """'jarvis voice --help' must list the 'chat' subcommand."""
+        r = _run_cli("voice", "--help")
+        assert "chat" in r.stdout, (
+            "'jarvis voice --help' must list the 'chat' subcommand"
+        )
+
+    def test_voice_chat_requires_wakeword_worker(self):
+        """voice_chat implementation must check bridge availability."""
+        voice_cmd_path = _REPO_ROOT / "src" / "openjarvis" / "cli" / "voice_cmd.py"
+        src = voice_cmd_path.read_text(encoding="utf-8")
+        assert "is_available" in src, (
+            "voice_chat must call bridge.is_available() before starting"
+        )
+
+    def test_voice_chat_exits_nonzero_without_worker(self):
+        """jarvis voice chat must exit non-zero when worker venv is missing."""
+        voice_cmd_path = _REPO_ROOT / "src" / "openjarvis" / "cli" / "voice_cmd.py"
+        src = voice_cmd_path.read_text(encoding="utf-8")
+        assert "sys.exit(1)" in src, (
+            "voice_chat must call sys.exit(1) when worker venv is not found"
+        )
+
+    def test_voice_chat_checks_stt_configuration(self):
+        """voice_chat must check STT is configured before starting."""
+        voice_cmd_path = _REPO_ROOT / "src" / "openjarvis" / "cli" / "voice_cmd.py"
+        src = voice_cmd_path.read_text(encoding="utf-8")
+        assert "stt" in src.lower() and "not_configured" in src
+
+    def test_voice_chat_uses_voice_conversation_loop(self):
+        """voice_chat must use VoiceConversationLoop, not re-implement the loop."""
+        voice_cmd_path = _REPO_ROOT / "src" / "openjarvis" / "cli" / "voice_cmd.py"
+        src = voice_cmd_path.read_text(encoding="utf-8")
+        assert "VoiceConversationLoop" in src
