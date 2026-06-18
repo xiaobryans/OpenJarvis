@@ -707,45 +707,76 @@ class TestPackagedAppMicFix:
     # 1. tauri.conf.json — NSMicrophoneUsageDescription                   #
     # ------------------------------------------------------------------ #
 
-    def test_tauri_conf_has_NSMicrophoneUsageDescription(self):
-        """tauri.conf.json must contain NSMicrophoneUsageDescription.
+    def test_tauri_conf_infoPlist_is_string_path(self):
+        """tauri.conf.json bundle.macOS.infoPlist must be a string path, not an object.
 
-        macOS Privacy framework requires this key in Info.plist for ANY app
-        that calls microphone APIs (including WKWebView getUserMedia).
-        Without it the system silently rejects the request and the user sees
-        'microphone is not available for this browser'.
+        Tauri v2 schema: infoPlist is null | string (path to a .plist file).
+        Passing a JSON object causes:
+          Error on bundle > macOS > infoPlist: {...} is not of types 'null', 'string'
         """
         import json
         tauri_conf = _REPO_ROOT / "frontend" / "src-tauri" / "tauri.conf.json"
         conf = json.loads(tauri_conf.read_text(encoding="utf-8"))
-        info_plist = (
+        info_plist_val = (
             conf.get("bundle", {})
                 .get("macOS", {})
-                .get("infoPlist", {})
+                .get("infoPlist")
         )
-        assert "NSMicrophoneUsageDescription" in info_plist, (
-            "bundle.macOS.infoPlist must contain NSMicrophoneUsageDescription. "
-            "Without it macOS will not show the permission dialog and getUserMedia "
-            "fails with 'microphone is not available for this browser'."
-        )
-        desc = info_plist["NSMicrophoneUsageDescription"]
-        assert isinstance(desc, str) and len(desc) > 10, (
-            f"NSMicrophoneUsageDescription must be a non-empty string, got: {desc!r}"
+        assert isinstance(info_plist_val, str) and info_plist_val.endswith(".plist"), (
+            f"bundle.macOS.infoPlist must be a string path to a .plist file, got: {info_plist_val!r}. "
+            "Passing a JSON object causes a Tauri build error."
         )
 
-    def test_tauri_conf_NSMicrophoneUsageDescription_mentions_transcription(self):
-        """Usage description should mention speech/transcription so TCC shows a meaningful reason."""
+    def test_info_plist_file_has_NSMicrophoneUsageDescription(self):
+        """The Info.plist referenced by tauri.conf.json must contain NSMicrophoneUsageDescription.
+
+        macOS Privacy framework (TCC) requires this key in ANY app that accesses
+        the microphone, including WKWebView getUserMedia. Without it, macOS refuses
+        to show the permission dialog and getUserMedia fails with:
+          'microphone is not available for this browser'
+        """
         import json
         tauri_conf = _REPO_ROOT / "frontend" / "src-tauri" / "tauri.conf.json"
         conf = json.loads(tauri_conf.read_text(encoding="utf-8"))
-        desc = (
+        plist_name = (
             conf.get("bundle", {})
                 .get("macOS", {})
-                .get("infoPlist", {})
-                .get("NSMicrophoneUsageDescription", "")
+                .get("infoPlist", "Info.plist")
         )
+        plist_path = _REPO_ROOT / "frontend" / "src-tauri" / plist_name
+        assert plist_path.exists(), (
+            f"Info.plist file not found at {plist_path}. "
+            "Create it with NSMicrophoneUsageDescription key."
+        )
+        src = plist_path.read_text(encoding="utf-8")
+        assert "NSMicrophoneUsageDescription" in src, (
+            f"{plist_path.name} must contain NSMicrophoneUsageDescription. "
+            "Without it macOS will not show the permission dialog and getUserMedia "
+            "fails with 'microphone is not available for this browser'."
+        )
+
+    def test_info_plist_NSMicrophoneUsageDescription_mentions_transcription(self):
+        """Usage description in Info.plist should mention speech/transcription for TCC."""
+        import json
+        tauri_conf = _REPO_ROOT / "frontend" / "src-tauri" / "tauri.conf.json"
+        conf = json.loads(tauri_conf.read_text(encoding="utf-8"))
+        plist_name = (
+            conf.get("bundle", {}).get("macOS", {}).get("infoPlist", "Info.plist")
+        )
+        if not isinstance(plist_name, str):
+            plist_name = "Info.plist"
+        plist_path = _REPO_ROOT / "frontend" / "src-tauri" / plist_name
+        src = plist_path.read_text(encoding="utf-8") if plist_path.exists() else ""
+        # Extract the string value that follows NSMicrophoneUsageDescription key
+        import re
+        m = re.search(
+            r"<key>NSMicrophoneUsageDescription</key>\s*<string>([^<]*)</string>",
+            src,
+        )
+        desc = m.group(1) if m else ""
         assert any(kw in desc.lower() for kw in ("speech", "transcri", "voice", "microphone")), (
-            f"NSMicrophoneUsageDescription should mention speech/transcription. Got: {desc!r}"
+            f"NSMicrophoneUsageDescription in {plist_name} should mention speech/transcription. "
+            f"Got: {desc!r}"
         )
 
     # ------------------------------------------------------------------ #

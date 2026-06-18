@@ -49,9 +49,7 @@
       "frameworks": [],
       "providerShortName": null,
       "signingIdentity": "-",
-      "infoPlist": {
-        "NSMicrophoneUsageDescription": "OpenJarvis needs microphone access for speech-to-text transcription."
-      }
+      "infoPlist": "Info.plist"
     },
     "windows": {
       "certificateThumbprint": null,
