@@ -579,6 +579,82 @@ async def workbench_doctor(repo_path: str = ".") -> Dict[str, Any]:
     except Exception as exc:
         checks.append(chk("us17_safety_events", "fail", str(exc)))
 
+    # Check 27: Wave 1 platform registry importable
+    try:
+        from openjarvis.wave.platform_registry import get_wave_platform_summary
+        summary = get_wave_platform_summary()
+        wave1_scaffolded = summary.get("wave1_scaffolded", False)
+        epics = summary.get("total_epics", 0)
+        checks.append(chk(
+            "wave1_platform_registry",
+            "pass" if wave1_scaffolded else "warn",
+            f"wave1_scaffolded={wave1_scaffolded} total_epics={epics}",
+        ))
+    except Exception as exc:
+        checks.append(chk("wave1_platform_registry", "fail", str(exc)))
+
+    # Check 28: Wave 1 Epic A — Skill Platform scaffold
+    try:
+        from openjarvis.wave.skill_platform import get_skill_platform_status
+        info = get_skill_platform_status()
+        checks.append(chk(
+            "wave1_skill_platform",
+            "pass",
+            f"status={info['status']} skills={info['skill_count']} approval_gate={info['approval_gate_enforced']}",
+        ))
+    except Exception as exc:
+        checks.append(chk("wave1_skill_platform", "fail", str(exc)))
+
+    # Check 29: Wave 1 Epic B — Automation Platform scaffold
+    try:
+        from openjarvis.wave.automation_platform import get_automation_platform_status
+        info = get_automation_platform_status()
+        checks.append(chk(
+            "wave1_automation_platform",
+            "pass",
+            f"status={info['status']} approval_gate={info['approval_gate_enforced']}",
+        ))
+    except Exception as exc:
+        checks.append(chk("wave1_automation_platform", "fail", str(exc)))
+
+    # Check 30: Wave 1 Epic C — Knowledge Platform scaffold
+    try:
+        from openjarvis.wave.knowledge_platform import get_knowledge_platform_status
+        info = get_knowledge_platform_status()
+        checks.append(chk(
+            "wave1_knowledge_platform",
+            "pass",
+            f"status={info['status']} sources={info['source_count']} pii_gate={info['pii_sources_require_approval']}",
+        ))
+    except Exception as exc:
+        checks.append(chk("wave1_knowledge_platform", "fail", str(exc)))
+
+    # Check 31: Wave 1 Epic D — Research Platform scaffold
+    try:
+        from openjarvis.wave.research_platform import get_research_platform_status
+        info = get_research_platform_status()
+        checks.append(chk(
+            "wave1_research_platform",
+            "pass",
+            f"status={info['status']} providers={info['provider_count']} approval_gate={info['approval_gate_enforced']}",
+        ))
+    except Exception as exc:
+        checks.append(chk("wave1_research_platform", "fail", str(exc)))
+
+    # Check 32: Wave 1 capabilities truthfully NOT claiming Wave 2–4 ready
+    try:
+        from openjarvis.wave.platform_registry import WavePlatformRegistry, WavePlatformStatus
+        reg = WavePlatformRegistry()
+        wave2_4 = reg.get_by_wave(2) + reg.get_by_wave(3) + reg.get_by_wave(4)
+        all_not_impl = all(r.status == WavePlatformStatus.NOT_IMPLEMENTED for r in wave2_4)
+        checks.append(chk(
+            "wave2_4_not_claimed_ready",
+            "pass" if all_not_impl else "fail",
+            f"wave2_4_correctly_marked_not_implemented={all_not_impl}",
+        ))
+    except Exception as exc:
+        checks.append(chk("wave2_4_not_claimed_ready", "fail", str(exc)))
+
     by_status: Dict[str, int] = {}
     for c in checks:
         s = c["status"]
@@ -587,6 +663,7 @@ async def workbench_doctor(repo_path: str = ".") -> Dict[str, Any]:
     all_pass = by_status.get("fail", 0) == 0
     us17_fail = any(c["check"].startswith("us17") and c["status"] == "fail" for c in checks)
     us18_fail = any(c["check"].startswith("us18") and c["status"] == "fail" for c in checks)
+    wave1_fail = any(c["check"].startswith("wave1") and c["status"] == "fail" for c in checks)
     return {
         "ok": all_pass,
         "total": len(checks),
@@ -597,6 +674,8 @@ async def workbench_doctor(repo_path: str = ".") -> Dict[str, Any]:
         "us16_status": "ready" if all_pass else "hold",
         "us17_status": "ready" if not us17_fail else "hold",
         "us18_status": "ready" if not us18_fail else "hold",
+        "wave1_status": "scaffolded" if not wave1_fail else "hold",
+        "wave2_4_status": "not_implemented",
     }
 
 

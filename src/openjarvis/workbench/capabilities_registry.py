@@ -270,8 +270,98 @@ def _automation_status() -> CapabilityRecord:
         )
 
 
+def _wave1_skill_platform_status() -> CapabilityRecord:
+    """Wave 1 Epic A — Skill Platform capability."""
+    try:
+        from openjarvis.wave.skill_platform import get_skill_platform_status
+        info = get_skill_platform_status()
+        return CapabilityRecord(
+            capability_id="wave1_skill_platform",
+            display_name="Wave 1 — Skill Platform",
+            status=STATUS_REQUIRES_SETUP,
+            summary=f"Wave 1 Epic A: Skill Platform scaffolded. {info['skill_count']} skills registered.",
+            evidence=info,
+        )
+    except Exception as exc:
+        return CapabilityRecord(
+            capability_id="wave1_skill_platform",
+            display_name="Wave 1 — Skill Platform",
+            status=STATUS_NOT_IMPLEMENTED,
+            summary=f"Wave 1 Epic A scaffold unavailable: {exc}",
+        )
+
+
+def _wave1_automation_platform_status() -> CapabilityRecord:
+    """Wave 1 Epic B — Automation Platform capability."""
+    try:
+        from openjarvis.wave.automation_platform import get_automation_platform_status
+        info = get_automation_platform_status()
+        return CapabilityRecord(
+            capability_id="wave1_automation_platform",
+            display_name="Wave 1 — Automation Platform",
+            status=STATUS_REQUIRES_SETUP,
+            summary="Wave 1 Epic B: Automation Platform scaffolded. Runtime execution not yet implemented.",
+            evidence=info,
+        )
+    except Exception as exc:
+        return CapabilityRecord(
+            capability_id="wave1_automation_platform",
+            display_name="Wave 1 — Automation Platform",
+            status=STATUS_NOT_IMPLEMENTED,
+            summary=f"Wave 1 Epic B scaffold unavailable: {exc}",
+        )
+
+
+def _wave1_knowledge_platform_status() -> CapabilityRecord:
+    """Wave 1 Epic C — Knowledge Platform capability."""
+    try:
+        from openjarvis.wave.knowledge_platform import get_knowledge_platform_status
+        info = get_knowledge_platform_status()
+        return CapabilityRecord(
+            capability_id="wave1_knowledge_platform",
+            display_name="Wave 1 — Knowledge Platform",
+            status=STATUS_REQUIRES_SETUP,
+            summary=(
+                f"Wave 1 Epic C: Knowledge Platform scaffolded. "
+                f"{info['source_count']} sources registered. Ingestion not yet wired."
+            ),
+            evidence=info,
+        )
+    except Exception as exc:
+        return CapabilityRecord(
+            capability_id="wave1_knowledge_platform",
+            display_name="Wave 1 — Knowledge Platform",
+            status=STATUS_NOT_IMPLEMENTED,
+            summary=f"Wave 1 Epic C scaffold unavailable: {exc}",
+        )
+
+
+def _wave1_research_platform_status() -> CapabilityRecord:
+    """Wave 1 Epic D — Research Platform capability."""
+    try:
+        from openjarvis.wave.research_platform import get_research_platform_status
+        info = get_research_platform_status()
+        return CapabilityRecord(
+            capability_id="wave1_research_platform",
+            display_name="Wave 1 — Research Platform",
+            status=STATUS_REQUIRES_SETUP,
+            summary=(
+                f"Wave 1 Epic D: Research Platform scaffolded. "
+                f"{info['provider_count']} providers registered. Execution not yet implemented."
+            ),
+            evidence=info,
+        )
+    except Exception as exc:
+        return CapabilityRecord(
+            capability_id="wave1_research_platform",
+            display_name="Wave 1 — Research Platform",
+            status=STATUS_NOT_IMPLEMENTED,
+            summary=f"Wave 1 Epic D scaffold unavailable: {exc}",
+        )
+
+
 def get_all_capabilities() -> List[CapabilityRecord]:
-    """Return all US15 capability records with truthful status."""
+    """Return all capability records with truthful status (US15 + Wave 1)."""
     return [
         _assistant_status(),
         _workbench_status(),
@@ -280,6 +370,11 @@ def get_all_capabilities() -> List[CapabilityRecord]:
         _browser_status(),
         _research_status(),
         _automation_status(),
+        # Wave 1 Foundation (Epic A–D)
+        _wave1_skill_platform_status(),
+        _wave1_automation_platform_status(),
+        _wave1_knowledge_platform_status(),
+        _wave1_research_platform_status(),
     ]
 
 
@@ -293,6 +388,8 @@ def get_capabilities_summary() -> Dict[str, Any]:
         "count": len(caps),
         "by_status": by_status,
         "us13_voice_parked": True,
+        "wave1_scaffolded": True,
+        "wave2_3_4_not_implemented": True,
     }
 
 
@@ -308,4 +405,8 @@ __all__ = [
     "US13_VOICE_PARKED_NOTE",
     "get_all_capabilities",
     "get_capabilities_summary",
+    "_wave1_skill_platform_status",
+    "_wave1_automation_platform_status",
+    "_wave1_knowledge_platform_status",
+    "_wave1_research_platform_status",
 ]
