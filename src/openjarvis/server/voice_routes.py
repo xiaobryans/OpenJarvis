@@ -33,6 +33,7 @@ import logging
 import platform
 import queue
 import threading
+from pathlib import Path
 from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
@@ -45,6 +46,13 @@ except ImportError:
     raise ImportError("fastapi and pydantic are required for voice routes")
 
 router = APIRouter()
+
+# ---------------------------------------------------------------------------
+# Path constants for error messages
+# ---------------------------------------------------------------------------
+
+_REPO_ROOT = Path(__file__).parent.parent.parent.parent
+_WORKER_VENV = _REPO_ROOT / ".wake_worker_venv"
 
 # ---------------------------------------------------------------------------
 # Global session singleton (one active voice session per server process)
@@ -101,106 +109,128 @@ async def start_voice_session(req: VoiceStartRequest) -> Dict[str, Any]:
     """
     global _global_session
 
-    plat = _platform_support()
-    if plat["status"] == "NOT_PROVEN":
+    try:
+        plat = _platform_support()
+        if plat["status"] == "NOT_PROVEN":
+            return {
+                "ok": False,
+                "error_code": "platform_not_supported",
+                "error": f"Voice conversation is NOT_PROVEN on {plat['platform']}. "
+                         "Only macOS is currently supported.",
+                "detail": plat,
+                "recovery": "Use macOS for voice conversation support.",
+            }
+
+        try:
+            from openjarvis.autonomy.voice_conversation import VoiceConversationLoop
+            from openjarvis.autonomy.wakeword_bridge import WakeWordBridge
+        except ImportError as exc:
+            return {
+                "ok": False,
+                "error_code": "module_import_failed",
+                "error": f"voice_conversation module not available: {exc}",
+                "detail": str(exc),
+                "recovery": "Ensure all dependencies are installed via uv sync.",
+            }
+
+        import os as _os
+
+        with _session_lock:
+            if _global_session is not None:
+                # Return existing session if already running
+                st = _global_session.status()
+                if st.get("bridge", {}).get("worker_running"):
+                    return {
+                        "ok": True,
+                        "already_running": True,
+                        "loop_state": st["loop_state"],
+                    }
+                # Previous session stopped — clean up
+                try:
+                    _global_session.stop()
+                except Exception:
+                    pass
+                _global_session = None
+
+            # Pre-flight: wake-word worker venv
+            _check_bridge = WakeWordBridge()
+            if not _check_bridge.is_available():
+                return {
+                    "ok": False,
+                    "error_code": "wake_worker_missing",
+                    "error": (
+                        "Wake-word worker venv not found. "
+                        "Run: uv venv .wake_worker_venv --python 3.12 && "
+                        "uv pip install --python .wake_worker_venv/bin/python openwakeword sounddevice"
+                    ),
+                    "detail": f"Worker venv path: {_WORKER_VENV}",
+                    "recovery": "Run the setup command above to create the wake-worker venv.",
+                }
+
+            # Advisory: STT must be configured
+            try:
+                from openjarvis.autonomy.voice_pipeline import get_voice_status
+                vs = get_voice_status()
+                if vs.get("stt_status") == "not_configured":
+                    return {
+                        "ok": False,
+                        "error_code": "stt_not_configured",
+                        "error": "STT not configured. Install faster-whisper or set OPENAI_API_KEY.",
+                        "detail": vs,
+                        "recovery": "Install faster-whisper (local) or set OPENAI_API_KEY (cloud).",
+                    }
+            except Exception as exc:
+                return {
+                    "ok": False,
+                    "error_code": "stt_check_failed",
+                    "error": f"STT status check failed: {exc}",
+                    "detail": str(exc),
+                    "recovery": "Check voice_pipeline configuration and dependencies.",
+                }
+
+            if req.threshold is not None:
+                _os.environ["JARVIS_WAKEWORD_THRESHOLD"] = str(req.threshold)
+            if req.debug:
+                _os.environ["JARVIS_WAKEWORD_DEBUG"] = "1"
+
+            loop = VoiceConversationLoop(
+                record_seconds=req.record_seconds,
+                language=req.language,
+                auto_restart=req.auto_restart,
+                debug=req.debug,
+                session_timeout=req.session_timeout,
+                user_name=req.user_name,
+            )
+
+            result = loop.start(debug=req.debug)
+            if not result.get("ok"):
+                return {
+                    "ok": False,
+                    "error_code": "loop_start_failed",
+                    "error": result.get("error", "Failed to start worker"),
+                    "detail": result,
+                    "recovery": "Check wake-worker logs and microphone permissions.",
+                }
+
+            _global_session = loop
+
         return {
-            "ok": False,
-            "error_code": "platform_not_supported",
-            "error": f"Voice conversation is NOT_PROVEN on {plat['platform']}. "
-                     "Only macOS is currently supported.",
+            "ok": True,
+            "worker_pid": result.get("worker_pid"),
+            "socket": result.get("socket"),
+            "loop_state": loop.status()["loop_state"],
             "platform_support": plat,
         }
 
-    try:
-        from openjarvis.autonomy.voice_conversation import VoiceConversationLoop
-        from openjarvis.autonomy.wakeword_bridge import WakeWordBridge
-    except ImportError as exc:
+    except Exception as exc:
+        logger.exception("Unexpected error in start_voice_session")
         return {
             "ok": False,
-            "error_code": "module_import_failed",
-            "error": f"voice_conversation module not available: {exc}",
+            "error_code": "unexpected_error",
+            "error": f"Unexpected error: {exc}",
+            "detail": str(exc),
+            "recovery": "Check server logs for full traceback.",
         }
-
-    import os as _os
-
-    with _session_lock:
-        if _global_session is not None:
-            # Return existing session if already running
-            st = _global_session.status()
-            if st.get("bridge", {}).get("worker_running"):
-                return {
-                    "ok": True,
-                    "already_running": True,
-                    "loop_state": st["loop_state"],
-                }
-            # Previous session stopped — clean up
-            try:
-                _global_session.stop()
-            except Exception:
-                pass
-            _global_session = None
-
-        # Pre-flight: wake-word worker venv
-        _check_bridge = WakeWordBridge()
-        if not _check_bridge.is_available():
-            return {
-                "ok": False,
-                "error_code": "wake_worker_missing",
-                "error": (
-                    "Wake-word worker venv not found. "
-                    "Run: uv venv .wake_worker_venv --python 3.12 && "
-                    "uv pip install --python .wake_worker_venv/bin/python openwakeword sounddevice"
-                ),
-            }
-
-        # Advisory: STT must be configured
-        try:
-            from openjarvis.autonomy.voice_pipeline import get_voice_status
-            vs = get_voice_status()
-            if vs.get("stt_status") == "not_configured":
-                return {
-                    "ok": False,
-                    "error_code": "stt_not_configured",
-                    "error": "STT not configured. Install faster-whisper or set OPENAI_API_KEY.",
-                }
-        except Exception as exc:
-            return {
-                "ok": False,
-                "error_code": "stt_check_failed",
-                "error": f"STT status check failed: {exc}",
-            }
-
-        if req.threshold is not None:
-            _os.environ["JARVIS_WAKEWORD_THRESHOLD"] = str(req.threshold)
-        if req.debug:
-            _os.environ["JARVIS_WAKEWORD_DEBUG"] = "1"
-
-        loop = VoiceConversationLoop(
-            record_seconds=req.record_seconds,
-            language=req.language,
-            auto_restart=req.auto_restart,
-            debug=req.debug,
-            session_timeout=req.session_timeout,
-            user_name=req.user_name,
-        )
-
-        result = loop.start(debug=req.debug)
-        if not result.get("ok"):
-            return {
-                "ok": False,
-                "error_code": "loop_start_failed",
-                "error": result.get("error", "Failed to start worker"),
-            }
-
-        _global_session = loop
-
-    return {
-        "ok": True,
-        "worker_pid": result.get("worker_pid"),
-        "socket": result.get("socket"),
-        "loop_state": loop.status()["loop_state"],
-        "platform_support": plat,
-    }
 
 
 # ---------------------------------------------------------------------------

@@ -224,7 +224,9 @@ export function useVoiceSession(): VoiceSessionState & VoiceSessionActions {
         if (!silent) {
           const errorCode = data.error_code || 'unknown';
           const errorMsg = data.error || 'Failed to start voice session';
-          setError(`${errorCode}: ${errorMsg}`);
+          const detail = data.detail ? ` (${JSON.stringify(data.detail)})` : '';
+          const recovery = data.recovery ? `\n\nRecovery: ${data.recovery}` : '';
+          setError(`${errorCode}: ${errorMsg}${detail}${recovery}`);
           setVoiceState('error');
         }
         return false;
@@ -233,7 +235,7 @@ export function useVoiceSession(): VoiceSessionState & VoiceSessionActions {
       return true;
     } catch (e) {
       if (!silent) {
-        setError(`network_error: ${String(e)}`);
+        setError(`network_error: ${String(e)}\n\nRecovery: Check that the backend server is running and reachable.`);
         setVoiceState('error');
       }
       return false;
