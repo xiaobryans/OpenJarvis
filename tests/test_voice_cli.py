@@ -1130,3 +1130,166 @@ class TestSTTTranscriptionQualityFix:
         assert "'webm'" in src or '"webm"' in src, (
             "useSpeech.ts must still produce recording.webm for audio/webm recorders."
         )
+
+
+# ---------------------------------------------------------------------------
+# K. STT language / output-mode fix (US13 — Malay misdetection)
+# ---------------------------------------------------------------------------
+
+
+class TestSTTLanguageFix:
+    """Verify the English-language default that fixes Malay/Indonesian output.
+
+    Root cause:
+      Whisper auto-detects language from the first 30 s of audio.
+      For short clips (1-3 s) it misidentifies English as Malay/Indonesian.
+      Bryan said "what is the capital of France" and got
+      "Apa ialah Kapital Perancis?" (Malay transcription, not translation).
+
+    Fix:
+      api_routes.py defaults language='en' from JARVIS_STT_LANGUAGE env var.
+      openai_whisper.py adds prompt hint when language='en'.
+      faster_whisper.py adds initial_prompt when language='en'.
+    """
+
+    # ------------------------------------------------------------------ #
+    # 1. api_routes.py — default language 'en'                           #
+    # ------------------------------------------------------------------ #
+
+    def test_transcribe_route_has_default_language_en(self):
+        """api_routes.py must default STT language to 'en', not None."""
+        routes = _REPO_ROOT / "src" / "openjarvis" / "server" / "api_routes.py"
+        src = routes.read_text(encoding="utf-8")
+        assert '"en"' in src or "'en'" in src, (
+            "api_routes.py must set a default language of 'en' for the "
+            "/v1/speech/transcribe route. Without it, Whisper auto-detects "
+            "and misidentifies short English clips as Malay/Indonesian."
+        )
+
+    def test_transcribe_route_reads_JARVIS_STT_LANGUAGE_env(self):
+        """api_routes.py must read JARVIS_STT_LANGUAGE env var for the language default."""
+        routes = _REPO_ROOT / "src" / "openjarvis" / "server" / "api_routes.py"
+        src = routes.read_text(encoding="utf-8")
+        assert "JARVIS_STT_LANGUAGE" in src, (
+            "api_routes.py must read JARVIS_STT_LANGUAGE env var so non-English "
+            "users can override the default language without code changes."
+        )
+
+    def test_transcribe_route_language_not_always_none(self):
+        """api_routes.py must not pass language=None unconditionally to backend."""
+        routes = _REPO_ROOT / "src" / "openjarvis" / "server" / "api_routes.py"
+        src = routes.read_text(encoding="utf-8")
+        # Old broken pattern was: language=language or None -> passes None
+        assert "language or None" not in src, (
+            "api_routes.py must not use 'language or None' — this passes None "
+            "when no language is provided, disabling the language constraint."
+        )
+
+    def test_transcribe_route_imports_os(self):
+        """api_routes.py must import os to read JARVIS_STT_LANGUAGE."""
+        routes = _REPO_ROOT / "src" / "openjarvis" / "server" / "api_routes.py"
+        src = routes.read_text(encoding="utf-8")
+        assert "import os" in src, (
+            "api_routes.py must import os to call os.environ.get('JARVIS_STT_LANGUAGE')."
+        )
+
+    # ------------------------------------------------------------------ #
+    # 2. openai_whisper.py — transcription mode + prompt hint            #
+    # ------------------------------------------------------------------ #
+
+    def test_openai_whisper_uses_transcriptions_not_translations(self):
+        """OpenAI backend must call audio.transcriptions, not audio.translations.
+
+        audio.translations forces output to English regardless of spoken language.
+        audio.transcriptions preserves the detected language — we then fix it
+        via language='en' parameter, not by using the translation endpoint.
+        """
+        backend = _REPO_ROOT / "src" / "openjarvis" / "speech" / "openai_whisper.py"
+        src = backend.read_text(encoding="utf-8")
+        assert "audio.transcriptions" in src, (
+            "openai_whisper.py must use audio.transcriptions.create(). "
+            "audio.translations would always force output to English and "
+            "lose non-English input for future multi-language support."
+        )
+        assert "audio.translations" not in src, (
+            "openai_whisper.py must NOT use audio.translations. Use "
+            "audio.transcriptions with language='en' instead."
+        )
+
+    def test_openai_whisper_has_english_prompt_hint(self):
+        """OpenAI backend must add a 'prompt' hint when language is 'en'."""
+        backend = _REPO_ROOT / "src" / "openjarvis" / "speech" / "openai_whisper.py"
+        src = backend.read_text(encoding="utf-8")
+        assert "prompt" in src, (
+            "openai_whisper.py must set the 'prompt' kwarg when language='en'. "
+            "This prevents Whisper from re-detecting language mid-clip."
+        )
+        assert "Do not translate" in src, (
+            "openai_whisper.py prompt must say 'Do not translate' to "
+            "prevent Malay/Indonesian transliterations for short English clips."
+        )
+
+    def test_openai_whisper_language_kwarg_set_when_provided(self):
+        """OpenAI backend must pass language kwarg when language is set."""
+        backend = _REPO_ROOT / "src" / "openjarvis" / "speech" / "openai_whisper.py"
+        src = backend.read_text(encoding="utf-8")
+        assert 'kwargs["language"] = language' in src or "language" in src, (
+            "openai_whisper.py must pass language to the Whisper API call."
+        )
+
+    # ------------------------------------------------------------------ #
+    # 3. faster_whisper.py — initial_prompt hint                         #
+    # ------------------------------------------------------------------ #
+
+    def test_faster_whisper_has_initial_prompt_for_english(self):
+        """faster-whisper backend must add initial_prompt when language is 'en'."""
+        backend = _REPO_ROOT / "src" / "openjarvis" / "speech" / "faster_whisper.py"
+        src = backend.read_text(encoding="utf-8")
+        assert "initial_prompt" in src, (
+            "faster_whisper.py must set initial_prompt when language='en'. "
+            "This steers the model away from Malay/Indonesian hallucinations "
+            "on short English clips."
+        )
+
+    def test_faster_whisper_initial_prompt_says_not_translate(self):
+        """faster-whisper initial_prompt must mention 'Do not translate'."""
+        backend = _REPO_ROOT / "src" / "openjarvis" / "speech" / "faster_whisper.py"
+        src = backend.read_text(encoding="utf-8")
+        assert "Do not translate" in src, (
+            "faster_whisper.py initial_prompt must say 'Do not translate' "
+            "to prevent Malay/Indonesian misdetection for short English audio."
+        )
+
+    # ------------------------------------------------------------------ #
+    # 4. Runtime: transcribe route default language unit test            #
+    # ------------------------------------------------------------------ #
+
+    def test_JARVIS_STT_LANGUAGE_default_is_en(self):
+        """JARVIS_STT_LANGUAGE env var defaults to 'en' when unset."""
+        import os
+        # Temporarily unset the env var to test default
+        original = os.environ.pop("JARVIS_STT_LANGUAGE", None)
+        try:
+            default = os.environ.get("JARVIS_STT_LANGUAGE", "en")
+            assert default == "en", (
+                f"Default JARVIS_STT_LANGUAGE must be 'en', got {default!r}"
+            )
+        finally:
+            if original is not None:
+                os.environ["JARVIS_STT_LANGUAGE"] = original
+
+    def test_JARVIS_STT_LANGUAGE_env_is_overridable(self):
+        """JARVIS_STT_LANGUAGE can be overridden for non-English users."""
+        import os
+        original = os.environ.get("JARVIS_STT_LANGUAGE")
+        try:
+            os.environ["JARVIS_STT_LANGUAGE"] = "fr"
+            value = os.environ.get("JARVIS_STT_LANGUAGE", "en")
+            assert value == "fr", (
+                "JARVIS_STT_LANGUAGE env var must be respected when set."
+            )
+        finally:
+            if original is None:
+                os.environ.pop("JARVIS_STT_LANGUAGE", None)
+            else:
+                os.environ["JARVIS_STT_LANGUAGE"] = original

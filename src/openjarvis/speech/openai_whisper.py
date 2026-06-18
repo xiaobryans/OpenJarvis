@@ -45,6 +45,11 @@ class OpenAIWhisperBackend(SpeechBackend):
         kwargs: dict = {"model": "whisper-1", "file": audio_file}
         if language:
             kwargs["language"] = language
+        # Prompt hint when transcribing English: prevents Whisper from
+        # re-detecting language mid-clip and producing Malay/Indonesian
+        # transliterations for short English audio (known Whisper issue).
+        if language == "en":
+            kwargs["prompt"] = "Transcribe spoken English exactly. Do not translate."
         kwargs["response_format"] = "verbose_json"
 
         response = self._client.audio.transcriptions.create(**kwargs)

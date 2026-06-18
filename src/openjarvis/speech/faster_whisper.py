@@ -65,6 +65,10 @@ class FasterWhisperBackend(SpeechBackend):
             kwargs = {}
             if language:
                 kwargs["language"] = language
+            # initial_prompt steers the model away from Malay/Indonesian
+            # misdetections that occur on short English clips (< 3 s).
+            if language == "en":
+                kwargs["initial_prompt"] = "Transcribe spoken English exactly. Do not translate."
 
             segments_iter, info = model.transcribe(tmp.name, **kwargs)
             segments_list = list(segments_iter)

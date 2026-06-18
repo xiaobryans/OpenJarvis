@@ -5,6 +5,7 @@ from __future__ import annotations
 import inspect
 import json
 import logging
+import os
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
@@ -1035,13 +1036,19 @@ async def transcribe_speech(request: Request):
         raise HTTPException(status_code=400, detail="Missing 'file' field")
 
     audio_bytes = await audio_file.read()
-    language = form.get("language")
+
+    # Language: prefer form field, then JARVIS_STT_LANGUAGE env var, then
+    # default to 'en'. Without a language hint Whisper auto-detects from the
+    # first 30 s of audio; for short clips (1-3 s) this misidentifies English
+    # as Malay, Indonesian, etc. 'en' forces English transcription mode.
+    _default_lang = os.environ.get("JARVIS_STT_LANGUAGE", "en")
+    language = form.get("language") or _default_lang
 
     # Detect format from filename
     filename = getattr(audio_file, "filename", "audio.wav")
     ext = filename.rsplit(".", 1)[-1] if "." in filename else "wav"
 
-    result = backend.transcribe(audio_bytes, format=ext, language=language or None)
+    result = backend.transcribe(audio_bytes, format=ext, language=language)
     return {
         "text": result.text,
         "language": result.language,
