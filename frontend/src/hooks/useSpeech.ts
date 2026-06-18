@@ -34,7 +34,21 @@ export function useSpeech() {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
 
-      const recorder = new MediaRecorder(stream);
+      // Prefer webm/opus (browsers) then mp4/aac (WKWebView on macOS packaged app).
+      // Without this, WKWebView defaults to audio/mp4 silently while we send
+      // filename 'recording.webm' → backend reads wrong format → garbage transcript.
+      const preferredTypes = [
+        'audio/webm;codecs=opus',
+        'audio/webm',
+        'audio/mp4;codecs=mp4a.40.2',
+        'audio/mp4',
+      ];
+      const supportedMime = preferredTypes.find(
+        (t) => typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(t)
+      );
+      const recorderOptions = supportedMime ? { mimeType: supportedMime } : {};
+
+      const recorder = new MediaRecorder(stream, recorderOptions);
       chunksRef.current = [];
 
       recorder.ondataavailable = (e) => {
@@ -84,11 +98,41 @@ export function useSpeech() {
         streamRef.current?.getTracks().forEach((track) => track.stop());
         streamRef.current = null;
 
-        const blob = new Blob(chunksRef.current, { type: recorder.mimeType || 'audio/webm' });
+        // Derive filename from the ACTUAL recorded MIME type so the backend
+        // decodes correctly. WKWebView records audio/mp4 (m4a); browsers
+        // record audio/webm. Sending 'recording.webm' for mp4 data causes
+        // the STT backend to parse the wrong container → garbage transcript.
+        const actualMime = recorder.mimeType || 'audio/webm';
+        const ext =
+          actualMime.includes('mp4') || actualMime.includes('m4a') ? 'm4a'
+          : actualMime.includes('ogg') ? 'ogg'
+          : 'webm';
+        const filename = `recording.${ext}`;
+
+        const blob = new Blob(chunksRef.current, { type: actualMime });
         chunksRef.current = [];
 
+        // Dev diagnostics — never logged in production builds
+        if (import.meta.env.DEV) {
+          console.debug(
+            '[useSpeech] mimeType:', actualMime,
+            'ext:', ext,
+            'bytes:', blob.size,
+            'filename:', filename,
+          );
+        }
+
+        // Reject recordings that are too short to contain real speech
+        if (blob.size < 1000) {
+          const msg = 'Recording too short — hold the mic button while speaking';
+          setError(msg);
+          setState('idle');
+          reject(new Error(msg));
+          return;
+        }
+
         try {
-          const result = await transcribeAudio(blob);
+          const result = await transcribeAudio(blob, filename);
           setState('idle');
           resolve(result.text);
         } catch (err) {

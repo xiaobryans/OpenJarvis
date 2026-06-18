@@ -914,3 +914,219 @@ class TestPackagedAppMicFix:
                     f"{doc.name}: must not claim packaged-app mic is ACCEPT before live proof. "
                     "US13 verdict must remain HOLD until Bryan proves mic transcription in packaged app."
                 )
+
+
+# ---------------------------------------------------------------------------
+# J. Packaged-app STT transcription quality fix (US13 — format mismatch)
+# ---------------------------------------------------------------------------
+
+
+class TestSTTTranscriptionQualityFix:
+    """Verify the audio-format mismatch fix that caused garbage transcripts.
+
+    Root cause:
+      WKWebView (macOS packaged app) records audio/mp4 (AAC) by default.
+      The old code hardcoded filename='recording.webm' and mime='audio/webm'.
+      The backend infers format from the filename extension -> got 'webm',
+      but the actual audio bytes were mp4/m4a -> STT got wrong decoder ->
+      garbage output with no relation to what Bryan actually said.
+
+    Fix:
+      useSpeech.ts tries supported MIME types (webm/opus first, mp4 fallback),
+      derives filename from recorder.mimeType (.m4a for mp4, .webm otherwise),
+      passes correct filename to transcribeAudio(blob, filename).
+      lib.rs transcribe_audio derives MIME from filename extension dynamically.
+    """
+
+    # ------------------------------------------------------------------ #
+    # 1. useSpeech.ts — preferred MIME type selection                     #
+    # ------------------------------------------------------------------ #
+
+    def test_useSpeech_tries_preferred_mime_types(self):
+        """useSpeech.ts must try a list of preferred MIME types via isTypeSupported.
+
+        Without this, WKWebView silently chooses audio/mp4 while the code
+        hardcodes 'recording.webm' -> format mismatch -> garbage transcript.
+        """
+        hook = _REPO_ROOT / "frontend" / "src" / "hooks" / "useSpeech.ts"
+        src = hook.read_text(encoding="utf-8")
+        assert "isTypeSupported" in src, (
+            "useSpeech.ts must call MediaRecorder.isTypeSupported() to pick a "
+            "format that WKWebView actually supports before creating the recorder."
+        )
+
+    def test_useSpeech_includes_mp4_fallback_mime(self):
+        """useSpeech.ts must include audio/mp4 as a fallback MIME type for WKWebView."""
+        hook = _REPO_ROOT / "frontend" / "src" / "hooks" / "useSpeech.ts"
+        src = hook.read_text(encoding="utf-8")
+        assert "audio/mp4" in src, (
+            "useSpeech.ts must include 'audio/mp4' in the preferred MIME list. "
+            "WKWebView on macOS does not support audio/webm — mp4 is the fallback."
+        )
+
+    def test_useSpeech_includes_webm_opus_primary(self):
+        """useSpeech.ts must include audio/webm;codecs=opus as primary (browser path)."""
+        hook = _REPO_ROOT / "frontend" / "src" / "hooks" / "useSpeech.ts"
+        src = hook.read_text(encoding="utf-8")
+        assert "audio/webm" in src, (
+            "useSpeech.ts must keep audio/webm in the preferred list for browser/localhost path."
+        )
+
+    # ------------------------------------------------------------------ #
+    # 2. useSpeech.ts — filename derived from actual MIME type            #
+    # ------------------------------------------------------------------ #
+
+    def test_useSpeech_derives_m4a_extension_for_mp4(self):
+        """useSpeech.ts must map audio/mp4 MIME type to .m4a extension."""
+        hook = _REPO_ROOT / "frontend" / "src" / "hooks" / "useSpeech.ts"
+        src = hook.read_text(encoding="utf-8")
+        assert "'m4a'" in src or '"m4a"' in src, (
+            "useSpeech.ts must produce 'recording.m4a' when the recorder MIME is audio/mp4. "
+            "The backend reads the extension to select the decoder."
+        )
+
+    def test_useSpeech_derives_filename_from_recorder_mimeType(self):
+        """useSpeech.ts must use recorder.mimeType (not a hardcoded 'recording.webm') as filename basis."""
+        hook = _REPO_ROOT / "frontend" / "src" / "hooks" / "useSpeech.ts"
+        src = hook.read_text(encoding="utf-8")
+        assert "recorder.mimeType" in src, (
+            "useSpeech.ts must read recorder.mimeType to derive the filename extension. "
+            "Hardcoding '.webm' causes the backend to misidentify mp4/m4a audio."
+        )
+
+    def test_useSpeech_passes_filename_to_transcribeAudio(self):
+        """useSpeech.ts must pass the derived filename to transcribeAudio(blob, filename)."""
+        hook = _REPO_ROOT / "frontend" / "src" / "hooks" / "useSpeech.ts"
+        src = hook.read_text(encoding="utf-8")
+        assert "transcribeAudio(blob, filename)" in src, (
+            "useSpeech.ts must call transcribeAudio(blob, filename) with the derived filename "
+            "so the backend receives the correct audio extension."
+        )
+
+    # ------------------------------------------------------------------ #
+    # 3. useSpeech.ts — minimum size guard                                #
+    # ------------------------------------------------------------------ #
+
+    def test_useSpeech_has_minimum_size_guard(self):
+        """useSpeech.ts must reject blobs smaller than 1 KB before sending to STT."""
+        hook = _REPO_ROOT / "frontend" / "src" / "hooks" / "useSpeech.ts"
+        src = hook.read_text(encoding="utf-8")
+        assert "blob.size" in src and "1000" in src, (
+            "useSpeech.ts must check blob.size < 1000 and reject the recording "
+            "before sending to STT. Tiny blobs produce garbage transcripts."
+        )
+
+    def test_useSpeech_size_guard_shows_actionable_error(self):
+        """Size guard error message must tell the user to hold the button longer."""
+        hook = _REPO_ROOT / "frontend" / "src" / "hooks" / "useSpeech.ts"
+        src = hook.read_text(encoding="utf-8")
+        assert "hold" in src.lower() and "mic" in src.lower(), (
+            "useSpeech.ts size-guard error must tell user to hold the mic button. "
+            "Silent rejection is not actionable."
+        )
+
+    # ------------------------------------------------------------------ #
+    # 4. useSpeech.ts — dev diagnostics                                   #
+    # ------------------------------------------------------------------ #
+
+    def test_useSpeech_has_dev_diagnostics(self):
+        """useSpeech.ts must log MIME type and byte count in DEV mode only."""
+        hook = _REPO_ROOT / "frontend" / "src" / "hooks" / "useSpeech.ts"
+        src = hook.read_text(encoding="utf-8")
+        assert "import.meta.env.DEV" in src, (
+            "useSpeech.ts must gate diagnostic logging on import.meta.env.DEV "
+            "so production builds don't print audio metadata."
+        )
+        assert "console.debug" in src or "console.log" in src, (
+            "useSpeech.ts must log mimeType/bytes in DEV mode for diagnosing format issues."
+        )
+
+    # ------------------------------------------------------------------ #
+    # 5. lib.rs — dynamic MIME type from filename extension               #
+    # ------------------------------------------------------------------ #
+
+    def test_lib_rs_transcribe_audio_not_hardcoded_webm_mime(self):
+        """lib.rs transcribe_audio must NOT hardcode mime_str('audio/webm').
+
+        The old hardcoded value sent wrong Content-Type for mp4/m4a recordings
+        from WKWebView. The fix derives MIME from the filename extension.
+        """
+        lib_rs = _REPO_ROOT / "frontend" / "src-tauri" / "src" / "lib.rs"
+        src = lib_rs.read_text(encoding="utf-8")
+        # Find the transcribe_audio function
+        fn_start = src.find("async fn transcribe_audio(")
+        assert fn_start != -1, "transcribe_audio function not found in lib.rs"
+        # Get function body (next 60 lines worth)
+        fn_body = src[fn_start:fn_start + 2000]
+        # Must NOT be hardcoded to audio/webm only
+        assert fn_body.count('mime_str("audio/webm")') == 0, (
+            "lib.rs transcribe_audio must not hardcode mime_str('audio/webm'). "
+            "WKWebView records audio/mp4 — use dynamic MIME derived from filename extension."
+        )
+
+    def test_lib_rs_transcribe_audio_has_mp4_mime_branch(self):
+        """lib.rs transcribe_audio must map .m4a/.mp4 filenames to audio/mp4 MIME."""
+        lib_rs = _REPO_ROOT / "frontend" / "src-tauri" / "src" / "lib.rs"
+        src = lib_rs.read_text(encoding="utf-8")
+        fn_start = src.find("async fn transcribe_audio(")
+        assert fn_start != -1
+        fn_body = src[fn_start:fn_start + 2000]
+        assert '"audio/mp4"' in fn_body, (
+            "lib.rs transcribe_audio must include audio/mp4 as a MIME value. "
+            "WKWebView produces m4a/mp4 audio which needs this Content-Type."
+        )
+
+    def test_lib_rs_transcribe_audio_has_empty_guard(self):
+        """lib.rs transcribe_audio must reject empty audio_data before posting."""
+        lib_rs = _REPO_ROOT / "frontend" / "src-tauri" / "src" / "lib.rs"
+        src = lib_rs.read_text(encoding="utf-8")
+        fn_start = src.find("async fn transcribe_audio(")
+        assert fn_start != -1
+        fn_body = src[fn_start:fn_start + 2000]
+        assert "is_empty()" in fn_body, (
+            "lib.rs transcribe_audio must check audio_data.is_empty() and return "
+            "an error before attempting to POST zero bytes to the STT backend."
+        )
+
+    # ------------------------------------------------------------------ #
+    # 6. Backend format detection from filename                           #
+    # ------------------------------------------------------------------ #
+
+    def test_backend_reads_format_from_filename_extension(self):
+        """api_routes.py must derive audio format from the uploaded filename extension."""
+        routes = (
+            _REPO_ROOT / "src" / "openjarvis" / "server" / "api_routes.py"
+        )
+        src = routes.read_text(encoding="utf-8")
+        assert "rsplit" in src or "splitext" in src or ".split" in src, (
+            "api_routes.py transcribe endpoint must extract the file extension "
+            "from the filename to pass the correct format to the STT backend."
+        )
+
+    def test_backend_default_format_is_wav_not_webm(self):
+        """When filename has no extension, backend should default to 'wav' (safe), not 'webm'."""
+        routes = (
+            _REPO_ROOT / "src" / "openjarvis" / "server" / "api_routes.py"
+        )
+        src = routes.read_text(encoding="utf-8")
+        assert '"wav"' in src or "'wav'" in src, (
+            "api_routes.py must default to 'wav' when the filename has no extension. "
+            "'webm' is not universally supported by all STT backends."
+        )
+
+    # ------------------------------------------------------------------ #
+    # 7. Browser path preservation                                        #
+    # ------------------------------------------------------------------ #
+
+    def test_useSpeech_webm_path_not_removed(self):
+        """Browser/localhost path (audio/webm) must still be present and preferred."""
+        hook = _REPO_ROOT / "frontend" / "src" / "hooks" / "useSpeech.ts"
+        src = hook.read_text(encoding="utf-8")
+        # webm must still be listed in preferred types
+        assert "audio/webm" in src, (
+            "useSpeech.ts must keep audio/webm in the list so browser/localhost path works."
+        )
+        # The filename logic must still produce .webm for webm MIME
+        assert "'webm'" in src or '"webm"' in src, (
+            "useSpeech.ts must still produce recording.webm for audio/webm recorders."
+        )

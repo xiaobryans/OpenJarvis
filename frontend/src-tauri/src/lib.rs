@@ -1648,12 +1648,29 @@ async fn transcribe_audio(
     audio_data: Vec<u8>,
     filename: String,
 ) -> Result<serde_json::Value, String> {
+    if audio_data.is_empty() {
+        return Err("Empty audio data received — recording may be too short".to_string());
+    }
     let url = format!("{}/v1/speech/transcribe", api_url);
     let client = reqwest::Client::new();
 
+    // Derive MIME type from the filename extension so the backend receives
+    // correct Content-Type. WKWebView records audio/mp4 (m4a), not webm.
+    // Hardcoding "audio/webm" for m4a data causes the STT backend to pick
+    // the wrong decoder path.
+    let mime = if filename.ends_with(".m4a") || filename.ends_with(".mp4") {
+        "audio/mp4"
+    } else if filename.ends_with(".wav") {
+        "audio/wav"
+    } else if filename.ends_with(".ogg") {
+        "audio/ogg"
+    } else {
+        "audio/webm"
+    };
+
     let part = reqwest::multipart::Part::bytes(audio_data)
         .file_name(filename)
-        .mime_str("audio/webm")
+        .mime_str(mime)
         .map_err(|e| format!("Failed to create multipart: {}", e))?;
 
     let form = reqwest::multipart::Form::new().part("file", part);
