@@ -7,6 +7,7 @@ Routes:
   GET /v1/readiness/report?project_id=omnix — full V1 evidence summary
   GET /v1/version                          — app version, git commit, branch, build date
   GET /v1/limitations                      — structured known limitations list (US12)
+  GET /v1/voice/status                     — full voice pipeline readiness (wake-word/STT/TTS/mic/hotkey)
 
 Governance:
   - No secrets in any response
@@ -89,24 +90,30 @@ _KNOWN_LIMITATIONS: List[Dict[str, str]] = [
     {
         "id": "wake_word",
         "category": "voice",
-        "severity": "warn",
-        "title": "True wake-word not available",
+        "severity": "info",
+        "title": "Wake-word requires explicit VoicePipeline.start() to activate",
         "description": (
-            "Wake-word detection (e.g. 'Hey Jarvis') requires OpenWakeWord or "
-            "a compatible model installed separately. Hotkey (Cmd+K) and the "
-            "manual chat box are the confirmed activation paths."
+            "OpenWakeWord is installed in the isolated .wake_worker_venv (Python 3.12). "
+            "The wake-word listener is not started automatically. "
+            "Input paths available: manual chat (always), push-to-talk hotkey (Cmd+Shift+Space), "
+            "and true wake-word (requires VoicePipeline.start() or CLI start)."
         ),
-        "workaround": "Use Cmd+K or the chat input. See Settings > Speech.",
+        "workaround": (
+            "To activate wake-word: run 'jarvis serve' with --voice flag, or call "
+            "VoicePipeline.start() from Python. Push-to-talk hotkey (Cmd+Shift+Space) "
+            "works without starting the listener."
+        ),
     },
     {
         "id": "packaged_app_signing",
         "category": "distribution",
-        "severity": "warn",
-        "title": "macOS app is ad-hoc signed only",
+        "severity": "info",
+        "title": "macOS app is ad-hoc signed (public notarization is FUTURE_BACKLOG)",
         "description": (
-            "The desktop build is signed with '-' (ad-hoc identity). "
-            "Gatekeeper will prompt on first launch. Notarization requires "
-            "an Apple Developer Program account which is not yet configured."
+            "The V1 local/founder build uses ad-hoc signing ('-'). "
+            "This is correct for local/founder distribution. Gatekeeper will prompt on first launch. "
+            "Public Apple Developer ID notarization (for App Store / public distribution) "
+            "is FUTURE_BACKLOG and is not required for V1."
         ),
         "workaround": "Right-click > Open on first launch, or run: xattr -dr com.apple.quarantine /Applications/OpenJarvis.app",
     },
@@ -269,6 +276,57 @@ async def get_limitations() -> Dict[str, Any]:
         "categories": categories,
         "limitations": _KNOWN_LIMITATIONS,
     }
+
+
+@router.get("/v1/voice/status")
+async def get_voice_status_endpoint() -> Dict[str, Any]:
+    """Return full voice pipeline readiness.
+
+    Covers: wake-word engine, STT, TTS, microphone, hotkey,
+    manual-chatbox, and voice_readiness (READY/PARTIAL/HOLD).
+    No secrets in response. No microphone started.
+    """
+    try:
+        from openjarvis.autonomy.voice_pipeline import get_voice_status
+        status = get_voice_status()
+        return {
+            "voice_readiness": status.get("voice_readiness", "HOLD"),
+            "voice_status": status.get("voice_status", "not_configured"),
+            "readiness_reason": status.get("readiness_reason", ""),
+            "summary": status.get("summary", ""),
+            # Input paths
+            "manual_chatbox_status": status.get("manual_chatbox_status", "available"),
+            "hotkey_status": status.get("hotkey_status", "available"),
+            "hotkey_binding": status.get("hotkey_binding", "cmd+shift+space"),
+            # Wake-word
+            "true_wakeword_status": status.get("true_wakeword_status", "not_configured"),
+            "true_wakeword_worker_available": status.get("true_wakeword_worker_available", False),
+            # STT / TTS
+            "stt_status": status.get("stt_status", "not_configured"),
+            "tts_status": status.get("tts_status", "not_configured"),
+            # Microphone
+            "microphone_status": status.get("microphone_status", "unknown"),
+            # Approval pin
+            "approval_pin_status": status.get("approval_pin_status", "not_set"),
+            "queried_at": time.time(),
+        }
+    except Exception as exc:
+        return {
+            "voice_readiness": "HOLD",
+            "voice_status": "error",
+            "readiness_reason": f"Voice status check failed: {exc}",
+            "summary": "Could not retrieve voice pipeline status.",
+            "manual_chatbox_status": "available",
+            "hotkey_status": "available",
+            "hotkey_binding": "cmd+shift+space",
+            "true_wakeword_status": "unknown",
+            "true_wakeword_worker_available": False,
+            "stt_status": "unknown",
+            "tts_status": "unknown",
+            "microphone_status": "unknown",
+            "approval_pin_status": "not_set",
+            "queried_at": time.time(),
+        }
 
 
 __all__ = ["router"]

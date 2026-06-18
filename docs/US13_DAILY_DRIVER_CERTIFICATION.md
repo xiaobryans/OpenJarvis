@@ -1,6 +1,6 @@
 # US13 — V1 Daily-Driver Certification
 
-**Verdict: ACCEPT_WITH_EXTERNAL_LIMITATIONS**
+**Verdict: HOLD**
 **Branch:** localhost-get-tool
 **Base HEAD:** dc94532ee3ef4a53edc3123b0566ff80c3fd2b01
 
@@ -24,12 +24,13 @@
 | 4. Connectors | GitHub/source status | EXTERNALLY_NOT_PROVEN | GitHub PAT not configured. | Set JARVIS_GITHUB_TOKEN. |
 | 4. Connectors | OpenClaw linkage | EXTERNALLY_NOT_PROVEN | `check_openclaw_linkage` returns NOT_CONFIGURED. OpenClaw workspace not wired. | Configure OpenClaw handoff per OMNIX_WORKBENCH.md. |
 | 4. Connectors | OMNIX linkage | DONE | `check_project_linkage_status` returns PASS. OMNIX project linked. | — |
-| 5. Voice | True wake-word | EXTERNALLY_NOT_PROVEN | OpenWakeWord not installed in this environment. Not claimed as available. | Install OpenWakeWord per docs/. |
-| 5. Voice | Hotkey activation (Cmd+K) | DONE | Global keyboard handler in `App.tsx`. Shown in Settings > Speech & Hotkeys. | — |
+| 5. Voice | True wake-word | HOLD | `.wake_worker_venv` with `openwakeword` is installed (`worker_available=True`). Wake-word listener is **configured but not started** — requires explicit `WakeWordBridge.start()` or `jarvis serve --voice`. Not proven via live activation in this session. | Run: `jarvis serve --voice` or call `VoicePipeline.start()`. Say "hey jarvis" with mic open. |
+| 5. Voice | Push-to-talk hotkey (Cmd+Shift+Space) | DONE | `wakeword_fallback.py` registers `cmd+shift+space` via `pynput.GlobalHotKeys`. Configurable via `JARVIS_VOICE_HOTKEY`. Shown in Settings > Input & Voice. | — |
+| 5. Voice | Model/settings palette (Cmd+K) | DONE | Opens `CommandPalette` for model management and API keys. **Not a voice hotkey.** Shown correctly in Settings > Input & Voice. | — |
 | 5. Voice | Manual chatbox | DONE | `ChatPage.tsx` always available. | — |
 | 5. Voice | Microphone (STT toggle) | DONE | STT toggle in SettingsPage. `fetchSpeechHealth` reports backend status. | — |
-| 5. Voice | STT backend | EXTERNALLY_NOT_PROVEN | `fetchSpeechHealth` returns `available: false` — no Whisper/Deepgram configured locally. | Install a speech backend per docs. |
-| 5. Voice | TTS | EXTERNALLY_NOT_PROVEN | No TTS backend configured. | Configure TTS provider. |
+| 5. Voice | STT backend | DONE | `stt_status = openai_whisper` (OPENAI_API_KEY configured). `faster_whisper` is priority 1 (not installed). Falls back to OpenAI Whisper. | — |
+| 5. Voice | TTS | DONE | `tts_status = macos_say`. macOS `say` command detected. Built-in, no API key needed. | — |
 | 5. Voice | Approval PIN | DONE | `set_operator_pin.py` script exists. Approval gates in `WorkbenchPage.tsx`. | — |
 | 6. Desktop/operator | Permission status | DONE | Entitlements declared in `Entitlements.plist`. Wake-word status shown in Settings. Known Limitations panel describes exact manual steps. | — |
 | 6. Desktop/operator | Dry-run | DONE | `CodingManager.DRY_RUN` path verified in tests. Plan-only and dry-run no-send gates confirmed in US14B tests. | — |
@@ -55,13 +56,38 @@
 
 ## Certification Verdict
 
-**ACCEPT_WITH_EXTERNAL_LIMITATIONS**
+**HOLD**
 
-All repo-controlled and locally provable items are DONE or EXTERNALLY_NOT_PROVEN with exact blockers documented.
-External limitations are exclusively:
-- Apple Developer account (signing/notarization)
-- Connector tokens (Slack, Telegram, Tavily, GitHub) — not present in this environment
-- Voice hardware/backend (OpenWakeWord, STT, TTS)
+All repo-controlled items are DONE. Voice pipeline is configured (wake-word worker available, STT=openai_whisper, TTS=macos_say, mic=granted, hotkey=available).
+
+US13 is HOLD because:
+- True wake-word activation has not been live-tested (requires `WakeWordBridge.start()` + microphone + saying "hey jarvis")
+- Full activation flow (wake → STT → chat reply → TTS speak) has not been proven in this session
+
+**Bryan local verification commands** (run to upgrade to ACCEPT):
+```bash
+# 1. Start the server with voice enabled
+jarvis serve --voice
+
+# 2. In another terminal, check voice status
+curl -s http://localhost:8000/v1/voice/status | python3 -m json.tool
+
+# 3. Say "hey jarvis" — verify activation appears in server logs
+# Expected: "Wake word detected! model=hey_jarvis score=X.XXX"
+
+# 4. Test push-to-talk hotkey (server must be running)
+# Press Cmd+Shift+Space — verify recording starts
+
+# 5. Test TTS
+python3 -c "from openjarvis.autonomy.voice_pipeline import tts_test; print(tts_test())"
+# Expected: {"ok": true, "engine": "macos_say", ...}
+
+# 6. Run all voice tests
+.venv/bin/python3 -m pytest tests/test_us13_voice_readiness.py -v
+```
+
+External limitations (connector tokens):
+- Slack, Telegram, Tavily, GitHub tokens not in this environment (FUTURE_BACKLOG for dogfood)
 
 No fake PASS claimed for any external item.
 
@@ -82,3 +108,4 @@ No fake PASS claimed for any external item.
 - `tests/test_us13_certification.py` — 66 tests (module-scoped fixtures, truthfulness gate, all matrix areas)
 - `tests/test_us12_polish.py` — 28 tests (redaction, version schema, limitations schema)
 - `tests/workbench/test_us14b.py` — plan-only/dry-run gate tests
+- `tests/test_us13_voice_readiness.py` — 15 test classes covering: voice schema, hotkey≠wake-word, manual chat always available, TTS/STT honest status, is_listening safety contract, no secrets in status

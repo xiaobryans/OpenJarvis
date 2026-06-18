@@ -23,7 +23,7 @@ import {
   ChevronRight,
 } from 'lucide-react';
 import { useAppStore, type ThemeMode } from '../lib/store';
-import { checkHealth, fetchSpeechHealth, getMemoryStats, getInferenceSource, setInferenceSource, fetchVersionInfo, fetchLimitations, type InferenceSource, type VersionInfo, type KnownLimitation } from '../lib/api';
+import { checkHealth, fetchSpeechHealth, getMemoryStats, getInferenceSource, setInferenceSource, fetchVersionInfo, fetchLimitations, fetchVoiceStatus, type InferenceSource, type VersionInfo, type KnownLimitation, type VoiceStatus } from '../lib/api';
 import { isAutoUpdateDisabled, setAutoUpdateDisabled } from '../components/Desktop/UpdateChecker';
 
 function OllamaModelList() {
@@ -133,6 +133,7 @@ export function SettingsPage() {
   const [versionInfo, setVersionInfo] = useState<VersionInfo | null>(null);
   const [limitations, setLimitations] = useState<KnownLimitation[]>([]);
   const [limitationsOpen, setLimitationsOpen] = useState(false);
+  const [voiceStatus, setVoiceStatus] = useState<VoiceStatus | null>(null);
 
   const handleAutoUpdateToggle = useCallback((enabled: boolean) => {
     setAutoUpdateEnabled(enabled);
@@ -208,6 +209,7 @@ export function SettingsPage() {
       .catch(() => setMemoryStats(null));
     fetchVersionInfo().then((v) => { if (v) setVersionInfo(v); }).catch(() => {});
     fetchLimitations().then((l) => { if (l) setLimitations(l.limitations); }).catch(() => {});
+    fetchVoiceStatus().then((v) => { if (v) setVoiceStatus(v); }).catch(() => {});
   }, []);
 
   const showSaved = () => {
@@ -594,25 +596,112 @@ export function SettingsPage() {
             </SettingRow>
           </Section>
 
-          {/* Speech */}
-          <Section title="Speech &amp; Hotkeys">
-            <SettingRow label="Global hotkey" description="Keyboard shortcut to open the chat (read-only — set at launch)">
+          {/* Input & Voice */}
+          <Section title="Input &amp; Voice">
+            <div className="text-xs mb-3" style={{ color: 'var(--color-text-secondary)' }}>
+              Three input paths — all independent. Do not substitute one for another.
+            </div>
+
+            {/* Path 1: Manual chat */}
+            <SettingRow label="Manual chat" description="Chatbox always available — type and press Enter">
+              <span className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--color-success, #22c55e)' }}>
+                <Check size={11} /> Always available
+              </span>
+            </SettingRow>
+
+            {/* Path 2: Hotkeys */}
+            <SettingRow label="Voice push-to-talk hotkey" description="Triggers voice listening (backend: JARVIS_VOICE_HOTKEY, default cmd+shift+space)">
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-xs px-2 py-1 rounded" style={{ background: 'var(--color-bg-tertiary)', color: 'var(--color-text-secondary)' }}>
+                  {voiceStatus ? voiceStatus.hotkey_binding : 'cmd+shift+space'}
+                </span>
+                <span className="text-xs" style={{ color: voiceStatus?.hotkey_status === 'active' ? 'var(--color-success, #22c55e)' : 'var(--color-text-tertiary)' }}>
+                  {voiceStatus ? (voiceStatus.hotkey_status === 'active' ? 'Active' : 'Available') : '…'}
+                </span>
+              </div>
+            </SettingRow>
+            <SettingRow label="Model / settings palette" description="Opens model management and API key settings — not voice">
               <span className="font-mono text-xs px-2 py-1 rounded" style={{ background: 'var(--color-bg-tertiary)', color: 'var(--color-text-secondary)' }}>
                 Cmd+K
               </span>
             </SettingRow>
-            <SettingRow label="System panel hotkey" description="Opens the system panel">
+            <SettingRow label="System panel" description="Opens the system monitoring panel">
               <span className="font-mono text-xs px-2 py-1 rounded" style={{ background: 'var(--color-bg-tertiary)', color: 'var(--color-text-secondary)' }}>
                 Cmd+I
               </span>
             </SettingRow>
-            <SettingRow label="Wake-word status" description="True wake-word requires OpenWakeWord installed separately">
-              <span className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
-                <AlertTriangle size={11} />
-                Not available — use Cmd+K or chat input
+
+            {/* Path 3: True wake-word */}
+            <SettingRow label="Wake-word (voice wake)" description="'Hey Jarvis' — requires VoicePipeline.start() or --voice flag">
+              <div className="flex items-center gap-1.5 text-xs">
+                <span
+                  className="w-2 h-2 rounded-full shrink-0"
+                  style={{
+                    background: voiceStatus?.true_wakeword_worker_available
+                      ? 'var(--color-warning, #f59e0b)'
+                      : 'var(--color-text-tertiary)',
+                  }}
+                />
+                <span style={{ color: 'var(--color-text-secondary)' }}>
+                  {voiceStatus === null ? 'Checking…'
+                    : voiceStatus.true_wakeword_worker_available
+                      ? 'Configured — not started'
+                      : 'Not configured'}
+                </span>
+              </div>
+            </SettingRow>
+            {voiceStatus?.true_wakeword_worker_available && (
+              <div className="text-xs mt-1 mb-2 px-1 rounded py-2" style={{ background: 'var(--color-bg-secondary)', color: 'var(--color-text-secondary)', border: '1px solid var(--color-border)' }}>
+                <span className="font-medium">To start:</span> run <code className="font-mono px-1">jarvis serve --voice</code> or call <code className="font-mono px-1">VoicePipeline.start()</code>.
+                Phrases: &ldquo;hey jarvis&rdquo;.
+              </div>
+            )}
+
+            {/* Voice status summary */}
+            <SettingRow label="Voice readiness" description="Overall voice pipeline status from /v1/voice/status">
+              <span className="text-xs font-mono px-2 py-1 rounded" style={{
+                background: voiceStatus?.voice_readiness === 'READY'
+                  ? 'color-mix(in srgb, var(--color-success, #22c55e) 12%, transparent)'
+                  : voiceStatus?.voice_readiness === 'PARTIAL'
+                    ? 'color-mix(in srgb, var(--color-warning, #f59e0b) 12%, transparent)'
+                    : 'var(--color-bg-tertiary)',
+                color: voiceStatus?.voice_readiness === 'READY'
+                  ? 'var(--color-success, #22c55e)'
+                  : voiceStatus?.voice_readiness === 'PARTIAL'
+                    ? 'var(--color-warning, #f59e0b)'
+                    : 'var(--color-text-tertiary)',
+              }}>
+                {voiceStatus ? voiceStatus.voice_readiness : '…'}
               </span>
             </SettingRow>
-            <SettingRow label="Speech-to-Text" description="Enable microphone input for voice dictation">
+            <SettingRow label="STT engine" description="Speech-to-text engine">
+              <span className="text-xs font-mono" style={{ color: 'var(--color-text-secondary)' }}>
+                {voiceStatus ? voiceStatus.stt_status : '…'}
+              </span>
+            </SettingRow>
+            <SettingRow label="TTS engine" description="Text-to-speech engine">
+              <span className="text-xs font-mono" style={{ color: 'var(--color-text-secondary)' }}>
+                {voiceStatus ? voiceStatus.tts_status : '…'}
+              </span>
+            </SettingRow>
+            <SettingRow label="Microphone" description="macOS microphone permission status">
+              <div className="flex items-center gap-1.5 text-xs">
+                <span
+                  className="w-2 h-2 rounded-full shrink-0"
+                  style={{
+                    background: voiceStatus?.microphone_status === 'granted'
+                      ? 'var(--color-success, #22c55e)'
+                      : 'var(--color-text-tertiary)',
+                  }}
+                />
+                <span style={{ color: 'var(--color-text-secondary)' }}>
+                  {voiceStatus ? (voiceStatus.microphone_status === 'granted' ? 'Granted' : voiceStatus.microphone_status) : '…'}
+                </span>
+              </div>
+            </SettingRow>
+
+            {/* STT toggle */}
+            <SettingRow label="In-chat microphone (push-to-talk)" description="Enables the mic button in the chat input area">
               <button
                 onClick={() => { updateSettings({ speechEnabled: !settings.speechEnabled }); showSaved(); }}
                 className="relative w-11 h-6 rounded-full transition-colors cursor-pointer"
@@ -629,27 +718,9 @@ export function SettingsPage() {
                 />
               </button>
             </SettingRow>
-            <SettingRow label="Backend status" description="Requires Whisper, Deepgram, or another speech backend">
-              <div className="flex items-center gap-2">
-                <span
-                  className="w-2 h-2 rounded-full"
-                  style={{
-                    background: speechBackendAvailable === true ? 'var(--color-success)'
-                      : speechBackendAvailable === false ? 'var(--color-text-tertiary)'
-                      : 'var(--color-text-tertiary)',
-                  }}
-                />
-                <span className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
-                  {speechBackendAvailable === null ? 'Checking...'
-                    : speechBackendAvailable ? 'Available'
-                    : 'Not configured'}
-                </span>
-              </div>
-            </SettingRow>
             {!speechBackendAvailable && speechBackendAvailable !== null && (
               <div className="text-xs mt-2 px-1" style={{ color: 'var(--color-text-tertiary)' }}>
-                Set up a speech backend to use voice input.
-                See the <a href="https://open-jarvis.github.io/OpenJarvis/user-guide/tools/" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-accent)' }}>documentation</a> for details.
+                No STT backend configured. Install <code className="font-mono">faster-whisper</code> or set <code className="font-mono">OPENAI_API_KEY</code> / <code className="font-mono">DEEPGRAM_API_KEY</code>.
               </div>
             )}
           </Section>

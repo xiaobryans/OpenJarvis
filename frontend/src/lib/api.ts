@@ -1140,3 +1140,34 @@ export async function fetchLimitations(): Promise<LimitationsResponse | null> {
     return null;
   }
 }
+
+// ---------------------------------------------------------------------------
+// Voice pipeline status (US13 — input/voice readiness)
+// ---------------------------------------------------------------------------
+
+export interface VoiceStatus {
+  voice_readiness: 'READY' | 'PARTIAL' | 'HOLD';
+  voice_status: string;
+  readiness_reason: string;
+  summary: string;
+  manual_chatbox_status: 'available' | 'unavailable';
+  hotkey_status: 'active' | 'available' | 'unavailable';
+  hotkey_binding: string;
+  true_wakeword_status: string;
+  true_wakeword_worker_available: boolean;
+  stt_status: string;
+  tts_status: string;
+  microphone_status: 'granted' | 'denied_or_no_device' | 'unknown';
+  approval_pin_status: 'set' | 'not_set';
+  queried_at: number;
+}
+
+export async function fetchVoiceStatus(): Promise<VoiceStatus | null> {
+  try {
+    const res = await apiFetch('/v1/voice/status');
+    if (!res.ok) return null;
+    return res.json();
+  } catch {
+    return null;
+  }
+}

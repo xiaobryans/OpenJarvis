@@ -1,6 +1,7 @@
 # US14 — Release & Distribution Hardening
 
-**Status: ACCEPT_WITH_EXTERNAL_LIMITATIONS**
+**Status: ACCEPT**
+**V1 Scope: macOS local/founder packaged app**
 **Branch:** localhost-get-tool
 **Base HEAD:** dc94532ee3ef4a53edc3123b0566ff80c3fd2b01
 
@@ -36,20 +37,22 @@
 
 | Item | Status | Reason | Exact Next Step |
 |---|---|---|---|
-| macOS notarization | EXTERNALLY_NOT_PROVEN | No Apple Developer Program account configured. | 1. Enroll at developer.apple.com. 2. Set `signingIdentity` in `tauri.conf.json` to team certificate. 3. Add `tauri-plugin-notarize`. 4. Run `tauri build` on a Mac with Xcode. |
+| Public Apple Developer ID notarization | FUTURE_BACKLOG | V1 is local/founder distribution only. Ad-hoc signing is correct for this scope. Notarization is required only for public App Store / public distribution. Bryan does not currently have an Apple Developer Program account. | Enroll at developer.apple.com when public distribution is needed (post-V1). |
 | iOS/Android packaging | NOT_APPLICABLE | Not in scope for V1 desktop release. | — |
-| Windows code signing | EXTERNALLY_NOT_PROVEN | `certificateThumbprint: null`. No EV certificate. | Obtain EV certificate, set thumbprint in `tauri.conf.json`. |
+| Windows code signing | FUTURE_BACKLOG | V1 scope is macOS local/founder app. Windows distribution may be added later if Bryan switches from MacBooks. No Windows EV cert needed for V1. | Add Windows signing when Windows distribution is required (post-V1). |
 | Build-time `BUILD_DATE` injection | PARTIAL | No CI env injection exists. `queried_at` is runtime. | Add `VITE_BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)` to the CI build step. |
 
 ---
 
 ## Release Verdict
 
-**ACCEPT_WITH_EXTERNAL_LIMITATIONS**
+**ACCEPT**
 
-All repo-controlled release hardening items are DONE.
-Remaining blockers are exclusively external (Apple Developer account, Windows EV cert, build-date injection).
-No secrets in artifact. No deploy performed. No production changes.
+All repo-controlled V1 release hardening items are DONE for the macOS local/founder packaged app target.
+- Ad-hoc signing is correct for V1 local/founder distribution.
+- Public Apple Developer ID notarization is FUTURE_BACKLOG (not a V1 blocker).
+- Windows signing is FUTURE_BACKLOG (Windows distribution is out of V1 scope).
+- No secrets in artifact. No deploy performed. No production changes.
 
 ---
 

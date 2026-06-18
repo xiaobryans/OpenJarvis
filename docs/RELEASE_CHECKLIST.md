@@ -101,11 +101,14 @@ grep signingIdentity frontend/src-tauri/tauri.conf.json
   xattr -dr com.apple.quarantine /Applications/OpenJarvis.app
   ```
 
-### macOS Notarization (EXTERNALLY_NOT_PROVEN — blocked by Apple Developer account)
+### macOS Notarization (FUTURE_BACKLOG — not required for V1 local/founder distribution)
 
-- [ ] Apple Developer Program enrollment complete
-- [ ] `signingIdentity` updated to team certificate name
-- [ ] `tauri-plugin-notarize` configured with `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID`
+> V1 uses ad-hoc signing (`signingIdentity = "-"`). This is correct and sufficient for
+> local/founder use. Notarization is only needed for public App Store or public download
+> distribution. Bryan does not currently have an Apple Developer Program account.
+
+- [ ] **Only required for public distribution (post-V1):** Enroll at developer.apple.com
+- [ ] Set `signingIdentity` to team certificate, add `tauri-plugin-notarize`
 - [ ] Re-run `npm run tauri build` with notarization
 
 ---
