@@ -498,7 +498,8 @@ def get_voice_status() -> Dict[str, Any]:
             "CLI daemon mode only. In packaged Tauri app, "
             "Cmd+Shift+Space opens chat overlay (not voice)."
         ),
-        "inapp_push_to_talk": "mic button in chat input (always available)",
+        "inapp_push_to_talk": "mic button in chat input (enable in Settings > Input & Voice)",
+        "mic_button_status": "available_in_ui",
         "manual_chatbox_status": fb.get("manual_chatbox_status", "available"),
         "microphone_status": fb.get("microphone_status", "unknown"),
         "microphone_device": fb.get("microphone_device", ""),

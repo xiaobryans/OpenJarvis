@@ -103,7 +103,11 @@ export function InputArea() {
   const navigate = useNavigate();
   const [workbenchPlanning, setWorkbenchPlanning] = useState(false);
 
-  const { state: speechState, available: speechAvailable, startRecording, stopRecording } = useSpeech();
+  const { state: speechState, error: speechError, available: speechAvailable, startRecording, stopRecording } = useSpeech();
+
+  useEffect(() => {
+    if (speechError) toast.error(speechError);
+  }, [speechError]);
 
   // Abort in-flight stream when the user switches models mid-generation.
   // This prevents errors from trying to continue a stream with a stale model.

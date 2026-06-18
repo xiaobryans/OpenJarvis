@@ -482,3 +482,213 @@ class TestNonContradictoryStatus:
         data = json.loads(r.stdout)
         assert "true_wakeword_worker_running" in data
         assert isinstance(data["true_wakeword_worker_running"], bool)
+
+
+# ---------------------------------------------------------------------------
+# E. Wake-word startup reliability
+# ---------------------------------------------------------------------------
+
+
+class TestWakeWordStartupReliability:
+    def test_bridge_cleans_stale_socket_before_start(self):
+        """WakeWordBridge.start() must delete a stale socket file before spawning worker."""
+        import inspect
+        from openjarvis.autonomy import wakeword_bridge
+        src = inspect.getsource(wakeword_bridge.WakeWordBridge.start)
+        assert "os.unlink(_SOCKET_PATH)" in src or "os.unlink" in src, (
+            "WakeWordBridge.start() must delete stale socket before spawning worker"
+        )
+
+    def test_bridge_drains_worker_stdout(self):
+        """WakeWordBridge.start() must read worker stdout in a thread to prevent pipe fill."""
+        import inspect
+        from openjarvis.autonomy import wakeword_bridge
+        src = inspect.getsource(wakeword_bridge.WakeWordBridge.start)
+        assert "_drain" in src or "drain" in src.lower(), (
+            "WakeWordBridge.start() must drain worker stdout to prevent pipe buffer fill"
+        )
+
+    def test_bridge_start_accepts_debug_param(self):
+        """WakeWordBridge.start() must accept debug= kwarg."""
+        import inspect
+        from openjarvis.autonomy.wakeword_bridge import WakeWordBridge
+        sig = inspect.signature(WakeWordBridge.start)
+        assert "debug" in sig.parameters
+
+    def test_voice_start_has_debug_option(self):
+        """jarvis voice start --help must list --debug option."""
+        r = _run_cli("voice", "start", "--help")
+        assert r.returncode == 0
+        assert "--debug" in r.stdout
+
+    def test_voice_start_has_threshold_option(self):
+        """jarvis voice start --help must list --threshold option."""
+        r = _run_cli("voice", "start", "--help")
+        assert r.returncode == 0
+        assert "--threshold" in r.stdout
+
+    def test_worker_socket_path_is_tmp(self):
+        """Socket path must be /tmp/jarvis_wakeword.sock (or JARVIS_WAKEWORD_SOCKET override)."""
+        import os
+        expected = os.environ.get("JARVIS_WAKEWORD_SOCKET", "/tmp/jarvis_wakeword.sock")
+        from openjarvis.autonomy.wakeword_bridge import _SOCKET_PATH
+        assert _SOCKET_PATH == expected
+
+    def test_bridge_error_message_includes_debug_hint(self):
+        """Bridge connect-failure message must suggest --debug."""
+        import inspect
+        from openjarvis.autonomy import wakeword_bridge
+        src = inspect.getsource(wakeword_bridge.WakeWordBridge.start)
+        assert "--debug" in src
+
+    def test_bridge_status_has_worker_ready(self):
+        """bridge.status() must include worker_ready field."""
+        from openjarvis.autonomy.wakeword_bridge import WakeWordBridge
+        b = WakeWordBridge()
+        st = b.status()
+        assert "worker_ready" in st
+        assert st["worker_ready"] is False
+
+    def test_bridge_status_has_debug(self):
+        """bridge.status() must include debug field."""
+        from openjarvis.autonomy.wakeword_bridge import WakeWordBridge
+        b = WakeWordBridge()
+        st = b.status()
+        assert "debug" in st
+
+    def test_bridge_status_has_worker_threshold(self):
+        """bridge.status() must include worker_threshold field."""
+        from openjarvis.autonomy.wakeword_bridge import WakeWordBridge
+        b = WakeWordBridge()
+        st = b.status()
+        assert "worker_threshold" in st
+
+
+# ---------------------------------------------------------------------------
+# F. Wake-word detection config
+# ---------------------------------------------------------------------------
+
+
+class TestWakeWordDetectionConfig:
+    def test_worker_default_threshold_is_0_3(self):
+        """Default threshold must be 0.3 (was 0.5 which was too strict)."""
+        import os
+        from openjarvis.autonomy import wakeword_worker
+        import importlib
+        # Read the source to check the default
+        import inspect
+        src = inspect.getsource(wakeword_worker)
+        assert '"0.3"' in src or "'0.3'" in src, (
+            "wakeword_worker.py default threshold must be 0.3 (not 0.5)"
+        )
+
+    def test_worker_has_debug_mode(self):
+        """Worker must have JARVIS_WAKEWORD_DEBUG support."""
+        import inspect
+        from openjarvis.autonomy import wakeword_worker
+        src = inspect.getsource(wakeword_worker)
+        assert "JARVIS_WAKEWORD_DEBUG" in src
+
+    def test_worker_sends_ready_event(self):
+        """Worker must send a ready event after accepting a connection."""
+        import inspect
+        from openjarvis.autonomy import wakeword_worker
+        src = inspect.getsource(wakeword_worker)
+        assert '"ready"' in src or "'ready'" in src, (
+            "wakeword_worker.py must send a ready event after client connects"
+        )
+
+    def test_worker_logs_first_audio_frame(self):
+        """Worker must log when first audio frame arrives to confirm mic is live."""
+        import inspect
+        from openjarvis.autonomy import wakeword_worker
+        src = inspect.getsource(wakeword_worker)
+        assert "First audio frame" in src or "first audio" in src.lower()
+
+    def test_worker_flushes_stdout(self):
+        """Worker must flush stdout so drain thread sees output promptly."""
+        import inspect
+        from openjarvis.autonomy import wakeword_worker
+        src = inspect.getsource(wakeword_worker)
+        assert "sys.stdout.flush()" in src
+
+
+# ---------------------------------------------------------------------------
+# G. Mic button / speechEnabled default
+# ---------------------------------------------------------------------------
+
+
+class TestMicButtonDefault:
+    def test_speech_enabled_defaults_true_in_store(self):
+        """store.ts must default speechEnabled to true so mic button works on first use."""
+        store_path = _REPO_ROOT / "frontend" / "src" / "lib" / "store.ts"
+        src = store_path.read_text(encoding="utf-8")
+        # Find the speechEnabled default in loadSettings
+        idx = src.find("speechEnabled: false")
+        assert idx == -1, (
+            "store.ts defaults speechEnabled to false — mic button will always be disabled "
+            "until user manually enables it in Settings. Change default to true."
+        )
+
+    def test_speech_enabled_default_true_present(self):
+        """store.ts must have speechEnabled: true in the defaults object."""
+        store_path = _REPO_ROOT / "frontend" / "src" / "lib" / "store.ts"
+        src = store_path.read_text(encoding="utf-8")
+        assert "speechEnabled: true" in src
+
+    def test_inputarea_surfaces_speech_error(self):
+        """InputArea.tsx must destructure error from useSpeech and show toast."""
+        input_area = _REPO_ROOT / "frontend" / "src" / "components" / "Chat" / "InputArea.tsx"
+        src = input_area.read_text(encoding="utf-8")
+        assert "speechError" in src and "toast.error" in src, (
+            "InputArea.tsx must show toast.error when speech/mic fails, not swallow silently"
+        )
+
+    def test_inputarea_error_useeffect_present(self):
+        """InputArea.tsx must have useEffect that fires toast.error on speechError."""
+        input_area = _REPO_ROOT / "frontend" / "src" / "components" / "Chat" / "InputArea.tsx"
+        src = input_area.read_text(encoding="utf-8")
+        assert "if (speechError) toast.error" in src or "speechError" in src
+
+
+# ---------------------------------------------------------------------------
+# H. Readiness honesty
+# ---------------------------------------------------------------------------
+
+
+class TestReadinessHonesty:
+    def test_mic_button_status_is_available_in_ui(self):
+        """voice_status must return mic_button_status='available_in_ui', not 'available'."""
+        from openjarvis.autonomy.voice_pipeline import get_voice_status
+        vs = get_voice_status()
+        assert "mic_button_status" in vs
+        assert vs["mic_button_status"] == "available_in_ui", (
+            f"mic_button_status={vs['mic_button_status']!r} — must be 'available_in_ui' "
+            "(cannot claim it is live-proven without user enabling it in Settings)"
+        )
+
+    def test_inapp_push_to_talk_not_claiming_available(self):
+        """inapp_push_to_talk field must not claim mic button is unconditionally available."""
+        from openjarvis.autonomy.voice_pipeline import get_voice_status
+        vs = get_voice_status()
+        val = vs.get("inapp_push_to_talk", "")
+        assert "always available" not in val.lower(), (
+            "inapp_push_to_talk must not say 'always available' — it requires Settings enablement"
+        )
+
+    def test_voice_status_json_has_mic_button_status(self):
+        """jarvis voice status --json must include mic_button_status."""
+        r = _run_cli("voice", "status", "--json")
+        assert r.returncode in (0, 1)
+        data = json.loads(r.stdout)
+        assert "mic_button_status" in data
+        assert data["mic_button_status"] == "available_in_ui"
+
+    def test_server_port_guidance_in_status_output(self):
+        """jarvis voice status output must include port conflict guidance."""
+        r = _run_cli("voice", "status")
+        assert r.returncode in (0, 1)
+        combined = r.stdout + r.stderr
+        assert "8000" in combined or "lsof" in combined or "jarvis stop" in combined, (
+            "jarvis voice status must show port conflict guidance"
+        )

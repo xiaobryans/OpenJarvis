@@ -74,6 +74,7 @@ class WakeWordBridge:
         self._lock = threading.Lock()
         self._process: Optional[subprocess.Popen] = None
         self._reader_thread: Optional[threading.Thread] = None
+        self._stdout_drain_thread: Optional[threading.Thread] = None
         self._running = False
         self._callbacks: List[Callable[[WakeWordTriggerEvent], None]] = []
         self._last_trigger: Optional[float] = None
@@ -85,6 +86,10 @@ class WakeWordBridge:
         self._watchdog_thread: Optional[threading.Thread] = None
         self._auto_restart: bool = False
         self._max_restarts: int = _WORKER_MAX_RESTARTS
+        self._debug: bool = False
+        self._worker_ready: bool = False
+        self._worker_model: Optional[str] = None
+        self._worker_threshold: Optional[float] = None
 
     def register_callback(self, cb: Callable[[WakeWordTriggerEvent], None]) -> None:
         with self._lock:
@@ -94,16 +99,29 @@ class WakeWordBridge:
         """Check if worker venv + script exist."""
         return _WORKER_PYTHON.exists() and _WORKER_SCRIPT.exists()
 
-    def start(self, auto_restart: bool = False) -> Dict[str, Any]:
+    def start(self, auto_restart: bool = False, debug: bool = False) -> Dict[str, Any]:
         """Start worker subprocess and socket reader thread.
 
         auto_restart=True: launch watchdog that restarts worker on crash,
         up to _max_restarts times with exponential backoff.
+        debug=True: forward worker stdout/stderr to parent stdout in real-time.
         """
         with self._lock:
             if self._running:
                 return {"ok": True, "already_running": True}
             self._auto_restart = auto_restart
+            self._debug = debug
+
+        # Remove stale socket file before spawning worker.
+        # Without this, a stale file from a previous session causes the bridge
+        # to immediately try to connect to a dead socket and fail with
+        # "Could not connect to worker socket after startup".
+        if os.path.exists(_SOCKET_PATH):
+            try:
+                os.unlink(_SOCKET_PATH)
+                logger.info("Removed stale socket at %s", _SOCKET_PATH)
+            except OSError as _e:
+                logger.warning("Could not remove stale socket %s: %s", _SOCKET_PATH, _e)
 
         if not self.is_available():
             msg = (
@@ -118,6 +136,8 @@ class WakeWordBridge:
 
         env = os.environ.copy()
         env["JARVIS_WAKEWORD_SOCKET"] = _SOCKET_PATH
+        if debug:
+            env["JARVIS_WAKEWORD_DEBUG"] = "1"
 
         try:
             proc = subprocess.Popen(
@@ -130,18 +150,40 @@ class WakeWordBridge:
             with self._lock:
                 self._process = proc
 
-            # Wait for socket to appear
+            # Drain worker stdout in a background thread to prevent the OS pipe
+            # buffer from filling up (which would block the worker and stop audio
+            # processing). In debug mode, forward output to parent stdout.
+            def _drain(p: subprocess.Popen, dbg: bool) -> None:
+                try:
+                    for line in iter(p.stdout.readline, ""):
+                        if dbg:
+                            sys.stdout.write(f"[worker] {line}")
+                            sys.stdout.flush()
+                except Exception:
+                    pass
+                try:
+                    p.stdout.close()
+                except Exception:
+                    pass
+
+            drain_t = threading.Thread(target=_drain, args=(proc, debug), daemon=True)
+            drain_t.start()
+            with self._lock:
+                self._stdout_drain_thread = drain_t
+
+            # Wait for socket to appear (worker creates it after loading model)
             deadline = time.time() + _WORKER_STARTUP_TIMEOUT
             while time.time() < deadline:
                 if os.path.exists(_SOCKET_PATH):
                     break
                 if proc.poll() is not None:
-                    out = ""
-                    try:
-                        out = proc.stdout.read(2000) if proc.stdout else ""
-                    except Exception:
-                        pass
-                    msg = f"Worker exited early (rc={proc.returncode}): {out}"
+                    msg = (
+                        f"Worker exited early (rc={proc.returncode}). "
+                        f"Socket path: {_SOCKET_PATH}. "
+                        "Check that openwakeword and sounddevice are installed in "
+                        f"{_WORKER_VENV}. "
+                        "Re-run with --debug to see worker output."
+                    )
                     with self._lock:
                         self._error = msg
                     logger.error(msg)
@@ -155,7 +197,13 @@ class WakeWordBridge:
                 conn = self._connect_unix()
 
             if conn is None:
-                msg = "Could not connect to worker socket after startup"
+                msg = (
+                    f"Could not connect to worker socket at {_SOCKET_PATH} "
+                    f"(worker pid={proc.pid}, rc={proc.poll()}). "
+                    "The worker may have crashed after creating the socket. "
+                    "Re-run with --debug to see worker output. "
+                    "Check: sounddevice microphone access (System Settings > Privacy > Microphone)."
+                )
                 with self._lock:
                     self._error = msg
                 return {"ok": False, "error": msg}
@@ -176,11 +224,13 @@ class WakeWordBridge:
                 with self._lock:
                     self._watchdog_thread = wt
 
-            logger.info("WakeWordBridge started — worker pid=%d", proc.pid)
+            logger.info("WakeWordBridge started — worker pid=%d socket=%s debug=%s",
+                         proc.pid, _SOCKET_PATH, debug)
             return {
                 "ok": True,
                 "worker_pid": proc.pid,
                 "auto_restart": auto_restart,
+                "debug": debug,
                 "socket": _SOCKET_PATH if os.path.exists(_SOCKET_PATH) else f"tcp:127.0.0.1:{_TCP_PORT}",
             }
 
@@ -344,6 +394,16 @@ class WakeWordBridge:
         except Exception:
             logger.debug("Non-JSON from worker: %s", raw_line[:100])
             return
+        if d.get("event") == "ready":
+            with self._lock:
+                self._worker_ready = True
+                self._worker_model = d.get("model")
+                self._worker_threshold = float(d.get("threshold", 0.0))
+            logger.info(
+                "Worker ready: model=%s threshold=%.2f",
+                d.get("model"), d.get("threshold", 0.0),
+            )
+            return
         if d.get("event") != "wake_word":
             return
         ev = WakeWordTriggerEvent(
@@ -383,12 +443,14 @@ class WakeWordBridge:
             proc = self._process
             return {
                 "true_wakeword_engine": "openwakeword",
-                "true_wakeword_model": os.environ.get("JARVIS_WAKEWORD_MODEL", "hey_jarvis_v0.1"),
+                "true_wakeword_model": self._worker_model or os.environ.get("JARVIS_WAKEWORD_MODEL", "hey_jarvis_v0.1"),
                 "worker_available": self.is_available(),
                 "worker_running": self._running,
+                "worker_ready": self._worker_ready,
                 "worker_pid": proc.pid if proc and proc.poll() is None else None,
                 "worker_venv": str(_WORKER_VENV),
                 "worker_python": str(_WORKER_PYTHON),
+                "worker_threshold": self._worker_threshold,
                 "trigger_count": self._trigger_count,
                 "last_trigger": self._last_trigger,
                 "error": self._error,
@@ -398,6 +460,7 @@ class WakeWordBridge:
                 "last_restart_at": self._last_restart_at,
                 "auto_restart": self._auto_restart,
                 "max_restarts": self._max_restarts,
+                "debug": self._debug,
             }
 
 

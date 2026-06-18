@@ -49,7 +49,7 @@ def _redact_status(vs: Dict[str, Any]) -> Dict[str, Any]:
     safe_keys = {
         "voice_readiness", "voice_status", "readiness_reason", "summary",
         "manual_chatbox_status", "hotkey_status", "hotkey_binding", "hotkey_note",
-        "inapp_push_to_talk",
+        "inapp_push_to_talk", "mic_button_status",
         "true_wakeword_status", "true_wakeword_worker_available", "true_wakeword_worker_running",
         "stt_status", "tts_status", "microphone_status",
         "approval_pin_status", "push_to_talk_available", "wake_word_available",
@@ -112,8 +112,8 @@ def voice_status(as_json: bool) -> None:
     # In-app push-to-talk (mic button in InputArea)
     click.echo(_fmt_field(
         "In-app push-to-talk",
-        "mic button in chat input  [available]",
-        ok=True,
+        "mic button in chat input  [available_in_ui — enable in Settings > Input & Voice]",
+        ok=None,
     ))
 
     # CLI voice hotkey (pynput, only in CLI mode — Cmd+Shift+Space opens overlay in Tauri app)
@@ -175,6 +175,13 @@ def voice_status(as_json: bool) -> None:
         click.echo("  TTS:  macOS 'say' command not found — check platform")
     click.echo()
 
+    click.echo("  ── Server / port ────────────────────────────────────────────")
+    click.echo("  If 'jarvis serve' fails with 'address already in use':")
+    click.echo("    jarvis status          # check running daemon")
+    click.echo("    jarvis stop            # stop it cleanly")
+    click.echo("    lsof -ti:8000 | xargs kill -9   # force-kill if stuck")
+    click.echo()
+
     if readiness == "HOLD":
         click.echo("  Voice runtime is HOLD. Run 'jarvis voice start' when worker is ready.")
         sys.exit(1)
@@ -196,12 +203,28 @@ def voice_status(as_json: bool) -> None:
     default=False,
     help="Automatically restart worker on crash (up to 5 times).",
 )
-def voice_start(auto_restart: bool) -> None:
+@click.option(
+    "--debug",
+    "debug_mode",
+    is_flag=True,
+    default=False,
+    help="Show worker output, model load, and raw per-frame scores (verbose).",
+)
+@click.option(
+    "--threshold",
+    type=float,
+    default=None,
+    help="Override wake-word detection threshold (default 0.3, range 0.1–1.0).",
+)
+def voice_start(auto_restart: bool, debug_mode: bool, threshold: float | None) -> None:
     """Start the wake-word listener.
 
     Requires .wake_worker_venv with openwakeword + sounddevice installed.
     Blocks until Ctrl+C. Prints trigger events to stdout.
     No secrets printed. Microphone is accessed by the worker subprocess.
+
+    Run with --debug to see worker output, model keys, audio frame counts,
+    and per-frame scores (useful when detection does not fire).
     """
     try:
         from openjarvis.autonomy.wakeword_bridge import WakeWordBridge
@@ -222,6 +245,17 @@ def voice_start(auto_restart: bool) -> None:
         click.echo("Then retry: jarvis voice start", err=True)
         sys.exit(1)
 
+    import os as _os
+    import time
+
+    # Set env overrides before starting bridge
+    if threshold is not None:
+        _os.environ["JARVIS_WAKEWORD_THRESHOLD"] = str(threshold)
+    if debug_mode:
+        _os.environ["JARVIS_WAKEWORD_DEBUG"] = "1"
+        click.echo("  [debug] Socket path:   /tmp/jarvis_wakeword.sock")
+        click.echo(f"  [debug] Threshold:     {threshold or 0.3}")
+
     # Check STT/TTS status (advisory only — voice start proceeds anyway)
     try:
         vs = get_voice_status()
@@ -240,8 +274,7 @@ def voice_start(auto_restart: bool) -> None:
 
     # Register callback to print trigger events
     def _on_trigger(event: Any) -> None:
-        import time as _time
-        ts = _time.strftime("%H:%M:%S")
+        ts = time.strftime("%H:%M:%S")
         model = getattr(event, "model", None) or getattr(event, "model_name", None) or "unknown"
         score = getattr(event, "score", "?")
         score_str = f"{score:.3f}" if isinstance(score, float) else str(score)
@@ -252,32 +285,55 @@ def voice_start(auto_restart: bool) -> None:
 
     click.echo()
     click.echo("Starting wake-word listener...")
-    result = bridge.start(auto_restart=auto_restart)
+    result = bridge.start(auto_restart=auto_restart, debug=debug_mode)
 
     if not result.get("ok"):
-        click.echo(f"ERROR: {result.get('error')}", err=True)
+        err_msg = result.get("error", "unknown error")
+        click.echo(f"ERROR: {err_msg}", err=True)
+        click.echo()
+        click.echo("Diagnostics:", err=True)
+        click.echo("  Socket path:  /tmp/jarvis_wakeword.sock", err=True)
+        click.echo("  Worker venv:  .wake_worker_venv", err=True)
+        click.echo("  Re-run with:  jarvis voice start --debug", err=True)
+        click.echo("  Mic access:   System Settings > Privacy & Security > Microphone", err=True)
         sys.exit(1)
 
     pid = result.get("worker_pid", "?")
+    socket_path = result.get("socket", "/tmp/jarvis_wakeword.sock")
+    t_thresh = threshold or 0.3
     click.echo(f"  Wake-word listener running (worker pid={pid})")
+    click.echo(f"  Socket: {socket_path}")
+    click.echo(f"  Threshold: {t_thresh}")
     click.echo("  Phrases: 'hey jarvis'")
+    if debug_mode:
+        click.echo("  [debug] Worker output shown above prefixed with [worker]")
+    else:
+        click.echo("  Tip: run with --debug to see per-frame scores and worker output")
     click.echo("  Press Ctrl+C to stop.")
     click.echo()
 
-    import time
+    _ready_shown = [False]
 
     try:
         while True:
             time.sleep(0.5)
             s = bridge.status()
+            if not _ready_shown[0] and s.get("worker_ready"):
+                _ready_shown[0] = True
+                mdl = s.get("true_wakeword_model", "unknown")
+                thr = s.get("worker_threshold", t_thresh)
+                click.echo(f"  Worker ready: model={mdl!r} threshold={thr} — say 'hey jarvis'")
             if not s.get("worker_running") and not auto_restart:
                 click.echo("Worker stopped unexpectedly.", err=True)
+                click.echo(f"  Last error: {s.get('error', 'none')}", err=True)
+                click.echo("  Re-run with: jarvis voice start --debug", err=True)
                 break
     except KeyboardInterrupt:
         click.echo("\nStopping wake-word listener...")
     finally:
         bridge.stop()
-        click.echo("Voice listener stopped.")
+        s = bridge.status()
+        click.echo(f"Voice listener stopped. Total detections: {s.get('trigger_count', 0)}")
 
 
 # ---------------------------------------------------------------------------
