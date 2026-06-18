@@ -552,11 +552,11 @@ def test_wave1_closeout_all_epics_implemented():
     assert d["provider_id"] == "tavily", "Epic D Tavily not implemented"
 
 
-def test_wave2_4_not_implemented():
-    """Wave 2–4 must not be implemented in closeout sprint."""
+def test_wave3_4_not_implemented():
+    """Wave 3–4 must remain NOT_IMPLEMENTED. Wave 2 is now implemented (separate sprint)."""
     from openjarvis.wave.platform_registry import WavePlatformRegistry, WavePlatformStatus
     reg = WavePlatformRegistry()
-    for wave in (2, 3, 4):
+    for wave in (3, 4):
         items = reg.get_by_wave(wave)
         for item in items:
             assert item.status == WavePlatformStatus.NOT_IMPLEMENTED, (

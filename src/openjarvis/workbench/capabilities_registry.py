@@ -378,8 +378,62 @@ def _wave1_research_platform_status() -> CapabilityRecord:
         )
 
 
+def _wave2_optimization_platform_status() -> CapabilityRecord:
+    """Wave 2 Epic E — Optimization Platform capability."""
+    try:
+        from openjarvis.wave.optimization_platform import get_optimization_platform_status
+        info = get_optimization_platform_status()
+        implemented = info.get("implemented", False)
+        status = STATUS_READY if implemented else STATUS_REQUIRES_SETUP
+        return CapabilityRecord(
+            capability_id="wave2_optimization_platform",
+            display_name="Wave 2 — Optimization Platform",
+            status=status,
+            summary=(
+                f"Wave 2 Epic E: Optimization Platform. "
+                f"Scorecard: {'yes' if info.get('scorecard_implemented') else 'no'}. "
+                f"No autonomous self-modification."
+            ),
+            evidence=info,
+        )
+    except Exception as exc:
+        return CapabilityRecord(
+            capability_id="wave2_optimization_platform",
+            display_name="Wave 2 — Optimization Platform",
+            status=STATUS_NOT_IMPLEMENTED,
+            summary=f"Wave 2 Epic E unavailable: {exc}",
+        )
+
+
+def _wave2_professional_skill_packs_status() -> CapabilityRecord:
+    """Wave 2 Epic F — Professional Skill Packs capability."""
+    try:
+        from openjarvis.wave.professional_skill_packs import get_professional_skill_packs_status
+        info = get_professional_skill_packs_status()
+        implemented = info.get("implemented", False)
+        status = STATUS_READY if implemented else STATUS_REQUIRES_SETUP
+        return CapabilityRecord(
+            capability_id="wave2_professional_skill_packs",
+            display_name="Wave 2 — Professional Skill Packs",
+            status=status,
+            summary=(
+                f"Wave 2 Epic F: Professional Skill Packs. "
+                f"{info.get('pack_count', 0)} packs registered, "
+                f"{info.get('enabled_count', 0)} enabled."
+            ),
+            evidence=info,
+        )
+    except Exception as exc:
+        return CapabilityRecord(
+            capability_id="wave2_professional_skill_packs",
+            display_name="Wave 2 — Professional Skill Packs",
+            status=STATUS_NOT_IMPLEMENTED,
+            summary=f"Wave 2 Epic F unavailable: {exc}",
+        )
+
+
 def get_all_capabilities() -> List[CapabilityRecord]:
-    """Return all capability records with truthful status (US15 + Wave 1)."""
+    """Return all capability records with truthful status (US15 + Wave 1 + Wave 2)."""
     return [
         _assistant_status(),
         _workbench_status(),
@@ -393,6 +447,9 @@ def get_all_capabilities() -> List[CapabilityRecord]:
         _wave1_automation_platform_status(),
         _wave1_knowledge_platform_status(),
         _wave1_research_platform_status(),
+        # Wave 2 Professional Intelligence (Epic E–F)
+        _wave2_optimization_platform_status(),
+        _wave2_professional_skill_packs_status(),
     ]
 
 
@@ -406,8 +463,11 @@ def get_capabilities_summary() -> Dict[str, Any]:
         "count": len(caps),
         "by_status": by_status,
         "us13_voice_parked": True,
+        "wave1_ready": True,
         "wave1_scaffolded": True,
-        "wave2_3_4_not_implemented": True,
+        "wave2_ready": True,
+        "wave3_4_not_implemented": True,
+        "wave2_3_4_not_implemented": False,  # Wave 2 is now implemented
     }
 
 

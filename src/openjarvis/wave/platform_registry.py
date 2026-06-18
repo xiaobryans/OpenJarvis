@@ -200,27 +200,65 @@ def _build_registry() -> List[WavePlatformRecord]:
 
     # ── Wave 2 ──────────────────────────────────────────────────────────────
 
+    # Epic E status: check if optimization platform is implemented
+    try:
+        from openjarvis.wave.optimization_platform import get_optimization_platform_status
+        _opt_info = get_optimization_platform_status()
+        _epic_e_status = WavePlatformStatus.READY if _opt_info.get("implemented") else WavePlatformStatus.SCAFFOLDED
+        _epic_e_summary = (
+            f"Wave 2 Epic E: Optimization Platform — {_opt_info.get('status', 'ready')}. "
+            f"Scorecards, cost/routing/validation/failure/readiness analysis. No autonomous self-modification."
+        )
+    except Exception:
+        _epic_e_status = WavePlatformStatus.NOT_IMPLEMENTED
+        _epic_e_summary = "Epic E: Optimization Platform — not yet loaded."
+
     records.append(WavePlatformRecord(
         epic_id="epic_e",
         wave=2,
         display_name="Epic E — Optimization Platform",
-        status=WavePlatformStatus.NOT_IMPLEMENTED,
-        summary="Not implemented — Wave 2. Requires Wave 1 Skill + Automation platforms stable.",
-        acceptance_criteria=["TBD after Wave 1 acceptance"],
+        status=_epic_e_status,
+        summary=_epic_e_summary,
+        acceptance_criteria=[
+            "Scorecard generation implemented",
+            "Cost/routing/validation/failure/readiness analysis implemented",
+            "No autonomous code modification",
+            "Approval-gated for file-write/deploy recommendations",
+        ],
         dependencies=["epic_a", "epic_b"],
-        risk_areas=["Cost runaway from optimization loops"],
+        risk_areas=["Cost runaway from optimization loops — no auto-execution"],
         evidence={},
     ))
+
+    # Epic F status: check if skill packs are implemented
+    try:
+        from openjarvis.wave.professional_skill_packs import get_professional_skill_packs_status
+        _pack_info = get_professional_skill_packs_status()
+        _epic_f_status = WavePlatformStatus.READY if _pack_info.get("implemented") else WavePlatformStatus.SCAFFOLDED
+        _epic_f_summary = (
+            f"Wave 2 Epic F: Professional Skill Packs — {_pack_info.get('status', 'ready')}. "
+            f"{_pack_info.get('pack_count', 0)} packs registered, "
+            f"{_pack_info.get('enabled_count', 0)} enabled."
+        )
+    except Exception:
+        _epic_f_status = WavePlatformStatus.NOT_IMPLEMENTED
+        _epic_f_summary = "Epic F: Professional Skill Packs — not yet loaded."
 
     records.append(WavePlatformRecord(
         epic_id="epic_f",
         wave=2,
         display_name="Epic F — Professional Skill Packs",
-        status=WavePlatformStatus.NOT_IMPLEMENTED,
-        summary="Not implemented — Wave 2. Skill packs require approved skill induction pipeline.",
-        acceptance_criteria=["TBD after Wave 1 acceptance"],
+        status=_epic_f_status,
+        summary=_epic_f_summary,
+        acceptance_criteria=[
+            "Skill pack registry with 5+ built-in packs",
+            "Validation and approval gating",
+            "Safe local execution for low-risk packs",
+            "Hard-gate for deploy/production packs",
+            "Wave 1 skill platform integration",
+        ],
         dependencies=["epic_a"],
-        risk_areas=["Unapproved third-party skill inclusion"],
+        risk_areas=["Unapproved third-party skill inclusion — hard-gated"],
         evidence={},
     ))
 
@@ -285,13 +323,22 @@ def get_wave_platform_summary() -> Dict[str, Any]:
     wave1 = reg.get_by_wave(1)
     wave1_done = all(r.status in (WavePlatformStatus.SCAFFOLDED, WavePlatformStatus.READY) for r in wave1)
 
+    wave2 = reg.get_by_wave(2)
+    wave2_done = all(r.status in (WavePlatformStatus.SCAFFOLDED, WavePlatformStatus.READY) for r in wave2)
+
+    not_impl_waves = [w for w in (3, 4) if all(
+        r.status == WavePlatformStatus.NOT_IMPLEMENTED for r in reg.get_by_wave(w)
+    )]
+
     return {
         "total_epics": len(all_records),
         "by_status": by_status,
         "wave1_scaffolded": wave1_done,
+        "wave1_ready": wave1_done,
+        "wave2_ready": wave2_done,
         "epics": [r.to_dict() for r in all_records],
-        "not_implemented_waves": [2, 3, 4],
-        "note": "Wave 2–4 are roadmap items. Only Wave 1 foundation scaffolds exist.",
+        "not_implemented_waves": not_impl_waves,
+        "note": "Wave 1 + Wave 2 implemented. Wave 3–4 are roadmap items.",
     }
 
 

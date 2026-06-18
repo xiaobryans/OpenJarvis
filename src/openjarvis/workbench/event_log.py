@@ -58,6 +58,13 @@ EVENT_KNOWLEDGE_BLOCKED = "knowledge_blocked"
 EVENT_RESEARCH_QUERIED = "research_queried"
 EVENT_RESEARCH_BLOCKED = "research_blocked"
 
+# Wave 2 event types
+EVENT_OPTIMIZATION_SCORECARD = "optimization_scorecard"
+EVENT_OPTIMIZATION_RECOMMENDATION = "optimization_recommendation"
+EVENT_OPTIMIZATION_BLOCKED = "optimization_blocked"
+EVENT_SKILL_PACK_EXECUTED = "skill_pack_executed"
+EVENT_SKILL_PACK_BLOCKED = "skill_pack_blocked"
+
 
 @dataclass
 class WorkbenchEvent:
@@ -281,4 +288,9 @@ __all__ = [
     "EVENT_KNOWLEDGE_BLOCKED",
     "EVENT_RESEARCH_QUERIED",
     "EVENT_RESEARCH_BLOCKED",
+    "EVENT_OPTIMIZATION_SCORECARD",
+    "EVENT_OPTIMIZATION_RECOMMENDATION",
+    "EVENT_OPTIMIZATION_BLOCKED",
+    "EVENT_SKILL_PACK_EXECUTED",
+    "EVENT_SKILL_PACK_BLOCKED",
 ]

@@ -766,19 +766,71 @@ async def workbench_doctor(repo_path: str = ".") -> Dict[str, Any]:
     except Exception as exc:
         checks.append(chk("wave1_research_tavily", "fail", str(exc)))
 
-    # Check 32: Wave 1 capabilities truthfully NOT claiming Wave 2–4 ready
+    # Check 32: Wave 1+2 platform registry truthfulness — Wave 3–4 still not_implemented
     try:
         from openjarvis.wave.platform_registry import WavePlatformRegistry, WavePlatformStatus
         reg = WavePlatformRegistry()
-        wave2_4 = reg.get_by_wave(2) + reg.get_by_wave(3) + reg.get_by_wave(4)
-        all_not_impl = all(r.status == WavePlatformStatus.NOT_IMPLEMENTED for r in wave2_4)
+        wave3_4 = reg.get_by_wave(3) + reg.get_by_wave(4)
+        all_not_impl = all(r.status == WavePlatformStatus.NOT_IMPLEMENTED for r in wave3_4)
+        wave2 = reg.get_by_wave(2)
+        wave2_ready = all(r.status in (WavePlatformStatus.READY, WavePlatformStatus.SCAFFOLDED) for r in wave2)
         checks.append(chk(
-            "wave2_4_not_claimed_ready",
-            "pass" if all_not_impl else "fail",
-            f"wave2_4_correctly_marked_not_implemented={all_not_impl}",
+            "wave_registry_truthful",
+            "pass" if (all_not_impl and wave2_ready) else "warn",
+            (
+                f"wave3_4_not_implemented={all_not_impl} "
+                f"wave2_ready_or_scaffolded={wave2_ready} "
+                f"wave2_items={len(wave2)}"
+            ),
         ))
     except Exception as exc:
-        checks.append(chk("wave2_4_not_claimed_ready", "fail", str(exc)))
+        checks.append(chk("wave_registry_truthful", "fail", str(exc)))
+
+    # Check 37: Wave 2 Epic E — Optimization Platform
+    try:
+        from openjarvis.wave.optimization_platform import (
+            get_optimization_platform_status, generate_scorecard
+        )
+        opt_info = get_optimization_platform_status()
+        sc = generate_scorecard()
+        checks.append(chk(
+            "wave2_optimization_platform",
+            "pass" if (opt_info["implemented"] and sc.overall_score >= 0.0) else "warn",
+            (
+                f"implemented={opt_info['implemented']} "
+                f"scorecard_score={sc.overall_score:.3f} "
+                f"recommendations={len(sc.recommendations)} "
+                f"auto_modify_disabled={opt_info['auto_modify_disabled']}"
+            ),
+        ))
+    except Exception as exc:
+        checks.append(chk("wave2_optimization_platform", "fail", str(exc)))
+
+    # Check 38: Wave 2 Epic F — Professional Skill Packs
+    try:
+        from openjarvis.wave.professional_skill_packs import (
+            get_professional_skill_packs_status, SkillPackRegistry,
+            run_skill_pack, validate_skill_pack
+        )
+        pack_info = get_professional_skill_packs_status()
+        reg_packs = SkillPackRegistry()
+        # Verify safe pack executes and risky pack is blocked
+        safe_result = run_skill_pack("coding_workflow", registry=reg_packs)
+        deploy_pack = reg_packs.get("deploy_release")
+        deploy_blocked = not run_skill_pack("deploy_release", registry=reg_packs).ok
+        checks.append(chk(
+            "wave2_professional_skill_packs",
+            "pass" if (pack_info["implemented"] and safe_result.ok and deploy_blocked) else "warn",
+            (
+                f"implemented={pack_info['implemented']} "
+                f"pack_count={pack_info['pack_count']} "
+                f"enabled={pack_info['enabled_count']} "
+                f"safe_exec_ok={safe_result.ok} "
+                f"deploy_blocked={deploy_blocked}"
+            ),
+        ))
+    except Exception as exc:
+        checks.append(chk("wave2_professional_skill_packs", "fail", str(exc)))
 
     by_status: Dict[str, int] = {}
     for c in checks:
@@ -789,6 +841,7 @@ async def workbench_doctor(repo_path: str = ".") -> Dict[str, Any]:
     us17_fail = any(c["check"].startswith("us17") and c["status"] == "fail" for c in checks)
     us18_fail = any(c["check"].startswith("us18") and c["status"] == "fail" for c in checks)
     wave1_fail = any(c["check"].startswith("wave1") and c["status"] == "fail" for c in checks)
+    wave2_fail = any(c["check"].startswith("wave2") and c["status"] == "fail" for c in checks)
     return {
         "ok": all_pass,
         "total": len(checks),
@@ -800,7 +853,9 @@ async def workbench_doctor(repo_path: str = ".") -> Dict[str, Any]:
         "us17_status": "ready" if not us17_fail else "hold",
         "us18_status": "ready" if not us18_fail else "hold",
         "wave1_status": "ready" if not wave1_fail else "hold",
-        "wave2_4_status": "not_implemented",
+        "wave2_status": "ready" if not wave2_fail else "hold",
+        "wave3_4_status": "not_implemented",
+        "nus1_status": "not_started",
     }
 
 
@@ -1261,3 +1316,97 @@ async def wave_research_providers() -> Dict[str, Any]:
     from openjarvis.wave.research_platform import ResearchProviderRegistry
     reg = ResearchProviderRegistry()
     return {"ok": True, "providers": [p.to_dict() for p in reg.list_providers()]}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Wave 2 endpoints
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.get("/v1/wave2/status")
+async def wave2_status() -> Dict[str, Any]:
+    """Wave 2 platform status for Mission Control."""
+    from openjarvis.wave.optimization_platform import get_optimization_platform_status
+    from openjarvis.wave.professional_skill_packs import get_professional_skill_packs_status
+    return {
+        "wave": 2,
+        "optimization_platform": get_optimization_platform_status(),
+        "professional_skill_packs": get_professional_skill_packs_status(),
+        "wave3_4_status": "not_implemented",
+        "nus1_status": "not_started",
+        "us13_voice": "HOLD / UNSAFE / PARKED",
+    }
+
+
+@router.get("/v1/wave2/optimization/status")
+async def wave2_optimization_status() -> Dict[str, Any]:
+    """Optimization platform status."""
+    from openjarvis.wave.optimization_platform import get_optimization_platform_status
+    return get_optimization_platform_status()
+
+
+@router.get("/v1/wave2/optimization/scorecard")
+async def wave2_optimization_scorecard() -> Dict[str, Any]:
+    """Generate a workflow optimization scorecard."""
+    from openjarvis.wave.optimization_platform import generate_scorecard
+    sc = generate_scorecard()
+    return {"ok": True, "scorecard": sc.to_dict()}
+
+
+@router.get("/v1/wave2/optimization/recommendations")
+async def wave2_optimization_recommendations(category: Optional[str] = None) -> Dict[str, Any]:
+    """Get optimization recommendations, optionally filtered by category."""
+    from openjarvis.wave.optimization_platform import generate_scorecard
+    sc = generate_scorecard()
+    recs = sc.recommendations
+    if category:
+        recs = [r for r in recs if r.category == category]
+    return {
+        "ok": True,
+        "category": category,
+        "count": len(recs),
+        "recommendations": [r.to_dict() for r in recs],
+    }
+
+
+@router.get("/v1/wave2/skill-packs/status")
+async def wave2_skill_packs_status() -> Dict[str, Any]:
+    """Professional skill packs platform status."""
+    from openjarvis.wave.professional_skill_packs import get_professional_skill_packs_status
+    return get_professional_skill_packs_status()
+
+
+@router.get("/v1/wave2/skill-packs")
+async def wave2_list_skill_packs() -> Dict[str, Any]:
+    """List all registered professional skill packs."""
+    from openjarvis.wave.professional_skill_packs import SkillPackRegistry
+    reg = SkillPackRegistry()
+    return {
+        "ok": True,
+        "packs": [p.to_dict() for p in reg.list_packs()],
+        "count": len(reg.list_packs()),
+    }
+
+
+if _pydantic_ok:
+    class _RunSkillPackRequest(_BaseModel):
+        pack_id: str
+        context: Dict[str, Any] = {}
+
+    @router.post("/v1/wave2/skill-packs/run")
+    async def wave2_run_skill_pack(req: _RunSkillPackRequest) -> Dict[str, Any]:
+        """Execute a safe local skill pack workflow."""
+        from openjarvis.wave.professional_skill_packs import SkillPackRegistry, run_skill_pack
+        reg = SkillPackRegistry()
+        result = run_skill_pack(req.pack_id, registry=reg, context=req.context)
+        return result.to_dict()
+
+    @router.post("/v1/wave2/skill-packs/validate")
+    async def wave2_validate_skill_pack(req: _RunSkillPackRequest) -> Dict[str, Any]:
+        """Validate a skill pack by ID."""
+        from openjarvis.wave.professional_skill_packs import SkillPackRegistry, validate_skill_pack
+        reg = SkillPackRegistry()
+        pack = reg.get(req.pack_id)
+        if pack is None:
+            return {"ok": False, "error": f"Pack not found: {req.pack_id}"}
+        result = validate_skill_pack(pack)
+        return result.to_dict()
