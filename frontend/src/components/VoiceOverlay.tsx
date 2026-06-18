@@ -123,12 +123,14 @@ export function VoiceOverlay() {
 
   const [expanded, setExpanded] = useState(false);
   const [showLatency, setShowLatency] = useState(false);
+  const [autoStartFailed, setAutoStartFailed] = useState(false);
   const autoStarted = useRef(false);
 
   // ── 1. AUTO-START: begin wake-word listening when the app loads ──────────
   // This is the primary user path. The user does NOT need to click the mic
   // button. Saying "Hey Jarvis" wakes the assistant automatically.
-  // Uses silent=true so a missing wake-worker venv does not flash any error.
+  // Uses silent=true so a missing wake-worker venv does not flash a full error,
+  // but we still track failure to show a small indicator.
   useEffect(() => {
     if (autoStarted.current) return;
     autoStarted.current = true;
@@ -137,7 +139,13 @@ export function VoiceOverlay() {
 
     const tryAutoStart = async () => {
       if (!mounted) return;
-      await start({ silent: true });
+      const ok = await start({ silent: true });
+      // If start() fails (e.g., wake-worker venv not set up), show a visible indicator
+      // so Bryan knows why wake mode isn't working. We don't show a full error toast
+      // because this is expected on first setup.
+      if (!ok) {
+        setAutoStartFailed(true);
+      }
     };
 
     // First attempt after 1.5 s — gives backend time to be ready after Tauri launch
@@ -145,7 +153,8 @@ export function VoiceOverlay() {
     // Retry at 5 s in case the server was still starting
     const t2 = setTimeout(async () => {
       if (!mounted || isActive) return;
-      await start({ silent: true });
+      const ok = await start({ silent: true });
+      if (!ok) setAutoStartFailed(true);
     }, 5000);
 
     return () => {
@@ -375,6 +384,18 @@ export function VoiceOverlay() {
             {VOICE_STATE_LABEL[voiceState] ?? voiceState}
             <ChevronUp size={10} />
           </button>
+        )}
+        {/* Auto-start failure indicator — red dot with tooltip */}
+        {autoStartFailed && !isRunning && (
+          <div
+            className="relative"
+            title="Wake-word listener failed to start. Run 'jarvis voice setup' in terminal to configure the wake-worker venv."
+          >
+            <span
+              className="inline-block w-2 h-2 rounded-full"
+              style={{ background: 'var(--color-error, #ef4444)' }}
+            />
+          </div>
         )}
 
         <button

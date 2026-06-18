@@ -62,7 +62,7 @@ export interface VoiceSessionActions {
     sessionTimeout?: number;
     /** Suppress UI error/state flicker — for auto-start on app mount. */
     silent?: boolean;
-  }) => Promise<void>;
+  }) => Promise<boolean>; // returns true on success, false on failure
   stop: () => Promise<void>;
 }
 
@@ -225,14 +225,16 @@ export function useVoiceSession(): VoiceSessionState & VoiceSessionActions {
           setError(data.error ?? 'Failed to start voice session');
           setVoiceState('error');
         }
-        return;
+        return false;
       }
       setIsActive(true);
+      return true;
     } catch (e) {
       if (!silent) {
         setError(String(e));
         setVoiceState('error');
       }
+      return false;
     }
   }, []);
 

@@ -661,12 +661,7 @@ export function InputArea() {
             >
               {workbenchPlanning ? <Loader2 size={16} className="animate-spin" /> : <Code2 size={16} />}
             </button>
-            <MicButton
-              state={speechState}
-              onClick={handleMicClick}
-              disabled={micDisabled}
-              reason={micReason}
-            />
+            {/* Manual dictation mic hidden — primary voice UX is wake-word VoiceOverlay */}
             <button
               onClick={sendMessage}
               disabled={!input.trim() || modelLoading || !selectedModel}

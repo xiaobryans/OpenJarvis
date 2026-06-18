@@ -2385,3 +2385,37 @@ class TestWakeDrivenNotMicClickDriven:
             "VoiceOverlay must import useEffect (for auto-start) and useRef "
             "(for autoStarted guard to prevent double-start on re-render)"
         )
+
+    def test_voice_overlay_shows_auto_start_failure_indicator(self):
+        """VoiceOverlay must show a visible red dot when auto-start fails."""
+        overlay_path = _REPO_ROOT / "frontend" / "src" / "components" / "VoiceOverlay.tsx"
+        src = overlay_path.read_text(encoding="utf-8")
+        assert "autoStartFailed" in src, (
+            "VoiceOverlay must track auto-start failure state"
+        )
+        assert "var(--color-error" in src and "autoStartFailed" in src, (
+            "VoiceOverlay must render a red error indicator when autoStartFailed is true"
+        )
+        assert "jarvis voice setup" in src or "wake-worker" in src, (
+            "The failure indicator tooltip must mention the setup command or wake-worker venv"
+        )
+
+    def test_voice_overlay_start_returns_boolean(self):
+        """useVoiceSession start() must return boolean for success/failure."""
+        hook_path = _REPO_ROOT / "frontend" / "src" / "hooks" / "useVoiceSession.ts"
+        src = hook_path.read_text(encoding="utf-8")
+        assert "Promise<boolean>" in src, (
+            "start() must return Promise<boolean> so VoiceOverlay can detect auto-start failure"
+        )
+        assert "return true" in src and "return false" in src, (
+            "start() must return true on success, false on failure"
+        )
+
+    def test_old_chatbox_mic_button_is_hidden(self):
+        """The old chatbox MicButton must be hidden to avoid confusion."""
+        input_path = _REPO_ROOT / "frontend" / "src" / "components" / "Chat" / "InputArea.tsx"
+        src = input_path.read_text(encoding="utf-8")
+        assert "MicButton" not in src or "Manual dictation mic hidden" in src, (
+            "The old chatbox MicButton must be hidden or commented out so it does not "
+            "confuse users with the new wake-word VoiceOverlay"
+        )
