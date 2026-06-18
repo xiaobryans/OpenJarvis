@@ -6,7 +6,12 @@ Rules:
 - POST /v1/notify/telegram: same.
 - Both send endpoints always return HTTP 200 with a result dict (never 500).
 - Auto-send on mission events is NOT wired here.
-"""
+
+US14 Hard Gates (non-negotiable):
+- DRY-RUN GATE: dry_run=True in request body blocks all sends unconditionally.
+- PLAN-ONLY GATE: plan_only=True in request body blocks all sends unconditionally.
+- APPROVAL GATE: requires_manager_approval is always True; documented in responses.
+  No send is triggered automatically by Workbench events or autopilot."""
 
 from __future__ import annotations
 
@@ -30,8 +35,33 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+_GATED_DRY_RUN: Dict[str, Any] = {
+    "ok": False,
+    "gated": True,
+    "gate": "dry_run",
+    "reason": "dry_run=True: no external Slack/Telegram sends in dry-run mode.",
+    "requires_manager_approval": True,
+}
+
+_GATED_PLAN_ONLY: Dict[str, Any] = {
+    "ok": False,
+    "gated": True,
+    "gate": "plan_only",
+    "reason": "plan_only=True: no external sends in plan-only mode.",
+    "requires_manager_approval": True,
+}
+
+
 class NotifyRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=4000)
+    dry_run: bool = Field(
+        default=False,
+        description="Hard gate: if True, no send occurs — dry-run mode.",
+    )
+    plan_only: bool = Field(
+        default=False,
+        description="Hard gate: if True, no send occurs — plan-only mode.",
+    )
 
 
 @router.get("/v1/notify/status")
@@ -49,13 +79,21 @@ async def send_slack(req: NotifyRequest) -> Dict[str, Any]:
 
     Always returns HTTP 200; check the 'ok' field in the response body.
     Only sends if OPENCLAW_SLACK_BOT_TOKEN is configured and non-placeholder.
+    Dry-run and plan-only hard gates block all sends unconditionally.
+    Manager approval is required before calling this in live mode.
     """
+    if req.dry_run:
+        logger.info("SLACK SEND GATED: dry_run=True — no send performed")
+        return _GATED_DRY_RUN
+    if req.plan_only:
+        logger.info("SLACK SEND GATED: plan_only=True — no send performed")
+        return _GATED_PLAN_ONLY
     try:
         result = await SlackNotifier().send(req.message)
     except Exception as exc:
         logger.warning("Unexpected error in send_slack: %s", exc)
         result = {"ok": False, "error_type": "unexpected", "error": type(exc).__name__}
-    return result
+    return {**result, "requires_manager_approval": True}
 
 
 @router.post("/v1/notify/telegram")
@@ -64,13 +102,21 @@ async def send_telegram(req: NotifyRequest) -> Dict[str, Any]:
 
     Always returns HTTP 200; check the 'ok' field in the response body.
     Only sends if JARVIS_TELEGRAM_BOT_TOKEN and JARVIS_TELEGRAM_CHAT_ID are configured.
+    Dry-run and plan-only hard gates block all sends unconditionally.
+    Manager approval is required before calling this in live mode.
     """
+    if req.dry_run:
+        logger.info("TELEGRAM SEND GATED: dry_run=True — no send performed")
+        return _GATED_DRY_RUN
+    if req.plan_only:
+        logger.info("TELEGRAM SEND GATED: plan_only=True — no send performed")
+        return _GATED_PLAN_ONLY
     try:
         result = await TelegramNotifier().send(req.message)
     except Exception as exc:
         logger.warning("Unexpected error in send_telegram: %s", exc)
         result = {"ok": False, "error_type": "unexpected", "error": type(exc).__name__}
-    return result
+    return {**result, "requires_manager_approval": True}
 
 
 __all__ = ["router"]

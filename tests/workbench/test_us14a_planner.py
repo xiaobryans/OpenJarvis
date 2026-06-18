@@ -31,11 +31,13 @@ def mgr(tmp_path):
         db_path=str(tmp_path / "routing.db"),
         adapter_override=MockModelAdapter(),
     )
-    return CodingManager(
+    manager = CodingManager(
         repo_path=str(tmp_path),
         db_dir=str(tmp_path),
         model_router=router,
     )
+    yield manager
+    manager.close()
 
 
 # ---------------------------------------------------------------------------

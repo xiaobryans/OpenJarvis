@@ -371,6 +371,26 @@ async def workbench_doctor(repo_path: str = ".") -> Dict[str, Any]:
     }
 
 
+@router.get("/v1/workbench/events/{session_id}")
+async def get_workbench_events(session_id: str, limit: int = 50) -> Dict[str, Any]:
+    """Return Workbench lifecycle events for a session (local audit log only).
+
+    Events are purely informational local records.
+    No external Slack/Telegram sends occur from this endpoint.
+    """
+    entry = _plans.get(session_id)
+    if entry is None:
+        raise HTTPException(status_code=404, detail=f"Session not found: {session_id}")
+    _, manager = entry
+    events = manager.get_events(session_id, limit=limit)
+    return {
+        "ok": True,
+        "session_id": session_id,
+        "events": events,
+        "count": len(events),
+    }
+
+
 @router.get("/v1/workbench/routing-log")
 async def get_routing_log(session_id: str, repo_path: str = ".") -> Dict[str, Any]:
     """Return routing decisions for a session."""

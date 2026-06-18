@@ -752,6 +752,13 @@ class ModelRouter:
             "openrouter_key_value": "MASKED",
         }
 
+    def close(self) -> None:
+        """Close the underlying SQLite connection.  Idempotent — safe to call multiple times."""
+        try:
+            self._conn.close()
+        except Exception:
+            pass
+
 
 # ---------------------------------------------------------------------------
 # Helpers

@@ -205,4 +205,12 @@ class CostLedger:
         )
 
 
+    def close(self) -> None:
+        """Close the underlying SQLite connection.  Idempotent — safe to call multiple times."""
+        try:
+            self._conn.close()
+        except Exception:
+            pass
+
+
 __all__ = ["CostLedger", "CostEntry", "MODEL_COST_TIERS"]

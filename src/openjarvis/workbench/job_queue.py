@@ -214,4 +214,12 @@ class JobQueue:
         )
 
 
+    def close(self) -> None:
+        """Close the underlying SQLite connection.  Idempotent — safe to call multiple times."""
+        try:
+            self._conn.close()
+        except Exception:
+            pass
+
+
 __all__ = ["JobQueue", "Job", "JobStatus"]

@@ -39,6 +39,16 @@ from typing import Any, Dict, List, Optional
 from openjarvis.workbench.job_queue import Job, JobQueue, JobStatus
 from openjarvis.workbench.cost_ledger import CostLedger
 from openjarvis.workbench.checkpoint import CheckpointStore
+from openjarvis.workbench.event_log import (
+    WorkbenchEventLog,
+    EVENT_PLAN_CREATED,
+    EVENT_EXECUTION_STARTED,
+    EVENT_SUBTASK_DONE,
+    EVENT_SUBTASK_FAILED,
+    EVENT_EXECUTION_COMPLETE,
+    EVENT_APPROVAL_REQUIRED,
+    EVENT_DRY_RUN_GATE,
+)
 from openjarvis.workbench.model_router import (
     ModelRouter,
     ModelTier,
@@ -536,6 +546,7 @@ class CodingManager:
         self._jobs = JobQueue(str(db_dir_path / "workbench_jobs.db"))
         self._costs = CostLedger(str(db_dir_path / "workbench_cost.db"))
         self._checkpoints = CheckpointStore(str(db_dir_path / "workbench_checkpoints.db"))
+        self._event_log = WorkbenchEventLog(str(db_dir_path / "workbench_events.db"))
         # Use MockModelAdapter by default (no real paid calls unless explicitly configured)
         self._router = model_router or ModelRouter(
             db_path=str(db_dir_path / "model_routing.db"),
@@ -544,6 +555,43 @@ class CodingManager:
 
         # Pending approvals keyed by subtask id
         self._pending_approvals: Dict[str, Subtask] = {}
+
+    # ------------------------------------------------------------------
+    # Event log helper
+    # ------------------------------------------------------------------
+
+    def _push_event_safe(self, **kwargs: Any) -> None:
+        """Push a Workbench lifecycle event without ever raising.
+
+        Event log storage failure is silently swallowed — it must never
+        crash plan() or execute().  Safety-critical approval and dry-run
+        gate logic is NOT routed through this helper.
+        """
+        try:
+            self._event_log.push(**kwargs)
+        except Exception:
+            pass
+
+    def close(self) -> None:
+        """Explicitly close all SQLite connections held by this manager.
+
+        Call after a manager instance is no longer needed to release file
+        descriptors immediately, without waiting for garbage collection.
+        Idempotent — safe to call multiple times.
+        """
+        for store in (self._jobs, self._costs, self._checkpoints,
+                      self._router, self._event_log):
+            try:
+                store.close()
+            except Exception:
+                pass
+
+    def __del__(self) -> None:
+        """Ensure connections are released when this instance is garbage-collected."""
+        try:
+            self.close()
+        except Exception:
+            pass
 
     # ------------------------------------------------------------------
     # Planning
@@ -605,6 +653,16 @@ class CodingManager:
             evidence=f"Plan created with {len(subtasks)} subtasks. dry_run={dry_run}",
             verdict="ACCEPT",
             notes={"prompt": prompt, "subtask_count": len(subtasks)},
+        )
+
+        self._push_event_safe(
+            session_id=session_id,
+            task_id=task_id,
+            event_type=EVENT_PLAN_CREATED,
+            title="Workbench plan created",
+            detail=f"{len(subtasks)} subtasks. task_type={task_type}. dry_run={dry_run}.",
+            tone="success",
+            dry_run=dry_run,
         )
 
         logger.info(
@@ -1110,6 +1168,16 @@ class CodingManager:
         total_cost = 0.0
         last_diff = None
 
+        self._push_event_safe(
+            session_id=plan.session_id,
+            task_id=plan.task_id,
+            event_type=EVENT_EXECUTION_STARTED,
+            title="Workbench execution started",
+            detail=f"dry_run={plan.dry_run}. {len(plan.subtasks)} subtasks queued.",
+            tone="info",
+            dry_run=plan.dry_run,
+        )
+
         # Pre-mark dry_run gates before execution so status is correct even
         # if earlier subtasks fail and stop_on_blocker halts the loop.
         if plan.dry_run:
@@ -1117,6 +1185,15 @@ class CodingManager:
                 if subtask.tool_id in ("git_commit", "git_push", "file_write", "file_delete") and subtask.status == "pending":
                     subtask.status = "skipped_dry_run"
                     subtask.output = f"[DRY-RUN] Skipped {subtask.tool_id} — dry-run mode active."
+                    self._push_event_safe(
+                        session_id=plan.session_id,
+                        task_id=plan.task_id,
+                        event_type=EVENT_DRY_RUN_GATE,
+                        title=f"Dry-run gate: {subtask.tool_id} skipped",
+                        detail=f"subtask_id={subtask.id}. No write/commit/push in dry-run.",
+                        tone="warning",
+                        dry_run=True,
+                    )
 
         for subtask in plan.subtasks:
             if subtask.status in ("done", "skipped", "skipped_dry_run"):
@@ -1127,6 +1204,15 @@ class CodingManager:
                 subtask.status = "skipped_dry_run"
                 subtask.output = f"[DRY-RUN] Skipped {subtask.tool_id} — dry-run mode active."
                 logger.info("DRY-RUN: skipping %s", subtask.tool_id)
+                self._push_event_safe(
+                    session_id=plan.session_id,
+                    task_id=plan.task_id,
+                    event_type=EVENT_DRY_RUN_GATE,
+                    title=f"Dry-run gate: {subtask.tool_id} skipped",
+                    detail=f"subtask_id={subtask.id}. No write/commit/push in dry-run.",
+                    tone="warning",
+                    dry_run=True,
+                )
                 continue
 
             # Approval gate
@@ -1134,6 +1220,15 @@ class CodingManager:
                 subtask.status = "awaiting_approval"
                 self._pending_approvals[subtask.id] = subtask
                 logger.info("APPROVAL REQUIRED: subtask %s (%s)", subtask.id, subtask.tool_id)
+                self._push_event_safe(
+                    session_id=plan.session_id,
+                    task_id=plan.task_id,
+                    event_type=EVENT_APPROVAL_REQUIRED,
+                    title=f"Approval required: {subtask.tool_id}",
+                    detail=f"subtask_id={subtask.id}. Awaiting Manager approval.",
+                    tone="warning",
+                    dry_run=plan.dry_run,
+                )
                 if plan.stop_on_blocker:
                     plan.status = "awaiting_approval"
                     break
@@ -1148,6 +1243,28 @@ class CodingManager:
             # Capture diff preview
             if subtask.tool_id == "git_diff" and result and subtask.output:
                 last_diff = subtask.output
+
+            # Log subtask completion event
+            if subtask.status == "done":
+                self._push_event_safe(
+                    session_id=plan.session_id,
+                    task_id=plan.task_id,
+                    event_type=EVENT_SUBTASK_DONE,
+                    title=f"Subtask done: {subtask.tool_id}",
+                    detail=f"[{subtask.index}] {subtask.description[:80]}",
+                    tone="info",
+                    dry_run=plan.dry_run,
+                )
+            elif subtask.status == "failed":
+                self._push_event_safe(
+                    session_id=plan.session_id,
+                    task_id=plan.task_id,
+                    event_type=EVENT_SUBTASK_FAILED,
+                    title=f"Subtask failed: {subtask.tool_id}",
+                    detail=f"[{subtask.index}] {subtask.error or 'unknown error'}",
+                    tone="error",
+                    dry_run=plan.dry_run,
+                )
 
             # Stop on blocker
             if subtask.status == "failed" and plan.stop_on_blocker:
@@ -1197,6 +1314,21 @@ class CodingManager:
             evidence=f"Status={plan.status}. Cost=${plan.total_cost_usd:.6f}",
             verdict="ACCEPT" if plan.status in ("done", "done_dry_run") else "HOLD",
             notes={"status": plan.status, "cost_usd": plan.total_cost_usd},
+        )
+
+        _exec_tone = (
+            "success" if plan.status in ("done", "done_dry_run")
+            else "error" if plan.status == "failed"
+            else "warning"
+        )
+        self._push_event_safe(
+            session_id=plan.session_id,
+            task_id=plan.task_id,
+            event_type=EVENT_EXECUTION_COMPLETE,
+            title=f"Workbench execution complete: {plan.status}",
+            detail=f"Cost=${plan.total_cost_usd:.6f}. dry_run={plan.dry_run}.",
+            tone=_exec_tone,
+            dry_run=plan.dry_run,
         )
 
         return plan
@@ -2159,6 +2291,10 @@ class CodingManager:
 
     def get_jobs(self, task_id: str) -> List[Dict[str, Any]]:
         return [j.to_dict() for j in self._jobs.list_by_task(task_id)]
+
+    def get_events(self, session_id: str, limit: int = 50) -> List[Dict[str, Any]]:
+        """Return Workbench lifecycle events for a session (newest first)."""
+        return [e.to_dict() for e in self._event_log.list_events(session_id, limit=limit)]
 
 
 __all__ = [
