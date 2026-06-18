@@ -1,8 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   Mic,
   MicOff,
-  X,
   Loader2,
   Volume2,
   Brain,
@@ -90,6 +89,21 @@ function LatencyRow({ label, ms }: { label: string; ms?: number }) {
 }
 
 // ---------------------------------------------------------------------------
+// States that mean Jarvis is actively processing (not just background-listening)
+// ---------------------------------------------------------------------------
+
+const ACTIVE_CONV_STATES: VoiceState[] = [
+  'wake_detected',
+  'acknowledging',
+  'active_conversation',
+  'recording',
+  'transcribing',
+  'thinking',
+  'speaking',
+  'follow_up_listening',
+];
+
+// ---------------------------------------------------------------------------
 // Main overlay component
 // ---------------------------------------------------------------------------
 
@@ -109,15 +123,62 @@ export function VoiceOverlay() {
 
   const [expanded, setExpanded] = useState(false);
   const [showLatency, setShowLatency] = useState(false);
+  const autoStarted = useRef(false);
+
+  // ── 1. AUTO-START: begin wake-word listening when the app loads ──────────
+  // This is the primary user path. The user does NOT need to click the mic
+  // button. Saying "Hey Jarvis" wakes the assistant automatically.
+  // Uses silent=true so a missing wake-worker venv does not flash any error.
+  useEffect(() => {
+    if (autoStarted.current) return;
+    autoStarted.current = true;
+
+    let mounted = true;
+
+    const tryAutoStart = async () => {
+      if (!mounted) return;
+      await start({ silent: true });
+    };
+
+    // First attempt after 1.5 s — gives backend time to be ready after Tauri launch
+    const t1 = setTimeout(tryAutoStart, 1500);
+    // Retry at 5 s in case the server was still starting
+    const t2 = setTimeout(async () => {
+      if (!mounted || isActive) return;
+      await start({ silent: true });
+    }, 5000);
+
+    return () => {
+      mounted = false;
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── 2. AUTO-EXPAND: show overlay panel when Jarvis wakes/starts a turn ──
+  useEffect(() => {
+    if (ACTIVE_CONV_STATES.includes(voiceState)) {
+      setExpanded(true);
+    }
+    // Auto-collapse after session returns to background wake-listening
+    if (voiceState === 'listening' || voiceState === 'wake_listening') {
+      // Keep expanded briefly after session so Bryan can read the last response
+      const t = setTimeout(() => setExpanded(false), 8000);
+      return () => clearTimeout(t);
+    }
+  }, [voiceState]);
 
   const isRunning = isActive && voiceState !== 'idle' && voiceState !== 'stopped';
+  const isWakeListening = isRunning && (voiceState === 'listening' || voiceState === 'wake_listening');
   const hasConversation = !!finalTranscript || !!jarvisResponse;
 
-  const handleToggle = async () => {
+  // Mic button: stop session (if running) or manually force-start (fallback)
+  const handleMicClick = async () => {
     if (isRunning) {
       await stop();
       setExpanded(false);
     } else {
+      // Manual / fallback start — show UI feedback
       await start();
       setExpanded(true);
     }
@@ -290,25 +351,34 @@ export function VoiceOverlay() {
         </div>
       )}
 
-      {/* Mic button (always visible, collapsed state shows state label) */}
+      {/* Mic button row — always visible */}
       <div className="flex items-center gap-2">
         {isRunning && !expanded && (
           <button
             onClick={() => setExpanded(true)}
-            className="text-xs px-2 py-1 rounded-full"
+            className="text-xs px-2 py-1 rounded-full flex items-center gap-1.5"
             style={{
               background: 'var(--color-bg-secondary)',
               border: '1px solid var(--color-border)',
               color: 'var(--color-text-secondary)',
             }}
           >
+            {/* Pulsing dot — visible indicator that wake mode is active */}
+            <span
+              className={`inline-block w-1.5 h-1.5 rounded-full ${isWakeListening ? 'animate-pulse' : ''}`}
+              style={{
+                background: isWakeListening
+                  ? 'var(--color-success, #22c55e)'
+                  : 'var(--color-accent)',
+              }}
+            />
             {VOICE_STATE_LABEL[voiceState] ?? voiceState}
-            <ChevronUp size={10} className="inline ml-1" />
+            <ChevronUp size={10} />
           </button>
         )}
 
         <button
-          onClick={handleToggle}
+          onClick={handleMicClick}
           className={`w-12 h-12 rounded-full flex items-center justify-center shadow-lg transition-all ${stateRing(voiceState)}`}
           style={{
             background: isRunning
@@ -319,7 +389,13 @@ export function VoiceOverlay() {
             border: '1px solid var(--color-border)',
             color: isRunning ? '#fff' : 'var(--color-text-secondary)',
           }}
-          title={isRunning ? 'Stop voice session' : 'Start voice session (or say "Hey Jarvis")'}
+          title={
+            isRunning
+              ? isWakeListening
+                ? 'Wake listening active — say "Hey Jarvis" (click to stop)'
+                : 'Stop voice session'
+              : 'Manually start voice session (auto-starts on app launch)'
+          }
           aria-label={isRunning ? 'Stop Jarvis voice session' : 'Start Jarvis voice session'}
         >
           {voiceState === 'thinking' || voiceState === 'transcribing' ? (

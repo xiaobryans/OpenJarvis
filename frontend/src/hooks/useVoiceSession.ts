@@ -56,7 +56,13 @@ export interface VoiceSessionState {
 }
 
 export interface VoiceSessionActions {
-  start: (opts?: { recordSeconds?: number; language?: string; sessionTimeout?: number }) => Promise<void>;
+  start: (opts?: {
+    recordSeconds?: number;
+    language?: string;
+    sessionTimeout?: number;
+    /** Suppress UI error/state flicker — for auto-start on app mount. */
+    silent?: boolean;
+  }) => Promise<void>;
   stop: () => Promise<void>;
 }
 
@@ -187,14 +193,19 @@ export function useVoiceSession(): VoiceSessionState & VoiceSessionActions {
     recordSeconds?: number;
     language?: string;
     sessionTimeout?: number;
+    /** If true: suppress all UI state changes on failure (for auto-start on mount). */
+    silent?: boolean;
   }) => {
-    setError(null);
-    setVoiceState('listening');
-    setFinalTranscript('');
-    setJarvisResponse('');
-    setInterimTranscript('');
-    setLatency({});
-    setTurnsCompleted(0);
+    const silent = opts?.silent ?? false;
+    if (!silent) {
+      setError(null);
+      setVoiceState('listening');
+      setFinalTranscript('');
+      setJarvisResponse('');
+      setInterimTranscript('');
+      setLatency({});
+      setTurnsCompleted(0);
+    }
 
     const body = {
       record_seconds: opts?.recordSeconds ?? 5.0,
@@ -202,18 +213,27 @@ export function useVoiceSession(): VoiceSessionState & VoiceSessionActions {
       session_timeout: opts?.sessionTimeout ?? 30.0,
     };
 
-    const res = await fetch(`${getBase()}/v1/voice/session/start`, {
-      method: 'POST',
-      headers: authHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify(body),
-    });
-    const data = await res.json();
-    if (!data.ok) {
-      setError(data.error ?? 'Failed to start voice session');
-      setVoiceState('error');
-      return;
+    try {
+      const res = await fetch(`${getBase()}/v1/voice/session/start`, {
+        method: 'POST',
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!data.ok) {
+        if (!silent) {
+          setError(data.error ?? 'Failed to start voice session');
+          setVoiceState('error');
+        }
+        return;
+      }
+      setIsActive(true);
+    } catch (e) {
+      if (!silent) {
+        setError(String(e));
+        setVoiceState('error');
+      }
     }
-    setIsActive(true);
   }, []);
 
   const stop = useCallback(async () => {

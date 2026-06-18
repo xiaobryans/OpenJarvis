@@ -2273,3 +2273,115 @@ class TestExistingFixesIntact:
         src = vc_path.read_text(encoding="utf-8")
         assert "_VOICE_HARD_BLOCKED" not in src
         assert "ResearchAgent" not in src
+
+
+# ---------------------------------------------------------------------------
+# N. US13 UX v2: Wake-driven (not mic-click-driven) acceptance tests
+# ---------------------------------------------------------------------------
+
+
+class TestWakeDrivenNotMicClickDriven:
+    """Voice mode must auto-start wake listening — not require a mic button click."""
+
+    def test_voice_overlay_has_auto_start_use_effect(self):
+        """VoiceOverlay.tsx must contain a useEffect that calls start() on mount.
+
+        This is the fix for the mic-click-driven failure: voice mode must begin
+        listening for 'Hey Jarvis' automatically when the app loads.
+        """
+        overlay_path = _REPO_ROOT / "frontend" / "src" / "components" / "VoiceOverlay.tsx"
+        src = overlay_path.read_text(encoding="utf-8")
+        assert "useEffect" in src, "VoiceOverlay must use useEffect"
+        assert "start(" in src, "VoiceOverlay must call start() from useEffect"
+        assert "silent" in src, (
+            "VoiceOverlay auto-start must use silent:true so missing wake-worker "
+            "venv does not flash an error to the user"
+        )
+
+    def test_voice_overlay_auto_start_does_not_require_onclick(self):
+        """The primary auto-start path must NOT be inside an onClick handler.
+
+        There must be a useEffect (not just onClick) that calls start().
+        """
+        overlay_path = _REPO_ROOT / "frontend" / "src" / "components" / "VoiceOverlay.tsx"
+        src = overlay_path.read_text(encoding="utf-8")
+        # useEffect must call start — confirm start() is referenced outside onClick context
+        # The auto-start useEffect uses setTimeout + start({silent:true})
+        assert "setTimeout" in src and "silent: true" in src, (
+            "VoiceOverlay must schedule an auto-start via setTimeout + start({silent:true}) "
+            "in a useEffect — not only in an onClick handler"
+        )
+
+    def test_voice_overlay_auto_expands_on_wake_detected(self):
+        """VoiceOverlay must expand automatically when wake_detected fires.
+
+        Without this, Bryan sees no UI feedback after saying 'Hey Jarvis'.
+        """
+        overlay_path = _REPO_ROOT / "frontend" / "src" / "components" / "VoiceOverlay.tsx"
+        src = overlay_path.read_text(encoding="utf-8")
+        assert "wake_detected" in src, (
+            "VoiceOverlay must check for wake_detected state to auto-expand"
+        )
+        assert "setExpanded(true)" in src, (
+            "VoiceOverlay must call setExpanded(true) when active voice states arrive"
+        )
+
+    def test_voice_overlay_uses_active_conv_states_list(self):
+        """VoiceOverlay must have a list of active states that trigger auto-expand."""
+        overlay_path = _REPO_ROOT / "frontend" / "src" / "components" / "VoiceOverlay.tsx"
+        src = overlay_path.read_text(encoding="utf-8")
+        for state in ("acknowledging", "recording", "thinking", "speaking"):
+            assert state in src, (
+                f"VoiceOverlay ACTIVE_CONV_STATES must include '{state}' "
+                "so the overlay opens automatically during those phases"
+            )
+
+    def test_voice_overlay_mic_button_is_fallback_not_required(self):
+        """The mic button must be labelled as a fallback/stop control, not the primary path."""
+        overlay_path = _REPO_ROOT / "frontend" / "src" / "components" / "VoiceOverlay.tsx"
+        src = overlay_path.read_text(encoding="utf-8")
+        # Primary start must not be tied to handleToggle/onClick only
+        assert "handleMicClick" in src or "handleToggle" not in src, (
+            "The primary mic-button handler must be handleMicClick (or equivalent) "
+            "with auto-start separated into useEffect"
+        )
+        assert "auto-starts on app launch" in src or "Manually" in src, (
+            "The mic button tooltip must indicate it is a manual fallback, "
+            "not the required path (auto-start handles normal use)"
+        )
+
+    def test_use_voice_session_has_silent_option(self):
+        """useVoiceSession start() must accept a silent option."""
+        hook_path = _REPO_ROOT / "frontend" / "src" / "hooks" / "useVoiceSession.ts"
+        src = hook_path.read_text(encoding="utf-8")
+        assert "silent" in src, (
+            "useVoiceSession start() must have a silent option for auto-start "
+            "so errors from a missing wake-worker venv don't break the UI"
+        )
+
+    def test_voice_overlay_shows_background_listening_indicator(self):
+        """VoiceOverlay must show a visible indicator while in background wake-only mode."""
+        overlay_path = _REPO_ROOT / "frontend" / "src" / "components" / "VoiceOverlay.tsx"
+        src = overlay_path.read_text(encoding="utf-8")
+        assert "animate-pulse" in src or "isWakeListening" in src, (
+            "VoiceOverlay must show a pulsing/animated indicator when in background "
+            "wake-listening mode so Bryan knows voice is active without the panel open"
+        )
+
+    def test_voice_overlay_auto_collapses_after_session(self):
+        """VoiceOverlay must auto-collapse after session returns to wake-listening."""
+        overlay_path = _REPO_ROOT / "frontend" / "src" / "components" / "VoiceOverlay.tsx"
+        src = overlay_path.read_text(encoding="utf-8")
+        # Must have setExpanded(false) in response to listening/wake_listening state
+        assert "setExpanded(false)" in src, (
+            "VoiceOverlay must eventually collapse back to background mode after a session"
+        )
+
+    def test_voice_overlay_uses_use_effect_and_use_ref(self):
+        """VoiceOverlay must import useEffect and useRef for auto-start guard."""
+        overlay_path = _REPO_ROOT / "frontend" / "src" / "components" / "VoiceOverlay.tsx"
+        src = overlay_path.read_text(encoding="utf-8")
+        assert "useEffect" in src and "useRef" in src, (
+            "VoiceOverlay must import useEffect (for auto-start) and useRef "
+            "(for autoStarted guard to prevent double-start on re-render)"
+        )
