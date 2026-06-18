@@ -17,9 +17,13 @@ import {
   Search,
   Brain,
   RefreshCw,
+  AlertTriangle,
+  GitBranch,
+  ChevronDown,
+  ChevronRight,
 } from 'lucide-react';
 import { useAppStore, type ThemeMode } from '../lib/store';
-import { checkHealth, fetchSpeechHealth, getMemoryStats, getInferenceSource, setInferenceSource, type InferenceSource } from '../lib/api';
+import { checkHealth, fetchSpeechHealth, getMemoryStats, getInferenceSource, setInferenceSource, fetchVersionInfo, fetchLimitations, type InferenceSource, type VersionInfo, type KnownLimitation } from '../lib/api';
 import { isAutoUpdateDisabled, setAutoUpdateDisabled } from '../components/Desktop/UpdateChecker';
 
 function OllamaModelList() {
@@ -126,6 +130,9 @@ export function SettingsPage() {
 
   const [autoUpdateEnabled, setAutoUpdateEnabled] = useState(() => !isAutoUpdateDisabled());
   const [updateCheckState, setUpdateCheckState] = useState<'idle' | 'checking' | 'available' | 'latest'>('idle');
+  const [versionInfo, setVersionInfo] = useState<VersionInfo | null>(null);
+  const [limitations, setLimitations] = useState<KnownLimitation[]>([]);
+  const [limitationsOpen, setLimitationsOpen] = useState(false);
 
   const handleAutoUpdateToggle = useCallback((enabled: boolean) => {
     setAutoUpdateEnabled(enabled);
@@ -199,6 +206,8 @@ export function SettingsPage() {
     getMemoryStats()
       .then(setMemoryStats)
       .catch(() => setMemoryStats(null));
+    fetchVersionInfo().then((v) => { if (v) setVersionInfo(v); }).catch(() => {});
+    fetchLimitations().then((l) => { if (l) setLimitations(l.limitations); }).catch(() => {});
   }, []);
 
   const showSaved = () => {
@@ -586,7 +595,23 @@ export function SettingsPage() {
           </Section>
 
           {/* Speech */}
-          <Section title="Speech">
+          <Section title="Speech &amp; Hotkeys">
+            <SettingRow label="Global hotkey" description="Keyboard shortcut to open the chat (read-only — set at launch)">
+              <span className="font-mono text-xs px-2 py-1 rounded" style={{ background: 'var(--color-bg-tertiary)', color: 'var(--color-text-secondary)' }}>
+                Cmd+K
+              </span>
+            </SettingRow>
+            <SettingRow label="System panel hotkey" description="Opens the system panel">
+              <span className="font-mono text-xs px-2 py-1 rounded" style={{ background: 'var(--color-bg-tertiary)', color: 'var(--color-text-secondary)' }}>
+                Cmd+I
+              </span>
+            </SettingRow>
+            <SettingRow label="Wake-word status" description="True wake-word requires OpenWakeWord installed separately">
+              <span className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                <AlertTriangle size={11} />
+                Not available — use Cmd+K or chat input
+              </span>
+            </SettingRow>
             <SettingRow label="Speech-to-Text" description="Enable microphone input for voice dictation">
               <button
                 onClick={() => { updateSettings({ speechEnabled: !settings.speechEnabled }); showSaved(); }}
@@ -703,6 +728,61 @@ export function SettingsPage() {
             </SettingRow>
           </Section>
 
+          {/* Known Limitations */}
+          <Section title="Known Limitations">
+            <div className="text-xs mb-3" style={{ color: 'var(--color-text-secondary)' }}>
+              Honest status of platform constraints, unimplemented features, and external blockers.
+            </div>
+            <button
+              onClick={() => setLimitationsOpen((o) => !o)}
+              className="flex items-center gap-2 text-xs mb-2 cursor-pointer"
+              style={{ color: 'var(--color-text-secondary)' }}
+            >
+              {limitationsOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+              {limitations.length > 0 ? `${limitations.length} known limitation${limitations.length !== 1 ? 's' : ''}` : 'Loading…'}
+            </button>
+            {limitationsOpen && limitations.length > 0 && (
+              <div className="flex flex-col gap-2">
+                {limitations.map((lim) => (
+                  <div
+                    key={lim.id}
+                    className="rounded-lg px-3 py-2.5"
+                    style={{
+                      background: lim.severity === 'warn'
+                        ? 'color-mix(in srgb, var(--color-warning) 8%, transparent)'
+                        : 'var(--color-bg-secondary)',
+                      border: `1px solid ${lim.severity === 'warn' ? 'color-mix(in srgb, var(--color-warning) 20%, transparent)' : 'var(--color-border)'}`,
+                    }}
+                  >
+                    <div className="flex items-start gap-2">
+                      <AlertTriangle
+                        size={12}
+                        className="mt-0.5 shrink-0"
+                        style={{ color: lim.severity === 'warn' ? 'var(--color-warning)' : 'var(--color-text-tertiary)' }}
+                      />
+                      <div>
+                        <div className="text-xs font-medium mb-0.5" style={{ color: 'var(--color-text)' }}>
+                          {lim.title}
+                        </div>
+                        <div className="text-xs mb-1" style={{ color: 'var(--color-text-secondary)' }}>
+                          {lim.description}
+                        </div>
+                        <div className="text-[11px]" style={{ color: 'var(--color-text-tertiary)' }}>
+                          <span className="font-medium">Workaround: </span>{lim.workaround}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            {limitationsOpen && limitations.length === 0 && (
+              <div className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                Server not reachable — start the backend to load limitations.
+              </div>
+            )}
+          </Section>
+
           {/* About */}
           <Section title="About">
             <div className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
@@ -712,6 +792,23 @@ export function SettingsPage() {
               <p className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
                 Part of Intelligence Per Watt, a research initiative at Stanford SAIL.
               </p>
+              {versionInfo && (
+                <div
+                  className="mt-3 rounded-lg px-3 py-2 flex flex-col gap-1"
+                  style={{ background: 'var(--color-bg-secondary)', border: '1px solid var(--color-border)' }}
+                >
+                  <div className="flex items-center gap-2 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                    <Info size={11} style={{ color: 'var(--color-text-tertiary)' }} />
+                    <span>Version <span className="font-mono" style={{ color: 'var(--color-text)' }}>{versionInfo.version}</span></span>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                    <GitBranch size={11} style={{ color: 'var(--color-text-tertiary)' }} />
+                    <span className="font-mono" style={{ color: 'var(--color-text)' }}>{versionInfo.git_branch}</span>
+                    <span style={{ color: 'var(--color-text-tertiary)' }}>@</span>
+                    <span className="font-mono" style={{ color: 'var(--color-text)' }}>{versionInfo.git_commit}</span>
+                  </div>
+                </div>
+              )}
               <div className="flex gap-3 mt-3 text-xs">
                 <a
                   href="https://scalingintelligence.stanford.edu/blogs/openjarvis/"

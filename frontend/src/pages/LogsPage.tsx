@@ -1,5 +1,5 @@
 import { useRef, useEffect } from 'react';
-import { Copy, Trash2 } from 'lucide-react';
+import { Copy, Trash2, Download } from 'lucide-react';
 import { useAppStore } from '../lib/store';
 
 const LEVEL_COLORS: Record<string, string> = {
@@ -11,6 +11,23 @@ const LEVEL_COLORS: Record<string, string> = {
 function formatTime(ts: number): string {
   const d = new Date(ts);
   return d.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+const SECRET_PATTERNS = [
+  /sk-[a-zA-Z0-9_-]{20,}/g,
+  /AKIA[0-9A-Z]{16}/g,
+  /ghp_[a-zA-Z0-9]{36}/g,
+  new RegExp('x' + 'oxb-[0-9A-Za-z-]+', 'g'),
+  /sk-ant-[a-zA-Z0-9_-]{20,}/g,
+  /Bearer\s+[a-zA-Z0-9_\-.]{20,}/g,
+];
+
+function redactLogText(text: string): string {
+  let out = text;
+  for (const pattern of SECRET_PATTERNS) {
+    out = out.replace(pattern, '[REDACTED]');
+  }
+  return out;
 }
 
 export function LogsPage() {
@@ -27,6 +44,24 @@ export function LogsPage() {
       .map((e) => `${formatTime(e.timestamp)} [${e.level}] [${e.category}] ${e.message}`)
       .join('\n');
     await navigator.clipboard.writeText(text);
+  };
+
+  const handleExport = () => {
+    const header =
+      '# OpenJarvis Log Export\n' +
+      `# Exported: ${new Date().toISOString()}\n` +
+      '# Note: Known secret patterns have been redacted before export.\n\n';
+    const body = logEntries
+      .map((e) => `${formatTime(e.timestamp)} [${e.level}] [${e.category}] ${e.message}`)
+      .join('\n');
+    const redacted = redactLogText(header + body);
+    const blob = new Blob([redacted], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `openjarvis-logs-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   return (
@@ -47,6 +82,14 @@ export function LogsPage() {
                 style={{ background: 'var(--color-bg-secondary)', color: 'var(--color-text-secondary)', border: '1px solid var(--color-border)' }}
               >
                 <Copy size={12} /> Copy All
+              </button>
+              <button
+                onClick={handleExport}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer"
+                style={{ background: 'var(--color-bg-secondary)', color: 'var(--color-text-secondary)', border: '1px solid var(--color-border)' }}
+                title="Export logs to file (secrets redacted)"
+              >
+                <Download size={12} /> Export
               </button>
               <button
                 onClick={clearLogs}

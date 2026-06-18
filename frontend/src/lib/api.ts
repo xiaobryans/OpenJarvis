@@ -1090,3 +1090,53 @@ export async function setInferenceSource(
     throw new Error(e?.message ?? e ?? 'Failed to save inference source');
   }
 }
+
+// ---------------------------------------------------------------------------
+// Version info (US12 — version/status display)
+// ---------------------------------------------------------------------------
+
+export interface VersionInfo {
+  version: string;
+  git_commit: string;
+  git_branch: string;
+  queried_at: number;
+}
+
+export async function fetchVersionInfo(): Promise<VersionInfo | null> {
+  try {
+    const res = await apiFetch('/v1/version');
+    if (!res.ok) return null;
+    return res.json();
+  } catch {
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Known limitations (US12 — limitations panel)
+// ---------------------------------------------------------------------------
+
+export interface KnownLimitation {
+  id: string;
+  category: string;
+  severity: 'warn' | 'info' | 'error';
+  title: string;
+  description: string;
+  workaround: string;
+}
+
+export interface LimitationsResponse {
+  total: number;
+  categories: string[];
+  limitations: KnownLimitation[];
+}
+
+export async function fetchLimitations(): Promise<LimitationsResponse | null> {
+  try {
+    const res = await apiFetch('/v1/limitations');
+    if (!res.ok) return null;
+    return res.json();
+  } catch {
+    return null;
+  }
+}
