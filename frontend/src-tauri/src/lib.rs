@@ -1015,29 +1015,13 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
         }
     }
 
-    // If something is already serving on our port, decide what to do based
-    // on what it actually responds with — don't blindly kill it (#455).
+    // Do NOT attach to existing servers. The packaged app must run its own
+    // backend to ensure voice_routes and other new features are available.
+    // Attaching to a stale old server (e.g., from a previous commit) causes
+    // "Method Not Allowed" errors for new routes like /v1/voice/session/start.
     //
-    // The OLD behaviour was: any HTTP response (even 404) → `fuser -k 8000/tcp`
-    // / `taskkill /PID /F`. That broke the legitimate case where a user had
-    // already started `jarvis serve` in a terminal and then launched the
-    // desktop app — the app killed their server, then raced to spawn its
-    // own, sometimes losing the race and hanging.
-    //
-    // New behaviour, by response shape:
-    //   * 2xx /health        — healthy jarvis serve. Attach to it; skip the
-    //                          uv-sync + spawn dance entirely. Done.
-    //   * 503                — server is up but engine isn't ready. Surface
-    //                          an actionable message; don't kill (matches
-    //                          our wait_for_jarvis_health 503 contract).
-    //   * any other status   — something else is listening on the port. Tell
-    //                          the user via the error banner instead of
-    //                          force-killing a foreign service.
-    //   * Err (conn refused) — nothing is listening. Proceed to spawn.
-    //
-    // TODO(#455 follow-up): validate /health response body before attaching
-    // so a multi-user host can't trivially spoof us. Also accept a port
-    // override from config instead of hard-coding JARVIS_PORT.
+    // If port is in use, surface an actionable error telling the user to stop
+    // the old server or change the port.
     {
         let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(2))
@@ -1048,55 +1032,9 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
             .send()
             .await
         {
-            Ok(resp) if resp.status().is_success() => {
-                // Confirm with a second probe — the first might have caught
-                // a flickering server (engine half-loaded, dying mid-stop,
-                // etc.) and we don't want to claim ready off a 2-second
-                // snapshot. Small sleep between to give the server room.
-                tokio::time::sleep(Duration::from_millis(500)).await;
-                let confirm = client
-                    .get(format!("http://127.0.0.1:{}/health", JARVIS_PORT))
-                    .send()
-                    .await
-                    .map(|r| r.status().is_success())
-                    .unwrap_or(false);
-                if !confirm {
-                    // First probe was 2xx but the second wasn't — fall
-                    // through to the spawn path. The server probably went
-                    // away between probes.
-                    // (No early return — we want to spawn our own.)
-                } else {
-                    // Attach to the existing healthy server. Mark every
-                    // pre-spawn step done so the setup UI doesn't show a
-                    // half-progress bar (model_ready / ollama_ready stay
-                    // false otherwise because we skipped those steps).
-                    let mut s = status.lock().await;
-                    s.phase = "ready".into();
-                    s.detail = format!(
-                        "Connected to existing API server on port {}.",
-                        JARVIS_PORT,
-                    );
-                    s.server_ready = true;
-                    s.model_ready = true;
-                    s.ollama_ready = true;
-                    return;
-                }
-            }
-            Ok(resp) if resp.status() == reqwest::StatusCode::SERVICE_UNAVAILABLE => {
-                let mut s = status.lock().await;
-                s.error = Some(format!(
-                    "An API server is already running on port {} but its \
-                     inference engine isn't ready (HTTP 503). If this is your \
-                     `jarvis serve`, wait for it to finish loading and relaunch. \
-                     Otherwise, stop that service or change the port.",
-                    JARVIS_PORT,
-                ));
-                return;
-            }
             Ok(resp) => {
-                // Something else (a different web server, a stale process,
-                // a 4xx-returning instance) is on our port. Don't kill it —
-                // give the user actionable info instead.
+                // Something is already listening on our port. Don't attach —
+                // the packaged app needs its own backend with latest code.
                 let lsof_hint = if cfg!(target_os = "windows") {
                     format!("netstat -ano | findstr :{}", JARVIS_PORT)
                 } else {
@@ -1104,9 +1042,10 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
                 };
                 let mut s = status.lock().await;
                 s.error = Some(format!(
-                    "Port {} is already in use by another service (it answered \
-                     /health with HTTP {}). Stop that service or change the \
-                     OpenJarvis port, then relaunch.\n\nTo identify it:\n  {}",
+                    "Port {} is already in use by another server (HTTP {}). \
+                     The packaged app requires its own backend to ensure voice \
+                     and other new features work. Stop the old server or change \
+                     the OpenJarvis port, then relaunch.\n\nTo identify it:\n  {}",
                     JARVIS_PORT,
                     resp.status(),
                     lsof_hint,
