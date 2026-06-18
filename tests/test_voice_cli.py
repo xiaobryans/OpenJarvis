@@ -2419,3 +2419,16 @@ class TestWakeDrivenNotMicClickDriven:
             "The old chatbox MicButton must be hidden or commented out so it does not "
             "confuse users with the new wake-word VoiceOverlay"
         )
+
+    def test_voice_overlay_shows_always_visible_state_badge(self):
+        """VoiceOverlay must show a state badge even when collapsed."""
+        overlay_path = _REPO_ROOT / "frontend" / "src" / "components" / "VoiceOverlay.tsx"
+        src = overlay_path.read_text(encoding="utf-8")
+        assert "Voice off" in src or "Voice unavailable" in src, (
+            "VoiceOverlay must render a state badge showing current status "
+            "even when the panel is collapsed"
+        )
+        assert "isWakeListening" in src and "autoStartFailed" in src, (
+            "The state badge must distinguish between wake-listening, active, "
+            "and failed states"
+        )

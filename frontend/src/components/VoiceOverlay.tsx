@@ -362,7 +362,8 @@ export function VoiceOverlay() {
 
       {/* Mic button row — always visible */}
       <div className="flex items-center gap-2">
-        {isRunning && !expanded && (
+        {/* State badge — always visible so Bryan can see wake-listening status */}
+        {!expanded && (
           <button
             onClick={() => setExpanded(true)}
             className="text-xs px-2 py-1 rounded-full flex items-center gap-1.5"
@@ -372,30 +373,28 @@ export function VoiceOverlay() {
               color: 'var(--color-text-secondary)',
             }}
           >
-            {/* Pulsing dot — visible indicator that wake mode is active */}
+            {/* Status dot — color indicates state */}
             <span
-              className={`inline-block w-1.5 h-1.5 rounded-full ${isWakeListening ? 'animate-pulse' : ''}`}
+              className={`inline-block w-1.5 h-1.5 rounded-full ${
+                isWakeListening ? 'animate-pulse' : ''
+              }`}
               style={{
-                background: isWakeListening
-                  ? 'var(--color-success, #22c55e)'
-                  : 'var(--color-accent)',
+                background: autoStartFailed
+                  ? 'var(--color-error, #ef4444)'
+                  : isWakeListening
+                    ? 'var(--color-success, #22c55e)'
+                    : isRunning
+                      ? 'var(--color-accent)'
+                      : 'var(--color-text-tertiary)',
               }}
             />
-            {VOICE_STATE_LABEL[voiceState] ?? voiceState}
+            {autoStartFailed
+              ? 'Voice unavailable'
+              : isRunning
+                ? VOICE_STATE_LABEL[voiceState] ?? voiceState
+                : 'Voice off'}
             <ChevronUp size={10} />
           </button>
-        )}
-        {/* Auto-start failure indicator — red dot with tooltip */}
-        {autoStartFailed && !isRunning && (
-          <div
-            className="relative"
-            title="Wake-word listener failed to start. Run 'jarvis voice setup' in terminal to configure the wake-worker venv."
-          >
-            <span
-              className="inline-block w-2 h-2 rounded-full"
-              style={{ background: 'var(--color-error, #ef4444)' }}
-            />
-          </div>
         )}
 
         <button
