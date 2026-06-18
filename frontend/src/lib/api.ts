@@ -1146,15 +1146,18 @@ export async function fetchLimitations(): Promise<LimitationsResponse | null> {
 // ---------------------------------------------------------------------------
 
 export interface VoiceStatus {
-  voice_readiness: 'READY' | 'PARTIAL' | 'HOLD';
+  voice_readiness: 'RUNTIME_STARTED' | 'READY_FOR_LIVE_PROOF' | 'PARTIAL' | 'HOLD';
   voice_status: string;
   readiness_reason: string;
   summary: string;
   manual_chatbox_status: 'available' | 'unavailable';
   hotkey_status: 'active' | 'available' | 'unavailable';
   hotkey_binding: string;
+  hotkey_note?: string;
+  inapp_push_to_talk?: string;
   true_wakeword_status: string;
   true_wakeword_worker_available: boolean;
+  true_wakeword_worker_running?: boolean;
   stt_status: string;
   tts_status: string;
   microphone_status: 'granted' | 'denied_or_no_device' | 'unknown';

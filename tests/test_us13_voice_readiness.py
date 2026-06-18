@@ -2,7 +2,7 @@
 
 Covers:
   1.  get_voice_status() returns required keys
-  2.  voice_readiness is one of READY/PARTIAL/HOLD (no invented values)
+  2.  voice_readiness is one of RUNTIME_STARTED/READY_FOR_LIVE_PROOF/PARTIAL/HOLD (no invented values)
   3.  manual_chatbox_status is always 'available'
   4.  hotkey_status and hotkey_binding are present and non-empty
   5.  hotkey != wake-word: hotkey_status != true_wakeword_status
@@ -47,9 +47,43 @@ class TestVoiceStatusSchema:
 
     def test_voice_readiness_valid_value(self):
         vs = self._get()
-        assert vs["voice_readiness"] in ("READY", "PARTIAL", "HOLD"), (
-            f"voice_readiness={vs['voice_readiness']!r} is not a valid value"
+        valid = ("RUNTIME_STARTED", "READY_FOR_LIVE_PROOF", "PARTIAL", "HOLD")
+        assert vs["voice_readiness"] in valid, (
+            f"voice_readiness={vs['voice_readiness']!r} is not a valid value. "
+            f"Valid values: {valid}"
         )
+
+    def test_voice_readiness_not_raw_ready(self):
+        """READY is no longer a valid value — it was contradictory with configured_not_started."""
+        vs = self._get()
+        assert vs["voice_readiness"] != "READY", (
+            "voice_readiness='READY' is no longer valid. Use RUNTIME_STARTED or READY_FOR_LIVE_PROOF."
+        )
+
+    def test_new_fields_present(self):
+        vs = self._get()
+        assert "true_wakeword_worker_running" in vs, "Missing true_wakeword_worker_running field"
+        assert "hotkey_note" in vs, "Missing hotkey_note field"
+        assert "inapp_push_to_talk" in vs, "Missing inapp_push_to_talk field"
+
+    def test_worker_not_running_is_not_runtime_started(self):
+        """When worker is not started, voice_readiness must not be RUNTIME_STARTED."""
+        vs = self._get()
+        worker_running = vs.get("true_wakeword_worker_running", False)
+        if not worker_running:
+            assert vs["voice_readiness"] != "RUNTIME_STARTED", (
+                "voice_readiness=RUNTIME_STARTED but worker is not running — contradictory"
+            )
+
+    def test_worker_not_started_is_configured_not_started(self):
+        """When fully configured but worker not running, voice_status must be configured_not_started."""
+        vs = self._get()
+        worker_running = vs.get("true_wakeword_worker_running", False)
+        fully_configured = vs.get("fully_configured", False)
+        if fully_configured and not worker_running:
+            assert vs["voice_status"] == "configured_not_started", (
+                f"Expected voice_status=configured_not_started, got {vs['voice_status']!r}"
+            )
 
     def test_manual_chatbox_always_available(self):
         vs = self._get()

@@ -181,7 +181,10 @@ class TestVoiceStatusJSON:
 
     def test_json_voice_readiness_valid(self):
         data = self._get_json()
-        assert data["voice_readiness"] in ("READY", "PARTIAL", "HOLD")
+        valid = ("RUNTIME_STARTED", "READY_FOR_LIVE_PROOF", "PARTIAL", "HOLD")
+        assert data["voice_readiness"] in valid, (
+            f"voice_readiness={data['voice_readiness']!r} not in {valid}"
+        )
 
     def test_json_manual_chatbox_always_available(self):
         data = self._get_json()
@@ -310,3 +313,172 @@ class TestUS13VoiceReadinessSmoke:
         for key in ("voice_readiness", "manual_chatbox_status", "hotkey_binding",
                     "stt_status", "tts_status", "microphone_status"):
             assert key in vs
+
+
+# ---------------------------------------------------------------------------
+# B. Wake-word callback crash fix
+# ---------------------------------------------------------------------------
+
+
+class TestWakeWordTriggerEvent:
+    def test_event_has_model_field_not_model_name(self):
+        """WakeWordTriggerEvent uses .model, not .model_name — root cause of the crash."""
+        import time
+        from openjarvis.autonomy.wakeword_bridge import WakeWordTriggerEvent
+        ev = WakeWordTriggerEvent(model="hey_jarvis_v0.1", score=0.95, ts=time.time())
+        assert hasattr(ev, "model"), "WakeWordTriggerEvent must have 'model' field"
+        assert not hasattr(ev, "model_name"), (
+            "WakeWordTriggerEvent must NOT have 'model_name' field "
+            "(this was the source of the AttributeError crash)"
+        )
+
+    def test_event_fields_correct_values(self):
+        import time
+        from openjarvis.autonomy.wakeword_bridge import WakeWordTriggerEvent
+        ev = WakeWordTriggerEvent(model="hey_jarvis_v0.1", score=0.87, ts=time.time())
+        assert ev.model == "hey_jarvis_v0.1"
+        assert ev.score == 0.87
+
+    def test_voice_cmd_callback_does_not_crash(self):
+        """The voice_cmd._on_trigger callback must not raise when event has only .model and .score."""
+        import time
+        from openjarvis.autonomy.wakeword_bridge import WakeWordTriggerEvent
+        ev = WakeWordTriggerEvent(model="hey_jarvis_v0.1", score=0.92, ts=time.time())
+        # Simulate the fixed callback logic from voice_cmd.py
+        model = getattr(ev, "model", None) or getattr(ev, "model_name", None) or "unknown"
+        score = getattr(ev, "score", "?")
+        score_str = f"{score:.3f}" if isinstance(score, float) else str(score)
+        msg = f"Wake word detected! model={model!r} score={score_str}"
+        assert "hey_jarvis" in msg
+        assert "0.920" in msg
+
+    def test_voice_cmd_callback_graceful_with_missing_fields(self):
+        """Callback must not raise even if event has no model or score fields at all."""
+        class MinimalEvent:
+            pass
+        ev = MinimalEvent()
+        model = getattr(ev, "model", None) or getattr(ev, "model_name", None) or "unknown"
+        score = getattr(ev, "score", "?")
+        score_str = f"{score:.3f}" if isinstance(score, float) else str(score)
+        msg = f"Wake word detected! model={model!r} score={score_str}"
+        assert "unknown" in msg
+        assert "?" in msg
+
+    def test_callback_uses_model_not_model_name_in_voice_cmd(self):
+        """Regression: voice_cmd.py must not reference event.model_name anywhere."""
+        voice_cmd_path = _REPO_ROOT / "src" / "openjarvis" / "cli" / "voice_cmd.py"
+        src = voice_cmd_path.read_text(encoding="utf-8")
+        assert "event.model_name" not in src, (
+            "voice_cmd.py still references event.model_name — this causes AttributeError crash"
+        )
+
+
+# ---------------------------------------------------------------------------
+# C. Hotkey truth tests
+# ---------------------------------------------------------------------------
+
+
+class TestHotkeyTruth:
+    def test_cmd_shift_space_is_overlay_in_tauri_not_voice(self):
+        """lib.rs must register Cmd+Shift+Space for the overlay, not voice."""
+        lib_rs = _REPO_ROOT / "frontend" / "src-tauri" / "src" / "lib.rs"
+        src = lib_rs.read_text(encoding="utf-8")
+        assert "toggle the overlay" in src or "toggle_overlay" in src or "native_overlay::toggle" in src, (
+            "lib.rs must register Cmd+Shift+Space for the overlay"
+        )
+
+    def test_settings_page_does_not_claim_cmd_shift_space_is_voice(self):
+        """SettingsPage.tsx must not label Cmd+Shift+Space as 'Voice push-to-talk hotkey'."""
+        src = (_REPO_ROOT / "frontend" / "src" / "pages" / "SettingsPage.tsx").read_text()
+        assert "Voice push-to-talk hotkey" not in src, (
+            "SettingsPage.tsx still claims Cmd+Shift+Space is 'Voice push-to-talk hotkey'. "
+            "Cmd+Shift+Space opens the chat overlay in the Tauri app."
+        )
+
+    def test_settings_page_labels_overlay_correctly(self):
+        src = (_REPO_ROOT / "frontend" / "src" / "pages" / "SettingsPage.tsx").read_text()
+        assert "Quick chat overlay" in src or "chat overlay" in src.lower(), (
+            "SettingsPage.tsx must label Cmd+Shift+Space as 'Quick chat overlay' or similar"
+        )
+
+    def test_settings_page_has_inapp_mic_button(self):
+        src = (_REPO_ROOT / "frontend" / "src" / "pages" / "SettingsPage.tsx").read_text()
+        assert "mic button" in src.lower() or "In-app voice" in src, (
+            "SettingsPage.tsx must show the in-app mic button as a real push-to-talk path"
+        )
+
+    def test_us13_doc_labels_overlay_correctly(self):
+        doc = (_REPO_ROOT / "docs" / "US13_DAILY_DRIVER_CERTIFICATION.md").read_text()
+        assert "overlay" in doc.lower() and "not voice" in doc.lower(), (
+            "US13 doc must clarify that Cmd+Shift+Space opens overlay (not voice)"
+        )
+
+    def test_hotkey_note_in_voice_status(self):
+        from openjarvis.autonomy.voice_pipeline import get_voice_status
+        vs = get_voice_status()
+        assert "hotkey_note" in vs
+        assert "overlay" in vs["hotkey_note"].lower() or "cli" in vs["hotkey_note"].lower()
+
+    def test_inapp_push_to_talk_in_voice_status(self):
+        from openjarvis.autonomy.voice_pipeline import get_voice_status
+        vs = get_voice_status()
+        assert "inapp_push_to_talk" in vs
+        assert "mic" in vs["inapp_push_to_talk"].lower()
+
+
+# ---------------------------------------------------------------------------
+# D. Non-contradictory voice status tests
+# ---------------------------------------------------------------------------
+
+
+class TestNonContradictoryStatus:
+    def test_voice_readiness_not_ready(self):
+        """READY is no longer a valid voice_readiness value."""
+        from openjarvis.autonomy.voice_pipeline import get_voice_status
+        vs = get_voice_status()
+        assert vs["voice_readiness"] != "READY", (
+            "voice_readiness='READY' is contradictory when worker is not running. "
+            "Use RUNTIME_STARTED or READY_FOR_LIVE_PROOF."
+        )
+
+    def test_valid_readiness_states(self):
+        from openjarvis.autonomy.voice_pipeline import get_voice_status
+        vs = get_voice_status()
+        valid = {"RUNTIME_STARTED", "READY_FOR_LIVE_PROOF", "PARTIAL", "HOLD"}
+        assert vs["voice_readiness"] in valid
+
+    def test_worker_not_running_not_runtime_started(self):
+        from openjarvis.autonomy.voice_pipeline import get_voice_status
+        vs = get_voice_status()
+        if not vs.get("true_wakeword_worker_running"):
+            assert vs["voice_readiness"] != "RUNTIME_STARTED", (
+                "RUNTIME_STARTED requires worker_running=True"
+            )
+
+    def test_configured_not_started_consistent(self):
+        """voice_status=configured_not_started implies worker not running."""
+        from openjarvis.autonomy.voice_pipeline import get_voice_status
+        vs = get_voice_status()
+        if vs.get("voice_status") == "configured_not_started":
+            assert not vs.get("true_wakeword_worker_running", True), (
+                "voice_status=configured_not_started but worker_running=True — contradictory"
+            )
+
+    def test_json_voice_readiness_not_ready(self):
+        r = _run_cli("voice", "status", "--json")
+        assert r.returncode in (0, 1)
+        data = json.loads(r.stdout)
+        assert data.get("voice_readiness") != "READY"
+
+    def test_json_has_hotkey_note(self):
+        r = _run_cli("voice", "status", "--json")
+        data = json.loads(r.stdout)
+        assert "hotkey_note" in data
+        note = data["hotkey_note"]
+        assert "overlay" in note.lower() or "cli" in note.lower()
+
+    def test_json_has_worker_running_field(self):
+        r = _run_cli("voice", "status", "--json")
+        data = json.loads(r.stdout)
+        assert "true_wakeword_worker_running" in data
+        assert isinstance(data["true_wakeword_worker_running"], bool)

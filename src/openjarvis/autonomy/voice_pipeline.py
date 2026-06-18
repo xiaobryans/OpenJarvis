@@ -378,10 +378,15 @@ def _get_fallback_status() -> Dict[str, Any]:
 def get_voice_status() -> Dict[str, Any]:
     """Complete voice pipeline status with all required fields.
 
-    Voice readiness:
-      READY    — true wake-word + mic + STT/TTS + approval PIN all operational
-      PARTIAL  — hotkey or manual chatbox available but true wake-word blocked
-      HOLD     — no usable activation path
+    Voice readiness (honest runtime states):
+      RUNTIME_STARTED   — wake-word worker is running (live proof possible)
+      READY_FOR_LIVE_PROOF — all deps configured, worker NOT yet started
+                            (run 'jarvis voice start' to prove live activation)
+      PARTIAL           — manual chat or in-app mic available but wake-word not configured
+      HOLD              — no usable activation path
+
+    IMPORTANT: READY is never returned; the pipeline can only be proven by
+    live activation (say 'hey jarvis' while worker is running).
     """
     wake = get_wake_word_status()
     stt = get_stt_status()
@@ -405,10 +410,27 @@ def get_voice_status() -> Dict[str, Any]:
     pin_ok = pin_status == "set"
     fully_configured = effective_wake_true and stt_ok and tts_ok
 
-    # Voice readiness classification
-    if effective_wake_true and stt_ok and tts_ok and mic_ok and pin_ok:
-        voice_readiness = "READY"
-        readiness_reason = "True wake-word + mic + STT/TTS + approval PIN all operational"
+    # Check if wake-word worker is actually running
+    worker_running = False
+    try:
+        from openjarvis.autonomy.wakeword_bridge import get_bridge
+        worker_running = get_bridge().status().get("worker_running", False)
+    except Exception:
+        pass
+
+    # Voice readiness classification — honest runtime states only
+    if worker_running and stt_ok and tts_ok and mic_ok:
+        voice_readiness = "RUNTIME_STARTED"
+        readiness_reason = (
+            "Wake-word worker is running. Say 'hey jarvis' to prove live activation. "
+            "STT/TTS/mic all operational."
+        )
+    elif effective_wake_true and stt_ok and tts_ok and mic_ok and pin_ok:
+        voice_readiness = "READY_FOR_LIVE_PROOF"
+        readiness_reason = (
+            "All deps configured (wake-word worker available, STT, TTS, mic, PIN). "
+            "Worker NOT started — run 'jarvis voice start' to prove live activation."
+        )
     elif (wake_fallback or fb.get("manual_chatbox_status") == "available") and (stt_ok or tts_ok):
         voice_readiness = "PARTIAL"
         active_paths = []
@@ -427,11 +449,17 @@ def get_voice_status() -> Dict[str, Any]:
         voice_readiness = "HOLD"
         readiness_reason = "No usable activation path — check microphone, STT, and hotkey config"
 
-    if fully_configured:
+    if worker_running and fully_configured:
+        status = "runtime_started"
+        summary = (
+            "Wake-word listener is running. Say 'hey jarvis' to activate STT/TTS pipeline. "
+            "Run 'jarvis voice start' to start if not running."
+        )
+    elif fully_configured:
         status = "configured_not_started"
         summary = (
-            "Voice pipeline configured. Not started — "
-            "requires macOS Microphone permission and explicit VoicePipeline.start() call."
+            "Voice pipeline configured. Worker NOT started — "
+            "run 'jarvis voice start' to start wake-word listener."
         )
     elif (wake_blocked or worker_available) and stt_ok and tts_ok:
         status = "partial_hotkey_fallback"
@@ -463,8 +491,14 @@ def get_voice_status() -> Dict[str, Any]:
         # Required status fields
         "true_wakeword_status": wake_status_val,
         "true_wakeword_worker_available": worker_available,
+        "true_wakeword_worker_running": worker_running,
         "hotkey_status": fb.get("hotkey_status", "available"),
         "hotkey_binding": fb.get("hotkey_binding", "cmd+shift+space"),
+        "hotkey_note": (
+            "CLI daemon mode only. In packaged Tauri app, "
+            "Cmd+Shift+Space opens chat overlay (not voice)."
+        ),
+        "inapp_push_to_talk": "mic button in chat input (always available)",
         "manual_chatbox_status": fb.get("manual_chatbox_status", "available"),
         "microphone_status": fb.get("microphone_status", "unknown"),
         "microphone_device": fb.get("microphone_device", ""),

@@ -609,14 +609,26 @@ export function SettingsPage() {
               </span>
             </SettingRow>
 
-            {/* Path 2: Hotkeys */}
-            <SettingRow label="Voice push-to-talk hotkey" description="Triggers voice listening (backend: JARVIS_VOICE_HOTKEY, default cmd+shift+space)">
+            {/* Path 2: In-app push-to-talk (mic button) */}
+            <SettingRow label="In-app voice (mic button)" description="Click 🎤 in the chat input area to record — real push-to-talk">
+              <span className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--color-success, #22c55e)' }}>
+                <Check size={11} /> Always available
+              </span>
+            </SettingRow>
+
+            {/* Hotkeys */}
+            <SettingRow label="Quick chat overlay" description="Cmd+Shift+Space — opens native overlay chat window (NOT voice listening)">
+              <span className="font-mono text-xs px-2 py-1 rounded" style={{ background: 'var(--color-bg-tertiary)', color: 'var(--color-text-secondary)' }}>
+                Cmd+Shift+Space
+              </span>
+            </SettingRow>
+            <SettingRow label="CLI voice hotkey (daemon mode)" description="Voice push-to-talk when running jarvis as CLI daemon — not active in packaged app">
               <div className="flex items-center gap-2">
                 <span className="font-mono text-xs px-2 py-1 rounded" style={{ background: 'var(--color-bg-tertiary)', color: 'var(--color-text-secondary)' }}>
                   {voiceStatus ? voiceStatus.hotkey_binding : 'cmd+shift+space'}
                 </span>
-                <span className="text-xs" style={{ color: voiceStatus?.hotkey_status === 'active' ? 'var(--color-success, #22c55e)' : 'var(--color-text-tertiary)' }}>
-                  {voiceStatus ? (voiceStatus.hotkey_status === 'active' ? 'Active' : 'Available') : '…'}
+                <span className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                  CLI only
                 </span>
               </div>
             </SettingRow>
@@ -637,16 +649,20 @@ export function SettingsPage() {
                 <span
                   className="w-2 h-2 rounded-full shrink-0"
                   style={{
-                    background: voiceStatus?.true_wakeword_worker_available
-                      ? 'var(--color-warning, #f59e0b)'
-                      : 'var(--color-text-tertiary)',
+                    background: voiceStatus?.true_wakeword_worker_running
+                      ? 'var(--color-success, #22c55e)'
+                      : voiceStatus?.true_wakeword_worker_available
+                        ? 'var(--color-warning, #f59e0b)'
+                        : 'var(--color-text-tertiary)',
                   }}
                 />
                 <span style={{ color: 'var(--color-text-secondary)' }}>
                   {voiceStatus === null ? 'Checking…'
-                    : voiceStatus.true_wakeword_worker_available
-                      ? 'Configured — not started'
-                      : 'Not configured'}
+                    : voiceStatus.true_wakeword_worker_running
+                      ? 'Running — say “hey jarvis”'
+                      : voiceStatus.true_wakeword_worker_available
+                        ? 'Configured — not started'
+                        : 'Not configured'}
                 </span>
               </div>
             </SettingRow>
@@ -660,14 +676,14 @@ export function SettingsPage() {
             {/* Voice status summary */}
             <SettingRow label="Voice readiness" description="Overall voice pipeline status from /v1/voice/status">
               <span className="text-xs font-mono px-2 py-1 rounded" style={{
-                background: voiceStatus?.voice_readiness === 'READY'
+                background: voiceStatus?.voice_readiness === 'RUNTIME_STARTED'
                   ? 'color-mix(in srgb, var(--color-success, #22c55e) 12%, transparent)'
-                  : voiceStatus?.voice_readiness === 'PARTIAL'
+                  : voiceStatus?.voice_readiness === 'READY_FOR_LIVE_PROOF' || voiceStatus?.voice_readiness === 'PARTIAL'
                     ? 'color-mix(in srgb, var(--color-warning, #f59e0b) 12%, transparent)'
                     : 'var(--color-bg-tertiary)',
-                color: voiceStatus?.voice_readiness === 'READY'
+                color: voiceStatus?.voice_readiness === 'RUNTIME_STARTED'
                   ? 'var(--color-success, #22c55e)'
-                  : voiceStatus?.voice_readiness === 'PARTIAL'
+                  : voiceStatus?.voice_readiness === 'READY_FOR_LIVE_PROOF' || voiceStatus?.voice_readiness === 'PARTIAL'
                     ? 'var(--color-warning, #f59e0b)'
                     : 'var(--color-text-tertiary)',
               }}>

@@ -25,8 +25,10 @@
 | 4. Connectors | OpenClaw linkage | EXTERNALLY_NOT_PROVEN | `check_openclaw_linkage` returns NOT_CONFIGURED. OpenClaw workspace not wired. | Configure OpenClaw handoff per OMNIX_WORKBENCH.md. |
 | 4. Connectors | OMNIX linkage | DONE | `check_project_linkage_status` returns PASS. OMNIX project linked. | — |
 | 5. Voice | True wake-word | HOLD | `.wake_worker_venv` with `openwakeword` is installed (`worker_available=True`). Wake-word listener is **configured but not started** — requires `jarvis voice start`. Not proven via live activation in this session. | Run: `jarvis voice start`. Say "hey jarvis" with mic open. |
-| 5. Voice | Push-to-talk hotkey (Cmd+Shift+Space) | DONE | `wakeword_fallback.py` registers `cmd+shift+space` via `pynput.GlobalHotKeys`. Configurable via `JARVIS_VOICE_HOTKEY`. Shown in Settings > Input & Voice. | — |
-| 5. Voice | Model/settings palette (Cmd+K) | DONE | Opens `CommandPalette` for model management and API keys. **Not a voice hotkey.** Shown correctly in Settings > Input & Voice. | — |
+| 5. Voice | In-app push-to-talk (mic button) | DONE | `MicButton` in `InputArea.tsx`. Click to record; uses `useSpeech` hook → `transcribeAudio`. STT=openai_whisper. Always available in app. | — |
+| 5. Voice | Quick chat overlay (Cmd+Shift+Space) | DONE | Tauri `lib.rs:2460` registers `Cmd+Shift+Space` to toggle native overlay chat window. **This is chat, not voice.** Correctly labeled in Settings. | — |
+| 5. Voice | CLI voice hotkey (daemon mode) | DONE | `wakeword_fallback.py` registers `cmd+shift+space` via `pynput.GlobalHotKeys` as voice hotkey. Active only when running `jarvis` as CLI daemon (not in packaged Tauri app where Tauri captures the binding first). Configurable via `JARVIS_VOICE_HOTKEY`. | — |
+| 5. Voice | Model/settings palette (Cmd+K) | DONE | Opens `CommandPalette` for model management and API keys. **Not voice.** | — |
 | 5. Voice | Manual chatbox | DONE | `ChatPage.tsx` always available. | — |
 | 5. Voice | Microphone (STT toggle) | DONE | STT toggle in SettingsPage. `fetchSpeechHealth` reports backend status. | — |
 | 5. Voice | STT backend | DONE | `stt_status = openai_whisper` (OPENAI_API_KEY configured). `faster_whisper` is priority 1 (not installed). Falls back to OpenAI Whisper. | — |
@@ -61,32 +63,44 @@
 All repo-controlled items are DONE. Voice pipeline is configured (wake-word worker available, STT=openai_whisper, TTS=macos_say, mic=granted, hotkey=available).
 
 US13 is HOLD because:
-- True wake-word activation has not been live-tested (requires `WakeWordBridge.start()` + microphone + saying "hey jarvis")
-- Full activation flow (wake → STT → chat reply → TTS speak) has not been proven in this session
+- True wake-word activation has not been live-tested. Worker must be running (`jarvis voice start`) and "hey jarvis" must be spoken without crashing the callback.
+- In-app mic button (push-to-talk) has not been live-tested via STT → chat reply in this session.
+- Full activation flow (wake/mic → STT → chat reply → TTS speak) has not been proven in this session.
+- Known bug fixed this session: `event.model_name` callback crash → now uses `event.model` (the actual field on `WakeWordTriggerEvent`).
 
 **Bryan local verification commands** (run to upgrade to ACCEPT):
 ```bash
 # 1. Check full voice pipeline readiness (no secrets printed)
 jarvis voice status
+# Expected: READY_FOR_LIVE_PROOF (all deps configured, worker not started)
 
 # 2. Test TTS (macOS 'say' command — speaks "Jarvis is ready.")
 jarvis voice test-tts
+# Expected: TTS OK: engine='macos_say'
 
 # 3. Check STT config (does not record audio)
 jarvis voice test-stt
+# Expected: STT engine=openai_whisper, configured=True
 
-# 4. Start the wake-word listener (blocks; say "hey jarvis" to activate)
+# 4. In-app push-to-talk (frontend): start server, open app, click mic button in chat
+jarvis serve
+# → open http://localhost:8080, click the mic icon in the chat input
+# Speak a sentence. Expected: transcription appears in chat input, send to get reply.
+
+# 5. Start the wake-word listener (blocks; say "hey jarvis" to activate)
 jarvis voice start
-# Expected output: "Wake word detected! model='hey_jarvis_v0.1' score=X.XXX"
+# Expected: status shows RUNTIME_STARTED
+# Say "hey jarvis" — expected log: "Wake word detected! model='hey_jarvis_v0.1' score=X.XXX"
 # Press Ctrl+C to stop.
 
-# 5. Test push-to-talk hotkey (server must be running in a separate terminal)
-jarvis serve &
-# Press Cmd+Shift+Space — verify voice recording starts in the frontend
-
 # 6. Run all voice readiness tests
-.venv/bin/python3 -m pytest tests/test_us13_voice_readiness.py -v
+.venv/bin/python3 -m pytest tests/test_us13_voice_readiness.py tests/test_voice_cli.py -v
 ```
+
+Note on hotkeys:
+- `Cmd+Shift+Space` in the packaged Tauri app = opens native chat overlay (NOT voice)
+- Voice push-to-talk in app = mic button (🎤) in InputArea (always visible)
+- CLI voice hotkey = JARVIS_VOICE_HOTKEY (only active when running as CLI daemon)
 
 External limitations (connector tokens):
 - Slack, Telegram, Tavily, GitHub tokens not in this environment (FUTURE_BACKLOG for dogfood)

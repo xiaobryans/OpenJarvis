@@ -48,8 +48,9 @@ def _redact_status(vs: Dict[str, Any]) -> Dict[str, Any]:
     """Return a copy of the status dict with no secret fields."""
     safe_keys = {
         "voice_readiness", "voice_status", "readiness_reason", "summary",
-        "manual_chatbox_status", "hotkey_status", "hotkey_binding",
-        "true_wakeword_status", "true_wakeword_worker_available",
+        "manual_chatbox_status", "hotkey_status", "hotkey_binding", "hotkey_note",
+        "inapp_push_to_talk",
+        "true_wakeword_status", "true_wakeword_worker_available", "true_wakeword_worker_running",
         "stt_status", "tts_status", "microphone_status",
         "approval_pin_status", "push_to_talk_available", "wake_word_available",
         "fully_configured",
@@ -93,7 +94,11 @@ def voice_status(as_json: bool) -> None:
         return
 
     readiness = safe.get("voice_readiness", "HOLD")
-    color = "\033[32m" if readiness == "READY" else "\033[33m" if readiness == "PARTIAL" else "\033[31m"
+    color = (
+        "\033[32m" if readiness in ("READY", "RUNTIME_STARTED")
+        else "\033[33m" if readiness in ("PARTIAL", "READY_FOR_LIVE_PROOF")
+        else "\033[31m"
+    )
     reset = "\033[0m"
 
     click.echo()
@@ -104,13 +109,26 @@ def voice_status(as_json: bool) -> None:
     # Manual chat
     click.echo(_fmt_field("Manual chat", "always available", ok=True))
 
-    # Push-to-talk hotkey
+    # In-app push-to-talk (mic button in InputArea)
+    click.echo(_fmt_field(
+        "In-app push-to-talk",
+        "mic button in chat input  [available]",
+        ok=True,
+    ))
+
+    # CLI voice hotkey (pynput, only in CLI mode — Cmd+Shift+Space opens overlay in Tauri app)
     hotkey_binding = safe.get("hotkey_binding", "cmd+shift+space")
     hotkey_status = safe.get("hotkey_status", "available")
+    hotkey_note = safe.get("hotkey_note", "")
     click.echo(_fmt_field(
-        "Push-to-talk hotkey",
-        f"{hotkey_binding}  [{hotkey_status}]",
+        "CLI voice hotkey (daemon mode)",
+        f"{hotkey_binding}  [{hotkey_status}]{' — ' + hotkey_note if hotkey_note else ''}",
         ok=hotkey_status in ("active", "available"),
+    ))
+    click.echo(_fmt_field(
+        "  Note",
+        "Cmd+Shift+Space in packaged Tauri app opens chat overlay (not voice)",
+        ok=None,
     ))
 
     # Wake-word
@@ -160,6 +178,10 @@ def voice_status(as_json: bool) -> None:
     if readiness == "HOLD":
         click.echo("  Voice runtime is HOLD. Run 'jarvis voice start' when worker is ready.")
         sys.exit(1)
+    elif readiness == "READY_FOR_LIVE_PROOF":
+        click.echo("  Voice pipeline configured. Run 'jarvis voice start' to prove live wake-word.")
+    elif readiness == "RUNTIME_STARTED":
+        click.echo("  Voice runtime is running.")
 
 
 # ---------------------------------------------------------------------------
@@ -220,8 +242,11 @@ def voice_start(auto_restart: bool) -> None:
     def _on_trigger(event: Any) -> None:
         import time as _time
         ts = _time.strftime("%H:%M:%S")
-        click.echo(f"  [{ts}] Wake word detected! model={event.model_name!r} score={event.score:.3f}")
-        click.echo("  → Push-to-talk: activate STT transcription now (mic is live)")
+        model = getattr(event, "model", None) or getattr(event, "model_name", None) or "unknown"
+        score = getattr(event, "score", "?")
+        score_str = f"{score:.3f}" if isinstance(score, float) else str(score)
+        click.echo(f"  [{ts}] Wake word detected! model={model!r} score={score_str}")
+        click.echo("  → Wake-word fired. STT transcription will activate if connected.")
 
     bridge.register_callback(_on_trigger)
 
