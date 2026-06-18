@@ -258,17 +258,28 @@ def dry_run_trigger(
 def get_automation_platform_status() -> Dict[str, Any]:
     """Return automation platform status for Mission Control / doctor."""
     reg = AutomationRegistry()
+    scheduler_ok = False
+    try:
+        from openjarvis.wave.automation_scheduler import get_scheduler_status
+        sched = get_scheduler_status()
+        scheduler_ok = sched.get("implemented", False)
+    except Exception:
+        pass
     return {
         "epic": "epic_b",
         "wave": 1,
         "status": "ready",
         "trigger_count": len(reg.list_triggers()),
         "dry_run_implemented": True,
-        "runtime_execution_implemented": False,
-        "cron_wiring_implemented": False,
+        "scheduler_wiring_implemented": scheduler_ok,
+        "runtime_execution_implemented": scheduler_ok,
+        "background_autopilot_disabled": True,
         "approval_gate_enforced": True,
         "destructive_automations_disabled_by_default": True,
-        "note": "AutomationTrigger model + dry-run execution implemented. Live scheduler wiring is next slice.",
+        "note": (
+            "AutomationTrigger model + dry-run + scheduler wiring implemented. "
+            "Background cron thread disabled (no uncontrolled autopilot)."
+        ),
     }
 
 

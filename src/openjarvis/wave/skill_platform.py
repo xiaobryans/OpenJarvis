@@ -382,6 +382,14 @@ def get_skill_platform_status() -> Dict[str, Any]:
     for s in skills:
         by_status[s.status] = by_status.get(s.status, 0) + 1
     executable = list(_SAFE_LOCAL_HANDLERS.keys())
+    induction_ok = False
+    try:
+        from openjarvis.wave.skill_induction import get_induction_pipeline_status
+        induction_info = get_induction_pipeline_status()
+        induction_ok = induction_info.get("implemented", False)
+    except Exception:
+        pass
+
     return {
         "epic": "epic_a",
         "wave": 1,
@@ -391,9 +399,9 @@ def get_skill_platform_status() -> Dict[str, Any]:
         "executable_skills": executable,
         "executable_count": len(executable),
         "approval_gate_enforced": True,
-        "induction_pipeline_implemented": False,
+        "induction_pipeline_implemented": induction_ok,
         "local_execution_implemented": True,
-        "note": "Local skill execution wired for read-only built-ins. Induction pipeline is next slice.",
+        "note": "Local skill execution + induction pipeline implemented.",
     }
 
 

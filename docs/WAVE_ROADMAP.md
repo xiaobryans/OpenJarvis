@@ -1,268 +1,196 @@
-# Jarvis Wave 1–4 Roadmap
+# Wave 1–4 Platform Roadmap
 
-**Status as of this sprint:** Wave 1 foundation scaffolded. Wave 2–4 are roadmap items only.
-
----
-
-## Accepted baseline (US12–US18)
-
-| US | Title | Status |
-|---|---|---|
-| US12 | Product Polish | ACCEPT |
-| US13 | Hands-free Voice | HOLD / UNSAFE / PARKED |
-| US14 | Workbench Coding Platform | ACCEPT |
-| US15 | Auto Browser + Terminal + Diff Review | ACCEPT |
-| US16 | Platform Hardening | ACCEPT |
-| US17 | Adversarial Safety & Failure Recovery | ACCEPT |
-| US18 | Founder Dogfood + Public Readiness Gate | ACCEPT |
-
-US13 voice remains parked. Do not claim voice accepted.
-Voice backlog: real VAD/endpointing, end-of-speech detection, silence rejection,
-wake privacy boundary, follow-up sessions, barge-in, streaming STT.
+**Status as of: Wave 1 Final Closeout Sprint**
+**Commit tag: `Close Wave 1 platform readiness`**
 
 ---
 
-## Wave Overview
+## Wave 1 — Foundation (LOCAL/FOUNDER V1 — COMPLETE)
 
-| Wave | Epics | Status |
-|---|---|---|
-| Wave 1 — Foundation | A (Skill), B (Automation), C (Knowledge), D (Research) | **Scaffolded** |
-| Wave 2 — Professional Intelligence | E (Optimization), F (Skill Packs) | Not implemented |
-| Wave 3 — Creation & Media | G (Content & Media Studio) | Not implemented |
-| Wave 4 — Jarvis Expansion | H (Autonomous Expansion) | Not implemented |
+### Status: READY (local/founder V1)
+
+All four epics are implemented at local/founder V1 level.
+External connectors and live web require env configuration or explicit approval.
 
 ---
 
-## Wave 1 — Foundation + Local/Founder V1 Execution
+### Epic A — Skill Platform
 
-### Status: LOCAL/FOUNDER V1 ACCEPTED
+| Item | Status |
+|---|---|
+| Skill manifest model (`WaveSkillManifest`) | DONE |
+| Skill registry (`WaveSkillRegistry`) | DONE |
+| Local skill execution (`run_skill`) | DONE |
+| **Skill induction/validation pipeline** (`skill_induction.py`) | **DONE** |
+| Unsafe manifest rejection (destructive, secrets, external sends, deploy, bypass, scraping) | DONE |
+| Hard-gate tag detection (external_send, slack, email, production_deploy) | DONE |
+| Approval-required tag detection (terminal, shell, browser, write, git_push) | DONE |
+| Safe local skill registration from manifest | DONE |
+| Event logging: inducted / blocked | DONE |
+| High-risk skills (risk_level=high/critical) require approval | DONE |
+| Tests | DONE (`test_wave1_closeout.py::TestSkillInductionValidation`, `TestSkillInductionPipeline`) |
 
-All four Wave 1 epics are locally implemented, tested, and event-logged.
-Capabilities report `ready` for locally executable features.
-
----
-
-### What IS implemented (Wave 1 local/founder V1)
-
-**Epic A — Skill Platform** (`src/openjarvis/wave/skill_platform.py`)
-- `WaveSkillManifest` dataclass + `WaveSkillRegistry` (register/list/get)
-- `run_skill(skill_id, context)` — local execution for safe read-only built-ins:
-  - `list_skills` → list all registered wave skills
-  - `list_capabilities` → capabilities summary from registry
-  - `platform_status` → wave platform summary
-  - `coding_workbench`, `diff_reviewer` → capabilities summary
-- Approval gates enforced: `browser_automation`, `terminal_executor` require approval; `hard_gate` skills blocked
-- Skills without local handlers return `approval_required` (not auto-blocked)
-- Event logging: `EVENT_SKILL_EXECUTED` / `EVENT_SKILL_BLOCKED`
-- Capability status: `wave1_skill_platform` → **`ready`**
-- Doctor check 28: verifies `run_skill("list_skills")` succeeds
-- REST: `GET /v1/wave/skills`, `POST /v1/wave/skills/run`
-- Induction pipeline: **not yet implemented** (next slice)
-
-**Epic B — Automation Platform** (`src/openjarvis/wave/automation_platform.py`)
-- `AutomationTrigger` dataclass + `AutomationRegistry` (register/enable/disable/list/get)
-- `dry_run_trigger(trigger_id)` — simulates trigger execution without real side effects:
-  - Low-risk `POLICY_AUTO` triggers → returns simulated output
-  - High/critical risk → `approval_required`
-  - `slack_*`/`email_*` triggers → hard-blocked (external sends never auto-execute)
-- All triggers disabled by default on registration
-- Event logging: `EVENT_AUTOMATION_DRY_RUN` / `EVENT_AUTOMATION_BLOCKED`
-- Capability status: `wave1_automation_platform` → **`ready`**
-- Doctor check 29: registers test trigger, verifies dry-run succeeds
-- REST: `GET /v1/wave/automations`, `POST /v1/wave/automations/dry-run`
-- Live scheduler wiring (cron): **not yet implemented** (next slice)
-
-**Epic C — Knowledge Platform** (`src/openjarvis/wave/knowledge_platform.py`)
-- `KnowledgeSource` dataclass + `KnowledgeSourceRegistry`
-- `KnowledgeRecord` — normalized knowledge unit (record_id, source_id, title, content, metadata)
-- `ingest_local_source(text, source_id)` — ingests plain text, splits into paragraph chunks, stores in-memory
-- `ingest_connector_source(source_id)` — checks approval gate; PII/private sources blocked
-- `search_knowledge(query)` — keyword search over ingested records
-- `get_ingested_records(source_id)` / `get_all_ingested_records()`
-- Event logging: `EVENT_KNOWLEDGE_INGESTED` / `EVENT_KNOWLEDGE_BLOCKED`
-- Capability status: `wave1_knowledge_platform` → **`ready`**
-- Doctor check 30: ingests test content, verifies record count >= 1
-- REST: `GET /v1/wave/knowledge/sources`, `POST /v1/wave/knowledge/ingest`
-- PII sources (apple_notes, apple_contacts, dropbox): `approval_required` — NOT auto-ingested
-- Connector ingestion pipeline, hybrid search: **not yet implemented** (next slice)
-
-**Epic D — Research Platform** (`src/openjarvis/wave/research_platform.py`)
-- `ResearchProvider` dataclass + `ResearchProviderRegistry`
-- `ResearchSource` + `ResearchResult` — structured query output
-- `run_local_query(query, provider_id)`:
-  - Searches local ingested knowledge records first
-  - Appends platform info as always-available fallback
-  - Forbidden terms (captcha, bypass, credential, password, token, secret) → hard-blocked
-  - `web_search_generic` provider → `approval_required` (no auto-scraping)
-  - Empty query → error
-- Event logging: `EVENT_RESEARCH_QUERIED` / `EVENT_RESEARCH_BLOCKED`
-- Capability status: `wave1_research_platform` → **`ready`**
-- Doctor check 31: queries `"doctor check"`, verifies sources >= 1
-- REST: `GET /v1/wave/research/providers`, `POST /v1/wave/research/query`
-- Web search (Serper/Tavily), deep research loop: **not yet implemented / requires_setup**
-
-**Wave Platform Registry** (`src/openjarvis/wave/platform_registry.py`)
-- `WavePlatformRecord` + `WavePlatformRegistry`
-- `get_wave_platform_summary()` for Mission Control / doctor
-- Doctor check 27: `wave1_platform_registry`
-- Doctor check 32: `wave2_4_not_claimed_ready`
-
-**Capabilities Registry** — Wave 1 statuses updated:
-| Capability | Previous | Now |
-|---|---|---|
-| `wave1_skill_platform` | requires_setup | **ready** |
-| `wave1_automation_platform` | requires_setup | **ready** |
-| `wave1_knowledge_platform` | requires_setup | **ready** |
-| `wave1_research_platform` | requires_setup | **ready** |
-
-**Event types** (`src/openjarvis/workbench/event_log.py`):
-`EVENT_SKILL_EXECUTED`, `EVENT_SKILL_BLOCKED`, `EVENT_AUTOMATION_DRY_RUN`,
-`EVENT_AUTOMATION_BLOCKED`, `EVENT_KNOWLEDGE_INGESTED`, `EVENT_KNOWLEDGE_BLOCKED`,
-`EVENT_RESEARCH_QUERIED`, `EVENT_RESEARCH_BLOCKED`
-
-**REST endpoints**:
-- `GET /v1/wave/status` — full platform status
-- `GET /v1/wave/skills` — list skills
-- `POST /v1/wave/skills/run` — execute skill
-- `GET /v1/wave/automations` — list triggers
-- `POST /v1/wave/automations/dry-run` — dry-run trigger
-- `POST /v1/wave/knowledge/ingest` — ingest text
-- `GET /v1/wave/knowledge/sources` — list sources
-- `POST /v1/wave/research/query` — local query
-- `GET /v1/wave/research/providers` — list providers
-
-**Tests**:
-- `tests/wave/test_wave1_foundation.py` — 40 tests (scaffold, registries, approval gates)
-- `tests/wave/test_wave1_execution.py` — ~55 tests (execution, events, capabilities)
+**Proof:** `induce_skill({safe_manifest})` → status=accepted; unsafe manifest → status=rejected/hard_gate_blocked.
 
 ---
 
-### What is NOT implemented (explicit REQUIRES_USER_ACTION or next slice)
+### Epic B — Automation Platform
 
-| Item | Status | Next action |
-|---|---|---|
-| Skill induction pipeline (LLM-based) | Not implemented | Epic A next slice |
-| Automation cron wiring (`scheduler/`) | Not implemented | Epic B next slice |
-| Automation event bus | Not implemented | Epic B next slice |
-| Knowledge connector ingestion (apple_notes, dropbox) | REQUIRES_USER_ACTION (auth + approval) | Epic C next slice |
-| Knowledge hybrid search (vector + BM25) | Not implemented | Epic C next slice |
-| Web search execution (Serper/Tavily) | REQUIRES_USER_ACTION (API key + approval) | Epic D next slice |
-| Deep research loop | Not implemented | Epic D next slice |
-| HackerNews live queries | Requires network; scaffolded | Epic D next slice |
+| Item | Status |
+|---|---|
+| AutomationTrigger model | DONE |
+| AutomationRegistry | DONE |
+| Dry-run execution (`dry_run_trigger`) | DONE |
+| **Scheduler wiring to TaskScheduler** (`automation_scheduler.py`) | **DONE** |
+| Register trigger | DONE |
+| Enable/schedule low-risk trigger | DONE |
+| Execute safe local action immediately | DONE |
+| Prevent high/critical risk without approval | DONE |
+| Block external sends (Slack/email/Telegram) | DONE |
+| Background autopilot disabled | DONE — no uncontrolled thread started |
+| Event logging: dry-run, executed, blocked | DONE |
+| Tests | DONE (`test_wave1_closeout.py::TestAutomationScheduler`) |
+
+**Proof:** `execute_safe_trigger(low_risk_trigger)` → ok=True; `execute_safe_trigger(high_risk)` → approval_required=True; `execute_safe_trigger(slack_trigger)` → blocked=True.
 
 ---
 
-### How to retest Wave 1
+### Epic C — Knowledge Platform
+
+| Item | Status |
+|---|---|
+| KnowledgeSource model | DONE |
+| KnowledgeSourceRegistry | DONE |
+| Local text/markdown ingestion (`ingest_local_source`) | DONE |
+| Keyword search (`search_knowledge`) | DONE |
+| **Local folder connector** (`local_folder_connector.py`) | **DONE** |
+| Path allowlist (home dir + /tmp only) | DONE |
+| Credential/secret file blocking (.env, .key, .pem, .ssh, etc.) | DONE |
+| Forbidden path segment blocking (/.ssh/, /.aws/, /.kube/) | DONE |
+| Max file size 500 KB, max 50 files per ingest | DONE |
+| Records pushed into knowledge_platform store | DONE |
+| PII sources without approval: rejected | DONE |
+| Apple Notes / Dropbox connectors | REQUIRES_USER_ACTION (auth unavailable) |
+| Event logging: ingested, blocked | DONE |
+| Tests | DONE (`test_wave1_closeout.py::TestLocalFolderConnector`) |
+
+**Proof:** `ingest_folder("/tmp/jarvis_docs", source_id="test")` reads .txt/.md files; `/etc` path → blocked=True; `.ssh` path → blocked=True.
+
+**External connectors (REQUIRES_USER_ACTION):**
+- Apple Notes: requires macOS entitlement + user authorization
+- Dropbox: requires OAuth2 flow with user account
+- These report `status=requires_setup` — no fake DONE claimed.
+
+---
+
+### Epic D — Research Platform
+
+| Item | Status |
+|---|---|
+| ResearchProvider model | DONE |
+| ResearchProviderRegistry | DONE |
+| Local knowledge query (`run_local_query`) | DONE |
+| Platform info fallback | DONE |
+| **Tavily web search adapter** (`tavily_provider.py`) | **DONE** |
+| Env-gated readiness (`TAVILY_API_KEY`) | DONE |
+| Status: `ready` if key present, `requires_setup` if absent | DONE |
+| Approval gate for all live queries | DONE |
+| Unsafe query blocking (captcha, credential, password, bypass, scraping) | DONE |
+| Key value NEVER logged/printed/stored/committed | DONE |
+| Mock-based tests (no real network in CI) | DONE |
+| Deep research loop | NOT_IMPLEMENTED (future slice) |
+| Tests | DONE (`test_wave1_closeout.py::TestTavilyProvider`) |
+
+**Key handling proof:**
+- `TAVILY_API_KEY` read only via `os.environ.get("TAVILY_API_KEY")`.
+- Value never appears in logs, responses, test output, or committed files.
+- Stored in `.env.local` (gitignored) — never committed.
+
+**Live provider status:**
+- Key configured via `TAVILY_API_KEY` env var.
+- All live queries require `approved=True` — approval gate enforced.
+- Unsafe queries (captcha/credential/bypass) blocked regardless of approval.
+
+---
+
+## Retest Commands
 
 ```bash
 cd /Users/user/OpenJarvis
-uv run python -m pytest tests/wave/ -q --tb=short
-```
 
-Expected: all tests pass (foundation + execution).
+# Full Wave 1 + US15-18 regression suite
+uv run python -m pytest tests/wave tests/workbench/test_us15_foundation.py \
+  tests/workbench/test_us16_complete.py tests/workbench/test_us17_adversarial.py \
+  tests/workbench/test_us18_readiness.py -q --tb=short
 
-```bash
-uv run python -c "
-from openjarvis.wave.skill_platform import run_skill
-from openjarvis.wave.knowledge_platform import ingest_local_source, search_knowledge
-from openjarvis.wave.research_platform import run_local_query
-import json
+# Closeout only
+uv run python -m pytest tests/wave/test_wave1_closeout.py -v --tb=short
 
-# Epic A
-r = run_skill('list_skills'); print('Epic A:', r.ok, len(r.output), 'skills')
+# Doctor check
+curl http://localhost:8000/v1/workbench/doctor | python3 -m json.tool | grep '"check"\|"status"'
 
-# Epic C
-ingest_local_source('Retest content.', 'retest_01')
-results = search_knowledge('retest')
-print('Epic C:', len(results), 'records found')
-
-# Epic D
-qr = run_local_query('wave platform status')
-print('Epic D:', qr.ok, len(qr.sources), 'sources')
-"
+# Wave status
+curl http://localhost:8000/v1/wave/status | python3 -m json.tool
 ```
 
 ---
 
-## Wave 2 — Professional Intelligence (not implemented)
+## External Setup Required
 
-**Dependencies:** Wave 1 Epics A + B fully accepted.
-
-### Epic E — Optimization Platform
-- Profile-based model selection optimization
-- Cost/latency trade-off analysis per workflow
-- Learning from past routing decisions
-
-### Epic F — Professional Skill Packs
-- Curated, approved skill bundles (legal, finance, dev, ops)
-- Requires approved skill induction pipeline (Epic A)
-- Third-party skill vetting process
-
-**Acceptance criteria:** TBD after Wave 1 acceptance.
-
----
-
-## Wave 3 — Creation & Media (not implemented)
-
-**Dependencies:** Wave 2 Epics E + F fully accepted.
-
-### Epic G — Content & Media Studio
-- Document generation, summarization, editing
-- Image/diagram generation (approval-gated)
-- Media asset management
-
-**Acceptance criteria:** TBD after Wave 2 acceptance.
-
----
-
-## Wave 4 — Jarvis Expansion (not implemented)
-
-**Dependencies:** All prior waves + explicit owner approval for autonomous capabilities.
-
-### Epic H — Autonomous Expansion
-- Self-directed skill discovery
-- Autonomous workflow composition
-- Requires hard-gate approval for every autonomous action
-
-**Risk areas:** This wave has the highest risk profile. Every action must be hard-gated.
-No autonomous expansion without explicit Bryan approval.
-
-**Acceptance criteria:** TBD after Wave 3 acceptance + separate safety review.
-
----
-
-## Safety rules (all Waves)
-
-All Wave implementations must:
-1. Enforce US17 adversarial safety gates (no bypass)
-2. Log all blocked/approval-required actions via `WorkbenchEventLog`
-3. Report truthful status in capabilities registry and doctor
-4. Not claim `ready` without evidence
-5. Follow US16 cost/model routing discipline
-6. Not touch `~/.openjarvis` except through existing read-only paths
-7. Not perform production deploys without explicit approval
-8. Not send Slack/email/messages without hard-gate approval
-
----
-
-## Doctor checks (Wave 1)
-
-| Check # | Name | Expected result |
+| Feature | Env Var | Status |
 |---|---|---|
-| 27 | `wave1_platform_registry` | pass — WavePlatformRegistry importable, wave1_scaffolded=True |
-| 28 | `wave1_skill_platform` | pass — scaffold importable, approval_gate=True |
-| 29 | `wave1_automation_platform` | pass — scaffold importable, approval_gate=True |
-| 30 | `wave1_knowledge_platform` | pass — scaffold importable, pii_gate=True |
-| 31 | `wave1_research_platform` | pass — scaffold importable, approval_gate=True |
-| 32 | `wave2_4_not_claimed_ready` | pass — Wave 2–4 all NOT_IMPLEMENTED |
+| Tavily web search | `TAVILY_API_KEY` | REQUIRES_USER_ACTION (key→ready; no key→requires_setup) |
+| Serper web search | `SERPER_API_KEY` | REQUIRES_USER_ACTION |
+| Apple Notes | macOS entitlement | REQUIRES_USER_ACTION |
+| Dropbox | OAuth2 token | REQUIRES_USER_ACTION |
+
+**Never set API key values in code, tests, rules, or committed files. Use env vars only.**
 
 ---
 
-## Recommended next Wave 1 slice (after Bryan approves)
+## US13 Voice — HOLD / UNSAFE / PARKED
 
-1. **Epic A next**: Wire skill execution engine — invoke `WaveSkillManifest.steps` via existing `skills/executor.py`
-2. **Epic B next**: Wire automation cron triggers to `scheduler/scheduler.py`
-3. **Epic D next**: Integrate web search (Serper/Tavily) with API key + approval gate
-4. **Epic C next**: Wire knowledge ingestion for a single connector (hackernews → memory)
+US13 hands-free voice runtime remains **HOLD / UNSAFE / PARKED**.
+No voice runtime code was touched or implemented in Wave 1 or the closeout sprint.
+Voice remains disabled/parked for a future sprint pending explicit approval.
 
-Do not start Wave 2 until all 4 Wave 1 epics are fully accepted (not just scaffolded).
+---
+
+## Wave 2 — Professional Intelligence: NOT STARTED
+
+- Epic E: Optimization Platform — NOT_IMPLEMENTED
+- Epic F: Professional Skill Packs — NOT_IMPLEMENTED
+
+## Wave 3 — Creation & Media: NOT STARTED
+
+- Epic G: Content & Media Studio — NOT_IMPLEMENTED
+
+## Wave 4 — Jarvis Expansion: NOT STARTED
+
+- Epic H: Autonomous Expansion — NOT_IMPLEMENTED
+
+No Wave 2–4 code exists. Platform registry correctly marks all as `NOT_IMPLEMENTED`.
+
+---
+
+## Wave 1 Doctor Checks
+
+The `/v1/workbench/doctor` endpoint includes checks 28–36 covering:
+- Check 28: Skill Platform local execution
+- Check 29: Automation Platform dry-run
+- Check 30: Knowledge Platform ingestion
+- Check 31: Research Platform status
+- Check 32: Wave 2–4 not claimed ready
+- Check 33: **Skill induction pipeline** (NEW)
+- Check 34: **Automation scheduler wiring** (NEW)
+- Check 35: **Local folder connector** (NEW)
+- Check 36: **Tavily research provider** (NEW)
+
+---
+
+## Accepted Checkpoints (intentionally not reverified)
+
+- US12–US18: Previously validated. No regression evidence.
+- Wave 1 foundation scaffold: `405b4be8 Add Wave 1 platform foundation`
+- Wave 1 core integration: `7691cff2 Complete Wave 1 platform integration`
+- Only Wave 1 closeout files were inspected and changed.

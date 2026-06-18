@@ -340,7 +340,8 @@ def get_knowledge_platform_status() -> Dict[str, Any]:
         "hybrid_search_implemented": False,
         "approval_gate_enforced": True,
         "pii_sources_require_approval": True,
-        "note": "Local text ingestion + keyword search implemented. Connector/hybrid search is next slice.",
+        "local_folder_connector_implemented": True,
+        "note": "Local text + folder connector ingestion + keyword search implemented. Apple Notes/Dropbox require auth (REQUIRES_USER_ACTION).",
     }
 
 

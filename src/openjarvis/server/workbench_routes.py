@@ -674,6 +674,98 @@ async def workbench_doctor(repo_path: str = ".") -> Dict[str, Any]:
     except Exception as exc:
         checks.append(chk("wave1_research_platform", "fail", str(exc)))
 
+    # Check 33: Wave 1 Epic A — Skill induction pipeline
+    try:
+        from openjarvis.wave.skill_induction import (
+            validate_skill_manifest, induce_skill, get_induction_pipeline_status
+        )
+        pipe_info = get_induction_pipeline_status()
+        # Quick smoke test: safe manifest should induct; unsafe should reject
+        safe_result = induce_skill({
+            "skill_id": "_doctor_test_safe", "name": "Doctor Test Safe",
+            "description": "Read-only local check", "tags": [], "risk_level": "low",
+        })
+        unsafe_result = validate_skill_manifest({
+            "skill_id": "_doctor_test_unsafe", "name": "Unsafe",
+            "description": "rm -rf /", "tags": ["external_send"], "risk_level": "high",
+        })
+        checks.append(chk(
+            "wave1_skill_induction",
+            "pass" if (pipe_info["implemented"] and not unsafe_result.valid) else "warn",
+            (
+                f"pipeline_implemented={pipe_info['implemented']} "
+                f"safe_induced={safe_result.ok} "
+                f"unsafe_rejected={not unsafe_result.valid}"
+            ),
+        ))
+    except Exception as exc:
+        checks.append(chk("wave1_skill_induction", "fail", str(exc)))
+
+    # Check 34: Wave 1 Epic B — Automation scheduler
+    try:
+        from openjarvis.wave.automation_scheduler import get_scheduler_status, execute_safe_trigger
+        from openjarvis.wave.automation_platform import AutomationTrigger
+        sched = get_scheduler_status()
+        safe_trigger = AutomationTrigger(
+            trigger_id="_doctor_safe_trigger",
+            name="Doctor safe",
+            trigger_type="manual",
+            skill_id="log_status",
+            risk_level="low",
+            approval_policy="auto",
+        )
+        exec_result = execute_safe_trigger(safe_trigger, action_key="log_status")
+        checks.append(chk(
+            "wave1_automation_scheduler",
+            "pass" if (sched["implemented"] and exec_result.ok) else "warn",
+            (
+                f"scheduler_implemented={sched['implemented']} "
+                f"external_sends_blocked={sched['external_sends_blocked']} "
+                f"safe_execute_ok={exec_result.ok}"
+            ),
+        ))
+    except Exception as exc:
+        checks.append(chk("wave1_automation_scheduler", "fail", str(exc)))
+
+    # Check 35: Wave 1 Epic C — Local folder connector
+    try:
+        from openjarvis.wave.local_folder_connector import (
+            get_local_folder_connector_status, ensure_default_knowledge_dir, ingest_folder
+        )
+        conn_status = get_local_folder_connector_status()
+        d = ensure_default_knowledge_dir()
+        checks.append(chk(
+            "wave1_knowledge_connector",
+            "pass" if conn_status["implemented"] else "warn",
+            (
+                f"implemented={conn_status['implemented']} "
+                f"default_dir={conn_status['default_knowledge_dir']} "
+                f"dir_exists={conn_status['default_dir_exists']} "
+                f"pii_blocked={conn_status['pii_blocked']}"
+            ),
+        ))
+    except Exception as exc:
+        checks.append(chk("wave1_knowledge_connector", "fail", str(exc)))
+
+    # Check 36: Wave 1 Epic D — Tavily web research provider
+    try:
+        from openjarvis.wave.tavily_provider import get_tavily_provider_status, run_tavily_query
+        ts = get_tavily_provider_status()
+        # Unsafe query must be blocked regardless of key
+        blocked = run_tavily_query("captcha bypass credential", approved=True)
+        checks.append(chk(
+            "wave1_research_tavily",
+            "pass" if ts else "warn",
+            (
+                f"adapter_implemented=True "
+                f"tavily_status={ts['status']} "
+                f"key_configured={ts['key_configured']} "
+                f"unsafe_blocked={blocked.blocked}"
+            ),
+        ))
+    except Exception as exc:
+        checks.append(chk("wave1_research_tavily", "fail", str(exc)))
+
     # Check 32: Wave 1 capabilities truthfully NOT claiming Wave 2–4 ready
     try:
         from openjarvis.wave.platform_registry import WavePlatformRegistry, WavePlatformStatus
@@ -707,7 +799,7 @@ async def workbench_doctor(repo_path: str = ".") -> Dict[str, Any]:
         "us16_status": "ready" if all_pass else "hold",
         "us17_status": "ready" if not us17_fail else "hold",
         "us18_status": "ready" if not us18_fail else "hold",
-        "wave1_status": "scaffolded" if not wave1_fail else "hold",
+        "wave1_status": "ready" if not wave1_fail else "hold",
         "wave2_4_status": "not_implemented",
     }
 

@@ -318,7 +318,52 @@ def run_local_query(
                 event_id=eid,
             )
 
-    # Web search providers require approval + setup
+    # Tavily provider — env-gated, approval-gated
+    if provider_id == "tavily":
+        try:
+            from openjarvis.wave.tavily_provider import run_tavily_query, get_tavily_provider_status
+            status = get_tavily_provider_status()
+            if not status["key_configured"]:
+                eid = _log_research_event(provider_id, query, False, False, True,
+                                           "TAVILY_API_KEY not set")
+                return ResearchResult(
+                    query=query,
+                    provider_id=provider_id,
+                    ok=False,
+                    approval_required=True,
+                    error="TAVILY_API_KEY not configured. Set env var to enable Tavily queries.",
+                    event_id=eid,
+                )
+            tr = run_tavily_query(query, approved=False)  # approval gate enforced
+            if tr.blocked:
+                return ResearchResult(
+                    query=query, provider_id=provider_id, ok=False,
+                    blocked=tr.blocked, error=tr.error, event_id=tr.event_id,
+                )
+            if tr.approval_required:
+                return ResearchResult(
+                    query=query, provider_id=provider_id, ok=False,
+                    approval_required=True, error=tr.error, event_id=tr.event_id,
+                )
+            sources = [
+                ResearchSource(
+                    title=s.get("title", ""),
+                    content=s.get("content", ""),
+                    url=s.get("url", ""),
+                    provider_id="tavily",
+                    score=s.get("score", 0.0),
+                )
+                for s in tr.sources
+            ]
+            return ResearchResult(
+                query=query, provider_id="tavily", ok=True,
+                sources=sources, summary=tr.answer or f"{len(sources)} results",
+                event_id=tr.event_id,
+            )
+        except Exception as exc:
+            return ResearchResult(query=query, provider_id=provider_id, ok=False, error=str(exc))
+
+    # web_search_generic — requires key + approval
     if provider_id == "web_search_generic":
         eid = _log_research_event(provider_id, query, False, False, True,
                                    "web_search_generic requires API key + approval")
@@ -329,7 +374,7 @@ def run_local_query(
             approval_required=True,
             error=(
                 "Web search provider requires API key (Serper/Tavily/Brave) and approval. "
-                "Set SERPER_API_KEY or TAVILY_API_KEY and request approval."
+                "Set TAVILY_API_KEY and use provider_id='tavily' to enable."
             ),
             event_id=eid,
         )
@@ -370,6 +415,15 @@ def get_research_platform_status() -> Dict[str, Any]:
     by_status: Dict[str, int] = {}
     for p in providers:
         by_status[p.status] = by_status.get(p.status, 0) + 1
+
+    tavily_status = "requires_setup"
+    try:
+        from openjarvis.wave.tavily_provider import get_tavily_provider_status
+        ts = get_tavily_provider_status()
+        tavily_status = ts["status"]
+    except Exception:
+        pass
+
     return {
         "epic": "epic_d",
         "wave": 1,
@@ -378,11 +432,16 @@ def get_research_platform_status() -> Dict[str, Any]:
         "by_status": by_status,
         "local_query_implemented": True,
         "execution_implemented": True,
+        "tavily_adapter_implemented": True,
+        "tavily_status": tavily_status,
         "deep_research_loop_implemented": False,
         "approval_gate_enforced": True,
-        "web_search_requires_setup": True,
+        "web_search_requires_setup": tavily_status != "ready",
         "scraping_blocked": True,
-        "note": "Local knowledge query + platform info implemented. Web search requires API key + approval.",
+        "note": (
+            f"Local knowledge query + Tavily adapter implemented. "
+            f"Tavily: {tavily_status}. Web search approval-gated. Deep research loop: next slice."
+        ),
     }
 
 
