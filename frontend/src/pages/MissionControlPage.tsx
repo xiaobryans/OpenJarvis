@@ -82,6 +82,13 @@ interface AgentSpec {
   capabilities: string[];
 }
 
+interface JarvisCapability {
+  capability_id: string;
+  display_name: string;
+  status: string;
+  summary: string;
+}
+
 interface NotifyStatus {
   slack: { configured: boolean; channel: string | null; ready: boolean };
   telegram: { configured: boolean; chat_id: string | null; ready: boolean };
@@ -263,6 +270,10 @@ export function MissionControlPage() {
   const [agents, setAgents] = useState<AgentSpec[]>([]);
   const [agentsLoading, setAgentsLoading] = useState(true);
 
+  // US15 capabilities registry
+  const [jarvisCapabilities, setJarvisCapabilities] = useState<JarvisCapability[]>([]);
+  const [capabilitiesLoading, setCapabilitiesLoading] = useState(true);
+
   // Notification status
   const [notifyStatus, setNotifyStatus] = useState<NotifyStatus | null>(null);
 
@@ -352,6 +363,19 @@ export function MissionControlPage() {
     }
   }, []);
 
+  const fetchCapabilities = useCallback(async () => {
+    try {
+      const resp = await apiFetch('/v1/workbench/capabilities');
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const data = await resp.json();
+      setJarvisCapabilities(data.capabilities ?? []);
+    } catch {
+      // silent
+    } finally {
+      setCapabilitiesLoading(false);
+    }
+  }, []);
+
   const fetchSystemHealth = useCallback(async () => {
     try {
       const resp = await apiFetch('/v1/system/health');
@@ -437,10 +461,11 @@ export function MissionControlPage() {
     return () => clearInterval(id);
   }, [fetchPending]);
 
-  // Fetch agents once on mount
+  // Fetch agents + US15 capabilities once on mount
   useEffect(() => {
     fetchAgents();
-  }, [fetchAgents]);
+    fetchCapabilities();
+  }, [fetchAgents, fetchCapabilities]);
 
   // Fetch notify status once on mount
   useEffect(() => {
@@ -1292,6 +1317,37 @@ export function MissionControlPage() {
                   })}
                 </div>
               )
+            )}
+          </Panel>
+
+          {/* US15 Capabilities */}
+          <Panel title="Jarvis Capabilities (US15)">
+            {capabilitiesLoading ? (
+              <div className="flex justify-center py-4">
+                <Loader2 size={16} className="animate-spin" style={{ color: 'var(--color-text-tertiary)' }} />
+              </div>
+            ) : jarvisCapabilities.length === 0 ? (
+              <EmptyState text="Capabilities registry unavailable" />
+            ) : (
+              <div className="space-y-1 max-h-72 overflow-y-auto pr-1">
+                {jarvisCapabilities.map(cap => (
+                  <div
+                    key={cap.capability_id}
+                    className="px-3 py-2 rounded-lg"
+                    style={{ background: 'var(--color-bg)' }}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-medium" style={{ color: 'var(--color-text)' }}>
+                        {cap.display_name}
+                      </span>
+                      <StatusBadge status={cap.status} />
+                    </div>
+                    <div className="text-[10px] mt-1" style={{ color: 'var(--color-text-tertiary)' }}>
+                      {cap.summary}
+                    </div>
+                  </div>
+                ))}
+              </div>
             )}
           </Panel>
 

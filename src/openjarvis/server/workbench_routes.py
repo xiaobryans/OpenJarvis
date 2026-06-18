@@ -356,6 +356,35 @@ async def workbench_doctor(repo_path: str = ".") -> Dict[str, Any]:
     except Exception as exc:
         checks.append(chk("routing_policy", "fail", str(exc)))
 
+    # Check 13: US15 capabilities registry
+    try:
+        from openjarvis.workbench.capabilities_registry import get_capabilities_summary
+        caps = get_capabilities_summary()
+        checks.append(chk("us15_capabilities", "pass",
+                           f"{caps['count']} capabilities registered"))
+    except Exception as exc:
+        checks.append(chk("us15_capabilities", "fail", str(exc)))
+
+    # Check 14: US15 repo index
+    try:
+        from openjarvis.workbench.repo_index import build_repo_index
+        idx = build_repo_index(repo_path)
+        checks.append(chk("us15_repo_index", "pass",
+                           f"{len(idx.files)} files indexed"))
+    except Exception as exc:
+        checks.append(chk("us15_repo_index", "fail", str(exc)))
+
+    # Check 15: US13 voice parked (must not show ready)
+    try:
+        from openjarvis.workbench.capabilities_registry import get_all_capabilities
+        voice = next(c for c in get_all_capabilities() if c.capability_id == "voice")
+        if voice.status == "ready":
+            checks.append(chk("us13_voice_parked", "fail", "Voice must not be ready while US13 is parked"))
+        else:
+            checks.append(chk("us13_voice_parked", "pass", voice.summary[:120]))
+    except Exception as exc:
+        checks.append(chk("us13_voice_parked", "fail", str(exc)))
+
     by_status: Dict[str, int] = {}
     for c in checks:
         s = c["status"]
@@ -369,6 +398,51 @@ async def workbench_doctor(repo_path: str = ".") -> Dict[str, Any]:
         "checks": checks,
         "verdict": "ACCEPT" if all_pass else "HOLD",
     }
+
+
+@router.get("/v1/workbench/capabilities")
+async def get_workbench_capabilities() -> Dict[str, Any]:
+    """US15 truthful capability status for Mission Control / doctor."""
+    try:
+        from openjarvis.workbench.capabilities_registry import get_capabilities_summary
+        return {"ok": True, **get_capabilities_summary()}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.get("/v1/workbench/repo-index")
+async def get_workbench_repo_index(repo_path: str = ".") -> Dict[str, Any]:
+    """US15 bounded repo map / symbol / dependency index."""
+    try:
+        from openjarvis.workbench.repo_index import build_repo_index, ci_visibility_status
+        index = build_repo_index(repo_path)
+        return {
+            "ok": True,
+            "index": index.to_dict(),
+            "ci": ci_visibility_status(repo_path),
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.get("/v1/workbench/validation-profiles")
+async def get_validation_profiles() -> Dict[str, Any]:
+    """US15 local-first validation runner profiles."""
+    try:
+        from openjarvis.workbench.validation_profiles import list_validation_profiles
+        return {"ok": True, "profiles": list_validation_profiles()}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.get("/v1/workbench/dogfood-evidence")
+async def get_dogfood_evidence(limit: int = 20) -> Dict[str, Any]:
+    """US15 Jarvis-only coding dogfood evidence records."""
+    try:
+        from openjarvis.workbench.dogfood_evidence import list_dogfood_evidence
+        return list_dogfood_evidence(limit=limit)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 @router.get("/v1/workbench/events/{session_id}")

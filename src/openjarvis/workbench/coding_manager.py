@@ -55,8 +55,19 @@ from openjarvis.workbench.model_router import (
     EscalationAction,
     MockModelAdapter,
 )
+from openjarvis.workbench.repair_loop import BoundedRepairLoop
 
 logger = logging.getLogger(__name__)
+
+_TIER_MODEL_MAP = {
+    "local": "local",
+    "cloud-cheap": "deepseek",
+    "cheap": "deepseek",
+    "mid": "gpt-4o-mini",
+    "cloud-high-trust": "claude-opus",
+    "premium": "claude-opus",
+    "high-trust": "claude-opus",
+}
 
 # ---------------------------------------------------------------------------
 # Worker tier routing policy
@@ -555,6 +566,7 @@ class CodingManager:
 
         # Pending approvals keyed by subtask id
         self._pending_approvals: Dict[str, Subtask] = {}
+        self._repair_loops: Dict[str, BoundedRepairLoop] = {}
 
     # ------------------------------------------------------------------
     # Event log helper
@@ -612,6 +624,13 @@ class CodingManager:
         session_id = uuid.uuid4().hex[:12]
         task_id = uuid.uuid4().hex[:12]
         effective_repo = Path(repo_path).resolve() if repo_path else self._repo_path
+
+        try:
+            from openjarvis.workbench.context_cache import warm_repo_map_cache
+
+            warm_repo_map_cache(str(effective_repo))
+        except Exception:
+            pass
 
         task_type = classify_prompt(prompt)
         subtasks = self._decompose(prompt, task_id, str(effective_repo), session_id=session_id, task_type=task_type)
@@ -1268,6 +1287,29 @@ class CodingManager:
 
             # Stop on blocker
             if subtask.status == "failed" and plan.stop_on_blocker:
+                if subtask.tool_id == "shell_exec":
+                    repair = self._repair_loops.setdefault(
+                        plan.session_id, BoundedRepairLoop(max_attempts=3)
+                    )
+                    repair_decision = repair.decide(
+                        router=self._router,
+                        subtask_id=subtask.id,
+                        tool_id=subtask.tool_id,
+                        session_id=plan.session_id,
+                        task_id=plan.task_id,
+                        validation_failed=True,
+                        terminal_error=False,
+                        error_message=subtask.error or subtask.output or "validation_failed",
+                    )
+                    self._push_event_safe(
+                        session_id=plan.session_id,
+                        task_id=plan.task_id,
+                        event_type="repair_decision",
+                        title="Validation repair decision",
+                        detail=str(repair_decision.get("reason", "")),
+                        tone="warning",
+                        dry_run=plan.dry_run,
+                    )
                 self._checkpoints.save_checkpoint(
                     session_id=plan.session_id,
                     task_id=plan.task_id,
@@ -1331,7 +1373,41 @@ class CodingManager:
             dry_run=plan.dry_run,
         )
 
+        try:
+            from openjarvis.workbench.dogfood_evidence import record_dogfood_evidence
+
+            record_dogfood_evidence(
+                session_id=plan.session_id,
+                prompt=plan.prompt,
+                verdict="ACCEPT" if plan.status in ("done", "done_dry_run") else "HOLD",
+                evidence={
+                    "status": plan.status,
+                    "total_cost_usd": plan.total_cost_usd,
+                    "validation_status": self._validation_status(plan.validation_output),
+                },
+                repo_path=plan.repo_path,
+            )
+        except Exception:
+            pass
+
         return plan
+
+    def _record_subtask_cost(self, subtask: Subtask, plan: TaskPlan) -> None:
+        """Record estimated subtask cost in the ledger (US16 hook)."""
+        model = _TIER_MODEL_MAP.get(subtask.worker_tier, "local")
+        in_tok = 80 if subtask.worker_tier != "local" else 0
+        out_tok = 40 if subtask.worker_tier != "local" else 0
+        entry = self._costs.record(
+            session_id=plan.session_id,
+            task_id=plan.task_id,
+            job_id=subtask.job_id or "",
+            model=model,
+            input_tokens=in_tok,
+            output_tokens=out_tok,
+            description=f"{subtask.tool_id}: {subtask.description[:80]}",
+            worker_tier=subtask.worker_tier,
+        )
+        subtask.cost_usd = entry.cost_usd
 
     def _execute_subtask(self, subtask: Subtask, plan: TaskPlan) -> bool:
         """Execute a single subtask using its tool. Returns True on success."""
@@ -1354,6 +1430,7 @@ class CodingManager:
             if success:
                 subtask.status = "done"
                 subtask.output = output
+                self._record_subtask_cost(subtask, plan)
                 self._jobs.mark_done(job.id, output, subtask.cost_usd)
             else:
                 subtask.status = "failed"
