@@ -108,9 +108,82 @@ class TestAutoBrowserComplete:
         assert "mcp_reachable" in hc
         assert "overall" in hc
         assert hc["overall"] in ("ready", "requires_setup")
-        # New fields in enhanced health check
         assert "client_sdk_installed" in hc
         assert hc["client_sdk_installed"] is True  # installed via PyPI
+        # docker_available is diagnostic only — must not force requires_setup
+        assert "docker_available" in hc
+
+    def test_docker_unavailable_does_not_block_ready(self, monkeypatch):
+        """docker_available=False must not force overall=requires_setup when server reachable."""
+        import urllib.request
+        from openjarvis.workbench import auto_browser_provider as abp
+
+        monkeypatch.setenv("JARVIS_AUTO_BROWSER_ENABLED", "1")
+        monkeypatch.setenv("JARVIS_AUTO_BROWSER_MCP_URL", "http://127.0.0.1:3000")
+
+        class _FakeResp:
+            status = 200
+            def __enter__(self): return self
+            def __exit__(self, *a): pass
+            def read(self): return b'{"status":"ok"}'
+
+        monkeypatch.setattr(urllib.request, "urlopen", lambda *a, **kw: _FakeResp())
+
+        hc = abp.health_check()
+        # With server reachable, overall must be ready regardless of docker_available value
+        assert hc["mcp_reachable"] is True
+        assert hc["overall"] == "ready"
+
+    def test_healthz_probe_succeeds(self, monkeypatch):
+        """/healthz response marks server reachable."""
+        import urllib.request
+        from openjarvis.workbench import auto_browser_provider as abp
+
+        monkeypatch.setenv("JARVIS_AUTO_BROWSER_ENABLED", "1")
+        monkeypatch.setenv("JARVIS_AUTO_BROWSER_MCP_URL", "http://127.0.0.1:3000")
+
+        probed = []
+
+        class _FakeResp:
+            status = 200
+            def __enter__(self): return self
+            def __exit__(self, *a): pass
+
+        def fake_urlopen(url, **kw):
+            probed.append(str(url))
+            return _FakeResp()
+
+        monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+        hc = abp.health_check()
+        assert hc["mcp_reachable"] is True
+        # Must probe /healthz first (not /health)
+        assert any("/healthz" in p for p in probed)
+        assert not any(p.endswith("/health") for p in probed), \
+            f"Should not probe /health — got {probed}"
+
+    def test_health_404_does_not_fail_if_healthz_succeeds(self, monkeypatch):
+        """/health 404 is irrelevant — provider probes /healthz, /readyz, /openapi.json."""
+        import urllib.request
+        from urllib.error import HTTPError
+        from openjarvis.workbench import auto_browser_provider as abp
+
+        monkeypatch.setenv("JARVIS_AUTO_BROWSER_ENABLED", "1")
+        monkeypatch.setenv("JARVIS_AUTO_BROWSER_MCP_URL", "http://127.0.0.1:3000")
+
+        class _OkResp:
+            status = 200
+            def __enter__(self): return self
+            def __exit__(self, *a): pass
+
+        def fake_urlopen(url, **kw):
+            if str(url).endswith("/health"):
+                raise HTTPError(str(url), 404, "Not Found", {}, None)
+            return _OkResp()
+
+        monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+        hc = abp.health_check()
+        # /healthz should succeed even if /health 404s
+        assert hc["mcp_reachable"] is True
 
     def test_session_status_returns_dict(self):
         from openjarvis.workbench.auto_browser_provider import session_status
@@ -123,7 +196,6 @@ class TestAutoBrowserComplete:
         from openjarvis.workbench.auto_browser_provider import get_auto_browser_status
 
         status = get_auto_browser_status()
-        # server_setup_steps (new key) or setup_steps (legacy) must be present
         assert "server_setup_steps" in status or "setup_steps" in status
         assert "health_check" in status
         assert "blocked_patterns" in status
@@ -133,15 +205,18 @@ class TestAutoBrowserComplete:
         from openjarvis.workbench.auto_browser_provider import auto_browser_safety_allows
 
         assert auto_browser_safety_allows("captcha_bypass") is False
-        assert auto_browser_safety_allows("file_read") is True
         assert auto_browser_safety_allows("credential_extraction") is False
+        assert auto_browser_safety_allows("deceptive_automation") is False
+        assert auto_browser_safety_allows("unauthorized_scraping") is False
+        assert auto_browser_safety_allows("approval_bypass") is False
+        assert auto_browser_safety_allows("uncontrolled_autopilot") is False
+        assert auto_browser_safety_allows("file_read") is True
         assert auto_browser_safety_allows("navigate") is True
 
     def test_status_not_ready_without_config(self):
         import os
         from openjarvis.workbench.auto_browser_provider import get_auto_browser_status
 
-        # Without env vars set, status should not be "ready"
         enabled = os.environ.get("JARVIS_AUTO_BROWSER_ENABLED", "")
         mcp = os.environ.get("JARVIS_AUTO_BROWSER_MCP_URL", "")
         if not enabled or not mcp:

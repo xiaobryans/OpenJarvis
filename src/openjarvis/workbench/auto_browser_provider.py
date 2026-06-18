@@ -45,7 +45,7 @@ SERVER_SETUP_STEPS = [
     "3. cd /Users/user/OpenJarvis/.external/auto-browser",
     "4. docker compose up -d",
     "5. Wait ~30s for containers to start: docker compose ps",
-    "6. Verify server: curl http://localhost:3000/health  → {\"status\":\"ok\"}",
+    "6. Verify server: curl http://localhost:3000/healthz  → {\"status\":\"ok\"}",
     "7. Set env: export JARVIS_AUTO_BROWSER_ENABLED=1",
     "8. Set env: export JARVIS_AUTO_BROWSER_MCP_URL=http://localhost:3000",
     "9. Rerun health check: uv run python -c \"from openjarvis.workbench.auto_browser_provider import health_check; import json; print(json.dumps(health_check(), indent=2))\"",
@@ -101,15 +101,29 @@ def health_check() -> Dict[str, Any]:
     mcp_reachable = False
     mcp_error = ""
     if mcp_url:
-        try:
-            import urllib.request
-            with urllib.request.urlopen(f"{mcp_url.rstrip('/')}/health", timeout=3) as resp:
-                mcp_reachable = resp.status == 200
-        except Exception as exc:
-            mcp_error = str(exc)[:120]
+        import urllib.request
+        base = mcp_url.rstrip("/")
+        # Auto Browser exposes /healthz (primary), /readyz, /openapi.json — not /health
+        for probe_path in ("/healthz", "/readyz", "/openapi.json"):
+            try:
+                with urllib.request.urlopen(f"{base}{probe_path}", timeout=4) as resp:
+                    if resp.status == 200:
+                        mcp_reachable = True
+                        mcp_error = ""
+                        break
+            except Exception as exc:
+                mcp_error = str(exc)[:120]
 
-    # All required: client SDK, playwright, enabled flag, MCP server reachable
+    # Ready when: client SDK installed, Playwright available, enabled flag set, server reachable.
+    # Docker CLI availability is diagnostic only — does not block ready if HTTP server responds.
     ready = client_sdk_ok and playwright_ok and enabled and mcp_reachable
+
+    docker_available = False
+    try:
+        import shutil
+        docker_available = shutil.which("docker") is not None
+    except Exception:
+        pass
 
     return {
         "client_sdk_installed": client_sdk_ok,
@@ -120,12 +134,12 @@ def health_check() -> Dict[str, Any]:
         "mcp_reachable": mcp_reachable,
         "mcp_error": mcp_error,
         "local_clone": AUTO_BROWSER_LOCAL_PATH,
-        "server_requires_docker": True,
-        "docker_available": False,  # confirmed: docker not on PATH on this machine
+        "docker_available": docker_available,  # diagnostic only — does not block ready
         "overall": "ready" if ready else "requires_setup",
         "blocker": (
-            "MCP server not reachable — start Docker and run: cd .external/auto-browser && docker compose up -d"
-            if not mcp_reachable else ""
+            ""
+            if mcp_reachable
+            else "MCP server not reachable — start server: cd .external/auto-browser && docker compose up -d"
         ),
     }
 
