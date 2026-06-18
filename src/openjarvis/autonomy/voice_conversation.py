@@ -44,6 +44,17 @@ from typing import Any, Callable, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
+# Fast cloud models already supported by OpenJarvis, ordered by preferred
+# voice latency.  The packaged app injects configured cloud keys into the
+# backend process, so ``get_engine(..., "cloud", model=...)`` remains the
+# single source of truth for whether each path is actually available.
+_VOICE_FAST_MODELS = (
+    ("gpt-4o-mini", "openai"),
+    ("claude-haiku-4-5", "anthropic"),
+    ("gemini-2.5-flash", "google"),
+    ("openrouter/auto", "openrouter"),
+)
+
 # ---------------------------------------------------------------------------
 # Stop phrases — end the active session and return to wake-word-only listening
 # ---------------------------------------------------------------------------
@@ -190,7 +201,11 @@ def transcribe_command(audio_bytes: bytes, language: str = "en") -> str:
 # ---------------------------------------------------------------------------
 
 
-def query_jarvis_text(text: str) -> str:
+def query_jarvis_text(
+    text: str,
+    *,
+    on_route: Optional[Callable[[Dict[str, Any]], None]] = None,
+) -> str:
     """Route ``text`` through the normal Jarvis chat/model/action path.
 
     Reuses: load_config(), get_engine(), setup_security(), engine.generate()
@@ -213,7 +228,15 @@ def query_jarvis_text(text: str) -> str:
     config = load_config()
     bus = EventBus(record_history=False)
 
-    resolved = get_engine(config, None)
+    configured_model = getattr(config.intelligence, "default_model", None) or None
+    preferred_engine = (
+        getattr(config.intelligence, "preferred_engine", None) or None
+    )
+    resolved = get_engine(
+        config,
+        preferred_engine,
+        model=configured_model,
+    )
     if resolved is None:
         return (
             "No inference engine available. "
@@ -222,12 +245,32 @@ def query_jarvis_text(text: str) -> str:
 
     engine_name, engine = resolved
 
+    # Voice latency policy: trivial/simple spoken questions should not wait
+    # tens of seconds on CPU Ollama when the packaged app already has a fast
+    # cloud provider configured.  This is deliberately voice-only and uses
+    # the existing engine registry; normal chat/model routing is unchanged.
+    from openjarvis.learning.routing.complexity import score_complexity
+
+    complexity = score_complexity(text)
+    route_path = "jarvis_default"
+    provider = engine_name
+    model_name = configured_model
+    if complexity.tier in ("trivial", "simple"):
+        for fast_model, fast_provider in _VOICE_FAST_MODELS:
+            fast_resolved = get_engine(config, "cloud", model=fast_model)
+            if fast_resolved is None or fast_resolved[0] != "cloud":
+                continue
+            engine_name, engine = fast_resolved
+            model_name = fast_model
+            provider = fast_provider
+            route_path = "voice_fast_cloud"
+            break
+
     # Security — MUST run before any inference; preserves all approval gates
     sec = setup_security(config, engine, bus)
     engine = sec.engine
 
     # Resolve model
-    model_name = getattr(config.intelligence, "default_model", None)
     if not model_name:
         try:
             all_engines = discover_engines(config)
@@ -242,6 +285,27 @@ def query_jarvis_text(text: str) -> str:
 
     temperature = getattr(config.intelligence, "temperature", 0.7)
     max_tokens = getattr(config.intelligence, "max_tokens", 512)
+
+    route = {
+        "model": model_name or "",
+        "provider": provider,
+        "engine": engine_name,
+        "path": route_path,
+        "complexity_tier": complexity.tier,
+    }
+    logger.info(
+        "Voice route selected: provider=%s engine=%s model=%s path=%s tier=%s",
+        route["provider"],
+        route["engine"],
+        route["model"],
+        route["path"],
+        route["complexity_tier"],
+    )
+    if on_route is not None:
+        try:
+            on_route(route)
+        except Exception as exc:
+            logger.debug("Voice route callback failed (non-fatal): %s", exc)
 
     # If a default agent is configured, use it (preserves agent tools/routing)
     agent_name = (getattr(config.agent, "default_agent", None) or "").strip()
@@ -287,13 +351,58 @@ def query_jarvis_text(text: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def speak_response(text: str) -> None:
+class _TTSPlayback:
+    """Tracks the active TTS subprocess so sessions can cancel pending speech."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._proc: Optional[subprocess.Popen] = None
+
+    def cancel(self) -> None:
+        with self._lock:
+            proc = self._proc
+            self._proc = None
+        if proc is None or proc.poll() is not None:
+            return
+        try:
+            proc.terminate()
+            proc.wait(timeout=0.5)
+        except Exception:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+
+    def _set_proc(self, proc: Optional[subprocess.Popen]) -> None:
+        with self._lock:
+            self._proc = proc
+
+    def _wait_proc(self, proc: subprocess.Popen, timeout: float) -> None:
+        try:
+            proc.wait(timeout=timeout)
+        finally:
+            with self._lock:
+                if self._proc is proc:
+                    self._proc = None
+
+
+def speak_response(
+    text: str,
+    *,
+    playback: Optional[_TTSPlayback] = None,
+    cancel_check: Optional[Callable[[], bool]] = None,
+) -> bool:
     """Speak ``text`` using the configured TTS engine.
 
     Reuses the existing TTS path (get_tts_status → macOS say / OpenAI TTS).
     Runs synchronously so the loop waits for speech to finish before
     returning to wake-word listening.
+
+    Returns False when cancelled before or during playback.
     """
+    if cancel_check is not None and cancel_check():
+        return False
+
     from openjarvis.autonomy.voice_pipeline import TTSEngine, get_tts_status
 
     tts = get_tts_status()
@@ -303,10 +412,21 @@ def speak_response(text: str) -> None:
 
     if engine == TTSEngine.MACOS_SAY:
         try:
-            subprocess.run(["say", text], check=False, timeout=60)
+            proc = subprocess.Popen(["say", text])
+            if playback is not None:
+                playback._set_proc(proc)
+            if cancel_check is not None and cancel_check():
+                proc.terminate()
+                if playback is not None:
+                    playback._set_proc(None)
+                return False
+            if playback is not None:
+                playback._wait_proc(proc, 60.0)
+            else:
+                proc.wait(timeout=60)
         except Exception as exc:
             logger.warning("macOS say failed: %s", exc)
-        return
+        return not (cancel_check is not None and cancel_check())
 
     if engine == TTSEngine.OPENAI_TTS:
         try:
@@ -316,7 +436,9 @@ def speak_response(text: str) -> None:
             api_key = _os.environ.get("OPENAI_API_KEY", "")
             if not api_key:
                 logger.warning("OpenAI TTS: OPENAI_API_KEY not set — skipping")
-                return
+                return False
+            if cancel_check is not None and cancel_check():
+                return False
             client = OpenAI(api_key=api_key)
             with client.audio.speech.with_streaming_response.create(
                 model="tts-1",
@@ -326,14 +448,50 @@ def speak_response(text: str) -> None:
                 with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp:
                     tmp_path = tmp.name
                     for chunk in response.iter_bytes(chunk_size=4096):
+                        if cancel_check is not None and cancel_check():
+                            _os.unlink(tmp_path)
+                            return False
                         tmp.write(chunk)
-            subprocess.run(["afplay", tmp_path], check=False, timeout=60)
-            _os.unlink(tmp_path)
+            if cancel_check is not None and cancel_check():
+                _os.unlink(tmp_path)
+                return False
+            proc = subprocess.Popen(["afplay", tmp_path])
+            if playback is not None:
+                playback._set_proc(proc)
+            try:
+                if playback is not None:
+                    playback._wait_proc(proc, 60.0)
+                else:
+                    proc.wait(timeout=60)
+            finally:
+                _os.unlink(tmp_path)
         except Exception as exc:
             logger.warning("OpenAI TTS failed: %s", exc)
-        return
+        return not (cancel_check is not None and cancel_check())
 
     logger.warning("TTS not configured (status=%r) — response not spoken", engine)
+    return False
+
+
+def play_acknowledgement_cue() -> None:
+    """Play a short local wake cue before recording begins.
+
+    The cue is intentionally local and bounded: a full TTS greeting can spend
+    10–30 seconds synthesizing/speaking before the microphone opens.  Tink is
+    roughly half a second on macOS, keeping wake acknowledgement audible
+    without allowing TTS/network latency onto the recording critical path.
+    """
+    sound = "/System/Library/Sounds/Tink.aiff"
+    try:
+        subprocess.run(
+            ["afplay", sound],
+            check=False,
+            timeout=1.5,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except Exception as exc:
+        logger.debug("Wake acknowledgement cue failed (non-fatal): %s", exc)
 
 
 # ---------------------------------------------------------------------------
@@ -383,6 +541,11 @@ class VoiceConversationLoop:
         self._state = "idle"
         self._lock = threading.Lock()
         self._turns = 0
+        self._wake_detected_monotonic: Optional[float] = None
+        self._session_id = 0
+        self._active_session_id: Optional[int] = None
+        self._session_deadline: float = 0.0
+        self._tts = _TTSPlayback()
 
         # Event queue — SSE consumers subscribe to this
         self._event_subscribers: List[queue.Queue] = []
@@ -443,6 +606,44 @@ class VoiceConversationLoop:
         t = text.lower().strip().rstrip(".,!?")
         return t in self._stop_phrases
 
+    def _is_session_live(self, session_id: int) -> bool:
+        """Return True while ``session_id`` is the authorized active session."""
+        with self._lock:
+            return self._active_session_id == session_id
+
+    def _session_allows_model_and_tts(
+        self,
+        session_id: int,
+        *,
+        is_first_turn: bool,
+    ) -> bool:
+        """Hard privacy gate: model/TTS only after wake or valid follow-up."""
+        with self._lock:
+            if self._active_session_id != session_id:
+                return False
+            if is_first_turn:
+                return True
+            return time.time() <= self._session_deadline
+
+    def _extend_session_deadline(self, session_id: int) -> None:
+        with self._lock:
+            if self._active_session_id == session_id:
+                self._session_deadline = time.time() + self._session_timeout
+
+    def _end_session(self, session_id: int, reason: str) -> None:
+        """Invalidate session, cancel pending TTS, return to wake-only mode."""
+        with self._lock:
+            if self._active_session_id != session_id:
+                return
+            self._active_session_id = None
+            self._session_deadline = 0.0
+            self._wake_detected_monotonic = None
+        self._tts.cancel()
+        self._emit_event({"type": "state", "state": "session_ended", "reason": reason})
+
+    def _cancel_check(self, session_id: int) -> Callable[[], bool]:
+        return lambda: not self._is_session_live(session_id)
+
     def _on_wake(self, event: Any) -> None:
         """Wake-word callback — transitions from wake_listening to recording.
 
@@ -455,7 +656,18 @@ class VoiceConversationLoop:
                     "Wake-word ignored (state=%s — already processing)", self._state
                 )
                 return
+            if self._active_session_id is not None:
+                logger.debug(
+                    "Wake-word ignored (session=%s already active)",
+                    self._active_session_id,
+                )
+                return
+            self._session_id += 1
+            session_id = self._session_id
+            self._active_session_id = session_id
+            self._session_deadline = time.time() + self._session_timeout
             self._state = "recording"
+            self._wake_detected_monotonic = time.monotonic()
 
         model = getattr(event, "model", "unknown")
         score = getattr(event, "score", 0.0)
@@ -468,54 +680,77 @@ class VoiceConversationLoop:
         })
         threading.Thread(
             target=self._process_turn,
+            args=(session_id,),
             daemon=True,
             name="jarvis-voice-turn",
         ).start()
 
-    def _process_turn(self) -> None:
+    def _process_turn(self, session_id: int) -> None:
         """Full conversation session: greeting → [record→STT→Jarvis→TTS] loop.
 
         A single call handles the entire session (greeting + all follow-up turns
         until timeout or stop phrase).  This method is called in a daemon thread.
         Always returns to state='listening' in the finally block.
         """
+        if not self._is_session_live(session_id):
+            logger.warning(
+                "Voice turn aborted — session %s is not authorized", session_id
+            )
+            return
+        end_reason = "completed"
         try:
             # ---------------------------------------------------------- #
-            # 1. Immediate acknowledgement (TTS greeting before recording) #
+            # 1. Immediate acknowledgement (short local cue before recording) #
             # ---------------------------------------------------------- #
-            _wake_ts = time.time()
+            with self._lock:
+                _wake_ts = self._wake_detected_monotonic or time.monotonic()
             self._set_state("acknowledging")
-            try:
-                greet = time_of_day_greeting(self._user_name)
-                speak_response(greet)
-                logger.info("Acknowledged: %r", greet)
-            except Exception as exc:
-                logger.debug("Acknowledgement TTS failed (non-fatal): %s", exc)
-            _ack_done_ts = time.time()
+            play_acknowledgement_cue()
+            logger.info("Acknowledged wake word with short local cue")
+            _ack_done_ts = time.monotonic()
             self._emit_latency("wake_to_ack_ms", (_ack_done_ts - _wake_ts) * 1000)
+
+            if not self._is_session_live(session_id):
+                logger.info("Session ended during acknowledgement — aborting turn")
+                return
 
             # ---------------------------------------------------------- #
             # 2. Active conversation session loop                          #
             # ---------------------------------------------------------- #
             self._set_state("active_conversation")
-            session_deadline = time.time() + self._session_timeout
             first_turn = True
 
             while True:
-                if not first_turn:
-                    # Follow-up turn — no wake-word needed
+                is_first_turn = first_turn
+                if not is_first_turn:
+                    # Follow-up turn — no wake-word needed, but session must
+                    # still be explicitly active and within its timeout.
                     self._set_state("follow_up_listening")
-                    if time.time() > session_deadline:
-                        logger.info("Session timeout — returning to wake listening")
+                    if not self._session_allows_model_and_tts(
+                        session_id, is_first_turn=False
+                    ):
+                        logger.info(
+                            "Follow-up session expired — returning to wake listening"
+                        )
                         break
+                    _turn_start = time.monotonic()
                     # Brief pause to give user a moment to start speaking
                     time.sleep(0.4)
+                    if not self._is_session_live(session_id):
+                        break
+                else:
+                    # Include acknowledgement in the first turn so
+                    # wake-to-record can never exceed total-turn latency.
+                    _turn_start = _wake_ts
                 first_turn = False
+
+                if not self._is_session_live(session_id):
+                    break
 
                 # ------------------------------------------------------ #
                 # 3. Record command audio                                   #
                 # ------------------------------------------------------ #
-                _rec_start = time.time()
+                _rec_start = time.monotonic()
                 self._set_state("recording")
                 self._emit_event({
                     "type": "interim_transcript",
@@ -529,13 +764,20 @@ class VoiceConversationLoop:
                 except Exception as exc:
                     logger.error("Recording failed: %s", exc)
                     break
-                _rec_end = time.time()
-                self._emit_latency("wake_to_record_start_ms", (_rec_start - _wake_ts) * 1000)
+                _rec_end = time.monotonic()
+                if is_first_turn:
+                    self._emit_latency(
+                        "wake_to_record_start_ms",
+                        (_rec_start - _wake_ts) * 1000,
+                    )
+
+                if not self._is_session_live(session_id):
+                    break
 
                 # ------------------------------------------------------ #
                 # 4. STT — existing speech backend path                    #
                 # ------------------------------------------------------ #
-                _stt_start = time.time()
+                _stt_start = time.monotonic()
                 self._set_state("transcribing")
                 self._emit_event({"type": "interim_transcript", "text": "Transcribing..."})
                 try:
@@ -543,12 +785,21 @@ class VoiceConversationLoop:
                 except Exception as exc:
                     logger.error("STT failed: %s", exc)
                     break
-                _stt_end = time.time()
+                _stt_end = time.monotonic()
                 self._emit_latency("stt_duration_ms", (_stt_end - _stt_start) * 1000)
                 self._emit_latency("speech_end_to_stt_final_ms", (_stt_end - _rec_end) * 1000)
 
                 if not text.strip():
                     logger.info("Empty transcript — ending session")
+                    break
+
+                if not self._session_allows_model_and_tts(
+                    session_id, is_first_turn=is_first_turn
+                ):
+                    logger.info(
+                        "Model/TTS blocked — session %s no longer authorized",
+                        session_id,
+                    )
                     break
 
                 logger.info("Transcript: %r", text)
@@ -559,25 +810,53 @@ class VoiceConversationLoop:
                 # ------------------------------------------------------ #
                 if self._is_stop_phrase(text):
                     logger.info("Stop phrase detected: %r", text)
+                    end_reason = "stop_phrase"
+                    self._tts.cancel()
                     try:
-                        speak_response("Going back to sleep. Say 'hey jarvis' when you need me.")
+                        speak_response(
+                            "Going back to sleep. Say 'hey jarvis' when you need me.",
+                            playback=self._tts,
+                            cancel_check=self._cancel_check(session_id),
+                        )
                     except Exception:
                         pass
-                    self._emit_event({"type": "state", "state": "session_ended", "reason": "stop_phrase"})
                     break
 
                 # ------------------------------------------------------ #
                 # 6. Route through normal Jarvis path (with security)      #
                 # ------------------------------------------------------ #
-                _model_start = time.time()
+                if not self._session_allows_model_and_tts(
+                    session_id, is_first_turn=is_first_turn
+                ):
+                    logger.info(
+                        "Model route blocked — session %s no longer authorized",
+                        session_id,
+                    )
+                    break
+
+                _model_start = time.monotonic()
                 self._set_state("thinking")
                 try:
-                    response = query_jarvis_text(text)
+                    response = query_jarvis_text(
+                        text,
+                        on_route=lambda route: self._emit_event(
+                            {"type": "route", **route}
+                        ),
+                    )
                 except Exception as exc:
                     logger.error("Jarvis query failed: %s", exc)
                     response = "I encountered an error processing your request."
-                _model_end = time.time()
+                _model_end = time.monotonic()
                 self._emit_latency("model_duration_ms", (_model_end - _model_start) * 1000)
+
+                if not self._session_allows_model_and_tts(
+                    session_id, is_first_turn=is_first_turn
+                ):
+                    logger.info(
+                        "TTS blocked — session %s ended during model inference",
+                        session_id,
+                    )
+                    break
 
                 if not response.strip():
                     response = "I don't have a response for that."
@@ -587,27 +866,35 @@ class VoiceConversationLoop:
                 # ------------------------------------------------------ #
                 # 7. TTS — existing TTS path                               #
                 # ------------------------------------------------------ #
-                _tts_start = time.time()
+                _tts_start = time.monotonic()
                 self._set_state("speaking")
                 try:
-                    speak_response(response)
+                    speak_response(
+                        response,
+                        playback=self._tts,
+                        cancel_check=self._cancel_check(session_id),
+                    )
                 except Exception as exc:
                     logger.error("TTS failed: %s", exc)
-                _tts_end = time.time()
+                _tts_end = time.monotonic()
                 self._emit_latency("tts_start_ms", (_tts_start - _model_end) * 1000)
-                self._emit_latency("total_turn_ms", (_tts_end - _wake_ts) * 1000)
+                self._emit_latency("total_turn_ms", (_tts_end - _turn_start) * 1000)
+
+                if not self._is_session_live(session_id):
+                    break
 
                 with self._lock:
                     self._turns += 1
 
                 # Reset session deadline after each successful response
-                session_deadline = time.time() + self._session_timeout
+                self._extend_session_deadline(session_id)
 
         except Exception as exc:
             logger.error("Voice session error: %s", exc)
             self._emit_event({"type": "error", "message": str(exc)})
         finally:
-            # Always return to wake-word-only listening after session ends
+            # Always invalidate session and return to wake-word-only listening
+            self._end_session(session_id, reason=end_reason)
             self._set_state("listening")
 
     # ------------------------------------------------------------------ #
@@ -624,6 +911,10 @@ class VoiceConversationLoop:
 
     def stop(self) -> None:
         """Stop the wake-word bridge and conversation loop."""
+        with self._lock:
+            session_id = self._active_session_id
+        if session_id is not None:
+            self._end_session(session_id, reason="stopped")
         self._bridge.stop()
         self._set_state("idle")
         # Sentinel to unblock SSE consumers
@@ -651,5 +942,6 @@ __all__ = [
     "record_command_audio",
     "transcribe_command",
     "query_jarvis_text",
+    "play_acknowledgement_cue",
     "speak_response",
 ]

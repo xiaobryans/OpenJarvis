@@ -151,6 +151,12 @@ export function useVoiceSession(): VoiceSessionState & VoiceSessionActions {
   const handleEvent = useCallback((ev: VoiceEvent) => {
     if (ev.type === 'state' && ev.state) {
       setVoiceState(ev.state);
+      if (ev.state === 'wake_detected' || ev.state === 'follow_up_listening') {
+        // Latency values belong to one turn only. Without resetting here,
+        // a follow-up's total_turn_ms was displayed beside the original
+        // wake_to_record_start_ms, producing impossible-looking metrics.
+        setLatency({});
+      }
       if (ev.state === 'recording') {
         setInterimTranscript('');
         setFinalTranscript('');

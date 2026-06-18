@@ -1425,7 +1425,7 @@ class TestWakeWordTriggersRecording:
 
         turn_started = threading.Event()
 
-        def _mock_process_turn():
+        def _mock_process_turn(_session_id):
             turn_started.set()
             loop._set_state("listening")
 
@@ -1574,6 +1574,119 @@ class TestSTTRoutesToJarvisPath:
         assert "OrchestratorAgent" not in src, "Must not duplicate the OrchestratorAgent"
         assert "PlannerAgent" not in src, "Must not duplicate the PlannerAgent"
 
+    def test_simple_voice_query_prefers_configured_fast_cloud_path(self):
+        """Simple voice facts use cloud when a fast provider is available."""
+        from types import SimpleNamespace
+        from unittest.mock import MagicMock, patch
+
+        from openjarvis.autonomy.voice_conversation import query_jarvis_text
+
+        config = SimpleNamespace(
+            intelligence=SimpleNamespace(
+                default_model="qwen3.5:2b",
+                fallback_model="",
+                preferred_engine="",
+                temperature=0.7,
+                max_tokens=512,
+            ),
+            agent=SimpleNamespace(default_agent=""),
+        )
+        local_engine = MagicMock()
+        cloud_engine = MagicMock()
+        secured_engine = MagicMock()
+        secured_engine.generate.return_value = {"content": "Paris."}
+        route = {}
+
+        def _get_engine(_config, engine_key=None, model=None):
+            if engine_key == "cloud" and model == "gpt-4o-mini":
+                return ("cloud", cloud_engine)
+            if engine_key == "cloud":
+                return None
+            return ("ollama", local_engine)
+
+        with (
+            patch("openjarvis.core.config.load_config", return_value=config),
+            patch("openjarvis.engine.get_engine", side_effect=_get_engine),
+            patch(
+                "openjarvis.security.setup_security",
+                return_value=SimpleNamespace(
+                    engine=secured_engine,
+                    capability_policy=None,
+                ),
+            ),
+        ):
+            result = query_jarvis_text(
+                "What is the capital of France?",
+                on_route=route.update,
+            )
+
+        assert result == "Paris."
+        assert route == {
+            "model": "gpt-4o-mini",
+            "provider": "openai",
+            "engine": "cloud",
+            "path": "voice_fast_cloud",
+            "complexity_tier": "trivial",
+        }
+        secured_engine.generate.assert_called_once()
+        assert secured_engine.generate.call_args.kwargs["model"] == "gpt-4o-mini"
+
+    def test_voice_fast_path_falls_back_to_configured_jarvis_model(self):
+        """No cloud provider means voice keeps the configured Jarvis path."""
+        from types import SimpleNamespace
+        from unittest.mock import MagicMock, patch
+
+        from openjarvis.autonomy.voice_conversation import query_jarvis_text
+
+        config = SimpleNamespace(
+            intelligence=SimpleNamespace(
+                default_model="qwen3.5:2b",
+                fallback_model="",
+                preferred_engine="ollama",
+                temperature=0.7,
+                max_tokens=512,
+            ),
+            agent=SimpleNamespace(default_agent=""),
+        )
+        local_engine = MagicMock()
+        secured_engine = MagicMock()
+        secured_engine.generate.return_value = {"content": "Paris."}
+        route = {}
+
+        def _get_engine(_config, engine_key=None, model=None):
+            if engine_key == "cloud":
+                return None
+            return ("ollama", local_engine)
+
+        with (
+            patch("openjarvis.core.config.load_config", return_value=config),
+            patch("openjarvis.engine.get_engine", side_effect=_get_engine),
+            patch(
+                "openjarvis.security.setup_security",
+                return_value=SimpleNamespace(
+                    engine=secured_engine,
+                    capability_policy=None,
+                ),
+            ),
+        ):
+            result = query_jarvis_text(
+                "What is the capital of France?",
+                on_route=route.update,
+            )
+
+        assert result == "Paris."
+        assert route["model"] == "qwen3.5:2b"
+        assert route["provider"] == "ollama"
+        assert route["path"] == "jarvis_default"
+
+    def test_voice_route_is_reported_before_inference(self):
+        """Diagnostics identify provider/model/path before generation starts."""
+        import inspect
+        from openjarvis.autonomy import voice_conversation
+
+        src = inspect.getsource(voice_conversation.query_jarvis_text)
+        assert src.find("on_route(route)") < src.rfind("engine.generate(")
+
 
 class TestTTSCalledWithResponse:
     """speak_response must use the existing TTS path."""
@@ -1629,7 +1742,7 @@ class TestLoopReturnsToListening:
 
         done = threading.Event()
 
-        def _mock_turn():
+        def _mock_turn(_session_id):
             try:
                 pass
             finally:
@@ -1850,14 +1963,24 @@ class TestWakeAcknowledgement:
             "_process_turn must acknowledge BEFORE starting the recording state"
         )
 
-    def test_process_turn_speaks_greeting(self):
-        """_process_turn must call speak_response with time_of_day_greeting."""
+    def test_process_turn_uses_short_local_acknowledgement_cue(self):
+        """Wake acknowledgement must not put full TTS on the recording path."""
         import inspect
         from openjarvis.autonomy import voice_conversation
         src = inspect.getsource(voice_conversation.VoiceConversationLoop._process_turn)
-        assert "time_of_day_greeting" in src, (
-            "_process_turn must call time_of_day_greeting() for wake acknowledgement"
-        )
+        assert "play_acknowledgement_cue()" in src
+        ack_section = src[:src.find('self._set_state("active_conversation")')]
+        assert "speak_response(" not in ack_section
+
+    def test_acknowledgement_cue_is_short_local_and_bounded(self):
+        """The wake cue uses local afplay with a strict timeout."""
+        import inspect
+        from openjarvis.autonomy import voice_conversation
+
+        src = inspect.getsource(voice_conversation.play_acknowledgement_cue)
+        assert '"afplay"' in src
+        assert "Tink.aiff" in src
+        assert "timeout=1.5" in src
 
     def test_wake_to_ack_latency_emitted(self):
         """_process_turn must emit wake_to_ack_ms latency event."""
@@ -1900,7 +2023,7 @@ class TestVoiceStateTransitions:
 
         import threading
         done = threading.Event()
-        def _mock_turn():
+        def _mock_turn(_session_id):
             done.set()
         loop._process_turn = _mock_turn
 
@@ -2070,7 +2193,7 @@ class TestConversationSessionFollowUp:
         import inspect
         from openjarvis.autonomy import voice_conversation
         src = inspect.getsource(voice_conversation.VoiceConversationLoop._process_turn)
-        assert "session_deadline" in src or "_session_timeout" in src, (
+        assert "_session_allows_model_and_tts" in src or "_session_deadline" in src, (
             "_process_turn must use a session deadline to return to wake-word-only mode"
         )
 
@@ -2084,6 +2207,206 @@ class TestConversationSessionFollowUp:
         loop = VoiceConversationLoop(session_timeout=45.0)
         st = loop.status()
         assert st.get("session_timeout") == 45.0
+
+
+class TestVoiceSessionPrivacyBoundary:
+    """US13 privacy gate — no model/TTS without wake or valid follow-up session."""
+
+    def test_session_gate_methods_exist(self):
+        from openjarvis.autonomy.voice_conversation import VoiceConversationLoop
+
+        loop = VoiceConversationLoop()
+        for name in (
+            "_session_allows_model_and_tts",
+            "_is_session_live",
+            "_end_session",
+        ):
+            assert hasattr(loop, name) and callable(getattr(loop, name))
+
+    def test_model_and_tts_blocked_without_active_session(self):
+        import time
+        from unittest.mock import patch
+
+        from openjarvis.autonomy.voice_conversation import VoiceConversationLoop
+
+        loop = VoiceConversationLoop()
+        loop._active_session_id = 99
+        loop._session_deadline = time.time() + 30.0
+        loop._wake_detected_monotonic = time.monotonic()
+
+        def _transcribe(*_args, **_kwargs):
+            loop._end_session(99, reason="stopped")
+            return "hello jarvis"
+
+        with patch(
+            "openjarvis.autonomy.voice_conversation.play_acknowledgement_cue",
+        ), patch(
+            "openjarvis.autonomy.voice_conversation.record_command_audio",
+            return_value=b"wav",
+        ), patch(
+            "openjarvis.autonomy.voice_conversation.transcribe_command",
+            side_effect=_transcribe,
+        ), patch(
+            "openjarvis.autonomy.voice_conversation.query_jarvis_text",
+            return_value="should not speak",
+        ) as mock_query, patch(
+            "openjarvis.autonomy.voice_conversation.speak_response",
+            return_value=True,
+        ) as mock_speak:
+            loop._process_turn(99)
+
+        mock_query.assert_not_called()
+        mock_speak.assert_not_called()
+        assert loop._active_session_id is None
+
+    def test_follow_up_timeout_returns_to_wake_only_mode(self):
+        import time
+        from unittest.mock import patch
+
+        from openjarvis.autonomy.voice_conversation import VoiceConversationLoop
+
+        loop = VoiceConversationLoop(session_timeout=30.0)
+        loop._session_id = 1
+        loop._active_session_id = 1
+        loop._session_deadline = time.time() + 30.0
+        loop._wake_detected_monotonic = time.monotonic()
+        turn = {"n": 0}
+
+        def _transcribe(*_args, **_kwargs):
+            turn["n"] += 1
+            return "hello"
+
+        def _speak(*_args, **_kwargs):
+            loop._session_deadline = time.time() - 1.0
+            return True
+
+        with patch(
+            "openjarvis.autonomy.voice_conversation.play_acknowledgement_cue",
+        ), patch.object(
+            loop, "_extend_session_deadline"
+        ), patch(
+            "openjarvis.autonomy.voice_conversation.record_command_audio",
+            return_value=b"wav",
+        ) as mock_record, patch(
+            "openjarvis.autonomy.voice_conversation.transcribe_command",
+            side_effect=_transcribe,
+        ), patch(
+            "openjarvis.autonomy.voice_conversation.query_jarvis_text",
+            return_value="first turn ok",
+        ) as mock_query, patch(
+            "openjarvis.autonomy.voice_conversation.speak_response",
+            side_effect=_speak,
+        ):
+            loop._process_turn(1)
+
+        assert mock_record.call_count == 1
+        assert mock_query.call_count == 1
+        assert loop._active_session_id is None
+        assert loop._state == "listening"
+
+    def test_follow_up_gate_blocks_expired_session(self):
+        import time
+
+        from openjarvis.autonomy.voice_conversation import VoiceConversationLoop
+
+        loop = VoiceConversationLoop()
+        loop._active_session_id = 4
+        loop._session_deadline = time.time() - 1.0
+        assert loop._session_allows_model_and_tts(4, is_first_turn=False) is False
+        assert loop._session_allows_model_and_tts(4, is_first_turn=True) is True
+
+    def test_stop_phrase_ends_session_and_cancels_pending_tts(self):
+        import time
+        from unittest.mock import MagicMock, patch
+
+        from openjarvis.autonomy.voice_conversation import VoiceConversationLoop
+
+        loop = VoiceConversationLoop()
+        loop._session_id = 2
+        loop._active_session_id = 2
+        loop._session_deadline = time.time() + 30.0
+        loop._wake_detected_monotonic = time.monotonic()
+        loop._tts.cancel = MagicMock()
+
+        with patch(
+            "openjarvis.autonomy.voice_conversation.play_acknowledgement_cue",
+        ), patch(
+            "openjarvis.autonomy.voice_conversation.record_command_audio",
+            return_value=b"wav",
+        ), patch(
+            "openjarvis.autonomy.voice_conversation.transcribe_command",
+            return_value="stop listening",
+        ), patch(
+            "openjarvis.autonomy.voice_conversation.query_jarvis_text",
+        ) as mock_query, patch(
+            "openjarvis.autonomy.voice_conversation.speak_response",
+            return_value=True,
+        ) as mock_speak:
+            loop._process_turn(2)
+
+        mock_query.assert_not_called()
+        loop._tts.cancel.assert_called()
+        mock_speak.assert_called_once()
+        assert loop._active_session_id is None
+
+    def test_stop_invalidates_session_and_cancels_tts(self):
+        from unittest.mock import MagicMock
+
+        from openjarvis.autonomy.voice_conversation import VoiceConversationLoop
+
+        loop = VoiceConversationLoop()
+        loop._session_id = 3
+        loop._active_session_id = 3
+        loop._session_deadline = 0.0
+        loop._tts.cancel = MagicMock()
+        loop._bridge.stop = MagicMock()
+
+        loop.stop()
+
+        loop._tts.cancel.assert_called()
+        assert loop._active_session_id is None
+        assert loop._state == "idle"
+
+    def test_wake_while_session_active_is_ignored(self):
+        import time
+        from openjarvis.autonomy.voice_conversation import VoiceConversationLoop
+        from openjarvis.autonomy.wakeword_bridge import WakeWordTriggerEvent
+
+        loop = VoiceConversationLoop()
+        loop._state = "listening"
+        loop._active_session_id = 5
+
+        ev = WakeWordTriggerEvent(model="hey_jarvis_v0.1", score=0.9, ts=time.time())
+        loop._on_wake(ev)
+
+        assert loop._active_session_id == 5
+
+    def test_process_turn_hard_guards_before_model_and_tts(self):
+        import inspect
+        from openjarvis.autonomy import voice_conversation
+
+        src = inspect.getsource(voice_conversation.VoiceConversationLoop._process_turn)
+        assert "_session_allows_model_and_tts" in src
+        model_pos = src.find("query_jarvis_text(")
+        tts_pos = src.find("speak_response(")
+        assert src.rfind("_session_allows_model_and_tts", 0, model_pos) != -1
+        assert src.rfind("_session_allows_model_and_tts", 0, tts_pos) != -1
+
+    def test_end_session_clears_active_session_in_finally(self):
+        import inspect
+        from openjarvis.autonomy import voice_conversation
+
+        src = inspect.getsource(voice_conversation.VoiceConversationLoop._process_turn)
+        assert "_end_session" in src
+        assert "finally:" in src
+
+    def test_speak_response_supports_cancellation(self):
+        import inspect
+        from openjarvis.autonomy import voice_conversation
+
+        sig = inspect.signature(voice_conversation.speak_response)
+        assert "playback" in sig.parameters
+        assert "cancel_check" in sig.parameters
 
 
 class TestLatencyInstrumentation:
@@ -2131,6 +2454,57 @@ class TestLatencyInstrumentation:
         ev = sub.get(timeout=1.0)
         assert ev.get("type") == "latency"
         assert ev.get("stage") == "total_turn_ms"
+
+    def test_total_turn_latency_is_per_turn_not_since_wake(self):
+        """Follow-up total_turn_ms must reset instead of accumulating."""
+        import inspect
+        from openjarvis.autonomy import voice_conversation
+
+        src = inspect.getsource(
+            voice_conversation.VoiceConversationLoop._process_turn
+        )
+        assert "_turn_start = _wake_ts" in src
+        assert "_turn_start = time.monotonic()" in src
+        assert "_tts_end - _turn_start" in src
+        assert "_tts_end - _wake_ts" not in src
+
+    def test_wake_to_record_start_only_emitted_for_first_turn(self):
+        """Follow-ups must not reuse the original wake timestamp."""
+        import inspect
+        from openjarvis.autonomy import voice_conversation
+
+        src = inspect.getsource(
+            voice_conversation.VoiceConversationLoop._process_turn
+        )
+        assert "if is_first_turn:" in src
+        metric_pos = src.find('"wake_to_record_start_ms"')
+        guard_pos = src.rfind("if is_first_turn:", 0, metric_pos)
+        assert guard_pos != -1
+
+    def test_latency_durations_use_monotonic_clock(self):
+        """Wall-clock adjustments cannot corrupt per-stage durations."""
+        import inspect
+        from openjarvis.autonomy import voice_conversation
+
+        src = inspect.getsource(
+            voice_conversation.VoiceConversationLoop._process_turn
+        )
+        for marker in (
+            "_rec_start = time.monotonic()",
+            "_stt_start = time.monotonic()",
+            "_model_start = time.monotonic()",
+            "_tts_start = time.monotonic()",
+        ):
+            assert marker in src
+
+    def test_voice_ui_resets_latency_for_each_turn(self):
+        """The UI must not merge wake metrics with a later follow-up turn."""
+        hook = (
+            _REPO_ROOT / "frontend" / "src" / "hooks" / "useVoiceSession.ts"
+        ).read_text(encoding="utf-8")
+        assert "ev.state === 'wake_detected'" in hook
+        assert "ev.state === 'follow_up_listening'" in hook
+        assert "setLatency({})" in hook
 
 
 class TestAppUserFacingStartPath:
