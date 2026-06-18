@@ -626,9 +626,25 @@ class CodingManager:
         effective_repo = Path(repo_path).resolve() if repo_path else self._repo_path
 
         try:
-            from openjarvis.workbench.context_cache import warm_repo_map_cache
+            from openjarvis.workbench.context_cache import ContextCache, warm_repo_map_cache
 
             warm_repo_map_cache(str(effective_repo))
+            # Also cache validation profiles and governance policy for reuse across sessions.
+            cache = ContextCache()
+            try:
+                from openjarvis.workbench.validation_profiles import list_validation_profiles
+                cache.put("validation_profiles", list_validation_profiles(), repo_path=str(effective_repo))
+            except Exception:
+                pass
+            try:
+                from openjarvis.governance.constitution import Verdict
+                cache.put(
+                    "policy_governance",
+                    {"verdict_values": [v.value for v in Verdict], "cost_control_law": "ACTIVE"},
+                    repo_path=str(effective_repo),
+                )
+            except Exception:
+                pass
         except Exception:
             pass
 
