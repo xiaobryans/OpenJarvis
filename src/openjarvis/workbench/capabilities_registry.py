@@ -275,11 +275,17 @@ def _wave1_skill_platform_status() -> CapabilityRecord:
     try:
         from openjarvis.wave.skill_platform import get_skill_platform_status
         info = get_skill_platform_status()
+        local_exec = info.get("local_execution_implemented", False)
+        status = STATUS_READY if local_exec else STATUS_REQUIRES_SETUP
         return CapabilityRecord(
             capability_id="wave1_skill_platform",
             display_name="Wave 1 — Skill Platform",
-            status=STATUS_REQUIRES_SETUP,
-            summary=f"Wave 1 Epic A: Skill Platform scaffolded. {info['skill_count']} skills registered.",
+            status=status,
+            summary=(
+                f"Wave 1 Epic A: Skill Platform. {info['skill_count']} skills registered, "
+                f"{info.get('executable_count', 0)} locally executable. "
+                f"Induction pipeline: {'yes' if info.get('induction_pipeline_implemented') else 'next slice'}."
+            ),
             evidence=info,
         )
     except Exception as exc:
@@ -287,7 +293,7 @@ def _wave1_skill_platform_status() -> CapabilityRecord:
             capability_id="wave1_skill_platform",
             display_name="Wave 1 — Skill Platform",
             status=STATUS_NOT_IMPLEMENTED,
-            summary=f"Wave 1 Epic A scaffold unavailable: {exc}",
+            summary=f"Wave 1 Epic A unavailable: {exc}",
         )
 
 
@@ -296,11 +302,16 @@ def _wave1_automation_platform_status() -> CapabilityRecord:
     try:
         from openjarvis.wave.automation_platform import get_automation_platform_status
         info = get_automation_platform_status()
+        dry_run = info.get("dry_run_implemented", False)
+        status = STATUS_READY if dry_run else STATUS_REQUIRES_SETUP
         return CapabilityRecord(
             capability_id="wave1_automation_platform",
             display_name="Wave 1 — Automation Platform",
-            status=STATUS_REQUIRES_SETUP,
-            summary="Wave 1 Epic B: Automation Platform scaffolded. Runtime execution not yet implemented.",
+            status=status,
+            summary=(
+                f"Wave 1 Epic B: Automation Platform. Dry-run: {'yes' if dry_run else 'no'}. "
+                f"Live scheduler: {'yes' if info.get('cron_wiring_implemented') else 'next slice'}."
+            ),
             evidence=info,
         )
     except Exception as exc:
@@ -308,7 +319,7 @@ def _wave1_automation_platform_status() -> CapabilityRecord:
             capability_id="wave1_automation_platform",
             display_name="Wave 1 — Automation Platform",
             status=STATUS_NOT_IMPLEMENTED,
-            summary=f"Wave 1 Epic B scaffold unavailable: {exc}",
+            summary=f"Wave 1 Epic B unavailable: {exc}",
         )
 
 
@@ -317,13 +328,17 @@ def _wave1_knowledge_platform_status() -> CapabilityRecord:
     try:
         from openjarvis.wave.knowledge_platform import get_knowledge_platform_status
         info = get_knowledge_platform_status()
+        local_ingest = info.get("local_ingestion_implemented", False)
+        status = STATUS_READY if local_ingest else STATUS_REQUIRES_SETUP
         return CapabilityRecord(
             capability_id="wave1_knowledge_platform",
             display_name="Wave 1 — Knowledge Platform",
-            status=STATUS_REQUIRES_SETUP,
+            status=status,
             summary=(
-                f"Wave 1 Epic C: Knowledge Platform scaffolded. "
-                f"{info['source_count']} sources registered. Ingestion not yet wired."
+                f"Wave 1 Epic C: Knowledge Platform. Local ingestion: {'yes' if local_ingest else 'no'}. "
+                f"{info.get('ingested_sources', 0)} sources ingested, "
+                f"{info.get('total_records', 0)} records. "
+                f"Connector/hybrid-search: next slice."
             ),
             evidence=info,
         )
@@ -332,7 +347,7 @@ def _wave1_knowledge_platform_status() -> CapabilityRecord:
             capability_id="wave1_knowledge_platform",
             display_name="Wave 1 — Knowledge Platform",
             status=STATUS_NOT_IMPLEMENTED,
-            summary=f"Wave 1 Epic C scaffold unavailable: {exc}",
+            summary=f"Wave 1 Epic C unavailable: {exc}",
         )
 
 
@@ -341,13 +356,16 @@ def _wave1_research_platform_status() -> CapabilityRecord:
     try:
         from openjarvis.wave.research_platform import get_research_platform_status
         info = get_research_platform_status()
+        local_query = info.get("local_query_implemented", False)
+        status = STATUS_READY if local_query else STATUS_REQUIRES_SETUP
         return CapabilityRecord(
             capability_id="wave1_research_platform",
             display_name="Wave 1 — Research Platform",
-            status=STATUS_REQUIRES_SETUP,
+            status=status,
             summary=(
-                f"Wave 1 Epic D: Research Platform scaffolded. "
-                f"{info['provider_count']} providers registered. Execution not yet implemented."
+                f"Wave 1 Epic D: Research Platform. Local query: {'yes' if local_query else 'no'}. "
+                f"{info['provider_count']} providers registered. "
+                f"Web search: requires_setup (API key needed). Scraping blocked."
             ),
             evidence=info,
         )
@@ -356,7 +374,7 @@ def _wave1_research_platform_status() -> CapabilityRecord:
             capability_id="wave1_research_platform",
             display_name="Wave 1 — Research Platform",
             status=STATUS_NOT_IMPLEMENTED,
-            summary=f"Wave 1 Epic D scaffold unavailable: {exc}",
+            summary=f"Wave 1 Epic D unavailable: {exc}",
         )
 
 

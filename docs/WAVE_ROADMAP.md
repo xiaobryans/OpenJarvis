@@ -33,81 +33,154 @@ wake privacy boundary, follow-up sessions, barge-in, streaming STT.
 
 ---
 
-## Wave 1 — Foundation
+## Wave 1 — Foundation + Local/Founder V1 Execution
 
-### What IS implemented in this sprint
+### Status: LOCAL/FOUNDER V1 ACCEPTED
 
-**Epic A — Skill Platform** (`src/openjarvis/wave/skill_platform.py`)
-- `WaveSkillManifest` dataclass: skill_id, name, version, approval_policy, risk_level, induction_approved
-- `WaveSkillRegistry`: register / list / get with approval gate enforcement
-- Built-in skills: coding_workbench, terminal_executor, diff_reviewer, browser_automation (all accepted), research_web (scaffolded, pending approval)
-- Wraps existing `skills/jarvis_registry.py` — does NOT duplicate it
-- Approval policy enforced: `hard_gate` → blocked without explicit approval, `requires_approval` → pending_approval state
-- Exposed in capabilities registry as `wave1_skill_platform` (status: `requires_setup`)
-- Doctor check 28: `wave1_skill_platform`
-
-**Epic B — Automation Platform** (`src/openjarvis/wave/automation_platform.py`)
-- `AutomationTrigger` dataclass: trigger_id, name, trigger_type (cron/event/webhook/manual), schedule, approval_policy, risk_level, enabled
-- `AutomationRegistry`: register / enable / disable / list / get
-- All triggers disabled by default on registration
-- High/critical risk or requires_approval policy → enable() returns approval_required
-- References existing `scheduler/` — does NOT duplicate it
-- Exposed in capabilities registry as `wave1_automation_platform` (status: `requires_setup`)
-- Doctor check 29: `wave1_automation_platform`
-
-**Epic C — Knowledge Platform** (`src/openjarvis/wave/knowledge_platform.py`)
-- `KnowledgeSource` dataclass: source_id, name, source_type (file/url/database/connector/memory), access_policy, pii_risk
-- `KnowledgeSourceRegistry`: register / list / get with PII approval gate
-- Built-in scaffolded sources: apple_notes, apple_contacts, dropbox (all require_approval, pii_risk=True)
-- Public sources (access_policy=public, pii_risk=False) register without approval
-- References existing `connectors/` — does NOT duplicate them
-- Exposed in capabilities registry as `wave1_knowledge_platform` (status: `requires_setup`)
-- Doctor check 30: `wave1_knowledge_platform`
-
-**Epic D — Research Platform** (`src/openjarvis/wave/research_platform.py`)
-- `ResearchProvider` dataclass: provider_id, name, provider_type (web_search/news/academic/internal), approval_policy
-- `ResearchProviderRegistry`: register / list / get with web-search approval gate
-- Built-in providers: hackernews (auto), news_rss (auto), web_search_generic (requires_setup + approval), deep_research_agent (requires approval)
-- No unauthorized scraping: web_search providers require approval
-- References existing `connectors/hackernews`, `agents/deep_research` — does NOT duplicate
-- Exposed in capabilities registry as `wave1_research_platform` (status: `requires_setup`)
-- Doctor check 31: `wave1_research_platform`
-
-**Wave Platform Registry** (`src/openjarvis/wave/platform_registry.py`)
-- `WavePlatformRecord`: per-epic status, acceptance criteria, dependencies, risk areas
-- `WavePlatformRegistry`: get_all / get_by_wave / get(epic_id)
-- `get_wave_platform_summary()`: used by Mission Control / doctor
-- Doctor check 27: `wave1_platform_registry`
-- Doctor check 32: `wave2_4_not_claimed_ready` — verifies Wave 2–4 are NOT claiming ready
-
-**Capabilities Registry** (`src/openjarvis/workbench/capabilities_registry.py`)
-- 4 new capability IDs added: `wave1_skill_platform`, `wave1_automation_platform`, `wave1_knowledge_platform`, `wave1_research_platform`
-- All report `requires_setup` — no fake ready claims
-- `get_capabilities_summary()` now reports `wave1_scaffolded: true`, `wave2_3_4_not_implemented: true`
-
-**Tests** (`tests/wave/test_wave1_foundation.py`)
-- `TestWaveSkillPlatform` (8 tests): registry, builtins, approval gates
-- `TestWaveAutomationPlatform` (6 tests): register, disable-by-default, approval gates
-- `TestWaveKnowledgePlatform` (5 tests): registry, PII approval gates
-- `TestWaveResearchPlatform` (5 tests): registry, web search approval gates
-- `TestWavePlatformRegistry` (6 tests): all epics, wave1 scaffolded, wave2-4 not_implemented
-- `TestWaveCapabilities` (3 tests): presence, no fake ready, summary flags
-- `TestWaveSafetyIntegration` (4 tests): hard gates, destructive disable, web scraping blocked, PII blocked
+All four Wave 1 epics are locally implemented, tested, and event-logged.
+Capabilities report `ready` for locally executable features.
 
 ---
 
-### What is NOT implemented (Wave 1 next slices — requires explicit Bryan approval)
+### What IS implemented (Wave 1 local/founder V1)
 
-| Item | Status | Required next action |
+**Epic A — Skill Platform** (`src/openjarvis/wave/skill_platform.py`)
+- `WaveSkillManifest` dataclass + `WaveSkillRegistry` (register/list/get)
+- `run_skill(skill_id, context)` — local execution for safe read-only built-ins:
+  - `list_skills` → list all registered wave skills
+  - `list_capabilities` → capabilities summary from registry
+  - `platform_status` → wave platform summary
+  - `coding_workbench`, `diff_reviewer` → capabilities summary
+- Approval gates enforced: `browser_automation`, `terminal_executor` require approval; `hard_gate` skills blocked
+- Skills without local handlers return `approval_required` (not auto-blocked)
+- Event logging: `EVENT_SKILL_EXECUTED` / `EVENT_SKILL_BLOCKED`
+- Capability status: `wave1_skill_platform` → **`ready`**
+- Doctor check 28: verifies `run_skill("list_skills")` succeeds
+- REST: `GET /v1/wave/skills`, `POST /v1/wave/skills/run`
+- Induction pipeline: **not yet implemented** (next slice)
+
+**Epic B — Automation Platform** (`src/openjarvis/wave/automation_platform.py`)
+- `AutomationTrigger` dataclass + `AutomationRegistry` (register/enable/disable/list/get)
+- `dry_run_trigger(trigger_id)` — simulates trigger execution without real side effects:
+  - Low-risk `POLICY_AUTO` triggers → returns simulated output
+  - High/critical risk → `approval_required`
+  - `slack_*`/`email_*` triggers → hard-blocked (external sends never auto-execute)
+- All triggers disabled by default on registration
+- Event logging: `EVENT_AUTOMATION_DRY_RUN` / `EVENT_AUTOMATION_BLOCKED`
+- Capability status: `wave1_automation_platform` → **`ready`**
+- Doctor check 29: registers test trigger, verifies dry-run succeeds
+- REST: `GET /v1/wave/automations`, `POST /v1/wave/automations/dry-run`
+- Live scheduler wiring (cron): **not yet implemented** (next slice)
+
+**Epic C — Knowledge Platform** (`src/openjarvis/wave/knowledge_platform.py`)
+- `KnowledgeSource` dataclass + `KnowledgeSourceRegistry`
+- `KnowledgeRecord` — normalized knowledge unit (record_id, source_id, title, content, metadata)
+- `ingest_local_source(text, source_id)` — ingests plain text, splits into paragraph chunks, stores in-memory
+- `ingest_connector_source(source_id)` — checks approval gate; PII/private sources blocked
+- `search_knowledge(query)` — keyword search over ingested records
+- `get_ingested_records(source_id)` / `get_all_ingested_records()`
+- Event logging: `EVENT_KNOWLEDGE_INGESTED` / `EVENT_KNOWLEDGE_BLOCKED`
+- Capability status: `wave1_knowledge_platform` → **`ready`**
+- Doctor check 30: ingests test content, verifies record count >= 1
+- REST: `GET /v1/wave/knowledge/sources`, `POST /v1/wave/knowledge/ingest`
+- PII sources (apple_notes, apple_contacts, dropbox): `approval_required` — NOT auto-ingested
+- Connector ingestion pipeline, hybrid search: **not yet implemented** (next slice)
+
+**Epic D — Research Platform** (`src/openjarvis/wave/research_platform.py`)
+- `ResearchProvider` dataclass + `ResearchProviderRegistry`
+- `ResearchSource` + `ResearchResult` — structured query output
+- `run_local_query(query, provider_id)`:
+  - Searches local ingested knowledge records first
+  - Appends platform info as always-available fallback
+  - Forbidden terms (captcha, bypass, credential, password, token, secret) → hard-blocked
+  - `web_search_generic` provider → `approval_required` (no auto-scraping)
+  - Empty query → error
+- Event logging: `EVENT_RESEARCH_QUERIED` / `EVENT_RESEARCH_BLOCKED`
+- Capability status: `wave1_research_platform` → **`ready`**
+- Doctor check 31: queries `"doctor check"`, verifies sources >= 1
+- REST: `GET /v1/wave/research/providers`, `POST /v1/wave/research/query`
+- Web search (Serper/Tavily), deep research loop: **not yet implemented / requires_setup**
+
+**Wave Platform Registry** (`src/openjarvis/wave/platform_registry.py`)
+- `WavePlatformRecord` + `WavePlatformRegistry`
+- `get_wave_platform_summary()` for Mission Control / doctor
+- Doctor check 27: `wave1_platform_registry`
+- Doctor check 32: `wave2_4_not_claimed_ready`
+
+**Capabilities Registry** — Wave 1 statuses updated:
+| Capability | Previous | Now |
+|---|---|---|
+| `wave1_skill_platform` | requires_setup | **ready** |
+| `wave1_automation_platform` | requires_setup | **ready** |
+| `wave1_knowledge_platform` | requires_setup | **ready** |
+| `wave1_research_platform` | requires_setup | **ready** |
+
+**Event types** (`src/openjarvis/workbench/event_log.py`):
+`EVENT_SKILL_EXECUTED`, `EVENT_SKILL_BLOCKED`, `EVENT_AUTOMATION_DRY_RUN`,
+`EVENT_AUTOMATION_BLOCKED`, `EVENT_KNOWLEDGE_INGESTED`, `EVENT_KNOWLEDGE_BLOCKED`,
+`EVENT_RESEARCH_QUERIED`, `EVENT_RESEARCH_BLOCKED`
+
+**REST endpoints**:
+- `GET /v1/wave/status` — full platform status
+- `GET /v1/wave/skills` — list skills
+- `POST /v1/wave/skills/run` — execute skill
+- `GET /v1/wave/automations` — list triggers
+- `POST /v1/wave/automations/dry-run` — dry-run trigger
+- `POST /v1/wave/knowledge/ingest` — ingest text
+- `GET /v1/wave/knowledge/sources` — list sources
+- `POST /v1/wave/research/query` — local query
+- `GET /v1/wave/research/providers` — list providers
+
+**Tests**:
+- `tests/wave/test_wave1_foundation.py` — 40 tests (scaffold, registries, approval gates)
+- `tests/wave/test_wave1_execution.py` — ~55 tests (execution, events, capabilities)
+
+---
+
+### What is NOT implemented (explicit REQUIRES_USER_ACTION or next slice)
+
+| Item | Status | Next action |
 |---|---|---|
 | Skill induction pipeline (LLM-based) | Not implemented | Epic A next slice |
-| Skill execution engine | Not implemented | Epic A next slice |
-| Automation cron wiring to `scheduler/` | Not implemented | Epic B next slice |
-| Automation event bus integration | Not implemented | Epic B next slice |
-| Knowledge ingestion pipeline | Not implemented | Epic C next slice |
-| Hybrid search (vector + BM25) | Not implemented | Epic C next slice |
-| Web search execution (Serper/Tavily API) | REQUIRES_USER_ACTION (API key + approval) | Epic D next slice |
+| Automation cron wiring (`scheduler/`) | Not implemented | Epic B next slice |
+| Automation event bus | Not implemented | Epic B next slice |
+| Knowledge connector ingestion (apple_notes, dropbox) | REQUIRES_USER_ACTION (auth + approval) | Epic C next slice |
+| Knowledge hybrid search (vector + BM25) | Not implemented | Epic C next slice |
+| Web search execution (Serper/Tavily) | REQUIRES_USER_ACTION (API key + approval) | Epic D next slice |
 | Deep research loop | Not implemented | Epic D next slice |
+| HackerNews live queries | Requires network; scaffolded | Epic D next slice |
+
+---
+
+### How to retest Wave 1
+
+```bash
+cd /Users/user/OpenJarvis
+uv run python -m pytest tests/wave/ -q --tb=short
+```
+
+Expected: all tests pass (foundation + execution).
+
+```bash
+uv run python -c "
+from openjarvis.wave.skill_platform import run_skill
+from openjarvis.wave.knowledge_platform import ingest_local_source, search_knowledge
+from openjarvis.wave.research_platform import run_local_query
+import json
+
+# Epic A
+r = run_skill('list_skills'); print('Epic A:', r.ok, len(r.output), 'skills')
+
+# Epic C
+ingest_local_source('Retest content.', 'retest_01')
+results = search_knowledge('retest')
+print('Epic C:', len(results), 'records found')
+
+# Epic D
+qr = run_local_query('wave platform status')
+print('Epic D:', qr.ok, len(qr.sources), 'sources')
+"
+```
 
 ---
 

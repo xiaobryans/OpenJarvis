@@ -127,24 +127,154 @@ class AutomationRegistry:
         return list(self._triggers.values())
 
 
+# ---------------------------------------------------------------------------
+# Dry-run execution result
+# ---------------------------------------------------------------------------
+
+@dataclass
+class AutomationDryRunResult:
+    trigger_id: str
+    ok: bool
+    simulated_output: str = ""
+    error: str = ""
+    blocked: bool = False
+    approval_required: bool = False
+    event_id: str = ""
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "trigger_id": self.trigger_id,
+            "ok": self.ok,
+            "simulated_output": self.simulated_output,
+            "error": self.error,
+            "blocked": self.blocked,
+            "approval_required": self.approval_required,
+            "event_id": self.event_id,
+        }
+
+
+def _log_automation_event(
+    trigger_id: str,
+    ok: bool,
+    blocked: bool,
+    approval_required: bool,
+    detail: str,
+) -> str:
+    try:
+        from openjarvis.workbench.event_log import (
+            WorkbenchEventLog,
+            EVENT_AUTOMATION_DRY_RUN,
+            EVENT_AUTOMATION_BLOCKED,
+            EVENT_APPROVAL_REQUIRED,
+        )
+        log = WorkbenchEventLog()
+        etype = EVENT_AUTOMATION_BLOCKED if blocked else (
+            EVENT_APPROVAL_REQUIRED if approval_required else EVENT_AUTOMATION_DRY_RUN
+        )
+        ev = log.push(
+            session_id="wave1_automation",
+            task_id=trigger_id,
+            event_type=etype,
+            title=f"Automation dry-run {'blocked' if blocked else 'completed'}: {trigger_id}",
+            detail=detail,
+            tone="error" if blocked else ("warning" if approval_required else "success"),
+            metadata={"trigger_id": trigger_id, "ok": ok},
+        )
+        return ev.id
+    except Exception:
+        return ""
+
+
+# Safe simulated outputs for dry-run
+_DRY_RUN_SIMULATIONS: Dict[str, str] = {
+    TRIGGER_MANUAL: "Simulated manual trigger fired — no side effects in dry-run mode.",
+    TRIGGER_EVENT: "Simulated event trigger fired — event handler would be invoked in live mode.",
+    TRIGGER_CRON: "Simulated cron trigger — would fire according to schedule in live mode.",
+    TRIGGER_WEBHOOK: "Simulated webhook trigger — webhook endpoint would be called in live mode.",
+}
+
+
+def dry_run_trigger(
+    trigger_id: str,
+    registry: Optional[AutomationRegistry] = None,
+) -> AutomationDryRunResult:
+    """Dry-run an automation trigger — simulates execution without real side effects.
+
+    High/critical risk triggers still require approval even for dry-run.
+    Returns a structured result with simulated output.
+    """
+    reg = registry or AutomationRegistry()
+    trigger = reg.get(trigger_id)
+
+    if trigger is None:
+        return AutomationDryRunResult(
+            trigger_id=trigger_id,
+            ok=False,
+            error=f"Trigger not found: {trigger_id}",
+        )
+
+    # High-risk/critical triggers require approval even for dry-run
+    if trigger.risk_level in ("high", "critical"):
+        eid = _log_automation_event(trigger_id, False, False, True,
+                                     f"Dry-run blocked: risk_level={trigger.risk_level} requires approval")
+        return AutomationDryRunResult(
+            trigger_id=trigger_id,
+            ok=False,
+            approval_required=True,
+            error=(
+                f"Trigger '{trigger_id}' (risk_level={trigger.risk_level}) "
+                "requires approval before dry-run"
+            ),
+            event_id=eid,
+        )
+
+    # External sends are always hard-gated
+    if "slack" in trigger_id.lower() or "email" in trigger_id.lower():
+        eid = _log_automation_event(trigger_id, False, True, False,
+                                     "External send triggers are hard-gated")
+        return AutomationDryRunResult(
+            trigger_id=trigger_id,
+            ok=False,
+            blocked=True,
+            error="External send triggers (Slack/email) are hard-gated — never auto-execute",
+            event_id=eid,
+        )
+
+    simulated = _DRY_RUN_SIMULATIONS.get(trigger.trigger_type, f"Dry-run of {trigger.trigger_type} trigger.")
+    detail = (
+        f"[DRY-RUN] trigger_id={trigger_id} type={trigger.trigger_type} "
+        f"skill={trigger.skill_id or 'none'} risk={trigger.risk_level}"
+    )
+    eid = _log_automation_event(trigger_id, True, False, False, detail)
+
+    return AutomationDryRunResult(
+        trigger_id=trigger_id,
+        ok=True,
+        simulated_output=simulated,
+        event_id=eid,
+    )
+
+
 def get_automation_platform_status() -> Dict[str, Any]:
     """Return automation platform status for Mission Control / doctor."""
     reg = AutomationRegistry()
     return {
         "epic": "epic_b",
         "wave": 1,
-        "status": "scaffolded",
+        "status": "ready",
         "trigger_count": len(reg.list_triggers()),
+        "dry_run_implemented": True,
         "runtime_execution_implemented": False,
         "cron_wiring_implemented": False,
         "approval_gate_enforced": True,
         "destructive_automations_disabled_by_default": True,
-        "note": "AutomationTrigger model + registry exist. Runtime execution is Wave 1 next slice.",
+        "note": "AutomationTrigger model + dry-run execution implemented. Live scheduler wiring is next slice.",
     }
 
 
 __all__ = [
     "AutomationTrigger",
+    "AutomationDryRunResult",
     "AutomationRegistry",
     "TRIGGER_CRON",
     "TRIGGER_EVENT",
@@ -153,5 +283,6 @@ __all__ = [
     "POLICY_AUTO",
     "POLICY_REQUIRES_APPROVAL",
     "POLICY_HARD_GATE",
+    "dry_run_trigger",
     "get_automation_platform_status",
 ]

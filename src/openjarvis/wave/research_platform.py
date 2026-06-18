@@ -157,29 +157,239 @@ class ResearchProviderRegistry:
         return list(self._providers.values())
 
 
+# ---------------------------------------------------------------------------
+# Research result
+# ---------------------------------------------------------------------------
+
+@dataclass
+class ResearchSource:
+    title: str
+    content: str
+    url: str = ""
+    provider_id: str = ""
+    score: float = 0.0
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "title": self.title,
+            "content": self.content[:300],
+            "url": self.url,
+            "provider_id": self.provider_id,
+            "score": self.score,
+        }
+
+
+@dataclass
+class ResearchResult:
+    query: str
+    provider_id: str
+    ok: bool
+    sources: List[ResearchSource] = field(default_factory=list)
+    summary: str = ""
+    error: str = ""
+    blocked: bool = False
+    approval_required: bool = False
+    event_id: str = ""
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "query": self.query,
+            "provider_id": self.provider_id,
+            "ok": self.ok,
+            "source_count": len(self.sources),
+            "sources": [s.to_dict() for s in self.sources],
+            "summary": self.summary,
+            "error": self.error,
+            "blocked": self.blocked,
+            "approval_required": self.approval_required,
+            "event_id": self.event_id,
+        }
+
+
+def _log_research_event(
+    provider_id: str,
+    query: str,
+    ok: bool,
+    blocked: bool,
+    approval_required: bool,
+    detail: str,
+) -> str:
+    try:
+        from openjarvis.workbench.event_log import (
+            WorkbenchEventLog,
+            EVENT_RESEARCH_QUERIED,
+            EVENT_RESEARCH_BLOCKED,
+            EVENT_APPROVAL_REQUIRED,
+        )
+        log = WorkbenchEventLog()
+        etype = EVENT_RESEARCH_BLOCKED if blocked else (
+            EVENT_APPROVAL_REQUIRED if approval_required else EVENT_RESEARCH_QUERIED
+        )
+        ev = log.push(
+            session_id="wave1_research",
+            task_id=f"{provider_id}:{query[:30]}",
+            event_type=etype,
+            title=f"Research {'blocked' if blocked else 'completed'}: {provider_id}",
+            detail=detail,
+            tone="error" if blocked else ("warning" if approval_required else "success"),
+            metadata={"provider_id": provider_id, "query": query[:100], "ok": ok},
+        )
+        return ev.id
+    except Exception:
+        return ""
+
+
+def _query_local_knowledge(query: str) -> List[ResearchSource]:
+    """Query local ingested knowledge store (no external deps)."""
+    try:
+        from openjarvis.wave.knowledge_platform import search_knowledge
+        records = search_knowledge(query, max_results=5)
+        return [
+            ResearchSource(
+                title=r.title,
+                content=r.content,
+                url="",
+                provider_id="local_knowledge",
+                score=1.0,
+                metadata=r.metadata,
+            )
+            for r in records
+        ]
+    except Exception:
+        return []
+
+
+def _query_platform_info(query: str) -> List[ResearchSource]:
+    """Return local platform information as research sources (always safe)."""
+    try:
+        from openjarvis.wave.platform_registry import get_wave_platform_summary
+        summary = get_wave_platform_summary()
+        content = (
+            f"Wave Platform Status: {summary['total_epics']} epics total. "
+            f"Wave 1 scaffolded: {summary['wave1_scaffolded']}. "
+            f"Wave 2-4 not implemented."
+        )
+        return [ResearchSource(
+            title="Jarvis Wave Platform Status",
+            content=content,
+            url="",
+            provider_id="internal",
+            score=0.5,
+            metadata={"type": "platform_info"},
+        )]
+    except Exception:
+        return []
+
+
+def run_local_query(
+    query: str,
+    provider_id: str = "local_knowledge",
+) -> ResearchResult:
+    """Run a local research query — no external API or key required.
+
+    Query order:
+    1. Local ingested knowledge records (from knowledge_platform)
+    2. Local platform info (always available)
+
+    External providers (web_search_generic, hackernews live) require approval or setup.
+    """
+    if not query or not query.strip():
+        return ResearchResult(
+            query=query,
+            provider_id=provider_id,
+            ok=False,
+            error="Empty query",
+        )
+
+    # Safety check: unauthorized scraping patterns
+    forbidden = ["captcha", "bypass", "credential", "password", "token", "secret"]
+    q_lower = query.lower()
+    for term in forbidden:
+        if term in q_lower:
+            eid = _log_research_event(provider_id, query, False, True, False,
+                                       f"Query blocked: forbidden term '{term}'")
+            return ResearchResult(
+                query=query,
+                provider_id=provider_id,
+                ok=False,
+                blocked=True,
+                error=f"Research query blocked: contains forbidden term '{term}'",
+                event_id=eid,
+            )
+
+    # Web search providers require approval + setup
+    if provider_id == "web_search_generic":
+        eid = _log_research_event(provider_id, query, False, False, True,
+                                   "web_search_generic requires API key + approval")
+        return ResearchResult(
+            query=query,
+            provider_id=provider_id,
+            ok=False,
+            approval_required=True,
+            error=(
+                "Web search provider requires API key (Serper/Tavily/Brave) and approval. "
+                "Set SERPER_API_KEY or TAVILY_API_KEY and request approval."
+            ),
+            event_id=eid,
+        )
+
+    # Local knowledge search
+    sources = _query_local_knowledge(query)
+
+    # Always append platform info as a fallback source
+    sources.extend(_query_platform_info(query))
+
+    if not sources:
+        sources = [ResearchSource(
+            title="No results",
+            content=f"No local knowledge records found for query: {query}",
+            url="",
+            provider_id="local_knowledge",
+            score=0.0,
+        )]
+
+    summary = f"Found {len(sources)} source(s) for query '{query}' via {provider_id}."
+    eid = _log_research_event(provider_id, query, True, False, False,
+                               f"Query returned {len(sources)} sources")
+
+    return ResearchResult(
+        query=query,
+        provider_id=provider_id,
+        ok=True,
+        sources=sources,
+        summary=summary,
+        event_id=eid,
+    )
+
+
 def get_research_platform_status() -> Dict[str, Any]:
     """Return research platform status for Mission Control / doctor."""
     reg = ResearchProviderRegistry()
     providers = reg.list_providers()
-    by_status = {}
+    by_status: Dict[str, int] = {}
     for p in providers:
         by_status[p.status] = by_status.get(p.status, 0) + 1
     return {
         "epic": "epic_d",
         "wave": 1,
-        "status": "scaffolded",
+        "status": "ready",
         "provider_count": len(providers),
         "by_status": by_status,
-        "execution_implemented": False,
+        "local_query_implemented": True,
+        "execution_implemented": True,
         "deep_research_loop_implemented": False,
         "approval_gate_enforced": True,
         "web_search_requires_setup": True,
-        "note": "ResearchProvider model + registry exist. Live execution is Wave 1 next slice.",
+        "scraping_blocked": True,
+        "note": "Local knowledge query + platform info implemented. Web search requires API key + approval.",
     }
 
 
 __all__ = [
     "ResearchProvider",
+    "ResearchSource",
+    "ResearchResult",
     "ResearchProviderRegistry",
     "PROVIDER_TYPE_WEB_SEARCH",
     "PROVIDER_TYPE_NEWS",
@@ -188,5 +398,6 @@ __all__ = [
     "POLICY_AUTO",
     "POLICY_REQUIRES_APPROVAL",
     "POLICY_HARD_GATE",
+    "run_local_query",
     "get_research_platform_status",
 ]

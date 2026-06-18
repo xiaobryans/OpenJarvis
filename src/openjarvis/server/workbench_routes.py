@@ -593,50 +593,83 @@ async def workbench_doctor(repo_path: str = ".") -> Dict[str, Any]:
     except Exception as exc:
         checks.append(chk("wave1_platform_registry", "fail", str(exc)))
 
-    # Check 28: Wave 1 Epic A — Skill Platform scaffold
+    # Check 28: Wave 1 Epic A — Skill Platform local execution
     try:
-        from openjarvis.wave.skill_platform import get_skill_platform_status
+        from openjarvis.wave.skill_platform import get_skill_platform_status, run_skill
         info = get_skill_platform_status()
+        # Verify local execution actually works
+        result = run_skill("list_skills")
+        exec_ok = result.ok
         checks.append(chk(
             "wave1_skill_platform",
-            "pass",
-            f"status={info['status']} skills={info['skill_count']} approval_gate={info['approval_gate_enforced']}",
+            "pass" if exec_ok else "warn",
+            (
+                f"status={info['status']} skills={info['skill_count']} "
+                f"local_exec={info.get('local_execution_implemented')} "
+                f"approval_gate={info['approval_gate_enforced']} "
+                f"run_skill_ok={exec_ok}"
+            ),
         ))
     except Exception as exc:
         checks.append(chk("wave1_skill_platform", "fail", str(exc)))
 
-    # Check 29: Wave 1 Epic B — Automation Platform scaffold
+    # Check 29: Wave 1 Epic B — Automation Platform dry-run
     try:
-        from openjarvis.wave.automation_platform import get_automation_platform_status
+        from openjarvis.wave.automation_platform import (
+            AutomationRegistry, AutomationTrigger, TRIGGER_MANUAL, POLICY_AUTO,
+            get_automation_platform_status, dry_run_trigger,
+        )
         info = get_automation_platform_status()
+        reg = AutomationRegistry()
+        reg.register(AutomationTrigger(
+            trigger_id="doctor_test_trigger", name="Doctor Test",
+            trigger_type=TRIGGER_MANUAL, approval_policy=POLICY_AUTO, risk_level="low",
+        ))
+        dr = dry_run_trigger("doctor_test_trigger", registry=reg)
+        dry_ok = dr.ok
         checks.append(chk(
             "wave1_automation_platform",
-            "pass",
-            f"status={info['status']} approval_gate={info['approval_gate_enforced']}",
+            "pass" if dry_ok else "warn",
+            (
+                f"status={info['status']} dry_run={info.get('dry_run_implemented')} "
+                f"approval_gate={info['approval_gate_enforced']} dry_run_ok={dry_ok}"
+            ),
         ))
     except Exception as exc:
         checks.append(chk("wave1_automation_platform", "fail", str(exc)))
 
-    # Check 30: Wave 1 Epic C — Knowledge Platform scaffold
+    # Check 30: Wave 1 Epic C — Knowledge Platform local ingestion
     try:
-        from openjarvis.wave.knowledge_platform import get_knowledge_platform_status
+        from openjarvis.wave.knowledge_platform import get_knowledge_platform_status, ingest_local_source
         info = get_knowledge_platform_status()
+        ingest = ingest_local_source("Doctor check content.", source_id="doctor_check", title="Doctor")
+        ingest_ok = ingest.ok
         checks.append(chk(
             "wave1_knowledge_platform",
-            "pass",
-            f"status={info['status']} sources={info['source_count']} pii_gate={info['pii_sources_require_approval']}",
+            "pass" if ingest_ok else "warn",
+            (
+                f"status={info['status']} sources={info['source_count']} "
+                f"local_ingest={info.get('local_ingestion_implemented')} "
+                f"pii_gate={info['pii_sources_require_approval']} ingest_ok={ingest_ok}"
+            ),
         ))
     except Exception as exc:
         checks.append(chk("wave1_knowledge_platform", "fail", str(exc)))
 
-    # Check 31: Wave 1 Epic D — Research Platform scaffold
+    # Check 31: Wave 1 Epic D — Research Platform local query
     try:
-        from openjarvis.wave.research_platform import get_research_platform_status
+        from openjarvis.wave.research_platform import get_research_platform_status, run_local_query
         info = get_research_platform_status()
+        qr = run_local_query("doctor check", provider_id="local_knowledge")
+        query_ok = qr.ok
         checks.append(chk(
             "wave1_research_platform",
-            "pass",
-            f"status={info['status']} providers={info['provider_count']} approval_gate={info['approval_gate_enforced']}",
+            "pass" if query_ok else "warn",
+            (
+                f"status={info['status']} providers={info['provider_count']} "
+                f"local_query={info.get('local_query_implemented')} "
+                f"scraping_blocked={info.get('scraping_blocked')} query_ok={query_ok}"
+            ),
         ))
     except Exception as exc:
         checks.append(chk("wave1_research_platform", "fail", str(exc)))
@@ -1005,3 +1038,134 @@ def workbench_autopilot_guard() -> dict:
             "No commit, push, shell execution, deploy, delete, or secrets access is allowed here.",
         ],
     }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Wave 1 endpoints
+# ─────────────────────────────────────────────────────────────────────────────
+
+try:
+    from pydantic import BaseModel as _BaseModel  # type: ignore
+
+    class _RunSkillRequest(_BaseModel):
+        skill_id: str
+        context: Dict[str, Any] = {}
+
+    class _IngestTextRequest(_BaseModel):
+        source_id: str
+        text: str
+        title: str = ""
+        content_type: str = "text"
+
+    class _ResearchQueryRequest(_BaseModel):
+        query: str
+        provider_id: str = "local_knowledge"
+
+    class _AutomationDryRunRequest(_BaseModel):
+        trigger_id: str
+
+    _pydantic_ok = True
+except ImportError:
+    _pydantic_ok = False
+
+
+@router.get("/v1/wave/status")
+async def wave_status() -> Dict[str, Any]:
+    """Wave 1–4 platform status for Mission Control."""
+    from openjarvis.wave.platform_registry import get_wave_platform_summary
+    from openjarvis.wave.skill_platform import get_skill_platform_status
+    from openjarvis.wave.automation_platform import get_automation_platform_status
+    from openjarvis.wave.knowledge_platform import get_knowledge_platform_status
+    from openjarvis.wave.research_platform import get_research_platform_status
+    return {
+        "platform": get_wave_platform_summary(),
+        "skill_platform": get_skill_platform_status(),
+        "automation_platform": get_automation_platform_status(),
+        "knowledge_platform": get_knowledge_platform_status(),
+        "research_platform": get_research_platform_status(),
+        "wave2_4_status": "not_implemented",
+        "us13_voice": "HOLD / UNSAFE / PARKED",
+    }
+
+
+@router.get("/v1/wave/skills")
+async def wave_list_skills() -> Dict[str, Any]:
+    """List all registered Wave 1 skills."""
+    from openjarvis.wave.skill_platform import list_wave_skills
+    return {"ok": True, "skills": list_wave_skills()}
+
+
+@router.post("/v1/wave/skills/run")
+async def wave_run_skill(req: Dict[str, Any]) -> Dict[str, Any]:
+    """Execute a Wave 1 skill by ID (approval-gated for high-risk skills)."""
+    from openjarvis.wave.skill_platform import run_skill
+    skill_id = req.get("skill_id", "")
+    context = req.get("context", {})
+    if not skill_id:
+        return {"ok": False, "error": "skill_id required"}
+    result = run_skill(skill_id, context)
+    return result.to_dict()
+
+
+@router.get("/v1/wave/automations")
+async def wave_list_automations() -> Dict[str, Any]:
+    """List all registered Wave 1 automation triggers."""
+    from openjarvis.wave.automation_platform import AutomationRegistry
+    reg = AutomationRegistry()
+    return {"ok": True, "triggers": [t.to_dict() for t in reg.list_triggers()]}
+
+
+@router.post("/v1/wave/automations/dry-run")
+async def wave_automation_dry_run(req: Dict[str, Any]) -> Dict[str, Any]:
+    """Dry-run an automation trigger (approval-gated for high-risk)."""
+    from openjarvis.wave.automation_platform import dry_run_trigger
+    trigger_id = req.get("trigger_id", "")
+    if not trigger_id:
+        return {"ok": False, "error": "trigger_id required"}
+    result = dry_run_trigger(trigger_id)
+    return result.to_dict()
+
+
+@router.post("/v1/wave/knowledge/ingest")
+async def wave_knowledge_ingest(req: Dict[str, Any]) -> Dict[str, Any]:
+    """Ingest local text as a knowledge source."""
+    from openjarvis.wave.knowledge_platform import ingest_local_source
+    source_id = req.get("source_id", "")
+    text = req.get("text", "")
+    if not source_id or not text:
+        return {"ok": False, "error": "source_id and text required"}
+    result = ingest_local_source(
+        text=text,
+        source_id=source_id,
+        title=req.get("title", ""),
+        content_type=req.get("content_type", "text"),
+    )
+    return result.to_dict()
+
+
+@router.get("/v1/wave/knowledge/sources")
+async def wave_knowledge_sources() -> Dict[str, Any]:
+    """List all registered knowledge sources."""
+    from openjarvis.wave.knowledge_platform import KnowledgeSourceRegistry
+    reg = KnowledgeSourceRegistry()
+    return {"ok": True, "sources": [s.to_dict() for s in reg.list_sources()]}
+
+
+@router.post("/v1/wave/research/query")
+async def wave_research_query(req: Dict[str, Any]) -> Dict[str, Any]:
+    """Run a local research query (approval-gated for web providers)."""
+    from openjarvis.wave.research_platform import run_local_query
+    query = req.get("query", "")
+    provider_id = req.get("provider_id", "local_knowledge")
+    if not query:
+        return {"ok": False, "error": "query required"}
+    result = run_local_query(query, provider_id=provider_id)
+    return result.to_dict()
+
+
+@router.get("/v1/wave/research/providers")
+async def wave_research_providers() -> Dict[str, Any]:
+    """List all registered research providers."""
+    from openjarvis.wave.research_platform import ResearchProviderRegistry
+    reg = ResearchProviderRegistry()
+    return {"ok": True, "providers": [p.to_dict() for p in reg.list_providers()]}

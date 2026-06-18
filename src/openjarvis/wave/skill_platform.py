@@ -203,31 +203,209 @@ def list_wave_skills() -> List[Dict[str, Any]]:
     return [s.to_dict() for s in get_skill_registry().list()]
 
 
+# ---------------------------------------------------------------------------
+# Skill execution result
+# ---------------------------------------------------------------------------
+
+@dataclass
+class WaveSkillResult:
+    skill_id: str
+    ok: bool
+    output: Any = None
+    error: str = ""
+    blocked: bool = False
+    approval_required: bool = False
+    event_id: str = ""
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "skill_id": self.skill_id,
+            "ok": self.ok,
+            "output": self.output,
+            "error": self.error,
+            "blocked": self.blocked,
+            "approval_required": self.approval_required,
+            "event_id": self.event_id,
+        }
+
+
+# ---------------------------------------------------------------------------
+# Built-in safe local skill handlers (no external API/key needed)
+# ---------------------------------------------------------------------------
+
+def _handler_platform_status(_context: Dict[str, Any]) -> Any:
+    """Return current Wave 1 platform status."""
+    from openjarvis.wave.platform_registry import get_wave_platform_summary
+    return get_wave_platform_summary()
+
+
+def _handler_list_capabilities(_context: Dict[str, Any]) -> Any:
+    """Return capabilities summary from capabilities registry."""
+    from openjarvis.workbench.capabilities_registry import get_capabilities_summary
+    return get_capabilities_summary()
+
+
+def _handler_list_skills(_context: Dict[str, Any]) -> Any:
+    """Return all registered wave skills."""
+    return list_wave_skills()
+
+
+_SAFE_LOCAL_HANDLERS: Dict[str, Any] = {
+    "platform_status": _handler_platform_status,
+    "list_capabilities": _handler_list_capabilities,
+    "list_skills": _handler_list_skills,
+    # Workbench-backed skills: return status from existing accepted systems
+    "coding_workbench": _handler_list_capabilities,
+    "diff_reviewer": _handler_list_capabilities,
+}
+
+# Skills that require approval before execution (even if induction_approved)
+_EXECUTION_APPROVAL_REQUIRED = frozenset({"browser_automation", "terminal_executor"})
+
+
+def _log_skill_event(
+    skill_id: str,
+    ok: bool,
+    blocked: bool,
+    approval_required: bool,
+    detail: str,
+) -> str:
+    """Log skill execution event; return event id (empty string on failure)."""
+    try:
+        from openjarvis.workbench.event_log import WorkbenchEventLog, EVENT_SKILL_EXECUTED, EVENT_SKILL_BLOCKED, EVENT_APPROVAL_REQUIRED
+        log = WorkbenchEventLog()
+        etype = EVENT_SKILL_BLOCKED if blocked else (EVENT_APPROVAL_REQUIRED if approval_required else EVENT_SKILL_EXECUTED)
+        ev = log.push(
+            session_id="wave1_skill",
+            task_id=skill_id,
+            event_type=etype,
+            title=f"Skill {'blocked' if blocked else 'executed'}: {skill_id}",
+            detail=detail,
+            tone="error" if blocked else ("warning" if approval_required else "success"),
+            metadata={"skill_id": skill_id, "ok": ok},
+        )
+        return ev.id
+    except Exception:
+        return ""
+
+
+def run_skill(
+    skill_id: str,
+    context: Optional[Dict[str, Any]] = None,
+) -> WaveSkillResult:
+    """Execute a Wave skill by ID.
+
+    Virtual built-in skills (list_skills, platform_status, list_capabilities) are
+    handled directly via _SAFE_LOCAL_HANDLERS without needing a registry entry.
+
+    For registry-registered skills:
+      - Safe read-only skills run via local handler if available.
+      - Write-capable / high-risk skills require approval.
+      - Hard-gate skills are blocked.
+    """
+    # 1. Check execution-level approval requirement (always, regardless of registry)
+    if skill_id in _EXECUTION_APPROVAL_REQUIRED:
+        eid = _log_skill_event(skill_id, False, False, True,
+                                f"Skill {skill_id} requires approval for execution")
+        return WaveSkillResult(
+            skill_id=skill_id,
+            ok=False,
+            approval_required=True,
+            error=f"Skill '{skill_id}' requires explicit approval before execution",
+            event_id=eid,
+        )
+
+    # 2. Check if a safe local handler exists (covers virtual and registry-backed skills)
+    handler = _SAFE_LOCAL_HANDLERS.get(skill_id)
+    if handler is not None:
+        try:
+            output = handler(context or {})
+            eid = _log_skill_event(skill_id, True, False, False,
+                                    f"Skill {skill_id} executed successfully")
+            return WaveSkillResult(
+                skill_id=skill_id,
+                ok=True,
+                output=output,
+                event_id=eid,
+            )
+        except Exception as exc:
+            eid = _log_skill_event(skill_id, False, False, False, str(exc))
+            return WaveSkillResult(
+                skill_id=skill_id,
+                ok=False,
+                error=str(exc),
+                event_id=eid,
+            )
+
+    # 3. Look up in registry for additional policy checks
+    reg = get_skill_registry()
+    manifest = reg.get(skill_id)
+
+    if manifest is None:
+        return WaveSkillResult(
+            skill_id=skill_id,
+            ok=False,
+            error=f"Skill not found: {skill_id}",
+        )
+
+    # Hard-gate skills without approval are blocked
+    if manifest.approval_policy == APPROVAL_POLICY_HARD_GATE and not manifest.induction_approved:
+        eid = _log_skill_event(skill_id, False, True, False,
+                                f"Hard-gate skill {skill_id} not approved")
+        return WaveSkillResult(
+            skill_id=skill_id,
+            ok=False,
+            blocked=True,
+            error=f"Hard-gate skill '{skill_id}' requires explicit owner approval",
+            event_id=eid,
+        )
+
+    # No local handler — approval required to wire execution
+    eid = _log_skill_event(skill_id, False, False, True,
+                            f"No local handler for {skill_id}")
+    return WaveSkillResult(
+        skill_id=skill_id,
+        ok=False,
+        approval_required=True,
+        error=(
+            f"Skill '{skill_id}' has no local handler — "
+            "requires setup or approval to wire execution"
+        ),
+        event_id=eid,
+    )
+
+
 def get_skill_platform_status() -> Dict[str, Any]:
     reg = get_skill_registry()
     skills = reg.list()
-    by_status = {}
+    by_status: Dict[str, int] = {}
     for s in skills:
         by_status[s.status] = by_status.get(s.status, 0) + 1
+    executable = list(_SAFE_LOCAL_HANDLERS.keys())
     return {
         "epic": "epic_a",
         "wave": 1,
-        "status": "scaffolded",
+        "status": "ready",
         "skill_count": len(skills),
         "by_status": by_status,
+        "executable_skills": executable,
+        "executable_count": len(executable),
         "approval_gate_enforced": True,
         "induction_pipeline_implemented": False,
-        "note": "Skill registry + manifest model exist. Full induction pipeline is Wave 1 next slice.",
+        "local_execution_implemented": True,
+        "note": "Local skill execution wired for read-only built-ins. Induction pipeline is next slice.",
     }
 
 
 __all__ = [
     "WaveSkillManifest",
+    "WaveSkillResult",
     "WaveSkillRegistry",
     "APPROVAL_POLICY_AUTO",
     "APPROVAL_POLICY_REQUIRES_APPROVAL",
     "APPROVAL_POLICY_HARD_GATE",
     "get_skill_registry",
     "list_wave_skills",
+    "run_skill",
     "get_skill_platform_status",
 ]
