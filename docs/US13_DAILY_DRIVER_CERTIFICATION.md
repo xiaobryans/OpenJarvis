@@ -24,7 +24,7 @@
 | 4. Connectors | GitHub/source status | EXTERNALLY_NOT_PROVEN | GitHub PAT not configured. | Set JARVIS_GITHUB_TOKEN. |
 | 4. Connectors | OpenClaw linkage | EXTERNALLY_NOT_PROVEN | `check_openclaw_linkage` returns NOT_CONFIGURED. OpenClaw workspace not wired. | Configure OpenClaw handoff per OMNIX_WORKBENCH.md. |
 | 4. Connectors | OMNIX linkage | DONE | `check_project_linkage_status` returns PASS. OMNIX project linked. | — |
-| 5. Voice | True wake-word | HOLD | `.wake_worker_venv` with `openwakeword` is installed (`worker_available=True`). Wake-word listener is **configured but not started** — requires explicit `WakeWordBridge.start()` or `jarvis serve --voice`. Not proven via live activation in this session. | Run: `jarvis serve --voice` or call `VoicePipeline.start()`. Say "hey jarvis" with mic open. |
+| 5. Voice | True wake-word | HOLD | `.wake_worker_venv` with `openwakeword` is installed (`worker_available=True`). Wake-word listener is **configured but not started** — requires `jarvis voice start`. Not proven via live activation in this session. | Run: `jarvis voice start`. Say "hey jarvis" with mic open. |
 | 5. Voice | Push-to-talk hotkey (Cmd+Shift+Space) | DONE | `wakeword_fallback.py` registers `cmd+shift+space` via `pynput.GlobalHotKeys`. Configurable via `JARVIS_VOICE_HOTKEY`. Shown in Settings > Input & Voice. | — |
 | 5. Voice | Model/settings palette (Cmd+K) | DONE | Opens `CommandPalette` for model management and API keys. **Not a voice hotkey.** Shown correctly in Settings > Input & Voice. | — |
 | 5. Voice | Manual chatbox | DONE | `ChatPage.tsx` always available. | — |
@@ -66,23 +66,25 @@ US13 is HOLD because:
 
 **Bryan local verification commands** (run to upgrade to ACCEPT):
 ```bash
-# 1. Start the server with voice enabled
-jarvis serve --voice
+# 1. Check full voice pipeline readiness (no secrets printed)
+jarvis voice status
 
-# 2. In another terminal, check voice status
-curl -s http://localhost:8000/v1/voice/status | python3 -m json.tool
+# 2. Test TTS (macOS 'say' command — speaks "Jarvis is ready.")
+jarvis voice test-tts
 
-# 3. Say "hey jarvis" — verify activation appears in server logs
-# Expected: "Wake word detected! model=hey_jarvis score=X.XXX"
+# 3. Check STT config (does not record audio)
+jarvis voice test-stt
 
-# 4. Test push-to-talk hotkey (server must be running)
-# Press Cmd+Shift+Space — verify recording starts
+# 4. Start the wake-word listener (blocks; say "hey jarvis" to activate)
+jarvis voice start
+# Expected output: "Wake word detected! model='hey_jarvis_v0.1' score=X.XXX"
+# Press Ctrl+C to stop.
 
-# 5. Test TTS
-python3 -c "from openjarvis.autonomy.voice_pipeline import tts_test; print(tts_test())"
-# Expected: {"ok": true, "engine": "macos_say", ...}
+# 5. Test push-to-talk hotkey (server must be running in a separate terminal)
+jarvis serve &
+# Press Cmd+Shift+Space — verify voice recording starts in the frontend
 
-# 6. Run all voice tests
+# 6. Run all voice readiness tests
 .venv/bin/python3 -m pytest tests/test_us13_voice_readiness.py -v
 ```
 

@@ -99,9 +99,9 @@ _KNOWN_LIMITATIONS: List[Dict[str, str]] = [
             "and true wake-word (requires VoicePipeline.start() or CLI start)."
         ),
         "workaround": (
-            "To activate wake-word: run 'jarvis serve' with --voice flag, or call "
-            "VoicePipeline.start() from Python. Push-to-talk hotkey (Cmd+Shift+Space) "
-            "works without starting the listener."
+            "To activate wake-word: run 'jarvis voice start' (starts the isolated worker). "
+            "Push-to-talk hotkey (Cmd+Shift+Space) works without starting the listener. "
+            "Check status with: jarvis voice status"
         ),
     },
     {

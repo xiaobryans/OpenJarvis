@@ -33,7 +33,7 @@
 |---|---|---|---|
 | Slack/Telegram guided setup in UI | EXTERNALLY_NOT_PROVEN | Connector tokens are environment-only; no OAuth flow in packaged app | Add OAuth callback flow post-V1 |
 | macOS permission wizard (programmatic request) | EXTERNALLY_NOT_PROVEN | macOS does not allow programmatic Accessibility/Screen Recording permission prompts from non-entitlement paths | Entitlements declared; user must grant in System Settings > Privacy & Security |
-| Wake-word activation (auto-start) | HOLD | `.wake_worker_venv` with openwakeword is installed. Wake-word listener requires explicit `VoicePipeline.start()` or `jarvis serve --voice`. Configuration is correct; live activation not proven in this session. | Run `jarvis serve --voice` and say "hey jarvis" |
+| Wake-word activation (auto-start) | HOLD | `.wake_worker_venv` with openwakeword is installed. Wake-word listener requires explicit `jarvis voice start`. Configuration is correct; live activation not proven in this session. | Run `jarvis voice start` and say "hey jarvis" |
 
 ---
 

@@ -632,7 +632,7 @@ export function SettingsPage() {
             </SettingRow>
 
             {/* Path 3: True wake-word */}
-            <SettingRow label="Wake-word (voice wake)" description="'Hey Jarvis' — requires VoicePipeline.start() or --voice flag">
+            <SettingRow label="Wake-word (voice wake)" description="'Hey Jarvis' — run: jarvis voice start">
               <div className="flex items-center gap-1.5 text-xs">
                 <span
                   className="w-2 h-2 rounded-full shrink-0"
@@ -652,8 +652,8 @@ export function SettingsPage() {
             </SettingRow>
             {voiceStatus?.true_wakeword_worker_available && (
               <div className="text-xs mt-1 mb-2 px-1 rounded py-2" style={{ background: 'var(--color-bg-secondary)', color: 'var(--color-text-secondary)', border: '1px solid var(--color-border)' }}>
-                <span className="font-medium">To start:</span> run <code className="font-mono px-1">jarvis serve --voice</code> or call <code className="font-mono px-1">VoicePipeline.start()</code>.
-                Phrases: &ldquo;hey jarvis&rdquo;.
+                <span className="font-medium">To start:</span> run <code className="font-mono px-1">jarvis voice start</code>.
+                Status: <code className="font-mono px-1">jarvis voice status</code>. Phrases: &ldquo;hey jarvis&rdquo;.
               </div>
             )}
 
