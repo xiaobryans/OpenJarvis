@@ -36,11 +36,13 @@ import io
 import logging
 import os
 import queue
+import re
 import subprocess
 import threading
 import time
 import wave
-from typing import Any, Callable, Dict, List, Optional
+from dataclasses import dataclass
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -147,8 +149,217 @@ def record_command_audio(
 
 
 # ---------------------------------------------------------------------------
+# Speech / silence gate — reject ambient noise and STT hallucinations
+# ---------------------------------------------------------------------------
+
+# int16 mono @ 16 kHz — conservative; real speech usually exceeds both.
+_MIN_SPEECH_RMS = 250.0
+_MIN_SPEECH_PEAK = 700
+
+# Cloud STT confidence when the backend exposes it (e.g. Deepgram).
+_MIN_STT_CONFIDENCE = 0.55
+
+# Whisper avg_logprob is log-probability; closer to 0 is stronger.
+_MIN_SEGMENT_AVG_LOGPROB = -0.95
+
+# Known silence/noise hallucinations from Whisper-class models on quiet clips.
+_STT_HALLUCINATION_FRAGMENTS: Tuple[str, ...] = (
+    "thank you for watching",
+    "thanks for watching",
+    "please subscribe",
+    "like and subscribe",
+    "subtitles by",
+    "subtitle by",
+    "transcribed by",
+    "copyright",
+    "all rights reserved",
+    "music playing",
+    "applause",
+    "[blank_audio]",
+    "[silence]",
+    "www.",
+    "http://",
+    "https://",
+)
+
+_STT_NOISE_EXACT: frozenset[str] = frozenset({
+    ".",
+    "..",
+    "...",
+    "a",
+    "ah",
+    "hmm",
+    "hm",
+    "i",
+    "music",
+    "oh",
+    "ok",
+    "okay",
+    "silence",
+    "so",
+    "thank you",
+    "thanks",
+    "the",
+    "um",
+    "uh",
+    "you",
+})
+
+
+@dataclass(frozen=True)
+class VoiceTranscriptDecision:
+    """Whether a captured clip + STT output may route to model/TTS."""
+
+    accepted: bool
+    text: str
+    reason: str
+
+
+def wav_audio_stats(wav_bytes: bytes) -> Tuple[float, int]:
+    """Return (RMS, peak) for int16 PCM inside a WAV container."""
+    try:
+        import numpy as np
+    except ImportError as exc:
+        raise ImportError(
+            f"numpy not available in main venv: {exc}. "
+            "It is listed in pyproject.toml dependencies."
+        ) from exc
+
+    try:
+        with wave.open(io.BytesIO(wav_bytes), "rb") as wf:
+            frames = wf.readframes(wf.getnframes())
+    except Exception:
+        return 0.0, 0
+    if not frames:
+        return 0.0, 0
+    samples = np.frombuffer(frames, dtype=np.int16)
+    if samples.size == 0:
+        return 0.0, 0
+    rms = float(np.sqrt(np.mean(samples.astype(np.float64) ** 2)))
+    peak = int(np.max(np.abs(samples)))
+    return rms, peak
+
+
+def audio_has_speech_energy(wav_bytes: bytes) -> Tuple[bool, float, int]:
+    """Return whether the clip likely contains speech-level energy."""
+    rms, peak = wav_audio_stats(wav_bytes)
+    return (rms >= _MIN_SPEECH_RMS or peak >= _MIN_SPEECH_PEAK), rms, peak
+
+
+def _normalize_transcript_for_gate(text: str) -> str:
+    t = text.lower().strip()
+    t = re.sub(r"[^\w\s']", " ", t)
+    return " ".join(t.split())
+
+
+def _best_segment_logprob(result: Any) -> Optional[float]:
+    probs = [
+        seg.confidence
+        for seg in getattr(result, "segments", [])
+        if getattr(seg, "confidence", None) is not None
+    ]
+    if not probs:
+        return None
+    return max(probs)
+
+
+def evaluate_voice_transcript(
+    text: str,
+    result: Any,
+    *,
+    wav_bytes: bytes,
+    is_stop_phrase: bool = False,
+) -> VoiceTranscriptDecision:
+    """Decide if STT output represents real speech worth routing.
+
+    Stop phrases are checked separately and bypass hallucination rejection.
+    """
+    cleaned = text.strip()
+    if not cleaned:
+        return VoiceTranscriptDecision(False, "", "empty_transcript")
+
+    normalized = _normalize_transcript_for_gate(cleaned)
+    if not normalized:
+        return VoiceTranscriptDecision(False, "", "empty_transcript")
+
+    if is_stop_phrase:
+        return VoiceTranscriptDecision(True, cleaned, "stop_phrase")
+
+    has_energy, rms, peak = audio_has_speech_energy(wav_bytes)
+    if not has_energy:
+        logger.info(
+            "Discarding clip with insufficient speech energy (rms=%.1f peak=%d)",
+            rms,
+            peak,
+        )
+        return VoiceTranscriptDecision(False, "", "low_audio_energy")
+
+    if normalized in _STT_NOISE_EXACT:
+        return VoiceTranscriptDecision(False, "", "noise_fragment")
+
+    for fragment in _STT_HALLUCINATION_FRAGMENTS:
+        if fragment in normalized:
+            return VoiceTranscriptDecision(False, "", "hallucination_fragment")
+
+    stt_confidence = getattr(result, "confidence", None)
+    if stt_confidence is not None and stt_confidence < _MIN_STT_CONFIDENCE:
+        return VoiceTranscriptDecision(False, "", "low_stt_confidence")
+
+    best_logprob = _best_segment_logprob(result)
+    if best_logprob is not None and best_logprob < _MIN_SEGMENT_AVG_LOGPROB:
+        return VoiceTranscriptDecision(False, "", "low_segment_confidence")
+
+    return VoiceTranscriptDecision(True, cleaned, "accepted")
+
+
+# ---------------------------------------------------------------------------
 # STT — uses existing speech backends via voice_pipeline status check
 # ---------------------------------------------------------------------------
+
+
+def transcribe_command_result(
+    audio_bytes: bytes,
+    language: str = "en",
+) -> Any:
+    """Transcribe WAV audio bytes using the configured STT backend.
+
+    Returns the backend ``TranscriptionResult`` so voice routing can apply
+    confidence/no-speech gates before model/TTS.
+    """
+    from openjarvis.autonomy.voice_pipeline import STTEngine, get_stt_status
+
+    stt = get_stt_status()
+    engine = stt.get("stt_status", STTEngine.NOT_CONFIGURED)
+
+    logger.debug(
+        "Transcribing via STT engine=%s language=%s bytes=%d",
+        engine,
+        language,
+        len(audio_bytes),
+    )
+
+    if engine == STTEngine.FASTER_WHISPER:
+        from openjarvis.speech.faster_whisper import FasterWhisperBackend
+
+        backend = FasterWhisperBackend()
+        return backend.transcribe(audio_bytes, format="wav", language=language)
+
+    if engine == STTEngine.OPENAI_WHISPER:
+        from openjarvis.speech.openai_whisper import OpenAIWhisperBackend
+
+        backend = OpenAIWhisperBackend()
+        return backend.transcribe(audio_bytes, format="wav", language=language)
+
+    if engine == STTEngine.DEEPGRAM:
+        from openjarvis.speech.deepgram import DeepgramBackend
+
+        backend = DeepgramBackend()
+        return backend.transcribe(audio_bytes, format="wav", language=language)
+
+    raise RuntimeError(
+        f"STT not configured (status={engine!r}). "
+        "Install faster-whisper or set OPENAI_API_KEY / DEEPGRAM_API_KEY."
+    )
 
 
 def transcribe_command(audio_bytes: bytes, language: str = "en") -> str:
@@ -159,41 +370,10 @@ def transcribe_command(audio_bytes: bytes, language: str = "en") -> str:
     Language defaults to 'en' to prevent Malay/Indonesian misdetection
     on short clips (same fix as the packaged-app STT path in api_routes.py).
     """
-    from openjarvis.autonomy.voice_pipeline import STTEngine, get_stt_status
-
-    stt = get_stt_status()
-    engine = stt.get("stt_status", STTEngine.NOT_CONFIGURED)
-
-    logger.debug("Transcribing via STT engine=%s language=%s bytes=%d", engine, language, len(audio_bytes))
-
-    if engine == STTEngine.FASTER_WHISPER:
-        from openjarvis.speech.faster_whisper import FasterWhisperBackend
-        backend = FasterWhisperBackend()
-        result = backend.transcribe(audio_bytes, format="wav", language=language)
-        text = result.text.strip()
-        logger.info("STT transcript: %r", text)
-        return text
-
-    if engine == STTEngine.OPENAI_WHISPER:
-        from openjarvis.speech.openai_whisper import OpenAIWhisperBackend
-        backend = OpenAIWhisperBackend()
-        result = backend.transcribe(audio_bytes, format="wav", language=language)
-        text = result.text.strip()
-        logger.info("STT transcript: %r", text)
-        return text
-
-    if engine == STTEngine.DEEPGRAM:
-        from openjarvis.speech.deepgram import DeepgramBackend
-        backend = DeepgramBackend()
-        result = backend.transcribe(audio_bytes, format="wav", language=language)
-        text = result.text.strip()
-        logger.info("STT transcript: %r", text)
-        return text
-
-    raise RuntimeError(
-        f"STT not configured (status={engine!r}). "
-        "Install faster-whisper or set OPENAI_API_KEY / DEEPGRAM_API_KEY."
-    )
+    result = transcribe_command_result(audio_bytes, language=language)
+    text = result.text.strip()
+    logger.info("STT transcript: %r", text)
+    return text
 
 
 # ---------------------------------------------------------------------------
@@ -781,7 +961,10 @@ class VoiceConversationLoop:
                 self._set_state("transcribing")
                 self._emit_event({"type": "interim_transcript", "text": "Transcribing..."})
                 try:
-                    text = transcribe_command(audio, language=self._language)
+                    stt_result = transcribe_command_result(
+                        audio, language=self._language
+                    )
+                    text = stt_result.text.strip()
                 except Exception as exc:
                     logger.error("STT failed: %s", exc)
                     break
@@ -789,9 +972,23 @@ class VoiceConversationLoop:
                 self._emit_latency("stt_duration_ms", (_stt_end - _stt_start) * 1000)
                 self._emit_latency("speech_end_to_stt_final_ms", (_stt_end - _rec_end) * 1000)
 
-                if not text.strip():
-                    logger.info("Empty transcript — ending session")
-                    break
+                is_stop = self._is_stop_phrase(text) if text else False
+                decision = evaluate_voice_transcript(
+                    text,
+                    stt_result,
+                    wav_bytes=audio,
+                    is_stop_phrase=is_stop,
+                )
+                if not decision.accepted:
+                    logger.info(
+                        "Non-speech capture discarded (%s) — not routing to model/TTS",
+                        decision.reason,
+                    )
+                    if is_first_turn:
+                        logger.info("No speech after wake — ending session")
+                        break
+                    self._set_state("follow_up_listening")
+                    continue
 
                 if not self._session_allows_model_and_tts(
                     session_id, is_first_turn=is_first_turn
@@ -802,13 +999,14 @@ class VoiceConversationLoop:
                     )
                     break
 
+                text = decision.text
                 logger.info("Transcript: %r", text)
                 self._emit_event({"type": "transcript", "text": text})
 
                 # ------------------------------------------------------ #
                 # 5. Stop-phrase check                                     #
                 # ------------------------------------------------------ #
-                if self._is_stop_phrase(text):
+                if is_stop:
                     logger.info("Stop phrase detected: %r", text)
                     end_reason = "stop_phrase"
                     self._tts.cancel()
@@ -938,9 +1136,14 @@ class VoiceConversationLoop:
 __all__ = [
     "VoiceConversationLoop",
     "STOP_PHRASES",
+    "VoiceTranscriptDecision",
     "time_of_day_greeting",
     "record_command_audio",
+    "wav_audio_stats",
+    "audio_has_speech_energy",
+    "evaluate_voice_transcript",
     "transcribe_command",
+    "transcribe_command_result",
     "query_jarvis_text",
     "play_acknowledgement_cue",
     "speak_response",

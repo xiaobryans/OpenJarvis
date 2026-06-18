@@ -80,7 +80,7 @@ class FasterWhisperBackend(SpeechBackend):
                 text=seg.text.strip(),
                 start=seg.start,
                 end=seg.end,
-                confidence=None,
+                confidence=getattr(seg, "avg_logprob", None),
             )
             for seg in segments_list
         ]

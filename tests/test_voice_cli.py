@@ -47,6 +47,28 @@ def _run_cli(*args: str, check: bool = False) -> subprocess.CompletedProcess:
     )
 
 
+def _voice_test_wav(amplitude: int = 12000) -> bytes:
+    """Build mono int16 WAV bytes for speech-gate tests."""
+    import io
+    import wave
+
+    import numpy as np
+
+    if amplitude:
+        samples = (
+            np.sin(np.linspace(0, 20 * np.pi, 16000)) * amplitude
+        ).astype(np.int16)
+    else:
+        samples = np.zeros(16000, dtype=np.int16)
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(16000)
+        wf.writeframes(samples.tobytes())
+    return buf.getvalue()
+
+
 # ---------------------------------------------------------------------------
 # 1. Importable
 # ---------------------------------------------------------------------------
@@ -1471,32 +1493,32 @@ class TestCommandRecordingFeedsSTT:
         """transcribe_command must use get_stt_status() to pick backend."""
         import inspect
         from openjarvis.autonomy import voice_conversation
-        src = inspect.getsource(voice_conversation.transcribe_command)
+        src = inspect.getsource(voice_conversation.transcribe_command_result)
         assert "get_stt_status" in src, (
-            "transcribe_command must call get_stt_status() to pick the configured backend"
+            "transcribe_command_result must call get_stt_status() to pick the configured backend"
         )
 
     def test_transcribe_command_uses_faster_whisper_backend(self):
         """transcribe_command must use FasterWhisperBackend for faster_whisper engine."""
         import inspect
         from openjarvis.autonomy import voice_conversation
-        src = inspect.getsource(voice_conversation.transcribe_command)
+        src = inspect.getsource(voice_conversation.transcribe_command_result)
         assert "FasterWhisperBackend" in src
 
     def test_transcribe_command_uses_openai_whisper_backend(self):
         """transcribe_command must use OpenAIWhisperBackend for openai_whisper engine."""
         import inspect
         from openjarvis.autonomy import voice_conversation
-        src = inspect.getsource(voice_conversation.transcribe_command)
+        src = inspect.getsource(voice_conversation.transcribe_command_result)
         assert "OpenAIWhisperBackend" in src
 
     def test_transcribe_command_defaults_language_en(self):
         """transcribe_command must default language to 'en'."""
         import inspect
-        from openjarvis.autonomy.voice_conversation import transcribe_command
-        sig = inspect.signature(transcribe_command)
+        from openjarvis.autonomy.voice_conversation import transcribe_command_result
+        sig = inspect.signature(transcribe_command_result)
         assert sig.parameters["language"].default == "en", (
-            "transcribe_command language default must be 'en' to prevent "
+            "transcribe_command_result language default must be 'en' to prevent "
             "Malay/Indonesian misdetection on short English clips"
         )
 
@@ -1504,7 +1526,7 @@ class TestCommandRecordingFeedsSTT:
         """transcribe_command must pass language kwarg to the STT backend."""
         import inspect
         from openjarvis.autonomy import voice_conversation
-        src = inspect.getsource(voice_conversation.transcribe_command)
+        src = inspect.getsource(voice_conversation.transcribe_command_result)
         assert "language=language" in src
 
     def test_record_command_audio_returns_wav_format(self):
@@ -2236,7 +2258,8 @@ class TestVoiceSessionPrivacyBoundary:
 
         def _transcribe(*_args, **_kwargs):
             loop._end_session(99, reason="stopped")
-            return "hello jarvis"
+            from openjarvis.speech._stubs import TranscriptionResult
+            return TranscriptionResult(text="hello jarvis")
 
         with patch(
             "openjarvis.autonomy.voice_conversation.play_acknowledgement_cue",
@@ -2244,7 +2267,7 @@ class TestVoiceSessionPrivacyBoundary:
             "openjarvis.autonomy.voice_conversation.record_command_audio",
             return_value=b"wav",
         ), patch(
-            "openjarvis.autonomy.voice_conversation.transcribe_command",
+            "openjarvis.autonomy.voice_conversation.transcribe_command_result",
             side_effect=_transcribe,
         ), patch(
             "openjarvis.autonomy.voice_conversation.query_jarvis_text",
@@ -2274,11 +2297,14 @@ class TestVoiceSessionPrivacyBoundary:
 
         def _transcribe(*_args, **_kwargs):
             turn["n"] += 1
-            return "hello"
+            from openjarvis.speech._stubs import TranscriptionResult
+            return TranscriptionResult(text="What is the weather today")
 
         def _speak(*_args, **_kwargs):
             loop._session_deadline = time.time() - 1.0
             return True
+
+        speech_wav = _voice_test_wav(12000)
 
         with patch(
             "openjarvis.autonomy.voice_conversation.play_acknowledgement_cue",
@@ -2286,9 +2312,9 @@ class TestVoiceSessionPrivacyBoundary:
             loop, "_extend_session_deadline"
         ), patch(
             "openjarvis.autonomy.voice_conversation.record_command_audio",
-            return_value=b"wav",
+            return_value=speech_wav,
         ) as mock_record, patch(
-            "openjarvis.autonomy.voice_conversation.transcribe_command",
+            "openjarvis.autonomy.voice_conversation.transcribe_command_result",
             side_effect=_transcribe,
         ), patch(
             "openjarvis.autonomy.voice_conversation.query_jarvis_text",
@@ -2332,10 +2358,12 @@ class TestVoiceSessionPrivacyBoundary:
             "openjarvis.autonomy.voice_conversation.play_acknowledgement_cue",
         ), patch(
             "openjarvis.autonomy.voice_conversation.record_command_audio",
-            return_value=b"wav",
+            return_value=_voice_test_wav(12000),
         ), patch(
-            "openjarvis.autonomy.voice_conversation.transcribe_command",
-            return_value="stop listening",
+            "openjarvis.autonomy.voice_conversation.transcribe_command_result",
+            return_value=__import__(
+                "openjarvis.speech._stubs", fromlist=["TranscriptionResult"]
+            ).TranscriptionResult(text="stop listening"),
         ), patch(
             "openjarvis.autonomy.voice_conversation.query_jarvis_text",
         ) as mock_query, patch(
@@ -2407,6 +2435,278 @@ class TestVoiceSessionPrivacyBoundary:
         sig = inspect.signature(voice_conversation.speak_response)
         assert "playback" in sig.parameters
         assert "cancel_check" in sig.parameters
+
+
+class TestVoiceSpeechGate:
+    """US13 — silence/noise/STT hallucinations must not route to model/TTS."""
+
+    def test_silent_audio_rejected_by_gate(self):
+        from openjarvis.autonomy.voice_conversation import evaluate_voice_transcript
+        from openjarvis.speech._stubs import TranscriptionResult
+
+        silent = _voice_test_wav(0)
+        decision = evaluate_voice_transcript(
+            "thank you",
+            TranscriptionResult(text="thank you"),
+            wav_bytes=silent,
+        )
+        assert decision.accepted is False
+        assert decision.reason in ("low_audio_energy", "noise_fragment", "hallucination_fragment")
+
+    def test_hallucination_fragment_rejected(self):
+        from openjarvis.autonomy.voice_conversation import evaluate_voice_transcript
+        from openjarvis.speech._stubs import TranscriptionResult
+
+        speech = _voice_test_wav(12000)
+        decision = evaluate_voice_transcript(
+            "Thank you for watching!",
+            TranscriptionResult(text="Thank you for watching!"),
+            wav_bytes=speech,
+        )
+        assert decision.accepted is False
+        assert decision.reason == "hallucination_fragment"
+
+    def test_valid_speech_accepted(self):
+        from openjarvis.autonomy.voice_conversation import evaluate_voice_transcript
+        from openjarvis.speech._stubs import TranscriptionResult
+
+        speech = _voice_test_wav(12000)
+        decision = evaluate_voice_transcript(
+            "What is the capital of France?",
+            TranscriptionResult(text="What is the capital of France?", confidence=0.92),
+            wav_bytes=speech,
+        )
+        assert decision.accepted is True
+        assert decision.text == "What is the capital of France?"
+
+    def test_stop_phrase_bypasses_hallucination_gate(self):
+        from openjarvis.autonomy.voice_conversation import evaluate_voice_transcript
+        from openjarvis.speech._stubs import TranscriptionResult
+
+        silent = _voice_test_wav(0)
+        decision = evaluate_voice_transcript(
+            "stop listening",
+            TranscriptionResult(text="stop listening"),
+            wav_bytes=silent,
+            is_stop_phrase=True,
+        )
+        assert decision.accepted is True
+
+    def test_silence_does_not_call_query_jarvis_text(self):
+        import time
+        from unittest.mock import patch
+
+        from openjarvis.autonomy.voice_conversation import VoiceConversationLoop
+        from openjarvis.speech._stubs import TranscriptionResult
+
+        loop = VoiceConversationLoop()
+        loop._session_id = 10
+        loop._active_session_id = 10
+        loop._session_deadline = time.time() + 30.0
+        loop._wake_detected_monotonic = time.monotonic()
+
+        with patch(
+            "openjarvis.autonomy.voice_conversation.play_acknowledgement_cue",
+        ), patch(
+            "openjarvis.autonomy.voice_conversation.record_command_audio",
+            return_value=_voice_test_wav(0),
+        ), patch(
+            "openjarvis.autonomy.voice_conversation.transcribe_command_result",
+            return_value=TranscriptionResult(text="thank you"),
+        ), patch(
+            "openjarvis.autonomy.voice_conversation.query_jarvis_text",
+        ) as mock_query, patch(
+            "openjarvis.autonomy.voice_conversation.speak_response",
+            return_value=True,
+        ) as mock_speak:
+            loop._process_turn(10)
+
+        mock_query.assert_not_called()
+        mock_speak.assert_not_called()
+
+    def test_silence_does_not_call_speak_response_on_follow_up(self):
+        import time
+        from unittest.mock import patch
+
+        from openjarvis.autonomy.voice_conversation import VoiceConversationLoop
+        from openjarvis.speech._stubs import TranscriptionResult
+
+        loop = VoiceConversationLoop()
+        loop._session_id = 11
+        loop._active_session_id = 11
+        loop._session_deadline = time.time() + 30.0
+        loop._wake_detected_monotonic = time.monotonic()
+        turn = {"n": 0}
+
+        def _transcribe(*_args, **_kwargs):
+            turn["n"] += 1
+            if turn["n"] == 1:
+                return TranscriptionResult(
+                    text="What is the weather today?",
+                    confidence=0.9,
+                )
+            loop._session_deadline = time.time() - 1.0
+            return TranscriptionResult(text="you")
+
+        speech = _voice_test_wav(12000)
+        silent = _voice_test_wav(0)
+
+        def _record(**_kwargs):
+            return speech if turn["n"] == 0 else silent
+
+        with patch(
+            "openjarvis.autonomy.voice_conversation.play_acknowledgement_cue",
+        ), patch.object(
+            loop, "_extend_session_deadline"
+        ), patch(
+            "openjarvis.autonomy.voice_conversation.record_command_audio",
+            side_effect=_record,
+        ) as mock_record, patch(
+            "openjarvis.autonomy.voice_conversation.transcribe_command_result",
+            side_effect=_transcribe,
+        ), patch(
+            "openjarvis.autonomy.voice_conversation.query_jarvis_text",
+            return_value="Sunny.",
+        ) as mock_query, patch(
+            "openjarvis.autonomy.voice_conversation.speak_response",
+            return_value=True,
+        ) as mock_speak:
+            loop._process_turn(11)
+
+        assert mock_query.call_count == 1
+        assert mock_speak.call_count == 1
+        assert mock_record.call_count == 2
+
+    def test_valid_speech_routes_during_active_session(self):
+        import time
+        from unittest.mock import patch
+
+        from openjarvis.autonomy.voice_conversation import VoiceConversationLoop
+        from openjarvis.speech._stubs import TranscriptionResult
+
+        loop = VoiceConversationLoop()
+        loop._session_id = 12
+        loop._active_session_id = 12
+        loop._session_deadline = time.time() + 30.0
+        loop._wake_detected_monotonic = time.monotonic()
+
+        def _speak(*_args, **_kwargs):
+            loop._session_deadline = time.time() - 1.0
+            return True
+
+        with patch(
+            "openjarvis.autonomy.voice_conversation.play_acknowledgement_cue",
+        ), patch.object(
+            loop, "_extend_session_deadline"
+        ), patch(
+            "openjarvis.autonomy.voice_conversation.record_command_audio",
+            return_value=_voice_test_wav(12000),
+        ), patch(
+            "openjarvis.autonomy.voice_conversation.transcribe_command_result",
+            return_value=TranscriptionResult(
+                text="What is two plus two?",
+                confidence=0.95,
+            ),
+        ), patch(
+            "openjarvis.autonomy.voice_conversation.query_jarvis_text",
+            return_value="Four.",
+        ) as mock_query, patch(
+            "openjarvis.autonomy.voice_conversation.speak_response",
+            side_effect=_speak,
+        ) as mock_speak:
+            loop._process_turn(12)
+
+        mock_query.assert_called_once()
+        mock_speak.assert_called_once()
+
+    def test_follow_up_silence_waits_without_routing(self):
+        import time
+        from unittest.mock import patch
+
+        from openjarvis.autonomy.voice_conversation import VoiceConversationLoop
+        from openjarvis.speech._stubs import TranscriptionResult
+
+        loop = VoiceConversationLoop(session_timeout=0.15)
+        loop._session_id = 13
+        loop._active_session_id = 13
+        loop._session_deadline = time.time() + 30.0
+        loop._wake_detected_monotonic = time.monotonic()
+        turn = {"n": 0}
+
+        def _transcribe(*_args, **_kwargs):
+            turn["n"] += 1
+            if turn["n"] == 1:
+                return TranscriptionResult(text="Hello there", confidence=0.9)
+            loop._session_deadline = time.time() - 1.0
+            return TranscriptionResult(text="")
+
+        def _record(**_kwargs):
+            return _voice_test_wav(12000) if turn["n"] == 0 else _voice_test_wav(0)
+
+        with patch(
+            "openjarvis.autonomy.voice_conversation.play_acknowledgement_cue",
+        ), patch.object(
+            loop, "_extend_session_deadline"
+        ), patch(
+            "openjarvis.autonomy.voice_conversation.record_command_audio",
+            side_effect=_record,
+        ) as mock_record, patch(
+            "openjarvis.autonomy.voice_conversation.transcribe_command_result",
+            side_effect=_transcribe,
+        ), patch(
+            "openjarvis.autonomy.voice_conversation.query_jarvis_text",
+            return_value="Hi.",
+        ) as mock_query, patch(
+            "openjarvis.autonomy.voice_conversation.speak_response",
+            return_value=True,
+        ) as mock_speak:
+            loop._process_turn(13)
+
+        assert mock_query.call_count == 1
+        assert mock_speak.call_count == 1
+        assert mock_record.call_count >= 2
+
+    def test_stop_phrase_still_ends_session(self):
+        import time
+        from unittest.mock import MagicMock, patch
+
+        from openjarvis.autonomy.voice_conversation import VoiceConversationLoop
+        from openjarvis.speech._stubs import TranscriptionResult
+
+        loop = VoiceConversationLoop()
+        loop._session_id = 14
+        loop._active_session_id = 14
+        loop._session_deadline = time.time() + 30.0
+        loop._wake_detected_monotonic = time.monotonic()
+        loop._tts.cancel = MagicMock()
+
+        with patch(
+            "openjarvis.autonomy.voice_conversation.play_acknowledgement_cue",
+        ), patch(
+            "openjarvis.autonomy.voice_conversation.record_command_audio",
+            return_value=_voice_test_wav(12000),
+        ), patch(
+            "openjarvis.autonomy.voice_conversation.transcribe_command_result",
+            return_value=TranscriptionResult(text="that's all"),
+        ), patch(
+            "openjarvis.autonomy.voice_conversation.query_jarvis_text",
+        ) as mock_query, patch(
+            "openjarvis.autonomy.voice_conversation.speak_response",
+            return_value=True,
+        ) as mock_speak:
+            loop._process_turn(14)
+
+        mock_query.assert_not_called()
+        mock_speak.assert_called_once()
+        assert loop._active_session_id is None
+
+    def test_process_turn_uses_speech_gate(self):
+        import inspect
+        from openjarvis.autonomy import voice_conversation
+
+        src = inspect.getsource(voice_conversation.VoiceConversationLoop._process_turn)
+        assert "evaluate_voice_transcript" in src
+        assert "transcribe_command_result" in src
 
 
 class TestLatencyInstrumentation:
