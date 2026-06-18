@@ -65,6 +65,13 @@ EVENT_OPTIMIZATION_BLOCKED = "optimization_blocked"
 EVENT_SKILL_PACK_EXECUTED = "skill_pack_executed"
 EVENT_SKILL_PACK_BLOCKED = "skill_pack_blocked"
 
+# Wave 3 event types
+EVENT_CONTENT_WORKFLOW_CREATED = "content_workflow_created"
+EVENT_CONTENT_WORKFLOW_BLOCKED = "content_workflow_blocked"
+EVENT_ARTIFACT_DRAFTED = "artifact_drafted"
+EVENT_ARTIFACT_WRITE_REQUIRES_APPROVAL = "artifact_write_requires_approval"
+EVENT_MEDIA_PROVIDER_REQUIRES_SETUP = "media_provider_requires_setup"
+
 
 @dataclass
 class WorkbenchEvent:
@@ -293,4 +300,9 @@ __all__ = [
     "EVENT_OPTIMIZATION_BLOCKED",
     "EVENT_SKILL_PACK_EXECUTED",
     "EVENT_SKILL_PACK_BLOCKED",
+    "EVENT_CONTENT_WORKFLOW_CREATED",
+    "EVENT_CONTENT_WORKFLOW_BLOCKED",
+    "EVENT_ARTIFACT_DRAFTED",
+    "EVENT_ARTIFACT_WRITE_REQUIRES_APPROVAL",
+    "EVENT_MEDIA_PROVIDER_REQUIRES_SETUP",
 ]

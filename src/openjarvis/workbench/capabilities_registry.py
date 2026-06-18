@@ -432,8 +432,36 @@ def _wave2_professional_skill_packs_status() -> CapabilityRecord:
         )
 
 
+def _wave3_content_media_studio_status() -> CapabilityRecord:
+    """Wave 3 Epic G — Content & Media Studio capability."""
+    try:
+        from openjarvis.wave.content_media_studio import get_content_studio_status
+        info = get_content_studio_status()
+        implemented = info.get("implemented", False)
+        status = STATUS_READY if implemented else STATUS_REQUIRES_SETUP
+        return CapabilityRecord(
+            capability_id="wave3_content_media_studio",
+            display_name="Wave 3 — Content & Media Studio",
+            status=status,
+            summary=(
+                f"Wave 3 Epic G: Content & Media Studio. "
+                f"{info.get('template_count', 0)} templates. "
+                f"Dry-run default. File writes approval-gated. "
+                f"External providers require setup."
+            ),
+            evidence=info,
+        )
+    except Exception as exc:
+        return CapabilityRecord(
+            capability_id="wave3_content_media_studio",
+            display_name="Wave 3 — Content & Media Studio",
+            status=STATUS_NOT_IMPLEMENTED,
+            summary=f"Wave 3 Epic G unavailable: {exc}",
+        )
+
+
 def get_all_capabilities() -> List[CapabilityRecord]:
-    """Return all capability records with truthful status (US15 + Wave 1 + Wave 2)."""
+    """Return all capability records with truthful status (US15 + Wave 1 + Wave 2 + Wave 3)."""
     return [
         _assistant_status(),
         _workbench_status(),
@@ -450,6 +478,8 @@ def get_all_capabilities() -> List[CapabilityRecord]:
         # Wave 2 Professional Intelligence (Epic E–F)
         _wave2_optimization_platform_status(),
         _wave2_professional_skill_packs_status(),
+        # Wave 3 Creation & Media (Epic G)
+        _wave3_content_media_studio_status(),
     ]
 
 
@@ -466,8 +496,10 @@ def get_capabilities_summary() -> Dict[str, Any]:
         "wave1_ready": True,
         "wave1_scaffolded": True,
         "wave2_ready": True,
-        "wave3_4_not_implemented": True,
-        "wave2_3_4_not_implemented": False,  # Wave 2 is now implemented
+        "wave3_ready": True,
+        "wave4_not_implemented": True,
+        "wave3_4_not_implemented": False,  # Wave 3 is now implemented
+        "wave2_3_4_not_implemented": False,  # Wave 2 + 3 are now implemented
     }
 
 

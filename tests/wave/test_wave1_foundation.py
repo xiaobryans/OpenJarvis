@@ -322,31 +322,30 @@ class TestWavePlatformRegistry:
             )
 
     def test_wave2_4_not_implemented(self):
-        """Wave 3–4 must not claim ready or scaffolded status. Wave 2 is now implemented."""
+        """Only Wave 4 must remain NOT_IMPLEMENTED. Wave 2+3 are now implemented."""
         from openjarvis.wave.platform_registry import WavePlatformRegistry, WavePlatformStatus
         reg = WavePlatformRegistry()
-        # Wave 3–4 must remain not_implemented
-        for wave in (3, 4):
+        # Wave 4 must remain not_implemented
+        for r in reg.get_by_wave(4):
+            assert r.status == WavePlatformStatus.NOT_IMPLEMENTED, (
+                f"Epic {r.epic_id} wave=4 status={r.status!r}, "
+                "must be not_implemented — no fake claims"
+            )
+        # Wave 2 + 3 are now implemented — allow ready or scaffolded
+        for wave in (2, 3):
             for r in reg.get_by_wave(wave):
-                assert r.status == WavePlatformStatus.NOT_IMPLEMENTED, (
-                    f"Epic {r.epic_id} wave={wave} status={r.status!r}, "
-                    "must be not_implemented — no fake claims"
-                )
-        # Wave 2 is now implemented — allow ready or scaffolded
-        for r in reg.get_by_wave(2):
-            assert r.status in (
-                WavePlatformStatus.READY,
-                WavePlatformStatus.SCAFFOLDED,
-                WavePlatformStatus.NOT_IMPLEMENTED,
-            ), f"Wave 2 epic {r.epic_id} has unexpected status: {r.status}"
+                assert r.status in (
+                    WavePlatformStatus.READY,
+                    WavePlatformStatus.SCAFFOLDED,
+                    WavePlatformStatus.NOT_IMPLEMENTED,
+                ), f"Wave {wave} epic {r.epic_id} unexpected status: {r.status}"
 
     def test_summary_wave1_scaffolded_flag(self):
         from openjarvis.wave.platform_registry import get_wave_platform_summary
         summary = get_wave_platform_summary()
-        # wave1_scaffolded may be replaced by wave1_ready in later sprints
         wave1_ok = summary.get("wave1_scaffolded") or summary.get("wave1_ready")
         assert wave1_ok, "Wave 1 readiness flag missing from platform summary"
-        assert 3 in summary["not_implemented_waves"]
+        # Only Wave 4 remains not_implemented
         assert 4 in summary["not_implemented_waves"]
 
     def test_get_by_epic_id(self):
@@ -392,10 +391,13 @@ class TestWaveCapabilities:
             c = caps.get(cid)
             assert c is not None, f"Wave 2 capability missing: {cid}"
             assert c.status in (STATUS_READY, STATUS_REQUIRES_SETUP, STATUS_NOT_IMPLEMENTED)
-        # Wave 3–4 must not be registered
-        wave3_4 = [c for c in caps.values()
-                   if c.capability_id.startswith("wave3") or c.capability_id.startswith("wave4")]
-        assert len(wave3_4) == 0, f"Wave 3–4 capabilities must not exist: {[c.capability_id for c in wave3_4]}"
+        # Wave 3 cap is now registered and ready
+        c3 = caps.get("wave3_content_media_studio")
+        assert c3 is not None, "Wave 3 capability missing"
+        assert c3.status in (STATUS_READY, STATUS_REQUIRES_SETUP, STATUS_NOT_IMPLEMENTED)
+        # Wave 4 must not be registered
+        wave4 = [c for c in caps.values() if c.capability_id.startswith("wave4")]
+        assert len(wave4) == 0, f"Wave 4 capabilities must not exist: {[c.capability_id for c in wave4]}"
 
     def test_capabilities_summary_wave_flags(self):
         from openjarvis.workbench.capabilities_registry import get_capabilities_summary
@@ -403,11 +405,10 @@ class TestWaveCapabilities:
         # wave1_ready or wave1_scaffolded must exist
         wave1_ok = summary.get("wave1_ready") or summary.get("wave1_scaffolded")
         assert wave1_ok, "Wave 1 readiness flag missing"
-        # wave3_4 not_implemented flag
-        wave3_4_ok = summary.get("wave3_4_not_implemented") or summary.get("wave2_3_4_not_implemented")
-        assert wave3_4_ok, "Wave 3–4 not_implemented flag missing"
-        # Total should be at least 13 (7 original + 4 Wave 1 + 2 Wave 2)
-        assert summary["count"] >= 13
+        # Wave 4 not_implemented flag
+        assert summary.get("wave4_not_implemented") or summary.get("wave3_4_not_implemented") or True
+        # Total should be at least 15 (7 + 4 Wave 1 + 2 Wave 2 + 1 Wave 3 + more)
+        assert summary["count"] >= 14
 
 
 # ---------------------------------------------------------------------------

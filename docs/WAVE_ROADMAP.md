@@ -226,15 +226,81 @@ uv run python -m pytest tests/wave tests/workbench/test_us15_foundation.py \
   tests/workbench/test_us18_readiness.py -q --tb=short
 ```
 
-## Wave 3 — Creation & Media: NOT STARTED
+## Wave 3 — Creation & Media (LOCAL/FOUNDER V1 — COMPLETE)
 
-- Epic G: Content & Media Studio — NOT_IMPLEMENTED
-- No code exists. Platform registry marks as `NOT_IMPLEMENTED`.
+**Commit tag: `Complete Wave 3 content media studio`**
+
+### Epic G — Content & Media Studio
+
+| Item | Status |
+|---|---|
+| 7 built-in content templates | DONE |
+| Product Spec template | DONE |
+| Technical Handoff template | DONE |
+| Bug Report template | DONE |
+| Release Readiness Report template | DONE |
+| Coding Agent Prompt Pack template | DONE |
+| Research Brief template | DONE |
+| Content Plan template | DONE |
+| `run_content_workflow()` — dry-run by default | DONE |
+| File write approval gate | DONE |
+| Content safety policy (credentials, impersonation, spam) | DONE |
+| External media providers status check | DONE |
+| Social/email/messaging providers hard-blocked | DONE |
+| Image/video providers (DALL-E, Stability, etc.) require env key + approval | DONE |
+| Wave 1 knowledge store integration | DONE |
+| Wave 2 skill pack integration | DONE |
+| Release notes convenience workflow | DONE |
+| Research brief convenience workflow | DONE |
+| Coding agent prompt convenience workflow | DONE |
+| Event logging (5 Wave 3 event types) | DONE |
+| `/v1/wave3/content/status` route | DONE |
+| `/v1/wave3/content/templates` route | DONE |
+| `/v1/wave3/content/run` route | DONE |
+| `/v1/wave3/content/media-provider/check` route | DONE |
+| Doctor check 39 | DONE |
+| Tests | DONE (`test_wave3.py` — 63 tests) |
+
+**Proofs:**
+- `run_content_workflow("bug_report", dry_run=True)` → ok=True, artifact.dry_run=True
+- `run_content_workflow("product_spec", dry_run=False, file_write_approved=False)` → approval_required=True
+- `check_content_safety("api_key: mysecret")` → block reason returned
+- `check_media_provider("slack_post")` → status=hard_blocked
+- `run_media_provider_workflow("dalle", prompt, approved=False)` → approval_required=True
+
+### What Requires Approval
+- File writes (`dry_run=False` requires `file_write_approved=True`)
+- Live media generation (requires env key + `approved=True`)
+
+### What Requires External Setup (REQUIRES_USER_ACTION)
+| Provider | Env Var |
+|---|---|
+| DALL-E | `OPENAI_API_KEY` |
+| Stability | `STABILITY_API_KEY` |
+| Midjourney | `MIDJOURNEY_API_KEY` |
+| Runway | `RUNWAY_API_KEY` |
+
+### What Is Not Implemented (Future)
+- Actual live image/video generation execution (stub — provider adapter done)
+- Social media account management
+- Publishing pipeline
+
+### Wave 3 Capability
+| Capability ID | Status |
+|---|---|
+| `wave3_content_media_studio` | ready |
+
+### Retest Commands
+```bash
+cd /Users/user/OpenJarvis
+uv run python -m pytest tests/wave/test_wave3.py -v --tb=short
+```
 
 ## Wave 4 — Jarvis Expansion: NOT STARTED
 
 - Epic H: Autonomous Expansion — NOT_IMPLEMENTED
 - No code exists. Platform registry marks as `NOT_IMPLEMENTED`.
+- Wave 4 must not be started until Wave 3 is accepted.
 
 ## NUS 1 — Autonomous Upgrade: NOT STARTED / LOCKED
 

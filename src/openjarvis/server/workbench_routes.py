@@ -786,6 +786,37 @@ async def workbench_doctor(repo_path: str = ".") -> Dict[str, Any]:
     except Exception as exc:
         checks.append(chk("wave_registry_truthful", "fail", str(exc)))
 
+    # Check 39: Wave 3 Epic G — Content & Media Studio
+    try:
+        from openjarvis.wave.content_media_studio import (
+            get_content_studio_status, run_content_workflow,
+            check_content_safety, list_templates
+        )
+        studio_info = get_content_studio_status()
+        templates = list_templates()
+        # Smoke test: run a safe dry-run workflow
+        dr = run_content_workflow(
+            "bug_report",
+            fields={"title": "Doctor Test", "severity": "low",
+                    "description": "Test bug", "steps_to_reproduce": "1. Test",
+                    "expected": "Pass", "actual": "Pass", "environment": "test"},
+            dry_run=True,
+        )
+        # Verify unsafe content is blocked
+        safety_check = check_content_safety("api_key: mysecret123")
+        checks.append(chk(
+            "wave3_content_studio",
+            "pass" if (studio_info["implemented"] and dr.ok and safety_check is not None) else "warn",
+            (
+                f"implemented={studio_info['implemented']} "
+                f"templates={len(templates)} "
+                f"dry_run_ok={dr.ok} "
+                f"safety_policy_active={safety_check is not None}"
+            ),
+        ))
+    except Exception as exc:
+        checks.append(chk("wave3_content_studio", "fail", str(exc)))
+
     # Check 37: Wave 2 Epic E — Optimization Platform
     try:
         from openjarvis.wave.optimization_platform import (
@@ -842,6 +873,7 @@ async def workbench_doctor(repo_path: str = ".") -> Dict[str, Any]:
     us18_fail = any(c["check"].startswith("us18") and c["status"] == "fail" for c in checks)
     wave1_fail = any(c["check"].startswith("wave1") and c["status"] == "fail" for c in checks)
     wave2_fail = any(c["check"].startswith("wave2") and c["status"] == "fail" for c in checks)
+    wave3_fail = any(c["check"].startswith("wave3") and c["status"] == "fail" for c in checks)
     return {
         "ok": all_pass,
         "total": len(checks),
@@ -854,7 +886,8 @@ async def workbench_doctor(repo_path: str = ".") -> Dict[str, Any]:
         "us18_status": "ready" if not us18_fail else "hold",
         "wave1_status": "ready" if not wave1_fail else "hold",
         "wave2_status": "ready" if not wave2_fail else "hold",
-        "wave3_4_status": "not_implemented",
+        "wave3_status": "ready" if not wave3_fail else "hold",
+        "wave4_status": "not_implemented",
         "nus1_status": "not_started",
     }
 
@@ -1410,3 +1443,61 @@ if _pydantic_ok:
             return {"ok": False, "error": f"Pack not found: {req.pack_id}"}
         result = validate_skill_pack(pack)
         return result.to_dict()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Wave 3 endpoints
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.get("/v1/wave3/status")
+async def wave3_status() -> Dict[str, Any]:
+    """Wave 3 platform status for Mission Control."""
+    from openjarvis.wave.content_media_studio import get_content_studio_status
+    return {
+        "wave": 3,
+        "content_media_studio": get_content_studio_status(),
+        "wave4_status": "not_implemented",
+        "nus1_status": "not_started",
+        "us13_voice": "HOLD / UNSAFE / PARKED",
+    }
+
+
+@router.get("/v1/wave3/content/status")
+async def wave3_content_status() -> Dict[str, Any]:
+    """Content & Media Studio status."""
+    from openjarvis.wave.content_media_studio import get_content_studio_status
+    return get_content_studio_status()
+
+
+@router.get("/v1/wave3/content/templates")
+async def wave3_list_templates() -> Dict[str, Any]:
+    """List all built-in content templates."""
+    from openjarvis.wave.content_media_studio import list_templates
+    templates = list_templates()
+    return {"ok": True, "templates": templates, "count": len(templates)}
+
+
+if _pydantic_ok:
+    class _ContentWorkflowRequest(_BaseModel):
+        template_id: str
+        fields: Dict[str, str] = {}
+        dry_run: bool = True
+
+    class _MediaProviderRequest(_BaseModel):
+        provider_id: str
+        prompt: str
+
+    @router.post("/v1/wave3/content/run")
+    async def wave3_run_content_workflow(req: _ContentWorkflowRequest) -> Dict[str, Any]:
+        """Run a local content workflow (dry-run by default)."""
+        from openjarvis.wave.content_media_studio import run_content_workflow
+        result = run_content_workflow(
+            req.template_id, fields=req.fields, dry_run=req.dry_run
+        )
+        return result.to_dict()
+
+    @router.post("/v1/wave3/content/media-provider/check")
+    async def wave3_check_media_provider(req: _MediaProviderRequest) -> Dict[str, Any]:
+        """Check the status of an external media provider (requires setup or approval)."""
+        from openjarvis.wave.content_media_studio import check_media_provider
+        return check_media_provider(req.provider_id)

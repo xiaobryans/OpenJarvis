@@ -264,15 +264,35 @@ def _build_registry() -> List[WavePlatformRecord]:
 
     # ── Wave 3 ──────────────────────────────────────────────────────────────
 
+    try:
+        from openjarvis.wave.content_media_studio import get_content_studio_status
+        _studio_info = get_content_studio_status()
+        _epic_g_status = WavePlatformStatus.READY if _studio_info.get("implemented") else WavePlatformStatus.SCAFFOLDED
+        _epic_g_summary = (
+            f"Wave 3 Epic G: Content & Media Studio — {_studio_info.get('status', 'ready')}. "
+            f"{_studio_info.get('template_count', 0)} templates. "
+            "Dry-run default. File writes approval-gated."
+        )
+    except Exception:
+        _epic_g_status = WavePlatformStatus.NOT_IMPLEMENTED
+        _epic_g_summary = "Epic G: Content & Media Studio — not yet loaded."
+
     records.append(WavePlatformRecord(
         epic_id="epic_g",
         wave=3,
         display_name="Epic G — Content & Media Studio",
-        status=WavePlatformStatus.NOT_IMPLEMENTED,
-        summary="Not implemented — Wave 3. Requires Wave 2 complete.",
-        acceptance_criteria=["TBD after Wave 2 acceptance"],
+        status=_epic_g_status,
+        summary=_epic_g_summary,
+        acceptance_criteria=[
+            "7+ built-in content templates",
+            "Local content workflow dry-run implemented",
+            "File write approval-gated",
+            "Content safety policy active",
+            "External media providers require setup + approval",
+            "Wave 1/2 integration",
+        ],
         dependencies=["epic_e", "epic_f"],
-        risk_areas=["Copyright / media generation policy"],
+        risk_areas=["Copyright / media generation policy — external providers require env key + approval"],
         evidence={},
     ))
 
@@ -326,7 +346,10 @@ def get_wave_platform_summary() -> Dict[str, Any]:
     wave2 = reg.get_by_wave(2)
     wave2_done = all(r.status in (WavePlatformStatus.SCAFFOLDED, WavePlatformStatus.READY) for r in wave2)
 
-    not_impl_waves = [w for w in (3, 4) if all(
+    wave3 = reg.get_by_wave(3)
+    wave3_done = all(r.status in (WavePlatformStatus.SCAFFOLDED, WavePlatformStatus.READY) for r in wave3)
+
+    not_impl_waves = [w for w in (4,) if all(
         r.status == WavePlatformStatus.NOT_IMPLEMENTED for r in reg.get_by_wave(w)
     )]
 
@@ -336,9 +359,10 @@ def get_wave_platform_summary() -> Dict[str, Any]:
         "wave1_scaffolded": wave1_done,
         "wave1_ready": wave1_done,
         "wave2_ready": wave2_done,
+        "wave3_ready": wave3_done,
         "epics": [r.to_dict() for r in all_records],
         "not_implemented_waves": not_impl_waves,
-        "note": "Wave 1 + Wave 2 implemented. Wave 3–4 are roadmap items.",
+        "note": "Wave 1 + Wave 2 + Wave 3 implemented. Wave 4 is roadmap item.",
     }
 
 
