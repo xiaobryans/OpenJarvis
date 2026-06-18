@@ -535,12 +535,58 @@ async def workbench_doctor(repo_path: str = ".") -> Dict[str, Any]:
     except Exception as exc:
         checks.append(chk("us15_repo_index_complete", "fail", str(exc)))
 
+    # Check 23: US17 adversarial safety self-test
+    try:
+        from openjarvis.workbench.adversarial_safety import run_adversarial_self_test
+        st = run_adversarial_self_test()
+        checks.append(chk(
+            "us17_adversarial_safety",
+            "pass" if st["all_pass"] else "fail",
+            f"{st['passed']}/{st['total']} adversarial denials pass",
+        ))
+    except Exception as exc:
+        checks.append(chk("us17_adversarial_safety", "fail", str(exc)))
+
+    # Check 24: US17 failure recovery playbook
+    try:
+        from openjarvis.workbench.failure_recovery import get_failure_recovery_summary
+        fr = get_failure_recovery_summary()
+        checks.append(chk(
+            "us17_failure_recovery",
+            "pass" if fr.get("playbook_entries", 0) >= 10 else "warn",
+            f"{fr.get('playbook_entries')} recovery playbooks, stop_on_blocker={fr.get('stop_on_blocker')}",
+        ))
+    except Exception as exc:
+        checks.append(chk("us17_failure_recovery", "fail", str(exc)))
+
+    # Check 25: US18 founder dogfood checklist
+    try:
+        from openjarvis.workbench.founder_readiness import evaluate_founder_dogfood
+        fd = evaluate_founder_dogfood()
+        blocking = fd.get("by_status", {}).get("blocked", 0) + fd.get("by_status", {}).get("missing", 0)
+        checks.append(chk(
+            "us18_founder_dogfood",
+            "pass" if blocking == 0 else "warn",
+            f"verdict={fd.get('verdict')} required_done={fd.get('required_done')}/{fd.get('required_total')}",
+        ))
+    except Exception as exc:
+        checks.append(chk("us18_founder_dogfood", "fail", str(exc)))
+
+    # Check 26: US17 safety event types registered
+    try:
+        from openjarvis.workbench.event_log import EVENT_SAFETY_BLOCKED, EVENT_BUDGET_EXCEEDED
+        checks.append(chk("us17_safety_events", "pass", f"safety_blocked={EVENT_SAFETY_BLOCKED}"))
+    except Exception as exc:
+        checks.append(chk("us17_safety_events", "fail", str(exc)))
+
     by_status: Dict[str, int] = {}
     for c in checks:
         s = c["status"]
         by_status[s] = by_status.get(s, 0) + 1
 
     all_pass = by_status.get("fail", 0) == 0
+    us17_fail = any(c["check"].startswith("us17") and c["status"] == "fail" for c in checks)
+    us18_fail = any(c["check"].startswith("us18") and c["status"] == "fail" for c in checks)
     return {
         "ok": all_pass,
         "total": len(checks),
@@ -549,6 +595,8 @@ async def workbench_doctor(repo_path: str = ".") -> Dict[str, Any]:
         "verdict": "ACCEPT" if all_pass else "HOLD",
         "us15_status": "ready" if all_pass else "hold",
         "us16_status": "ready" if all_pass else "hold",
+        "us17_status": "ready" if not us17_fail else "hold",
+        "us18_status": "ready" if not us18_fail else "hold",
     }
 
 
@@ -764,12 +812,73 @@ async def get_ci_status(repo_path: str = ".") -> Dict[str, Any]:
 
 
 @router.get("/v1/workbench/auto-browser/status")
-async def get_auto_browser_status() -> Dict[str, Any]:
+async def get_auto_browser_status_route() -> Dict[str, Any]:
     """US15 Auto Browser integration status with health check and setup steps."""
     try:
-        from openjarvis.workbench.auto_browser_provider import get_auto_browser_status, health_check
+        from openjarvis.workbench.auto_browser_provider import get_auto_browser_status
         status = get_auto_browser_status()
         return {"ok": True, "auto_browser": status}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+# ---------------------------------------------------------------------------
+# US17 Adversarial Safety routes
+# ---------------------------------------------------------------------------
+
+
+@router.get("/v1/workbench/safety/status")
+async def get_safety_status() -> Dict[str, Any]:
+    """US17 adversarial safety status + self-test results."""
+    try:
+        from openjarvis.workbench.adversarial_safety import get_safety_status_summary
+        from openjarvis.workbench.failure_recovery import get_failure_recovery_summary
+        return {
+            "ok": True,
+            "safety": get_safety_status_summary(),
+            "failure_recovery": get_failure_recovery_summary(),
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+class SafetyEvaluateRequest(BaseModel):
+    category: str
+    payload: Any = Field(default="")
+
+
+@router.post("/v1/workbench/safety/evaluate")
+async def evaluate_safety(req: SafetyEvaluateRequest) -> Dict[str, Any]:
+    """US17 evaluate a single adversarial category + payload."""
+    try:
+        from openjarvis.workbench.adversarial_safety import evaluate_adversarial
+        verdict = evaluate_adversarial(req.category, req.payload)
+        return {"ok": True, "verdict": verdict.to_dict()}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+# ---------------------------------------------------------------------------
+# US18 Founder Readiness routes
+# ---------------------------------------------------------------------------
+
+
+@router.get("/v1/workbench/founder-readiness")
+async def get_founder_readiness() -> Dict[str, Any]:
+    """US18 founder dogfood checklist evaluation."""
+    try:
+        from openjarvis.workbench.founder_readiness import evaluate_founder_dogfood
+        return {"ok": True, **evaluate_founder_dogfood()}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.get("/v1/workbench/public-readiness")
+async def get_public_readiness() -> Dict[str, Any]:
+    """US18 public readiness matrix — honest release-safe status."""
+    try:
+        from openjarvis.workbench.founder_readiness import generate_public_readiness_matrix
+        return {"ok": True, "matrix": generate_public_readiness_matrix()}
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 

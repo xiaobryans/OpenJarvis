@@ -42,6 +42,12 @@ EVENT_EXECUTION_COMPLETE = "execution_complete"
 EVENT_APPROVAL_REQUIRED = "approval_required"
 EVENT_DRY_RUN_GATE = "dry_run_gate"
 EVENT_NOTIFICATION_GATED = "notification_gated"
+# US17 safety event types
+EVENT_SAFETY_BLOCKED = "safety_blocked"
+EVENT_VALIDATION_FAILED = "validation_failed"
+EVENT_BUDGET_EXCEEDED = "budget_exceeded"
+EVENT_PROVIDER_UNAVAILABLE = "provider_unavailable"
+EVENT_ROLLBACK_GUIDANCE = "rollback_guidance"
 
 
 @dataclass
