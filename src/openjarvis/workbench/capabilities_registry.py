@@ -460,8 +460,36 @@ def _wave3_content_media_studio_status() -> CapabilityRecord:
         )
 
 
+def _wave4_autonomous_expansion_status() -> CapabilityRecord:
+    """Wave 4 Epic H — Autonomous Expansion capability."""
+    try:
+        from openjarvis.wave.autonomous_expansion import get_expansion_status
+        info = get_expansion_status()
+        implemented = info.get("implemented", False)
+        status = STATUS_READY if implemented else STATUS_REQUIRES_SETUP
+        return CapabilityRecord(
+            capability_id="wave4_autonomous_expansion",
+            display_name="Wave 4 — Autonomous Expansion (Supervised)",
+            status=status,
+            summary=(
+                "Wave 4 Epic H: Supervised expansion scaffolding. "
+                "Proposal-only — no auto-execute, no code self-modification, "
+                "no auto-commit, no deploy. "
+                "NUS 1 not started. US13 voice HOLD/UNSAFE/PARKED."
+            ),
+            evidence=info,
+        )
+    except Exception as exc:
+        return CapabilityRecord(
+            capability_id="wave4_autonomous_expansion",
+            display_name="Wave 4 — Autonomous Expansion (Supervised)",
+            status=STATUS_NOT_IMPLEMENTED,
+            summary=f"Wave 4 Epic H unavailable: {exc}",
+        )
+
+
 def get_all_capabilities() -> List[CapabilityRecord]:
-    """Return all capability records with truthful status (US15 + Wave 1 + Wave 2 + Wave 3)."""
+    """Return all capability records with truthful status (US15 + Wave 1–4)."""
     return [
         _assistant_status(),
         _workbench_status(),
@@ -480,6 +508,8 @@ def get_all_capabilities() -> List[CapabilityRecord]:
         _wave2_professional_skill_packs_status(),
         # Wave 3 Creation & Media (Epic G)
         _wave3_content_media_studio_status(),
+        # Wave 4 Autonomous Expansion (Epic H)
+        _wave4_autonomous_expansion_status(),
     ]
 
 
@@ -497,9 +527,11 @@ def get_capabilities_summary() -> Dict[str, Any]:
         "wave1_scaffolded": True,
         "wave2_ready": True,
         "wave3_ready": True,
-        "wave4_not_implemented": True,
-        "wave3_4_not_implemented": False,  # Wave 3 is now implemented
-        "wave2_3_4_not_implemented": False,  # Wave 2 + 3 are now implemented
+        "wave4_ready": True,
+        "wave4_not_implemented": False,
+        "wave3_4_not_implemented": False,
+        "wave2_3_4_not_implemented": False,
+        "nus1_status": "not_started",
     }
 
 

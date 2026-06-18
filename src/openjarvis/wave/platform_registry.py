@@ -298,18 +298,54 @@ def _build_registry() -> List[WavePlatformRecord]:
 
     # ── Wave 4 ──────────────────────────────────────────────────────────────
 
+    _epic_h_status = WavePlatformStatus.NOT_IMPLEMENTED
+    _epic_h_summary = "Epic H: Autonomous Expansion — not yet loaded."
+    try:
+        from openjarvis.wave.autonomous_expansion import get_expansion_status
+        _info_h = get_expansion_status()
+        if _info_h.get("implemented"):
+            _epic_h_status = WavePlatformStatus.READY
+            _epic_h_summary = (
+                "Epic H: Supervised expansion module ready. "
+                "Proposal-only. Approval-gated. No auto-execute. "
+                "NUS 1 not started. US13 voice HOLD/UNSAFE/PARKED."
+            )
+    except Exception:
+        pass
+
     records.append(WavePlatformRecord(
         epic_id="epic_h",
         wave=4,
-        display_name="Epic H — Autonomous Expansion",
-        status=WavePlatformStatus.NOT_IMPLEMENTED,
-        summary=(
-            "Not implemented — Wave 4. Requires all prior Waves + explicit owner "
-            "approval for autonomous expansion capabilities."
-        ),
-        acceptance_criteria=["TBD after Wave 3 acceptance"],
+        display_name="Epic H — Autonomous Expansion (Supervised)",
+        status=_epic_h_status,
+        summary=_epic_h_summary,
+        acceptance_criteria=[
+            "Expansion opportunity detection implemented",
+            "Capability gap analysis implemented",
+            "Safe expansion proposal creation implemented",
+            "Dependency/risk classification implemented",
+            "Acceptance criteria generation implemented",
+            "Validation plan generation implemented",
+            "Rollback plan generation implemented",
+            "Approval-gated expansion queue implemented",
+            "Wave 1 registry integration (skill/automation/knowledge/research proposals)",
+            "Wave 2 cost/routing/performance classification",
+            "Wave 3 content spec/handoff/readiness report drafting",
+            "Event logging for all expansion events",
+            "API routes /v1/wave4/expansion/*",
+            "Doctor/readiness checks for Wave 4",
+            "No code self-modification",
+            "No auto-commit or auto-push",
+            "No deploy",
+            "NUS 1 not started",
+            "US13 voice HOLD/UNSAFE/PARKED",
+        ],
         dependencies=["epic_a", "epic_b", "epic_c", "epic_d", "epic_e", "epic_f", "epic_g"],
-        risk_areas=["Autonomous action without approval", "Cost runaway", "Unsafe expansion"],
+        risk_areas=[
+            "Autonomous action without approval — blocked by design",
+            "Cost runaway — classified via Wave 2 patterns",
+            "Unsafe expansion — blocked by adversarial safety",
+        ],
         evidence={},
     ))
 
@@ -353,6 +389,9 @@ def get_wave_platform_summary() -> Dict[str, Any]:
         r.status == WavePlatformStatus.NOT_IMPLEMENTED for r in reg.get_by_wave(w)
     )]
 
+    wave4 = reg.get_by_wave(4)
+    wave4_done = all(r.status in (WavePlatformStatus.SCAFFOLDED, WavePlatformStatus.READY) for r in wave4)
+
     return {
         "total_epics": len(all_records),
         "by_status": by_status,
@@ -360,9 +399,15 @@ def get_wave_platform_summary() -> Dict[str, Any]:
         "wave1_ready": wave1_done,
         "wave2_ready": wave2_done,
         "wave3_ready": wave3_done,
+        "wave4_ready": wave4_done,
         "epics": [r.to_dict() for r in all_records],
         "not_implemented_waves": not_impl_waves,
-        "note": "Wave 1 + Wave 2 + Wave 3 implemented. Wave 4 is roadmap item.",
+        "nus1_status": "not_started",
+        "us13_voice_status": "HOLD/UNSAFE/PARKED",
+        "note": (
+            "Wave 1 + Wave 2 + Wave 3 + Wave 4 implemented. "
+            "NUS 1 not started. US13 voice HOLD/UNSAFE/PARKED."
+        ),
     }
 
 

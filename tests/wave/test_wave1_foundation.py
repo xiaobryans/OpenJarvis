@@ -322,17 +322,11 @@ class TestWavePlatformRegistry:
             )
 
     def test_wave2_4_not_implemented(self):
-        """Only Wave 4 must remain NOT_IMPLEMENTED. Wave 2+3 are now implemented."""
+        """Wave 2, 3, and 4 are all now implemented (ready/scaffolded)."""
         from openjarvis.wave.platform_registry import WavePlatformRegistry, WavePlatformStatus
         reg = WavePlatformRegistry()
-        # Wave 4 must remain not_implemented
-        for r in reg.get_by_wave(4):
-            assert r.status == WavePlatformStatus.NOT_IMPLEMENTED, (
-                f"Epic {r.epic_id} wave=4 status={r.status!r}, "
-                "must be not_implemented — no fake claims"
-            )
-        # Wave 2 + 3 are now implemented — allow ready or scaffolded
-        for wave in (2, 3):
+        # Wave 2 + 3 + 4 are now implemented — allow ready or scaffolded
+        for wave in (2, 3, 4):
             for r in reg.get_by_wave(wave):
                 assert r.status in (
                     WavePlatformStatus.READY,
@@ -345,8 +339,8 @@ class TestWavePlatformRegistry:
         summary = get_wave_platform_summary()
         wave1_ok = summary.get("wave1_scaffolded") or summary.get("wave1_ready")
         assert wave1_ok, "Wave 1 readiness flag missing from platform summary"
-        # Only Wave 4 remains not_implemented
-        assert 4 in summary["not_implemented_waves"]
+        # Wave 4 is now implemented — not_implemented_waves may be empty
+        assert isinstance(summary["not_implemented_waves"], list)
 
     def test_get_by_epic_id(self):
         from openjarvis.wave.platform_registry import WavePlatformRegistry
@@ -395,9 +389,10 @@ class TestWaveCapabilities:
         c3 = caps.get("wave3_content_media_studio")
         assert c3 is not None, "Wave 3 capability missing"
         assert c3.status in (STATUS_READY, STATUS_REQUIRES_SETUP, STATUS_NOT_IMPLEMENTED)
-        # Wave 4 must not be registered
+        # Wave 4 is now implemented — wave4_autonomous_expansion must be registered and ready
         wave4 = [c for c in caps.values() if c.capability_id.startswith("wave4")]
-        assert len(wave4) == 0, f"Wave 4 capabilities must not exist: {[c.capability_id for c in wave4]}"
+        assert len(wave4) >= 1, "Wave 4 capability must be registered"
+        assert any(c.capability_id == "wave4_autonomous_expansion" for c in wave4)
 
     def test_capabilities_summary_wave_flags(self):
         from openjarvis.workbench.capabilities_registry import get_capabilities_summary

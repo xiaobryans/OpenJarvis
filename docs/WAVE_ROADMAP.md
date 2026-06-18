@@ -296,11 +296,54 @@ cd /Users/user/OpenJarvis
 uv run python -m pytest tests/wave/test_wave3.py -v --tb=short
 ```
 
-## Wave 4 — Jarvis Expansion: NOT STARTED
+## Wave 4 — Jarvis Expansion: COMPLETE (local/founder V1)
 
-- Epic H: Autonomous Expansion — NOT_IMPLEMENTED
-- No code exists. Platform registry marks as `NOT_IMPLEMENTED`.
-- Wave 4 must not be started until Wave 3 is accepted.
+- Epic H: Autonomous Expansion — `READY` (supervised proposal workflows only)
+- Module: `src/openjarvis/wave/autonomous_expansion.py`
+- Tests: `tests/wave/test_wave4.py`
+- Full doc: `docs/WAVE4_EXPANSION.md`
+
+### What Wave 4 completed
+
+- Expansion opportunity detection (Wave 1–3 registry scan)
+- Capability gap analysis (Wave 1–3)
+- Safe expansion proposal creation (approval-gated)
+- Dependency/risk classification (adversarial safety reused from US17)
+- Acceptance criteria generation
+- Validation-plan generation
+- Rollback-plan generation
+- Approval-gated expansion queue
+- Wave 1 integration: propose new skills, automation triggers, knowledge sources, research providers
+- Wave 2 integration: cost/routing/performance classification via Wave 2 patterns
+- Wave 3 integration: content spec drafting, handoff pack drafting, readiness report drafting
+- Event logging: opportunity_detected, proposal_created, proposal_blocked, approval_required, validation_plan_generated
+- API routes: `/v1/wave4/expansion/status`, `/opportunities`, `/gaps`, `/queue`, `/propose`, `/validate`
+- Doctor/readiness: Wave 4 check added to workbench doctor
+- Capability: `wave4_autonomous_expansion` in capabilities registry
+
+### What requires approval before execution
+
+- Any proposal of type: register_capability, add_provider, add_integration, wave1_skill_register,
+  wave1_automation_register, wave1_knowledge_source_register, wave1_research_provider_register
+
+### What is explicitly blocked / not allowed
+
+- No code self-modification
+- No auto-commit or auto-push
+- No deploy or release automation
+- No external sends (Slack/email/Telegram)
+- No secret access
+- No browser automation
+- No NUS 1 self-improvement autonomy
+- No US13 voice (HOLD/UNSAFE/PARKED)
+
+### Retest commands
+
+```bash
+cd /Users/user/OpenJarvis
+uv run python -m pytest tests/wave/test_wave4.py -v --tb=short
+uv run python -m pytest tests/wave tests/workbench/test_us15_foundation.py tests/workbench/test_us16_complete.py tests/workbench/test_us17_adversarial.py tests/workbench/test_us18_readiness.py -q --tb=short
+```
 
 ## NUS 1 — Autonomous Upgrade: NOT STARTED / LOCKED
 

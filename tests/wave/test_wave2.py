@@ -472,13 +472,12 @@ class TestWave2Integration:
         assert caps["wave2_optimization_platform"] == "ready"
         assert caps["wave2_professional_skill_packs"] == "ready"
 
-    def test_wave4_not_in_registry(self):
-        """Wave 4 capability IDs must not appear in registry. Wave 3 is now implemented."""
+    def test_wave4_in_registry(self):
+        """Wave 4 capability is now registered (supervised expansion, local/founder V1)."""
         from openjarvis.workbench.capabilities_registry import get_capabilities_summary
         summary = get_capabilities_summary()
         cap_ids = [c["capability_id"] for c in summary["capabilities"]]
-        for cid in cap_ids:
-            assert not cid.startswith("wave4"), f"Wave 4 capability should not exist: {cid}"
+        assert "wave4_autonomous_expansion" in cap_ids, "Wave 4 capability must be registered"
 
     def test_wave2_platform_registry_shows_ready(self):
         from openjarvis.wave.platform_registry import WavePlatformRegistry, WavePlatformStatus
@@ -490,13 +489,13 @@ class TestWave2Integration:
                 f"Wave 2 item {item.epic_id} should be ready/scaffolded, got {item.status}"
             )
 
-    def test_wave4_still_not_implemented(self):
-        """Only Wave 4 must remain NOT_IMPLEMENTED. Wave 3 is now implemented."""
+    def test_wave4_now_implemented(self):
+        """Wave 4 Epic H is now implemented (supervised expansion, local/founder V1)."""
         from openjarvis.wave.platform_registry import WavePlatformRegistry, WavePlatformStatus
         reg = WavePlatformRegistry()
         for item in reg.get_by_wave(4):
-            assert item.status == WavePlatformStatus.NOT_IMPLEMENTED, (
-                f"Wave 4 item {item.epic_id} must be NOT_IMPLEMENTED"
+            assert item.status in (WavePlatformStatus.READY, WavePlatformStatus.SCAFFOLDED), (
+                f"Wave 4 item {item.epic_id} should be ready/scaffolded, got {item.status}"
             )
 
     def test_us13_voice_still_parked(self):
@@ -553,15 +552,15 @@ class TestWave2SafetyGates:
         except ImportError:
             pass  # Expected — not implemented
 
-    def test_wave3_4_not_implemented_module(self):
-        """Wave 3–4 modules must not exist."""
-        try:
-            import openjarvis.wave.content_studio  # noqa
-            pytest.fail("Wave 3 content studio should not exist")
-        except ImportError:
-            pass
-        try:
-            import openjarvis.wave.autonomous_expansion  # noqa
-            pytest.fail("Wave 4 autonomous expansion should not exist")
-        except ImportError:
-            pass
+    def test_wave3_content_studio_module_exists(self):
+        """Wave 3 content media studio module must exist (now implemented)."""
+        from openjarvis.wave.content_media_studio import get_content_studio_status  # noqa
+        info = get_content_studio_status()
+        assert info["implemented"] is True
+
+    def test_wave4_autonomous_expansion_module_exists(self):
+        """Wave 4 autonomous expansion module must exist (now implemented)."""
+        from openjarvis.wave.autonomous_expansion import get_expansion_status  # noqa
+        info = get_expansion_status()
+        assert info["implemented"] is True
+        assert info["nus1_status"] == "not_started"

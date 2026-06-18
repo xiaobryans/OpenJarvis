@@ -863,6 +863,39 @@ async def workbench_doctor(repo_path: str = ".") -> Dict[str, Any]:
     except Exception as exc:
         checks.append(chk("wave2_professional_skill_packs", "fail", str(exc)))
 
+    # Check: Wave 4 Epic H — Autonomous Expansion
+    try:
+        from openjarvis.wave.autonomous_expansion import (
+            get_expansion_status,
+            create_expansion_proposal,
+            classify_proposal_risk,
+        )
+        exp_info = get_expansion_status()
+        # Verify safe proposal creates cleanly
+        safe_prop = create_expansion_proposal(
+            opportunity_id="doctor_check_opp",
+            title="Doctor check: safe local proposal",
+            description="Local-only analysis proposal for readiness verification.",
+            proposal_type="capability_analysis",
+            wave_integrations=[1, 2, 3],
+        )
+        # Verify unsafe proposal is blocked
+        blocked_cls = classify_proposal_risk("file_write", "auto-commit code", [])
+        unsafe_blocked = blocked_cls["status"] == "blocked"
+        checks.append(chk(
+            "wave4_autonomous_expansion",
+            "pass" if (exp_info["implemented"] and safe_prop is not None and unsafe_blocked) else "warn",
+            (
+                f"implemented={exp_info['implemented']} "
+                f"safe_proposal_ok={safe_prop is not None} "
+                f"unsafe_blocked={unsafe_blocked} "
+                f"nus1_status={exp_info['nus1_status']} "
+                f"us13_voice={exp_info['us13_voice_status']}"
+            ),
+        ))
+    except Exception as exc:
+        checks.append(chk("wave4_autonomous_expansion", "fail", str(exc)))
+
     by_status: Dict[str, int] = {}
     for c in checks:
         s = c["status"]
@@ -874,6 +907,7 @@ async def workbench_doctor(repo_path: str = ".") -> Dict[str, Any]:
     wave1_fail = any(c["check"].startswith("wave1") and c["status"] == "fail" for c in checks)
     wave2_fail = any(c["check"].startswith("wave2") and c["status"] == "fail" for c in checks)
     wave3_fail = any(c["check"].startswith("wave3") and c["status"] == "fail" for c in checks)
+    wave4_fail = any(c["check"].startswith("wave4") and c["status"] == "fail" for c in checks)
     return {
         "ok": all_pass,
         "total": len(checks),
@@ -887,8 +921,9 @@ async def workbench_doctor(repo_path: str = ".") -> Dict[str, Any]:
         "wave1_status": "ready" if not wave1_fail else "hold",
         "wave2_status": "ready" if not wave2_fail else "hold",
         "wave3_status": "ready" if not wave3_fail else "hold",
-        "wave4_status": "not_implemented",
+        "wave4_status": "ready" if not wave4_fail else "hold",
         "nus1_status": "not_started",
+        "us13_voice_status": "HOLD/UNSAFE/PARKED",
     }
 
 
@@ -1364,7 +1399,8 @@ async def wave2_status() -> Dict[str, Any]:
         "wave": 2,
         "optimization_platform": get_optimization_platform_status(),
         "professional_skill_packs": get_professional_skill_packs_status(),
-        "wave3_4_status": "not_implemented",
+        "wave3_status": "ready",
+        "wave4_status": "ready",
         "nus1_status": "not_started",
         "us13_voice": "HOLD / UNSAFE / PARKED",
     }
@@ -1456,7 +1492,7 @@ async def wave3_status() -> Dict[str, Any]:
     return {
         "wave": 3,
         "content_media_studio": get_content_studio_status(),
-        "wave4_status": "not_implemented",
+        "wave4_status": "ready",
         "nus1_status": "not_started",
         "us13_voice": "HOLD / UNSAFE / PARKED",
     }
@@ -1501,3 +1537,96 @@ if _pydantic_ok:
         """Check the status of an external media provider (requires setup or approval)."""
         from openjarvis.wave.content_media_studio import check_media_provider
         return check_media_provider(req.provider_id)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Wave 4 endpoints — Autonomous Expansion (Epic H)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.get("/v1/wave4/expansion/status")
+async def wave4_expansion_status() -> Dict[str, Any]:
+    """Wave 4 Epic H expansion module status."""
+    from openjarvis.wave.autonomous_expansion import get_expansion_status
+    return get_expansion_status()
+
+
+@router.get("/v1/wave4/expansion/opportunities")
+async def wave4_list_opportunities() -> Dict[str, Any]:
+    """Detect and list current expansion opportunities across Wave 1–3."""
+    from openjarvis.wave.autonomous_expansion import (
+        detect_expansion_opportunities, get_queue, log_opportunity_detected
+    )
+    opportunities = detect_expansion_opportunities()
+    q = get_queue()
+    for opp in opportunities:
+        q.add_opportunity(opp)
+        log_opportunity_detected(opp)
+    return {
+        "ok": True,
+        "count": len(opportunities),
+        "opportunities": [o.to_dict() for o in opportunities],
+        "nus1_status": "not_started",
+        "us13_voice_status": "HOLD/UNSAFE/PARKED",
+    }
+
+
+@router.get("/v1/wave4/expansion/gaps")
+async def wave4_capability_gaps() -> Dict[str, Any]:
+    """Run capability gap analysis across Waves 1–3."""
+    from openjarvis.wave.autonomous_expansion import analyze_capability_gaps
+    return {"ok": True, **analyze_capability_gaps()}
+
+
+@router.get("/v1/wave4/expansion/queue")
+async def wave4_expansion_queue() -> Dict[str, Any]:
+    """Inspect the current expansion proposal queue."""
+    from openjarvis.wave.autonomous_expansion import get_queue
+    q = get_queue()
+    return {
+        "ok": True,
+        **q.queue_summary(),
+        "proposals": [p.to_dict() for p in q.list_proposals()],
+        "nus1_status": "not_started",
+        "us13_voice_status": "HOLD/UNSAFE/PARKED",
+    }
+
+
+if _pydantic_ok:
+    class _ExpansionProposalRequest(_BaseModel):
+        opportunity_id: str = ""
+        title: str
+        description: str
+        proposal_type: str
+        wave_integrations: List[int] = []
+        dependencies: List[str] = []
+
+    class _ValidateProposalRequest(_BaseModel):
+        proposal_id: str
+
+    @router.post("/v1/wave4/expansion/propose")
+    async def wave4_create_proposal(req: _ExpansionProposalRequest) -> Dict[str, Any]:
+        """Create a safe local expansion proposal (proposal-only, no auto-execution)."""
+        from openjarvis.wave.autonomous_expansion import create_expansion_proposal
+        proposal = create_expansion_proposal(
+            opportunity_id=req.opportunity_id,
+            title=req.title,
+            description=req.description,
+            proposal_type=req.proposal_type,
+            wave_integrations=req.wave_integrations,
+            dependencies=req.dependencies,
+        )
+        return {"ok": True, "proposal": proposal.to_dict()}
+
+    @router.post("/v1/wave4/expansion/validate")
+    async def wave4_validate_proposal(req: _ValidateProposalRequest) -> Dict[str, Any]:
+        """Generate and return a validation plan for an expansion proposal."""
+        from openjarvis.wave.autonomous_expansion import (
+            get_queue, generate_validation_plan, log_validation_plan_generated
+        )
+        q = get_queue()
+        proposal = q.get_proposal(req.proposal_id)
+        if proposal is None:
+            return {"ok": False, "error": f"Proposal not found: {req.proposal_id}"}
+        vp = generate_validation_plan(proposal)
+        log_validation_plan_generated(req.proposal_id, vp)
+        return {"ok": True, "validation_plan": vp.to_dict()}
