@@ -131,3 +131,6 @@ minion_logs/
 *.oj-debug.json
 oj-debug.*.json
 frontend/tsconfig.tsbuildinfo
+
+# Third-party runtime code (not committed)
+.external/

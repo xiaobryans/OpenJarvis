@@ -108,6 +108,9 @@ class TestAutoBrowserComplete:
         assert "mcp_reachable" in hc
         assert "overall" in hc
         assert hc["overall"] in ("ready", "requires_setup")
+        # New fields in enhanced health check
+        assert "client_sdk_installed" in hc
+        assert hc["client_sdk_installed"] is True  # installed via PyPI
 
     def test_session_status_returns_dict(self):
         from openjarvis.workbench.auto_browser_provider import session_status
@@ -120,7 +123,8 @@ class TestAutoBrowserComplete:
         from openjarvis.workbench.auto_browser_provider import get_auto_browser_status
 
         status = get_auto_browser_status()
-        assert "setup_steps" in status
+        # server_setup_steps (new key) or setup_steps (legacy) must be present
+        assert "server_setup_steps" in status or "setup_steps" in status
         assert "health_check" in status
         assert "blocked_patterns" in status
         assert isinstance(status["blocked_patterns"], list)

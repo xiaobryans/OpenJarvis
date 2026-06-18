@@ -86,6 +86,7 @@ server = [
     "uvicorn>=0.30",
     "pydantic>=2.0",
     "python-multipart>=0.0.9",
+    "auto-browser-client>=1.2.1",
 ]
 openhands = ["openhands-sdk>=1.0; python_version >= '3.12'"]
 gpu-metrics = ["pynvml>=12.0"]

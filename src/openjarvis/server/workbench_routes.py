@@ -480,10 +480,15 @@ async def workbench_doctor(repo_path: str = ".") -> Dict[str, Any]:
     try:
         from openjarvis.workbench.auto_browser_provider import health_check as ab_health
         hc = ab_health()
+        client_ok = hc.get("client_sdk_installed", False)
+        pw_ok = hc.get("playwright_available", False)
+        mcp_ok = hc.get("mcp_reachable", False)
+        # pass if client+playwright ready; warn if server not running (expected without Docker)
+        check_status = "pass" if (client_ok and pw_ok) else "warn"
         checks.append(chk(
             "us15_auto_browser",
-            "pass" if hc["playwright_available"] else "warn",
-            f"playwright={hc['playwright_available']}, enabled={hc['auto_browser_enabled']}, mcp_reachable={hc['mcp_reachable']}",
+            check_status,
+            f"client_sdk={client_ok}, playwright={pw_ok}, mcp_reachable={mcp_ok}, overall={hc['overall']}",
         ))
     except Exception as exc:
         checks.append(chk("us15_auto_browser", "fail", str(exc)))

@@ -160,33 +160,40 @@ def _voice_status() -> CapabilityRecord:
 
 
 def _browser_status() -> CapabilityRecord:
-    from openjarvis.workbench.auto_browser_provider import get_auto_browser_status
+    from openjarvis.workbench.auto_browser_provider import health_check, get_auto_browser_status
 
+    hc = health_check()
     auto = get_auto_browser_status()
-    playwright_ok = False
-    try:
-        from openjarvis.tools.browser import BrowserNavigateTool  # noqa: F401
 
-        playwright_ok = True
-    except Exception:
-        playwright_ok = False
+    client_ok = hc.get("client_sdk_installed", False)
+    playwright_ok = hc.get("playwright_available", False)
+    mcp_reachable = hc.get("mcp_reachable", False)
 
-    if auto.get("integration_status") == "blocked":
-        status = STATUS_REQUIRES_SETUP
-        summary = auto.get("summary", "Auto Browser evaluation blocked.")
-    elif playwright_ok:
+    if mcp_reachable:
         status = STATUS_NEEDS_APPROVAL
-        summary = "Playwright browser tools available; approval-gated. Auto Browser connector not merged."
+        summary = "Auto Browser fully configured — approval-gated sessions available."
+    elif client_ok and playwright_ok:
+        status = STATUS_REQUIRES_SETUP
+        summary = (
+            "Auto Browser client SDK + Playwright installed. "
+            "MCP server requires Docker to start — see server_setup_steps."
+        )
     else:
         status = STATUS_REQUIRES_SETUP
-        summary = "Install browser extra (uv sync --extra browser) for Playwright tools."
+        summary = auto.get("summary", "Auto Browser partial setup.")
 
     return CapabilityRecord(
         capability_id="browser_automation",
         display_name="Browser Automation / Auto Browser",
         status=status,
         summary=summary,
-        evidence={"auto_browser": auto, "playwright_tools": playwright_ok},
+        evidence={
+            "client_sdk_installed": client_ok,
+            "playwright_installed": playwright_ok,
+            "mcp_reachable": mcp_reachable,
+            "integration_status": auto.get("integration_status"),
+            "local_clone": auto.get("local_clone"),
+        },
     )
 
 
@@ -222,6 +229,8 @@ def _research_status() -> CapabilityRecord:
 
 
 def _automation_status() -> CapabilityRecord:
+    # Autopilot guard policy is hardcoded — does not require FastAPI at runtime.
+    # The workbench_autopilot_guard() function is importable once fastapi is installed.
     try:
         from openjarvis.server.workbench_routes import workbench_autopilot_guard
 
@@ -240,7 +249,16 @@ def _automation_status() -> CapabilityRecord:
             display_name="Automation",
             status=STATUS_DISABLED,
             summary="Autopilot runtime disabled by default; guarded preview only.",
-            evidence=guard,
+            evidence={"autopilot_runtime_enabled": False, "approval_bypass_allowed": False},
+        )
+    except ImportError:
+        # FastAPI not installed — report truthfully without claiming insufficient_data.
+        return CapabilityRecord(
+            capability_id="automation",
+            display_name="Automation",
+            status=STATUS_REQUIRES_SETUP,
+            summary="Automation routes require 'uv sync --extra server' to activate FastAPI.",
+            evidence={"fastapi_installed": False, "fix": "uv sync --extra server"},
         )
     except Exception as exc:
         return CapabilityRecord(

@@ -367,6 +367,18 @@ wheels = [
 ]
 
 [[package]]
+name = "auto-browser-client"
+version = "1.2.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "httpx" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/dc/79/0ee42d11da70b3ab18effe4789d4d35693a868a3423c55952b4b83bf6d31/auto_browser_client-1.2.1.tar.gz", hash = "sha256:e95f7c64431c449b491cf2c09097b77c45c847093f1639a8223ef414392b3a48", size = 9320, upload-time = "2026-06-10T17:14:06.618Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/3b/f2/3ed22d74a8aa7406af74a571e89579a5587d3215b26d4ec9b39035b28e36/auto_browser_client-1.2.1-py3-none-any.whl", hash = "sha256:46eb9e7011ebc020db66df8cba876cc96421242ce57ff834d099e5994d7779b8", size = 8002, upload-time = "2026-06-10T17:14:05.529Z" },
+]
+
+[[package]]
 name = "av"
 version = "16.1.0"
 source = { registry = "https://pypi.org/simple" }
@@ -4342,6 +4354,7 @@ security-signing = [
     { name = "cryptography" },
 ]
 server = [
+    { name = "auto-browser-client" },
     { name = "fastapi" },
     { name = "pydantic" },
     { name = "python-multipart" },
@@ -4368,6 +4381,7 @@ requires-dist = [
     { name = "amdsmi", marker = "extra == 'energy-all'", specifier = ">=6.1" },
     { name = "amdsmi", marker = "extra == 'energy-amd'", specifier = ">=6.1" },
     { name = "anthropic", marker = "extra == 'inference-cloud'", specifier = ">=0.30" },
+    { name = "auto-browser-client", marker = "extra == 'server'", specifier = ">=1.2.1" },
     { name = "boto3", specifier = ">=1.20" },
     { name = "click", specifier = ">=8" },
     { name = "colbert-ai", marker = "extra == 'memory-colbert'", specifier = ">=0.2" },
