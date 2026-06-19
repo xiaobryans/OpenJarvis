@@ -210,6 +210,54 @@ def read_github_user(token: Optional[str] = None) -> ConnectorLiveReadResult:
     )
 
 
+def read_github_repo(
+    owner: str = "xiaobryans",
+    repo: str = "OpenJarvis",
+    token: Optional[str] = None,
+) -> ConnectorLiveReadResult:
+    """Get GitHub repository metadata (read-only). No push/PR/issue creation."""
+    token = token or _load_env_key("GITHUB_TOKEN")
+    start = time.time()
+
+    if not token:
+        return ConnectorLiveReadResult(
+            connector_id="github_repo", operation=f"GET /repos/{owner}/{repo}",
+            status="blocked_credentials", live_read_available=False,
+            data_preview=None, latency_ms=0.0, error="GITHUB_TOKEN not configured",
+            write_status="BLOCKED_SAFETY", send_status="BLOCKED_SAFETY",
+        )
+
+    data = _safe_get(
+        f"https://api.github.com/repos/{owner}/{repo}",
+        headers={"Authorization": f"Bearer {token}", "User-Agent": "openjarvis/1.0"},
+    )
+    latency = (time.time() - start) * 1000
+
+    if "_error" in data or data.get("_status") == 404:
+        return ConnectorLiveReadResult(
+            connector_id="github_repo", operation=f"GET /repos/{owner}/{repo}",
+            status="blocked_network" if "_error" in data else "blocked_credentials",
+            live_read_available=False,
+            data_preview=None, latency_ms=latency,
+            error=data.get("_error", "repository not found"),
+            write_status="BLOCKED_SAFETY", send_status="BLOCKED_SAFETY",
+        )
+
+    preview = {
+        "full_name": data.get("full_name"),
+        "default_branch": data.get("default_branch"),
+        "private": data.get("private"),
+        "open_issues": data.get("open_issues_count"),
+        "language": data.get("language"),
+    }
+    return ConnectorLiveReadResult(
+        connector_id="github_repo", operation=f"GET /repos/{owner}/{repo}",
+        status="ok", live_read_available=True,
+        data_preview=preview, latency_ms=latency, error=None,
+        write_status="BLOCKED_SAFETY", send_status="BLOCKED_SAFETY",
+    )
+
+
 # ---------------------------------------------------------------------------
 # Telegram live read
 # ---------------------------------------------------------------------------
@@ -282,31 +330,89 @@ def _blocked_connector(
     )
 
 
+def _check_google_token_file(name: str) -> bool:
+    """Check if ~/.openjarvis/connectors/{name}.json exists and has tokens."""
+    paths = [
+        Path.home() / ".openjarvis" / "connectors" / f"{name}.json",
+        Path.home() / ".jarvis" / "connectors" / f"{name}.json",
+    ]
+    for p in paths:
+        if p.exists():
+            try:
+                import json as _json
+                data = _json.loads(p.read_text())
+                if data.get("access_token") or data.get("refresh_token"):
+                    return True
+            except Exception:
+                pass
+    return False
+
+
+def _google_oauth_blockers() -> Dict[str, Any]:
+    """Return exact missing Google OAuth artifacts."""
+    return {
+        "GOOGLE_OAUTH_CLIENT_SECRET": "MISSING — not in cloud-keys.env",
+        "GOOGLE_OAUTH_REFRESH_TOKEN": "MISSING — OAuth flow not completed",
+        "GOOGLE_OAUTH_ACCESS_TOKEN": "MISSING — OAuth flow not completed",
+        "token_file_gmail": "MISSING — ~/.openjarvis/connectors/gmail.json not present",
+        "token_file_calendar": "MISSING — ~/.openjarvis/connectors/calendar.json not present",
+        "token_file_drive": "MISSING — ~/.openjarvis/connectors/drive.json not present",
+        "exact_bryan_steps": [
+            "1. Add GOOGLE_OAUTH_CLIENT_SECRET to ~/.jarvis/cloud-keys.env",
+            "2. Run: python -m openjarvis.connectors.google_auth --flow gmail "
+            "   (or equivalent OAuth flow script) to get refresh_token + access_token",
+            "3. Tokens auto-saved to ~/.openjarvis/connectors/gmail.json",
+            "4. Repeat for calendar and drive if separate tokens needed",
+        ],
+        "implementation_status": "BLOCKED_CREDENTIALS — client_secret missing prevents OAuth flow",
+    }
+
+
 def read_gmail() -> ConnectorLiveReadResult:
+    """Gmail: BLOCKED_CREDENTIALS — no client_secret or refresh_token."""
+    blockers = _google_oauth_blockers()
     return _blocked_connector(
         "gmail", "messages.list",
-        "GOOGLE_OAUTH_CLIENT_ID present but no OAuth access token. "
-        "Google OAuth flow not yet completed.",
-        "Run Google OAuth flow for openjarvis app to get gmail access token. "
-        "Store token in ~/.jarvis/connectors/gmail.json",
+        "BLOCKED_CREDENTIALS: GOOGLE_OAUTH_CLIENT_SECRET missing; refresh_token not obtained. "
+        "Google OAuth flow cannot be started without client_secret.",
+        str(blockers["exact_bryan_steps"]),
     )
 
 
 def read_calendar() -> ConnectorLiveReadResult:
+    """Calendar: BLOCKED_CREDENTIALS — same Google OAuth flow required."""
+    blockers = _google_oauth_blockers()
     return _blocked_connector(
         "calendar", "events.list",
-        "No Google Calendar OAuth access token configured.",
-        "Same OAuth flow as Gmail. After completing OAuth, store token in "
-        "~/.jarvis/connectors/calendar.json",
+        "BLOCKED_CREDENTIALS: GOOGLE_OAUTH_CLIENT_SECRET missing. "
+        "Same OAuth flow as Gmail required.",
+        str(blockers["exact_bryan_steps"]),
     )
 
 
 def read_drive() -> ConnectorLiveReadResult:
+    """Drive: BLOCKED_CREDENTIALS — same Google OAuth flow required."""
     return _blocked_connector(
         "drive", "files.list",
-        "No Google Drive OAuth access token configured.",
-        "Same OAuth flow as Gmail/Calendar.",
+        "BLOCKED_CREDENTIALS: GOOGLE_OAUTH_CLIENT_SECRET missing. "
+        "Same OAuth flow as Gmail/Calendar required.",
+        "Add GOOGLE_OAUTH_CLIENT_SECRET to cloud-keys.env, then run OAuth flow.",
     )
+
+
+def get_google_oauth_status() -> Dict[str, Any]:
+    """Return full Google OAuth readiness status for doctor checks."""
+    return {
+        "client_id_present": bool(_load_env_key("GOOGLE_OAUTH_CLIENT_ID")),
+        "client_secret_present": bool(_load_env_key("GOOGLE_OAUTH_CLIENT_SECRET")),
+        "refresh_token_present": bool(_load_env_key("GOOGLE_OAUTH_REFRESH_TOKEN")),
+        "token_file_gmail": _check_google_token_file("gmail"),
+        "token_file_calendar": _check_google_token_file("calendar"),
+        "token_file_drive": _check_google_token_file("drive"),
+        "overall_status": "BLOCKED_CREDENTIALS",
+        "blockers": _google_oauth_blockers(),
+        "no_raw_chain_of_thought": True,
+    }
 
 
 # ---------------------------------------------------------------------------

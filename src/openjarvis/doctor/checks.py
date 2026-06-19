@@ -4408,6 +4408,130 @@ def check_coding_proof_ladder_framework(project_id: str = "omnix") -> CheckResul
         )
 
 
+def check_provider_capability_matrix(project_id: str = "omnix") -> CheckResult:
+    """Check that the provider capability matrix is present and coverage is adequate."""
+    try:
+        from openjarvis.orchestrator.provider_capability_matrix import get_matrix_summary
+        summary = get_matrix_summary()
+        da = summary.get("daily_driver_accept", 0)
+        blocked = summary.get("blocked", 0)
+        total = summary.get("total_capabilities", 0)
+        overall = summary.get("overall_status", "UNKNOWN")
+        embeddings = summary.get("embedding_proven", False)
+        ok = overall == "DAILY_DRIVER_ACCEPT" and da >= 8 and embeddings
+        return CheckResult(
+            check_id="provider_capability_matrix",
+            category="model_provider",
+            status=CheckStatus.PASS if ok else CheckStatus.WARN,
+            summary=(
+                f"Provider capability matrix: {da}/{total} DAILY_DRIVER_ACCEPT, "
+                f"{blocked} blocked, embeddings_proven={embeddings}, overall={overall}"
+            ),
+            evidence={
+                "total": total,
+                "daily_driver_accept": da,
+                "blocked": blocked,
+                "overall_status": overall,
+                "embedding_model": summary.get("embedding_model", "unknown"),
+                "embedding_proven": embeddings,
+                "coverage_gaps": summary.get("coverage_gaps", []),
+                "voice_status": summary.get("voice_status", "unknown"),
+            },
+            project_id=project_id,
+        )
+    except Exception as exc:
+        return CheckResult(
+            check_id="provider_capability_matrix",
+            category="model_provider",
+            status=CheckStatus.FAIL,
+            summary=f"provider_capability_matrix check error: {exc}",
+            evidence={"exception": str(exc)},
+            project_id=project_id,
+        )
+
+
+def check_memory_continuity_proofs(project_id: str = "omnix") -> CheckResult:
+    """Run the 7 daily-driver memory continuity proof cases."""
+    try:
+        from openjarvis.memory.memory_continuity import run_memory_continuity_proofs
+        report = run_memory_continuity_proofs()
+        ok = report.overall_status == "DAILY_DRIVER_ACCEPT"
+        return CheckResult(
+            check_id="memory_continuity_proofs",
+            category="memory",
+            status=CheckStatus.PASS if ok else CheckStatus.WARN,
+            summary=(
+                f"Memory continuity: {report.pass_count} PASS, "
+                f"{report.skip_count} SKIP, {report.fail_count} FAIL — "
+                f"overall={report.overall_status} score={report.memory_score}"
+            ),
+            evidence={
+                "pass_count": report.pass_count,
+                "fail_count": report.fail_count,
+                "skip_count": report.skip_count,
+                "overall_status": report.overall_status,
+                "memory_score": report.memory_score,
+                "proof_ids": [p.proof_id for p in report.proofs],
+                "failures": [p.proof_id for p in report.proofs if p.status == "FAIL"],
+                "notes": report.notes,
+            },
+            project_id=project_id,
+        )
+    except Exception as exc:
+        return CheckResult(
+            check_id="memory_continuity_proofs",
+            category="memory",
+            status=CheckStatus.FAIL,
+            summary=f"memory_continuity_proofs check error: {exc}",
+            evidence={"exception": str(exc)},
+            project_id=project_id,
+        )
+
+
+def check_google_oauth_status(project_id: str = "omnix") -> CheckResult:
+    """Check Google OAuth credential completeness for Gmail/Calendar/Drive."""
+    try:
+        from openjarvis.orchestrator.connector_live_reader import get_google_oauth_status
+        status = get_google_oauth_status()
+        client_id = status.get("client_id_present", False)
+        client_secret = status.get("client_secret_present", False)
+        tokens = status.get("refresh_token_present", False)
+        blocked = not (client_secret and tokens)
+        summary = (
+            f"Google OAuth: client_id={client_id}, client_secret={client_secret}, "
+            f"refresh_token={tokens}, overall={status.get('overall_status','UNKNOWN')}"
+        )
+        return CheckResult(
+            check_id="google_oauth_status",
+            category="connector",
+            status=CheckStatus.WARN if blocked else CheckStatus.PASS,
+            summary=summary,
+            evidence={
+                "client_id_present": client_id,
+                "client_secret_present": client_secret,
+                "refresh_token_present": tokens,
+                "token_file_gmail": status.get("token_file_gmail", False),
+                "token_file_calendar": status.get("token_file_calendar", False),
+                "token_file_drive": status.get("token_file_drive", False),
+                "overall_status": status.get("overall_status"),
+                "bryan_action": (
+                    "Add GOOGLE_OAUTH_CLIENT_SECRET to ~/.jarvis/cloud-keys.env, "
+                    "then run OAuth flow to obtain refresh_token"
+                ),
+            },
+            project_id=project_id,
+        )
+    except Exception as exc:
+        return CheckResult(
+            check_id="google_oauth_status",
+            category="connector",
+            status=CheckStatus.FAIL,
+            summary=f"google_oauth_status check error: {exc}",
+            evidence={"exception": str(exc)},
+            project_id=project_id,
+        )
+
+
 # ---------------------------------------------------------------------------
 # Check registry (34+ checks)
 # ---------------------------------------------------------------------------
@@ -4487,6 +4611,10 @@ _ALL_CHECK_FNS: List[Callable[..., CheckResult]] = [
     # Prompt 3 continuation — memory + connectors raised to 4/5
     check_semantic_memory,
     check_connector_live_reader,
+    # Blocker Clearance Mega-Sprint A
+    check_provider_capability_matrix,
+    check_memory_continuity_proofs,
+    check_google_oauth_status,
 ]
 
 
@@ -4588,5 +4716,9 @@ __all__ = [
     # Prompt 3 continuation — memory + connectors raised to 4/5
     "check_semantic_memory",
     "check_connector_live_reader",
+    # Blocker Clearance Mega-Sprint A
+    "check_provider_capability_matrix",
+    "check_memory_continuity_proofs",
+    "check_google_oauth_status",
     "run_all_checks",
 ]

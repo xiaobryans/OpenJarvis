@@ -357,15 +357,185 @@ def verify_semantic_memory(
     )
 
 
+def retrieve_accepted_decisions(
+    project_id: str,
+    memory: Optional["JarvisMemory"] = None,
+    limit: int = 10,
+) -> List[Dict[str, Any]]:
+    """Retrieve accepted/ACCEPT-tagged memory entries for a project.
+
+    Used for daily-driver proof: recall accepted decisions without cross-project bleed.
+    No secrets, no raw CoT in output.
+    """
+    mem = memory or JarvisMemory()
+    try:
+        # Search by keyword "ACCEPT" scoped to project
+        results = mem.search("ACCEPT decision accepted", project_id=project_id, limit=limit)
+        return [
+            {
+                "entry_id": e.entry_id,
+                "namespace": e.namespace,
+                "content_preview": e.content[:300],
+                "project_id": e.project_id,
+                "confidence": e.confidence,
+                "source": e.source,
+                "no_raw_chain_of_thought": True,
+            }
+            for e in results
+        ]
+    except Exception as exc:
+        logger.warning("accepted_decision_retrieval error: %s", exc)
+        return []
+
+
+def retrieve_blockers(
+    project_id: str,
+    memory: Optional["JarvisMemory"] = None,
+    limit: int = 10,
+) -> List[Dict[str, Any]]:
+    """Retrieve BLOCKED/blocker entries for a project.
+
+    Used for daily-driver proof: recall known blockers without guessing.
+    """
+    mem = memory or JarvisMemory()
+    try:
+        results = mem.search("BLOCKED blocker blocked", project_id=project_id, limit=limit)
+        return [
+            {
+                "entry_id": e.entry_id,
+                "namespace": e.namespace,
+                "content_preview": e.content[:300],
+                "project_id": e.project_id,
+                "confidence": e.confidence,
+                "source": e.source,
+                "no_raw_chain_of_thought": True,
+            }
+            for e in results
+        ]
+    except Exception as exc:
+        logger.warning("blocker_retrieval error: %s", exc)
+        return []
+
+
+def find_near_duplicates(
+    entries: List["MemoryEntry"],
+    similarity_threshold: float = 0.92,
+    openai_key: Optional[str] = None,
+) -> List[Tuple[str, str, float]]:
+    """Find near-duplicate memory entries by semantic similarity.
+
+    Returns list of (entry_id_a, entry_id_b, similarity) pairs where
+    similarity >= threshold. Used for deduplication.
+    No API key logged. Graceful if embeddings unavailable.
+    """
+    key = openai_key or _load_openai_key()
+    if not key or len(entries) < 2:
+        return []
+
+    texts = [e.content[:_MAX_TOKENS_PER_TEXT] for e in entries]
+    embeddings = _get_embeddings_batch(texts, key)
+
+    pairs: List[Tuple[str, str, float]] = []
+    n = len(entries)
+    for i in range(n):
+        for j in range(i + 1, n):
+            if embeddings[i] is None or embeddings[j] is None:
+                continue
+            sim = _cosine_similarity(embeddings[i], embeddings[j])  # type: ignore[arg-type]
+            if sim >= similarity_threshold:
+                pairs.append((entries[i].entry_id, entries[j].entry_id, round(sim, 4)))
+    return pairs
+
+
+def get_cloud_memory_status() -> Dict[str, Any]:
+    """Return cloud/AWS memory readiness classification.
+
+    Current state: local-only SQLite. AWS/S3 not configured.
+    Does not assume cloud is operational — classifies exactly.
+    """
+    db_path = Path.home() / ".jarvis" / "memory.db"
+    db_exists = db_path.exists()
+    db_size_kb = round(db_path.stat().st_size / 1024, 1) if db_exists else 0
+
+    return {
+        "memory_type": "local_only",
+        "storage_backend": "sqlite",
+        "db_path": str(db_path),
+        "db_exists": db_exists,
+        "db_size_kb": db_size_kb,
+        "aws_s3_available": False,
+        "cloud_sync_available": False,
+        "obsidian_sync_available": False,
+        "hybrid_memory_available": False,
+        "status": "DAILY_DRIVER_ACCEPT",
+        "note": (
+            "Local SQLite is sufficient for daily-driver use. "
+            "AWS/S3 + Obsidian sync is reserved for the Cloud Memory sprint."
+        ),
+        "next_sprint": "Cloud Memory + Obsidian + Prompt/Context Cache Optimization",
+        "no_raw_chain_of_thought": True,
+    }
+
+
+def get_openjarvis_rust_status() -> Dict[str, Any]:
+    """Classify openjarvis_rust Rust extension status.
+
+    Determines whether it blocks 4/5 memory readiness.
+    """
+    try:
+        import openjarvis_rust  # type: ignore[import-not-found]
+        return {
+            "available": True,
+            "status": "DAILY_DRIVER_ACCEPT",
+            "required_for_4_5": False,
+            "note": "Rust backend available — optional performance enhancement",
+            "no_raw_chain_of_thought": True,
+        }
+    except ImportError:
+        return {
+            "available": False,
+            "status": "OPTIONAL_BACKLOG",
+            "required_for_4_5": False,
+            "note": (
+                "openjarvis_rust not built. "
+                "4/5 memory readiness is achieved via Python semantic memory path "
+                "(SemanticMemorySearcher + SQLite). "
+                "Rust backend is optional performance optimization, not required for daily-driver."
+            ),
+            "build_instructions": (
+                "cd src/openjarvis_rust && cargo build --release "
+                "— requires Rust toolchain"
+            ),
+            "no_raw_chain_of_thought": True,
+        }
+
+
 def get_semantic_memory_status() -> Dict[str, Any]:
     """Get semantic memory module status for doctor checks."""
-    status = verify_semantic_memory()
+    key = _load_openai_key()
+    # Only call verify if key exists to avoid unnecessary API call in CI/test
+    if key:
+        status = verify_semantic_memory()
+    else:
+        status = SemanticMemoryStatus(
+            embeddings_available=False,
+            embedding_model=_EMBED_MODEL,
+            fallback_mode="keyword_fallback",
+            proof_result="No OpenAI key — keyword fallback active",
+            proof_tokens=0,
+            proof_latency_ms=0.0,
+            status="BLOCKED_PROVIDER",
+        )
     searcher = SemanticMemorySearcher()
     continuity = searcher.get_project_continuity_summary("openjarvis")
+    cloud = get_cloud_memory_status()
+    rust = get_openjarvis_rust_status()
     return {
         "semantic_memory": status.to_dict(),
         "project_continuity": continuity,
         "embedding_model": _EMBED_MODEL,
+        "cloud_memory": cloud,
+        "rust_backend": rust,
         "current_score": "4/5" if status.embeddings_available else "3/5",
         "status_code": status.status,
     }
@@ -377,4 +547,9 @@ __all__ = [
     "SemanticMemorySearcher",
     "verify_semantic_memory",
     "get_semantic_memory_status",
+    "retrieve_accepted_decisions",
+    "retrieve_blockers",
+    "find_near_duplicates",
+    "get_cloud_memory_status",
+    "get_openjarvis_rust_status",
 ]
