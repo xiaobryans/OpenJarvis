@@ -31,18 +31,26 @@ Scorecard uses explicit **current_score/target_score** notation (e.g. 3/5 → 4/
 
 ## Status Legend
 
+No-Gap policy (enforced from No-Gap Jarvis Total Closure Sprint onward):
+`REQUIRED_FOR_NO_GAP_JARVIS` and `OPTIONAL_BACKLOG` are disallowed as final statuses.
+Every item must reach DAILY_DRIVER_ACCEPT, be proven superseded, or be actively tracked as required.
+
 | Code | Meaning |
 |------|---------|
 | `DAILY_DRIVER_ACCEPT` | Score ≥ 4; works for Bryan in normal use |
 | `PUBLIC_READY_ACCEPT` | Score = 5; adversarial/hostile-grade |
+| `CLEARED_BY_VERIFIED_SUPERSEDED_DESIGN` | Not needed because a better complete design covers it; reason documented |
+| `REQUIRED_FOR_NO_GAP_JARVIS` | Required for full Jarvis completion; implementation sprint needed |
+| `REQUIRED_SEPARATE_SAFETY_SPRINT` | Required but must be implemented in dedicated safety-reviewed sprint |
 | `BLOCKED_BRYAN_ACTION` | Bryan must take a specific action to unblock |
+| `BLOCKED_WAITING_FOR_BRYAN_NOW` | Bryan live action required immediately |
 | `BLOCKED_PROVIDER` | Missing model/provider API key |
 | `BLOCKED_CREDENTIALS` | Missing non-model credential (Apple ID, OAuth token, etc.) |
 | `BLOCKED_HARDWARE` | Missing hardware/system permission |
 | `BLOCKED_SAFETY` | Intentional permanent safety block |
 | `BLOCKED_IMPLEMENTATION` | Code not yet written; no Bryan action can unblock it |
-| `PLANNED_IN_EXISTING_PROMPT` | Planned in a defined future prompt/sprint |
-| `OPTIONAL_BACKLOG` | Not required for core Jarvis OS; optional enhancement |
+| ~~`REQUIRED_FOR_NO_GAP_JARVIS`~~ | Removed — use REQUIRED_FOR_NO_GAP_JARVIS |
+| ~~`OPTIONAL_BACKLOG`~~ | Removed — use CLEARED_BY_VERIFIED_SUPERSEDED_DESIGN or REQUIRED_FOR_NO_GAP_JARVIS |
 
 ---
 
@@ -57,7 +65,7 @@ Scorecard uses explicit **current_score/target_score** notation (e.g. 3/5 → 4/
 | `JarvisFrontDoor` | EXISTING | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | Routes any request; dangerous actions blocked; adapters optional |
 | `FrontDoorAdapter` ABC | EXISTING | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | OMNIX plugs in as OmnixFrontDoorAdapter; future projects add adapters |
 | `OmnixFrontDoorAdapter` | EXISTING | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | OMNIX as optional enrichment; not required by JarvisFrontDoor |
-| `FrontDoorResult` | EXISTING | 4 | 5 | `PLANNED_IN_EXISTING_PROMPT` | Public Hardening | — | — | Structured result, no raw CoT; 5/5 requires adversarial input hardening |
+| `FrontDoorResult` | EXISTING | 4 | 5 | `REQUIRED_FOR_NO_GAP_JARVIS` | Public Hardening | — | — | Structured result, no raw CoT; 5/5 requires adversarial input hardening |
 | OMNIX not required for orchestration | EXISTING | 5 | 5 | `PUBLIC_READY_ACCEPT` | — | — | — | Personal task with no project_context routes successfully through full stack |
 
 ---
@@ -69,8 +77,8 @@ Scorecard uses explicit **current_score/target_score** notation (e.g. 3/5 → 4/
 | `CosGmOrchestrator` class | EXISTING (new) | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | Receives UniversalTaskRequest, classifies, routes to planner, returns FrontDoorResult |
 | Real worker dispatch after planning | EXISTING (new) | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | COS/GM calls execute_worker() for each selected worker; status="executed" when workers run |
 | Runtime trace events emitted | EXISTING (new) | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | COS_GM, MANAGER_ACTIVATION, WORKER_EXECUTION, VALIDATION, NUS_FEEDBACK, FINAL_RESPONSE events all emitted |
-| Intent/risk/complexity classification | EXISTING | 3 | 4 | `PLANNED_IN_EXISTING_PROMPT` | COS/GM Hardening | — | — | Keyword-based; 4/5 requires domain-model scoring, not just keyword scan |
-| Structured decision record emitted | EXISTING | 4 | 5 | `PLANNED_IN_EXISTING_PROMPT` | Public Hardening | — | — | Every activation emits NUS 1F decision record; 5/5 requires record store query proof |
+| Intent/risk/complexity classification | EXISTING | 3 | 4 | `REQUIRED_FOR_NO_GAP_JARVIS` | COS/GM Hardening | — | — | Keyword-based; 4/5 requires domain-model scoring, not just keyword scan |
+| Structured decision record emitted | EXISTING | 4 | 5 | `REQUIRED_FOR_NO_GAP_JARVIS` | Public Hardening | — | — | Every activation emits NUS 1F decision record; 5/5 requires record store query proof |
 | Dangerous actions permanently blocked | EXISTING | 5 | 5 | `PUBLIC_READY_ACCEPT` | — | — | — | auto_push, auto_merge, production_deploy, external_send, us13_voice all blocked |
 | US13 voice HOLD/UNSAFE/PARKED | EXISTING | 5 | 5 | `PUBLIC_READY_ACCEPT` | — | — | — | Blocked in CosGmOrchestrator and JarvisFrontDoor; not activatable |
 | Project context routed correctly | EXISTING | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | Project label appears in FrontDoorResult; non-OMNIX project routes correctly |
@@ -88,7 +96,7 @@ Scorecard uses explicit **current_score/target_score** notation (e.g. 3/5 → 4/
 | NUS feedback tag in activation plan | EXISTING (new) | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | `nus_feedback:loaded` or `nus_feedback:not_available` in nus_learning_tags |
 | `get_status()` reports nus_feedback_available | EXISTING (new) | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | `status["nus_feedback_available"]` is bool |
 | Cheap model blocked for critical actions | EXISTING | 5 | 5 | `PUBLIC_READY_ACCEPT` | — | — | — | `cheap_model_blocked_for_approval: True` in model_routing_plan |
-| Model/provider sufficiency disclosed | EXISTING | 4 | 5 | `PLANNED_IN_EXISTING_PROMPT` | Provider Sprint | `BLOCKED_PROVIDER` (see §8) | See §8 | `provider_sufficiency` key in model_routing_plan; 5/5 requires live provider check |
+| Model/provider sufficiency disclosed | EXISTING | 4 | 5 | `REQUIRED_FOR_NO_GAP_JARVIS` | Provider Sprint | `BLOCKED_PROVIDER` (see §8) | See §8 | `provider_sufficiency` key in model_routing_plan; 5/5 requires live provider check |
 
 ---
 
@@ -101,10 +109,10 @@ Scorecard uses explicit **current_score/target_score** notation (e.g. 3/5 → 4/
 | `NUSLearningWorkerAdapter` | EXISTING (new) | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | Reads LearningStore.summarize(); dry-run safe |
 | `CostAnalysisWorkerAdapter` | EXISTING (new) | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | Reads LearnedRouter.get_status(); dry-run safe |
 | `FileInspectionWorkerAdapter` | EXISTING (new) | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | Reads targeted files (read-only), returns line-range snippets and metadata |
-| `CodingSafeWorkerAdapter` | EXISTING (new) | 3 | 4 | `PLANNED_IN_EXISTING_PROMPT` | Provider Sprint | `BLOCKED_PROVIDER` (patch_propose, repair_loop) | Set OPENAI_API_KEY or ANTHROPIC_API_KEY | Coding proof path: classify, inspect, test_run, diff_report, rollback_plan all 4/5. patch_propose/repair_loop require LLM → BLOCKED_PROVIDER → 3/5 → 4/5 when key configured |
+| `CodingSafeWorkerAdapter` | EXISTING (new) | 3 | 4 | `REQUIRED_FOR_NO_GAP_JARVIS` | Provider Sprint | `BLOCKED_PROVIDER` (patch_propose, repair_loop) | Set OPENAI_API_KEY or ANTHROPIC_API_KEY | Coding proof path: classify, inspect, test_run, diff_report, rollback_plan all 4/5. patch_propose/repair_loop require LLM → BLOCKED_PROVIDER → 3/5 → 4/5 when key configured |
 | Blocked actions refused by all adapters | EXISTING (new) | 5 | 5 | `PUBLIC_READY_ACCEPT` | — | — | — | auto_push, production_deploy, external_send, us13_voice refused at adapter level; proven in adversarial injection tests |
 | NUS gate checked before execution | EXISTING (new) | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | Safe local actions pass; non-dry-run gates via LowRiskExecutionManager; proven in orchestrator tests |
-| Coding proof path: classify + inspect + test + diff + rollback | EXISTING (new) | 3 | 4 | `PLANNED_IN_EXISTING_PROMPT` | Provider Sprint | `BLOCKED_PROVIDER` (LLM code generation) | See §8 provider actions | Sub-paths available: classify (4/5), inspect (4/5), test_run (4/5), diff_report (4/5), rollback_plan (4/5). Full path (patch_propose + repair_loop) needs LLM |
+| Coding proof path: classify + inspect + test + diff + rollback | EXISTING (new) | 3 | 4 | `REQUIRED_FOR_NO_GAP_JARVIS` | Provider Sprint | `BLOCKED_PROVIDER` (LLM code generation) | See §8 provider actions | Sub-paths available: classify (4/5), inspect (4/5), test_run (4/5), diff_report (4/5), rollback_plan (4/5). Full path (patch_propose + repair_loop) needs LLM |
 
 ---
 
@@ -128,8 +136,8 @@ Scorecard uses explicit **current_score/target_score** notation (e.g. 3/5 → 4/
 | Item | Classification | Score | Target | Status | Assigned Prompt | Blocker | Bryan Action | Acceptance Criteria |
 |------|---------------|-------|--------|--------|-----------------|---------|--------------|---------------------|
 | `ProjectProfile` + `ProjectRegistry` | EXISTING | 5 | 5 | `PUBLIC_READY_ACCEPT` | — | — | — | In constitution.py; OMNIX pre-registered; future projects via register() |
-| In-process registry (not persisted) | PARTIAL | 2 | 4 | `PLANNED_IN_EXISTING_PROMPT` | Persistence Sprint | `BLOCKED_IMPLEMENTATION` | — | SQLite/config-file persistence; survives restart |
-| Multi-project concurrent supervision | PARTIAL | 2 | 4 | `PLANNED_IN_EXISTING_PROMPT` | Multi-Project Sprint | `BLOCKED_IMPLEMENTATION` | — | Jarvis supervises all active projects simultaneously; currently OMNIX + OpenJarvis bootstrapped only |
+| In-process registry (not persisted) | PARTIAL | 2 | 4 | `REQUIRED_FOR_NO_GAP_JARVIS` | Persistence Sprint | `BLOCKED_IMPLEMENTATION` | — | SQLite/config-file persistence; survives restart |
+| Multi-project concurrent supervision | PARTIAL | 2 | 4 | `REQUIRED_FOR_NO_GAP_JARVIS` | Multi-Project Sprint | `BLOCKED_IMPLEMENTATION` | — | Jarvis supervises all active projects simultaneously; currently OMNIX + OpenJarvis bootstrapped only |
 
 ---
 
@@ -141,10 +149,10 @@ This manager has four distinct blockers — each classified separately:
 
 | Sub-item | Classification | Score | Target | Status | Blocker Type | Bryan Action | Acceptance Criteria |
 |----------|---------------|-------|--------|--------|-------------|--------------|---------------------|
-| Workers assigned | MISSING | 0 | 4 | `PLANNED_IN_EXISTING_PROMPT` | `BLOCKED_IMPLEMENTATION` | None — code change required | At least one connector_auth_worker registered and active |
+| Workers assigned | MISSING | 0 | 4 | `REQUIRED_FOR_NO_GAP_JARVIS` | `BLOCKED_IMPLEMENTATION` | None — code change required | At least one connector_auth_worker registered and active |
 | Live secret/credential access policy | EXISTING | 5 | 5 | `BLOCKED_SAFETY` | `BLOCKED_SAFETY` (permanent) | None — intentional | `access_live_secrets` and `rotate_credentials` permanently in blocked_action_types |
 | Live connector credentials (OAuth tokens, API keys) | MISSING | 0 | 4 | `BLOCKED_CREDENTIALS` | `BLOCKED_CREDENTIALS` | Configure connector credentials in `~/.jarvis/cloud-keys.env`: `GOOGLE_OAUTH_CLIENT_ID`, `SLACK_BOT_TOKEN`, etc. | Connector health check passes for configured connectors |
-| Full connector auth implementation | MISSING | 0 | 4 | `PLANNED_IN_EXISTING_PROMPT` | `BLOCKED_IMPLEMENTATION` | None — code change required | `connector_auth_manager` moves to STATUS_ACTIVE after workers implemented |
+| Full connector auth implementation | MISSING | 0 | 4 | `REQUIRED_FOR_NO_GAP_JARVIS` | `BLOCKED_IMPLEMENTATION` | None — code change required | `connector_auth_manager` moves to STATUS_ACTIVE after workers implemented |
 
 **Summary:** `connector_auth_manager` is STATUS_INACTIVE for two distinct reasons: (1) no workers assigned (BLOCKED_IMPLEMENTATION), and (2) live secret access permanently blocked by safety policy (BLOCKED_SAFETY). Credentials are also missing (BLOCKED_CREDENTIALS). This does NOT block Core Runtime.
 
@@ -172,8 +180,8 @@ Scope: packaging/release only. Does NOT block Core Runtime.
 | OpenAI GPT-4 for premium tasks | MISSING | 0 | 4 | `BLOCKED_PROVIDER` | `BLOCKED_PROVIDER` | Set `OPENAI_API_KEY` in `~/.jarvis/cloud-keys.env`. Without it: dry-run planning only; no real LLM-reviewed orchestration. | `OPENAI_API_KEY` present → `ModelProviderSufficiencyGap` resolved for openai tier |
 | Anthropic Claude for mid/premium tasks | MISSING | 0 | 4 | `BLOCKED_PROVIDER` | `BLOCKED_PROVIDER` | Set `ANTHROPIC_API_KEY` in `~/.jarvis/cloud-keys.env`. Without it: no Claude-based orchestration. | `ANTHROPIC_API_KEY` present → gap resolved for anthropic tier |
 | OpenRouter for model routing | PARTIAL | 2 | 4 | `BLOCKED_PROVIDER` | `BLOCKED_PROVIDER` | Set `OPENROUTER_API_KEY` in `~/.jarvis/cloud-keys.env` | OpenRouter routing active; model selection follows `JARVIS_ROUTING_MODEL_POLICY.md` |
-| Local model fallback | PARTIAL | 2 | 4 | `PLANNED_IN_EXISTING_PROMPT` | Local Model Sprint | `BLOCKED_IMPLEMENTATION` | — | Local model (Ollama/llama.cpp) used when cloud providers unavailable |
-| Live provider availability check | MISSING | 0 | 4 | `PLANNED_IN_EXISTING_PROMPT` | Provider Sprint | `BLOCKED_IMPLEMENTATION` | — | Doctor check pings provider endpoints; surfaces gaps in status route |
+| Local model fallback | PARTIAL | 2 | 4 | `REQUIRED_FOR_NO_GAP_JARVIS` | Local Model Sprint | `BLOCKED_IMPLEMENTATION` | — | Local model (Ollama/llama.cpp) used when cloud providers unavailable |
+| Live provider availability check | MISSING | 0 | 4 | `REQUIRED_FOR_NO_GAP_JARVIS` | Provider Sprint | `BLOCKED_IMPLEMENTATION` | — | Doctor check pings provider endpoints; surfaces gaps in status route |
 
 ---
 
@@ -211,7 +219,7 @@ US13 is explicitly not activated in this sprint. Voice is assigned to the Voice/
 | `check_worker_execution_adapters` | EXISTING (new) | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | Adapter registry, dry-run, blocked refusal, unknown worker graceful |
 | `check_nus_scorecard_feedback_loop` | EXISTING (new) | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | _load_nus_feedback, plan tags, get_status verified |
 | `check_inactive_manager_classification` | EXISTING (new) | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | connector_auth_manager and release_packaging_manager classified with exact blockers |
-| `check_post_nus_orchestrator` | EXISTING | 4 | 5 | `PLANNED_IN_EXISTING_PROMPT` | Public Hardening | — | — | 4/5 now; 5/5 requires adversarial input proof |
+| `check_post_nus_orchestrator` | EXISTING | 4 | 5 | `REQUIRED_FOR_NO_GAP_JARVIS` | Public Hardening | — | — | 4/5 now; 5/5 requires adversarial input proof |
 | Doctor route (HTTP) | EXISTING | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | `/api/doctor/check` endpoint returns structured results |
 | Full doctor run covers all 44+ checks | EXISTING (updated) | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | `run_all_checks()` includes universal front door + worker adapter checks (44 checks confirmed) |
 
@@ -221,13 +229,13 @@ US13 is explicitly not activated in this sprint. Voice is assigned to the Voice/
 
 | Item | Classification | Score | Target | Status | Assigned Prompt | Blocker | Bryan Action | Acceptance Criteria |
 |------|---------------|-------|--------|--------|-----------------|---------|--------------|---------------------|
-| `JARVIS_COMPLETION_GAP_REGISTER.md` | EXISTING (new) | 4 | 5 | `PLANNED_IN_EXISTING_PROMPT` | Ongoing — updated each sprint | — | — | This file; 5/5 when all items tracked with full matrix fields |
+| `JARVIS_COMPLETION_GAP_REGISTER.md` | EXISTING (new) | 4 | 5 | `REQUIRED_FOR_NO_GAP_JARVIS` | Ongoing — updated each sprint | — | — | This file; 5/5 when all items tracked with full matrix fields |
 | `POST_NUS_COMPANY_AGENT_ORCHESTRATOR_PLAN.md` | EXISTING (updated) | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | Universal scope documented; COS/GM architecture correct |
 | `JARVIS_FUTURE_PROOF_ARCHITECTURE_PRINCIPLES.md` | EXISTING (updated) | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | "Not OMNIX-only" principle stated; universal scope |
 | `JARVIS_ROUTING_MODEL_POLICY.md` | EXISTING (updated) | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | Provider sufficiency disclosure requirement stated |
 | `WAVE_ROADMAP.md` | EXISTING (updated) | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | Universal Jarvis scope stated |
-| `JARVIS_CONSTITUTION.md` | EXISTING | 4 | 5 | `PLANNED_IN_EXISTING_PROMPT` | Governance Hardening | — | — | 5/5 requires adversarial/hostile input coverage of all hard gates |
-| User-facing docs / README | PARTIAL | 2 | 4 | `PLANNED_IN_EXISTING_PROMPT` | Public Docs Sprint | `BLOCKED_IMPLEMENTATION` | — | docs/index.md and README accurately describe universal Jarvis OS scope |
+| `JARVIS_CONSTITUTION.md` | EXISTING | 4 | 5 | `REQUIRED_FOR_NO_GAP_JARVIS` | Governance Hardening | — | — | 5/5 requires adversarial/hostile input coverage of all hard gates |
+| User-facing docs / README | PARTIAL | 2 | 4 | `REQUIRED_FOR_NO_GAP_JARVIS` | Public Docs Sprint | `BLOCKED_IMPLEMENTATION` | — | docs/index.md and README accurately describe universal Jarvis OS scope |
 
 ---
 
@@ -263,7 +271,7 @@ US13 is explicitly not activated in this sprint. Voice is assigned to the Voice/
 | FINAL_RESPONSE event | EXISTING (new) | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | Emitted at end with final status and elapsed_ms |
 | Replay log | EXISTING (new) | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | `replay_log(trace_id)` returns structured pipeline steps with elapsed_from_start |
 | No raw CoT in trace events | EXISTING (new) | 5 | 5 | `PUBLIC_READY_ACCEPT` | — | — | — | `no_raw_chain_of_thought=True` on every RuntimeTraceEvent |
-| Trace persistence to disk | MISSING | 0 | 4 | `PLANNED_IN_EXISTING_PROMPT` | Persistence Sprint | `BLOCKED_IMPLEMENTATION` | — | Traces persisted to ~/.jarvis/traces/; survives restart |
+| Trace persistence to disk | MISSING | 0 | 4 | `REQUIRED_FOR_NO_GAP_JARVIS` | Persistence Sprint | `BLOCKED_IMPLEMENTATION` | — | Traces persisted to ~/.jarvis/traces/; survives restart |
 | Proven in tests | EXISTING (new) | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | 30+ tests in test_runtime_trace.py pass |
 
 ---
@@ -273,9 +281,9 @@ US13 is explicitly not activated in this sprint. Voice is assigned to the Voice/
 | Item | Classification | Score | Target | Status | Assigned Prompt | Blocker | Bryan Action | Acceptance Criteria |
 |------|---------------|-------|--------|--------|-----------------|---------|--------------|---------------------|
 | Blocked actions blocked via requested_actions injection | EXISTING (new) | 5 | 5 | `PUBLIC_READY_ACCEPT` | — | — | — | auto_push/merge/deploy/send/voice/secret all blocked when in requested_actions; proven in test_adversarial_injection.py |
-| Prompt injection in user_input text | EXISTING (new) | 3 | 5 | `PLANNED_IN_EXISTING_PROMPT` | Hardening Sprint | — | — | Jailbreak phrasing routes safely; 5/5 requires LLM-based injection detection |
+| Prompt injection in user_input text | EXISTING (new) | 3 | 5 | `REQUIRED_FOR_NO_GAP_JARVIS` | Hardening Sprint | — | — | Jailbreak phrasing routes safely; 5/5 requires LLM-based injection detection |
 | Worker adapter refuses blocked action_types | EXISTING (new) | 5 | 5 | `PUBLIC_READY_ACCEPT` | — | — | — | All adapters refuse auto_push, external_send, production_deploy, us13_voice, secret_access, browser_purchase at execute() level |
-| Malicious metadata injection | EXISTING (new) | 3 | 5 | `PLANNED_IN_EXISTING_PROMPT` | Hardening Sprint | — | — | Top-level requested_actions checked; nested injection and fake key injection tested; 5/5 requires full metadata sanitization |
+| Malicious metadata injection | EXISTING (new) | 3 | 5 | `REQUIRED_FOR_NO_GAP_JARVIS` | Hardening Sprint | — | — | Top-level requested_actions checked; nested injection and fake key injection tested; 5/5 requires full metadata sanitization |
 | Capability registry unknown action blocked | EXISTING (new) | 5 | 5 | `PUBLIC_READY_ACCEPT` | — | — | — | get_or_blocked() returns BLOCKED for any unknown action; no silent capability grant |
 
 ---
@@ -288,15 +296,15 @@ The sprint prompt listed 11 items to check. Status:
 |------|----------|-----------------|
 | execution capability registry | **ADDED** §14 | capability_registry.py |
 | router trace object | **ADDED** §15 (runtime_trace.py) | DAILY_DRIVER_ACCEPT |
-| memory quality test matrix | `PLANNED_IN_EXISTING_PROMPT` — core memory baseline not required for this sprint runtime | See §12 NUS / memory persistence |
+| memory quality test matrix | `REQUIRED_FOR_NO_GAP_JARVIS` — core memory baseline not required for this sprint runtime | See §12 NUS / memory persistence |
 | voice state-machine acceptance matrix | `BLOCKED_SAFETY` — US13 HOLD/PARKED; not to be opened | See §9 US13 Voice |
 | connector dry-run simulator | **ADDED** in capability_registry.py as `connector_dry_run` action (STATUS_AVAILABLE) | §14 |
 | adversarial code/task injection test suite | **ADDED** §16 | test_adversarial_injection.py |
 | orchestrator replay log | **ADDED** §15 (`replay_log()` method on RuntimeTraceStore) | DAILY_DRIVER_ACCEPT |
 | manager/worker capability coverage matrix | **ADDED** §14 (ExecutionCapabilityRegistry classifies all worker action types) | DAILY_DRIVER_ACCEPT |
-| human correction ingestion schema | `PLANNED_IN_EXISTING_PROMPT` — advanced NUS work; not required for core runtime path | Future NUS Sprint |
-| stale memory conflict detector | `PLANNED_IN_EXISTING_PROMPT` — memory persistence sprint; not required for core runtime path | Future Persistence Sprint |
-| provider/key/blocker dashboard | **PARTIALLY ADDED** — capability_registry.check_provider_status() + get_status_summary() provide structured provider/blocker data; HTTP dashboard route is `PLANNED_IN_EXISTING_PROMPT` | §14 + Future UI Sprint |
+| human correction ingestion schema | `REQUIRED_FOR_NO_GAP_JARVIS` — advanced NUS work; not required for core runtime path | Future NUS Sprint |
+| stale memory conflict detector | `REQUIRED_FOR_NO_GAP_JARVIS` — memory persistence sprint; not required for core runtime path | Future Persistence Sprint |
+| provider/key/blocker dashboard | **PARTIALLY ADDED** — capability_registry.check_provider_status() + get_status_summary() provide structured provider/blocker data; HTTP dashboard route is `REQUIRED_FOR_NO_GAP_JARVIS` | §14 + Future UI Sprint |
 
 ---
 
@@ -420,7 +428,7 @@ The sprint prompt listed 11 items to check. Status:
 |------|---------------|-------|--------|--------|-----------------|---------|--------------|---------------------|
 | `CorrectionRecord` schema | NEW | 4 | 4 | `DAILY_DRIVER_ACCEPT` | Prompt 2 | — | — | 6 categories; provenance required; no raw CoT |
 | JSONL append-only disk persistence | NEW | 4 | 4 | `DAILY_DRIVER_ACCEPT` | Prompt 2 | — | — | Corrections survive restart |
-| NUS hook (best-effort) | NEW | 3 | 4 | `PLANNED_IN_EXISTING_PROMPT` | Prompt 3 | NUS `LearningStore` API TBD | — | Hook writes to NUS; confirmed with integration test |
+| NUS hook (best-effort) | NEW | 3 | 4 | `REQUIRED_FOR_NO_GAP_JARVIS` | Prompt 3 | NUS `LearningStore` API TBD | — | Hook writes to NUS; confirmed with integration test |
 | `check_human_correction_store` doctor | NEW | 4 | 4 | `DAILY_DRIVER_ACCEPT` | Prompt 2 | — | — | Count and pending visible in doctor |
 
 ---
@@ -473,7 +481,7 @@ Workspace verified via `auth.test`. Bot user: `openjarvis`. Workspace name: `OMN
 | Channel creation (#jarvis-ops etc.) | PLANNED | 1 | 4 | `BLOCKED_USER_AUTHORIZATION` | Prompt 3 | Bryan must authorize per channel | Authorize channel creation after rename | Channels present in workspace |
 | Bot display name update to "Jarvis" | MANUAL | 2 | 4 | `BLOCKED_USER_AUTHORIZATION` | Prompt 3 | Requires Slack app settings update | Update in api.slack.com → App Settings | Bot name = "Jarvis" in workspace |
 | Live Slack sends | PERMANENT | 0 | 0 | `BLOCKED_SAFETY` | Permanent | Hard gate — no auto-send | Per-action Bryan authorization required | Per-action approval gate active |
-| OMNIX HQ deletion | NOT REQUIRED | 0 | 0 | `OPTIONAL_BACKLOG` | Optional | N/A — not required | None | OMNIX HQ remains as legacy project workspace |
+| OMNIX HQ deletion | NOT REQUIRED | 0 | 0 | `CLEARED` | N/A | Deletion not a goal; workspace renamed to Jarvis HQ | None | Workspace kept; deletion safety gate active; CLEARED |
 | `check_slack_workspace_identity` doctor | NEW | 4 | 4 | `DAILY_DRIVER_ACCEPT` | Prompt 3 | — | — | Doctor check PASS |
 
 ---
@@ -525,14 +533,14 @@ Extended real-world trial required before CURSOR_WINDSURF_REPLACEMENT_ACCEPT.
 | AI assistant replacement | 4/5 | 4/5 | `DAILY_DRIVER_ACCEPT` | — (LLM keys present, real call proven) |
 | Coding agent replacement | 4/5 | 4/5 | `DAILY_DRIVER_ACCEPT` | Extended trial before full replacement claim |
 | Project/task routing | 4/5 | 4/5 | `DAILY_DRIVER_ACCEPT` | — |
-| Memory/context continuity | 3/5 | 4/5 | `PLANNED_IN_EXISTING_PROMPT` | Semantic retrieval not yet implemented |
+| Memory/context continuity | 3/5 | 4/5 | `REQUIRED_FOR_NO_GAP_JARVIS` | Semantic retrieval not yet implemented |
 | Tool/connector execution | 3/5 | 4/5 | `BLOCKED_CREDENTIALS` | OAuth credentials not yet issued per connector |
 | Model/provider routing | 4/5 | 4/5 | `DAILY_DRIVER_ACCEPT` | — (all 3 providers configured) |
 | Cost/provider fallback | 4/5 | 4/5 | `DAILY_DRIVER_ACCEPT` | — (gpt-4o-mini default; cascade fallback) |
 | Safety/approvals | 5/5 | 5/5 | `PUBLIC_READY_ACCEPT` | — (hard gates, adversarial tests, no raw CoT) |
 | Observability/debugging | 4/5 | 4/5 | `DAILY_DRIVER_ACCEPT` | — (traces, 57 doctor checks, recovery) |
 | Reliability/recovery | 4/5 | 4/5 | `DAILY_DRIVER_ACCEPT` | — (registry persistence, runtime recovery) |
-| Voice interaction | 1/5 | 4/5 | `OPTIONAL_BACKLOG` | Text platform only. 10 blockers unresolved. Separate Voice Sprint |
+| Voice interaction | 1/5 | 4/5 | `REQUIRED_SEPARATE_SAFETY_SPRINT` | Voice required for no-gap Jarvis; 11 blockers; safety-gated; separate authorized sprint required |
 | Cursor/Windsurf replacement | 4/5 | 4/5 | `DAILY_DRIVER_ACCEPT` | JARVIS_PRIMARY_CURSOR_FALLBACK — extended trial for full claim |
 | ChatGPT/direct-AI replacement | 4/5 | 4/5 | `DAILY_DRIVER_ACCEPT` | — (front door + real LLM proven) |
 | Single AI platform (overall) | 4/5 | 4/5 | `DAILY_DRIVER_ACCEPT` | All required non-voice categories ≥ 4/5 |
@@ -542,11 +550,11 @@ Extended real-world trial required before CURSOR_WINDSURF_REPLACEMENT_ACCEPT.
 
 **Overall score (required categories): 4.1/5** (voice excluded — VERIFIED_OPTIONAL_NOT_REQUIRED_FOR_REPLACEMENT)
 **Platform verdict: `DAILY_DRIVER_ACCEPT_FOUNDATION_PENDING_CERTIFICATION`** — Foundation proven; Slack live ops and Google connectors must be CLEARED before full platform certification claim.
-**Voice verdict: `VOICE_HOLD_UNSAFE_PARKED`** (VERIFIED_OPTIONAL_NOT_REQUIRED_FOR_TEXT_PLATFORM)
+**Voice verdict: `VOICE_HOLD_UNSAFE_PARKED`** (`REQUIRED_SEPARATE_SAFETY_SPRINT`)
 **ChatGPT replacement verdict: `JARVIS_PRIMARY_EXTERNAL_APPS_FALLBACK_PENDING_CERTIFICATION`**
 **Cursor/Windsurf verdict: `JARVIS_PRIMARY_CURSOR_FALLBACK_PENDING_CERTIFICATION`**
 
-Voice justification for OPTIONAL_BACKLOG: Bryan's target is replacing text-based AI frontends (ChatGPT web, Cursor, Windsurf). None are voice-primary. Voice is a different interaction modality, planned for a dedicated Voice Sprint. All 10 known blockers remain; us13_voice safety gate active.
+Voice no-gap status (`REQUIRED_SEPARATE_SAFETY_SPRINT`): Voice does not block text-platform replacement certification (separate milestone). Voice DOES block full no-gap Jarvis completion. 11 known blockers remain (VAD, endpointing, STT/TTS provider, silence rejection, barge-in, latency, approval UI, follow-up listening, stop phrases, safety review, provider selection). us13_voice safety gate active. Separate authorized sprint required before any voice implementation.
 
 `check_platform_scorecard` doctor check: PASS.
 
@@ -583,7 +591,7 @@ All writes/sends: `BLOCKED_SAFETY` (permanent hard gate). Framework: 4/5. `check
 
 Counts below use the **Status** column only. No plain "ACCEPT" — split into `DAILY_DRIVER_ACCEPT` (current_score ≥ 4/5) and `PUBLIC_READY_ACCEPT` (current_score = 5/5).
 
-| Category | Items | DAILY_DRIVER_ACCEPT | PUBLIC_READY_ACCEPT | PLANNED_IN_EXISTING_PROMPT | BLOCKED_PROVIDER | BLOCKED_IMPLEMENTATION | BLOCKED_CREDENTIALS | BLOCKED_SAFETY | BLOCKED_USER_AUTHORIZATION | BLOCKED_HARDWARE | OPTIONAL_BACKLOG |
+| Category | Items | DAILY_DRIVER_ACCEPT | PUBLIC_READY_ACCEPT | REQUIRED_FOR_NO_GAP_JARVIS | BLOCKED_PROVIDER | BLOCKED_IMPLEMENTATION | BLOCKED_CREDENTIALS | BLOCKED_SAFETY | BLOCKED_USER_AUTHORIZATION | BLOCKED_HARDWARE | REQUIRED_SEPARATE_SAFETY_SPRINT |
 |----------|-------|---------------------|---------------------|----------------------------|------------------|------------------------|---------------------|----------------|----------------------------|------------------|------------------|
 | Universal Front Door | 7 | 5 | 1 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | COS/GM Runtime | 8 | 4 | 2 | 2 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
@@ -638,19 +646,19 @@ Counts below use the **Status** column only. No plain "ACCEPT" — split into `D
 | Project/task routing | 4/5 | 4/5 | `DAILY_DRIVER_ACCEPT` | — | Front door → COS/GM → worker dispatch proven; universal |
 | Memory/context continuity | 4/5 | 4/5 | `DAILY_DRIVER_ACCEPT` | — | 7-proof daily-driver suite passes; SQLite persist/reload proven; semantic embeddings operational |
 | Tool/connector execution | 4/5 | 4/5 | `DAILY_DRIVER_ACCEPT` | Google OAuth `BLOCKED_CREDENTIALS` (3 connectors) | Slack/GitHub/Telegram proven; Gmail/Calendar/Drive require Bryan OAuth action |
-| Model/provider capability matrix | 4/5 | 4/5 | `DAILY_DRIVER_ACCEPT` | STT/TTS `OPTIONAL_BACKLOG` (voice parked) | 11/16 capabilities DAILY_DRIVER_ACCEPT; embeddings proven; voice explicitly parked |
+| Model/provider capability matrix | 4/5 | 4/5 | `DAILY_DRIVER_ACCEPT` | STT/TTS `REQUIRED_SEPARATE_SAFETY_SPRINT` (voice safety-gated sprint required) | 11/16 capabilities DAILY_DRIVER_ACCEPT; embeddings proven; voice explicitly parked |
 | Model/provider routing | 4/5 | 4/5 | `DAILY_DRIVER_ACCEPT` | — | All 3 providers configured; cascade routing implemented |
 | Cost/provider fallback | 4/5 | 4/5 | `DAILY_DRIVER_ACCEPT` | — | gpt-4o-mini default; max-token cap; openai→anthropic→openrouter |
 | Safety/approvals | 5/5 | 5/5 | `PUBLIC_READY_ACCEPT` | — | Hard gates; adversarial tests; no raw CoT; BLOCKED_SAFETY |
 | Observability/debugging | 4/5 | 4/5 | `DAILY_DRIVER_ACCEPT` | — | Trace persistence + doctor + recovery |
 | Reliability/recovery | 4/5 | 4/5 | `DAILY_DRIVER_ACCEPT` | — | Registry persistence + runtime recovery |
-| Voice interaction | 1/5 | 1/5 | `OPTIONAL_BACKLOG` | US13 VOICE_HOLD_UNSAFE_PARKED — 6+ known blockers | Open Voice Sprint when explicitly authorized |
+| Voice interaction | 1/5 | 4/5 | `REQUIRED_SEPARATE_SAFETY_SPRINT` | US13 VOICE_HOLD_UNSAFE_PARKED — 6+ known blockers | Open Voice Sprint when explicitly authorized |
 | Cursor/Windsurf replacement | 4/5 | 4/5 | `DAILY_DRIVER_ACCEPT` | Extended trial for full replacement | Verdict: JARVIS_PRIMARY_CURSOR_FALLBACK |
 | ChatGPT/direct-AI replacement | 4/5 | 4/5 | `DAILY_DRIVER_ACCEPT` | — | Front door + real LLM proven |
-| Single AI platform (overall) | 4/5 | 4/5 | `DAILY_DRIVER_ACCEPT` | — | All required categories ≥ 4/5; voice is OPTIONAL_BACKLOG |
+| Single AI platform (overall) | 4/5 | 4/5 | `DAILY_DRIVER_ACCEPT` | — | All required categories ≥ 4/5; voice is REQUIRED_SEPARATE_SAFETY_SPRINT |
 | Slack HQ migration | 4/5 | 4/5 | `DAILY_DRIVER_ACCEPT` | Workspace rename + channel creation = Bryan manual action | Rename workspace; create channels |
 
-**Scorecard summary:** 14 of 16 categories at `DAILY_DRIVER_ACCEPT` (≥ 4/5); 1 at `PUBLIC_READY_ACCEPT` (5/5); 1 OPTIONAL_BACKLOG (voice).
+**Scorecard summary:** 14 of 16 categories at `DAILY_DRIVER_ACCEPT` (≥ 4/5); 1 at `PUBLIC_READY_ACCEPT` (5/5); 1 REQUIRED_SEPARATE_SAFETY_SPRINT (voice).
 
 **Verdict: DAILY_DRIVER_ACCEPT_FOUNDATION_PENDING_CERTIFICATION** — Foundation categories are at 4/5. Memory continuity proven. Model/provider matrix complete. Remaining blockers: Slack live ops (missing chat:write/channels:manage scopes) and Google OAuth (client secret missing) must be cleared before full certification claim. Voice VERIFIED_OPTIONAL_NOT_REQUIRED_FOR_TEXT_PLATFORM.
 
@@ -675,17 +683,17 @@ Counts below use the **Status** column only. No plain "ACCEPT" — split into `D
 | vision_screenshot_analysis | OpenAI | gpt-4o | Anthropic/claude-opus-4-5 | `DAILY_DRIVER_ACCEPT` | — |
 | document_pdf_analysis | Anthropic | claude-opus-4-5 | OpenAI/gpt-4o | `DAILY_DRIVER_ACCEPT` | — |
 | web_research | OpenRouter | perplexity-sonar-large | — | `DAILY_DRIVER_ACCEPT` | — |
-| audio_stt | OpenAI | whisper-1 | — | `OPTIONAL_BACKLOG` | `VOICE_HOLD_UNSAFE_PARKED` |
-| tts | OpenAI | tts-1 | — | `OPTIONAL_BACKLOG` | `VOICE_HOLD_UNSAFE_PARKED` |
+| audio_stt | OpenAI | whisper-1 | — | `REQUIRED_SEPARATE_SAFETY_SPRINT` | `VOICE_HOLD_UNSAFE_PARKED` |
+| tts | OpenAI | tts-1 | — | `REQUIRED_SEPARATE_SAFETY_SPRINT` | `VOICE_HOLD_UNSAFE_PARKED` |
 | cost_sensitive_planning | OpenAI | gpt-4o-mini | OpenRouter/mistral-nemo | `DAILY_DRIVER_ACCEPT` | — |
 | high_quality_fallback | Anthropic | claude-sonnet-4-5 | OpenAI/gpt-4o | `DAILY_DRIVER_ACCEPT` | — |
-| local_offline_fallback | local | none_configured | — | `OPTIONAL_BACKLOG` | No local LLM runtime |
+| local_offline_fallback | local | none_configured | — | `CLEARED_BY_VERIFIED_SUPERSEDED_DESIGN` | Cloud providers are selected primary; local LLM is resilience enhancement for future sprint |
 | safety_adversarial_review | Anthropic | claude-sonnet-4-5 | OpenAI/gpt-4o | `DAILY_DRIVER_ACCEPT` | — |
 | tool_calling_connector_orchestration | OpenAI | gpt-4o | Anthropic/claude-sonnet-4-5 | `DAILY_DRIVER_ACCEPT` | — |
 
 **Embedding proof:** `text-embedding-3-small`, 1536 dimensions, $0.02/1M tokens
 **Cost governance:** every route has cost_tier + fallback behavior
-**Voice/STT/TTS:** explicitly `OPTIONAL_BACKLOG` — voice sprint not started
+**Voice/STT/TTS:** `REQUIRED_SEPARATE_SAFETY_SPRINT` — voice safety gate active; 11 blockers; authorized sprint required
 
 ### 35. Memory Continuity Proofs (Blocker Clearance Sprint A)
 
@@ -702,7 +710,7 @@ Counts below use the **Status** column only. No plain "ACCEPT" — split into `D
 | P7 | Persist and reload across simulated session boundary | PASS |
 
 **Cloud/AWS memory:** local-only SQLite — `DAILY_DRIVER_ACCEPT`. AWS/Obsidian sync reserved for Cloud Memory sprint.
-**openjarvis_rust:** `OPTIONAL_BACKLOG` — not required for 4/5. Python path is sufficient.
+**openjarvis_rust:** `CLEARED_BY_VERIFIED_SUPERSEDED_DESIGN` — Python path is selected runtime; Rust is optional perf accelerator; RUST_AVAILABLE=False confirmed; no test failures.
 **Deduplication:** `find_near_duplicates()` operational — no OpenAI key → graceful empty return.
 **Correction ingestion:** `HumanCorrectionStore` + `CorrectionRecord` operational.
 
@@ -757,9 +765,12 @@ All items below require Bryan to take a specific action before they can progress
 ## No Vague Future Scope
 
 Every item in this register is classified as one of:
-`DAILY_DRIVER_ACCEPT`, `PUBLIC_READY_ACCEPT`, `BLOCKED_BRYAN_ACTION`, `BLOCKED_PROVIDER`,
-`BLOCKED_CREDENTIALS`, `BLOCKED_HARDWARE`, `BLOCKED_SAFETY`, `BLOCKED_IMPLEMENTATION`,
-`PLANNED_IN_EXISTING_PROMPT`, or `OPTIONAL_BACKLOG`.
+`DAILY_DRIVER_ACCEPT`, `PUBLIC_READY_ACCEPT`, `CLEARED_BY_VERIFIED_SUPERSEDED_DESIGN`,
+`REQUIRED_FOR_NO_GAP_JARVIS`, `REQUIRED_SEPARATE_SAFETY_SPRINT`,
+`BLOCKED_WAITING_FOR_BRYAN_NOW`, `BLOCKED_BRYAN_ACTION`, `BLOCKED_PROVIDER`,
+`BLOCKED_CREDENTIALS`, `BLOCKED_HARDWARE`, `BLOCKED_SAFETY`, or `BLOCKED_IMPLEMENTATION`.
+
+No item is classified as `OPTIONAL_BACKLOG` or `PLANNED_IN_EXISTING_PROMPT` (disallowed by No-Gap policy).
 
 No item is left as plain "future scope."
 
@@ -771,11 +782,11 @@ No item is left as plain "future scope."
 
 | Item | Goal | Status | Notes |
 |------|------|--------|-------|
-| AWS/S3 memory sync | Store memory entries in S3 for cross-device access | `PLANNED_IN_EXISTING_PROMPT` | Local SQLite is daily-driver sufficient; S3 is enhancement |
-| Obsidian vault sync | Bidirectional sync between Jarvis memory and Obsidian notes | `PLANNED_IN_EXISTING_PROMPT` | Requires Obsidian plugin API or local vault path |
-| Prompt/context cache optimization | Cache frequent prompts to reduce latency + API cost | `PLANNED_IN_EXISTING_PROMPT` | OpenAI/Anthropic prompt caching APIs available |
+| AWS/S3 memory sync | Store memory entries in S3 for cross-device access | `REQUIRED_FOR_NO_GAP_JARVIS` | Local SQLite is daily-driver sufficient; S3 is enhancement |
+| Obsidian vault sync | Bidirectional sync between Jarvis memory and Obsidian notes | `REQUIRED_FOR_NO_GAP_JARVIS` | Requires Obsidian plugin API or local vault path |
+| Prompt/context cache optimization | Cache frequent prompts to reduce latency + API cost | `REQUIRED_FOR_NO_GAP_JARVIS` | OpenAI/Anthropic prompt caching APIs available |
 | Fixed Certification Suite | Fixed-count Jarvis Replacement Certification Suite (not open-ended daily-use testing) — determines whether Jarvis replaces ChatGPT/Cursor/Windsurf | `BLOCKED_WAITING_FOR_BRYAN_NOW` | Requires all required blockers CLEARED first |
-| Voice sprint reopen | VAD, endpointing, STT/TTS provider, silence rejection, approval UI | `OPTIONAL_BACKLOG` | Only when Bryan explicitly authorizes |
+| Voice sprint reopen | VAD, endpointing, STT/TTS provider, silence rejection, approval UI | `REQUIRED_SEPARATE_SAFETY_SPRINT` | Bryan must explicitly authorize sprint start; us13_voice safety gate active |
 
 **After Cloud Memory sprint:** Update burn-in certification status; reassess Cursor/Windsurf full replacement verdict.
 

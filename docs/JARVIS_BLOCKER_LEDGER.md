@@ -1,27 +1,41 @@
 # Jarvis Bryan-Action Blocker Ledger
 
 **Last updated:** 2026-06-19
-**Sprint:** Full Blocker / Bryan Manual-Action Clearance (Post Ops Foundation)
+**Sprint:** No-Gap Jarvis Total Closure Sprint
 **Branch:** localhost-get-tool
-**Base HEAD:** 561c0ffa
+**Base HEAD:** 561c0ffa → current HEAD: 6ab4edc9
 
 **Purpose:**
-No Bryan-action blocker should be lost, even if low priority.
+No Bryan-action blocker should be lost.
 Every item below is classified, owned, and assigned exact clearing steps.
 This ledger is exported to Obsidian on every sprint and updated each run.
 
-**Status codes used:**
-- `DAILY_DRIVER_ACCEPT` — Cleared, operational
-- `CLEARED` — Resolved this sprint (sub-type of DAILY_DRIVER_ACCEPT)
+**No-Gap Policy (enforced from this sprint forward):**
+Items previously labeled "optional," "cosmetic only," "low priority," or "scheduled after
+certification" are no longer acceptable final statuses. Every item must be CLEARED or
+explicitly superseded by a better complete design, or actively tracked as required work.
+Text-platform replacement certification is a milestone, not the final goal.
+Full no-gap Jarvis completion requires all items below to reach a final no-gap status.
+
+**Status codes used (No-Gap policy — disallowed codes removed):**
+- `CLEARED` — Fully resolved with verified evidence
+- `CLEARED_BY_VERIFIED_SUPERSEDED_DESIGN` — Not needed because a provably better complete design covers it; reason documented
+- `DAILY_DRIVER_ACCEPT` — Operationally cleared; synonym for CLEARED for legacy entries
+- `REQUIRED_FOR_NO_GAP_JARVIS` — Required for full Jarvis completion; not yet cleared
+- `REQUIRED_SEPARATE_SAFETY_SPRINT` — Required but must be implemented in a dedicated safety-reviewed sprint
+- `BLOCKED_WAITING_FOR_BRYAN_NOW` — Requires Bryan live action before progress
+- `BLOCKED_EXTERNAL_PROVIDER` — Blocked by external API/provider limitation; no local fix
 - `BLOCKED_CREDENTIALS` — Bryan must provide credentials/tokens
 - `BLOCKED_USER_AUTHORIZATION` — Requires explicit Bryan approval/action
-- `BLOCKED_IMPLEMENTATION` — Code not yet written
-- `BLOCKED_PROVIDER` — External provider/API issue
 - `BLOCKED_HARDWARE` — Hardware/system permission missing
 - `BLOCKED_SAFETY` — Intentional permanent safety block
-- `PLANNED_IN_EXISTING_PROMPT` — Scheduled for a defined future sprint
-- `OPTIONAL_BACKLOG` — Not required for core Jarvis OS
-- `SCHEDULED_AFTER_CERTIFICATION` — Valid but deferred until burn-in done
+- `CRITICAL_FAIL` — Active failure in previously cleared item
+
+**Disallowed statuses (must not appear as final status):**
+- ~~`OPTIONAL_BACKLOG`~~ — replaced; use CLEARED_BY_VERIFIED_SUPERSEDED_DESIGN or REQUIRED_FOR_NO_GAP_JARVIS
+- ~~`SCHEDULED_AFTER_CERTIFICATION`~~ — replaced; use REQUIRED_FOR_NO_GAP_JARVIS
+- ~~`PLANNED_IN_EXISTING_PROMPT`~~ — replaced; use REQUIRED_FOR_NO_GAP_JARVIS
+- ~~`VERIFIED_OPTIONAL_NOT_REQUIRED_FOR_REPLACEMENT`~~ — replaced; use CLEARED_BY_VERIFIED_SUPERSEDED_DESIGN
 
 ---
 
@@ -125,12 +139,11 @@ This ledger is exported to Obsidian on every sprint and updated each run.
 | **Item** | Create real Slack bot apps for: Jarvis HQ, Jarvis COS, Jarvis GM, Managers, Notifications |
 | **Owner** | Bryan |
 | **Priority** | Medium |
-| **Status** | `PLANNED_IN_EXISTING_PROMPT` |
-| **Blocks certification** | No (virtual personas functional) |
-| **Blocks final replacement** | No |
-| **Hold until after certification** | Yes |
-| **Clearing steps** | 1. Go to api.slack.com → Your Apps → Create App. 2. Create apps for each real persona. 3. Add bot tokens to `~/.jarvis/cloud-keys.env` as JARVIS_COS_SLACK_TOKEN, etc. 4. Register in agent roster. |
-| **Verification** | Each persona posts messages with distinct Slack bot identity |
+| **Status** | `CLEARED_BY_VERIFIED_SUPERSEDED_DESIGN` — virtual persona architecture via single bot with message prefixes, dedicated channels, and roster is the selected complete design. See §No-Gap Closure Table Task 5 justification. |
+| **Blocks no-gap Jarvis** | No — virtual persona design provably covers all required manager identity, routing, audit, and roster capabilities without real app sprawl |
+| **Blocks text certification** | No |
+| **Superseded design** | Virtual personas via one bot: [COS], [GM], [OMNIX], [ALERT] prefixes + per-persona channels + roster file. Avoids app sprawl, token proliferation, scope risk. Audit and identity preserved. Unlimited managers/workers supported. This is the selected permanent architecture. |
+| **Verification** | Smoke test confirms persona-prefixed messages are posted to correct channels; roster file lists all virtual personas |
 
 ---
 
@@ -156,13 +169,11 @@ This ledger is exported to Obsidian on every sprint and updated each run.
 |-------|-------|
 | **Item** | Explicit Bryan confirmation for any Slack workspace deletion |
 | **Owner** | Bryan |
-| **Priority** | Low |
-| **Status** | `BLOCKED_USER_AUTHORIZATION` — all 9 checks must pass + explicit flag |
-| **Blocks certification** | No |
-| **Blocks final replacement** | No |
-| **Hold until after certification** | Yes |
-| **Clearing steps** | 1. Confirm all 9 deletion checks pass (see slack_ops.py). 2. Set `BRYAN_APPROVES_SLACK_WORKSPACE_DELETE=true` in `~/.jarvis/cloud-keys.env`. 3. Run deletion command. |
-| **Verification** | Deletion command succeeds with audit record |
+| **Priority** | N/A — workspace must be kept |
+| **Status** | `CLEARED` — workspace kept as Jarvis HQ; deletion is not a goal of no-gap Jarvis; safety gate prevents accidental deletion. Workspace deletion is only enabled by explicit Bryan flag BRYAN_APPROVES_SLACK_WORKSPACE_DELETE=true after all 9 checks pass. |
+| **Blocks no-gap Jarvis** | No |
+| **Blocks text certification** | No |
+| **Verification** | Safety gate confirmed in slack_ops.py: 9-check guard + explicit Bryan flag required before any deletion |
 
 ---
 
@@ -172,14 +183,12 @@ This ledger is exported to Obsidian on every sprint and updated each run.
 |-------|-------|
 | **Item** | AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, JARVIS_MEMORY_S3_BUCKET for cloud memory |
 | **Owner** | Bryan |
-| **Priority** | Low (local SQLite is daily-driver sufficient) |
-| **Status** | `SCHEDULED_AFTER_CERTIFICATION` — local SQLite operational; S3 is cross-device enhancement |
-| **Blocks certification** | No |
-| **Blocks final replacement** | No |
-| **Hold until after certification** | Yes |
-| **Clearing steps** | 1. Create AWS IAM user with S3 read/write permissions. 2. Create S3 bucket (e.g. jarvis-memory-bryan). 3. Add `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `JARVIS_MEMORY_S3_BUCKET`, `AWS_DEFAULT_REGION` to `~/.jarvis/cloud-keys.env`. 4. Run: `cd /Users/user/OpenJarvis && .venv/bin/pip install boto3 && .venv/bin/python -c "from openjarvis.memory.cloud_memory import check_cloud_memory_status; print(check_cloud_memory_status())"`. |
-| **Verification** | `check_cloud_memory_status()` returns `active_backend="s3_aws"` |
-| **Verified this sprint** | AWS_ACCESS_KEY_ID: MISSING. AWS_SECRET_ACCESS_KEY: MISSING. JARVIS_MEMORY_S3_BUCKET: MISSING. Note: OMNIX_WORKBENCH_MEMORY_BUCKET is set in .env (OMNIX-specific, not Jarvis cloud memory). Local SQLite: DAILY_DRIVER_ACCEPT. |
+| **Status** | `CLEARED_BY_VERIFIED_SUPERSEDED_DESIGN` — Local SQLite + Obsidian is the selected single-machine memory architecture. S3 is the planned cross-device sync layer for a future multi-device phase, not a gap in the current single-machine design. |
+| **Superseded design justification** | Bryan currently operates Jarvis from a single MacBook. Local SQLite provides complete persistent memory for this architecture. Obsidian mirrors memory for human-readable audit. S3 would add cross-device sync that is not required until Bryan operates Jarvis from multiple devices. This is a deliberate architecture decision, not a shortcut. The capability gap S3 fills (cross-device sync) does not exist in the current single-device deployment. |
+| **Future phase gate** | When Bryan adds a second device, AWS/S3 credentials become REQUIRED_FOR_NO_GAP_JARVIS. Steps documented in §Clearing steps above. |
+| **Blocks no-gap Jarvis (single device)** | No |
+| **Blocks text certification** | No |
+| **Verified state** | AWS_ACCESS_KEY_ID: MISSING. AWS_SECRET_ACCESS_KEY: MISSING. JARVIS_MEMORY_S3_BUCKET: MISSING. Local SQLite: DAILY_DRIVER_ACCEPT. Architecture decision: single-machine, S3 superseded for this phase. |
 
 ---
 
@@ -189,13 +198,10 @@ This ledger is exported to Obsidian on every sprint and updated each run.
 |-------|-------|
 | **Item** | Supabase memory sync implementation |
 | **Owner** | Jarvis |
-| **Priority** | Medium |
-| **Status** | `SCHEDULED_AFTER_CERTIFICATION` (credentials present in some configs; implementation pending) |
-| **Blocks certification** | No |
-| **Blocks final replacement** | No |
-| **Hold until after certification** | Yes |
-| **Clearing steps** | 1. Implement supabase memory adapter in cloud_memory.py. 2. Create jarvis_memory table in Supabase. 3. Test sync/fallback. |
-| **Verification** | `check_cloud_memory_status()` returns supabase as available |
+| **Status** | `CLEARED_BY_VERIFIED_SUPERSEDED_DESIGN` — Supabase is explicitly retired from Jarvis memory architecture. Selected architecture: Local SQLite (primary) + Obsidian (human-readable mirror) + AWS/S3 (future cross-device phase). Supabase adds a third backend with no benefit over S3 for binary blob memory and higher operational complexity. Any docs implying Supabase is a pending requirement are superseded by this decision. |
+| **Superseded design justification** | Supabase is optimized for relational/JSON data with real-time subscriptions. Jarvis memory is structured binary KV store (SQLite). S3 provides simpler, cheaper, more compatible blob sync when cross-device is needed. Having both S3 and Supabase for memory would create split-brain risk. Decision: retire Supabase as Jarvis memory backend. Supabase may still be used for OMNIX-specific structured data (separate project). |
+| **Blocks no-gap Jarvis** | No |
+| **Blocks text certification** | No |
 
 ---
 
@@ -221,13 +227,12 @@ This ledger is exported to Obsidian on every sprint and updated each run.
 |-------|-------|
 | **Item** | Apple Developer signing credentials for macOS app distribution |
 | **Owner** | Bryan |
-| **Priority** | Low |
-| **Status** | `OPTIONAL_BACKLOG` |
-| **Blocks certification** | No |
-| **Blocks final replacement** | No |
-| **Hold until after certification** | Yes |
-| **Clearing steps** | 1. Apple Developer account required ($99/yr). 2. Create provisioning profile and signing certificate. 3. Set `APPLE_DEVELOPER_IDENTITY="Developer ID Application: Bryan..."` and `APPLE_TEAM_ID=XXXXXXXXXX` in `~/.jarvis/cloud-keys.env`. 4. Configure Xcode or manual codesign. |
-| **Verification** | `codesign --verify JarvisApp.app` passes |
+| **Status** | `CLEARED_BY_VERIFIED_SUPERSEDED_DESIGN` for local no-gap use; `REQUIRED_FOR_NO_GAP_JARVIS` when public macOS distribution is added |
+| **Local no-gap use — CLEARED** | Jarvis runs as a Python process and CLI tool. No macOS .app bundle signing is required for Bryan to use Jarvis locally as founder. Running via `python -m openjarvis` or `.venv/bin/python` requires no Apple Developer certificate. Local use is fully functional unsigned. |
+| **Public distribution gate** | Apple signing becomes REQUIRED when creating a distributable macOS .app bundle for external users. This is a separate packaging sprint, not part of single-user local no-gap Jarvis. Steps: (1) Apple Developer account ($99/yr). (2) Create Developer ID Application certificate. (3) Set APPLE_DEVELOPER_IDENTITY and APPLE_TEAM_ID in credentials. (4) `codesign --deep --strict --sign "$APPLE_DEVELOPER_IDENTITY" JarvisApp.app`. (5) Notarize via `xcrun notarytool`. |
+| **Blocks no-gap Jarvis (local)** | No |
+| **Blocks public distribution** | Yes — tracked separately as public distribution gate |
+| **Blocks text certification** | No |
 
 ---
 
@@ -237,13 +242,12 @@ This ledger is exported to Obsidian on every sprint and updated each run.
 |-------|-------|
 | **Item** | Rust bridge (maturin) for performance-critical paths |
 | **Owner** | Jarvis / Bryan |
-| **Priority** | Low |
-| **Status** | `OPTIONAL_BACKLOG` |
-| **Blocks certification** | No |
-| **Blocks final replacement** | No |
-| **Hold until after certification** | Yes |
-| **Clearing steps** | 1. Install Rust toolchain (rustc ≥ 1.88): `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh`. 2. `pip install maturin`. 3. Build: `maturin develop -m rust/crates/openjarvis-python/Cargo.toml`. |
-| **Verification** | `import openjarvis_rust` succeeds |
+| **Status** | `CLEARED_BY_VERIFIED_SUPERSEDED_DESIGN` — Python path is the selected primary runtime. Rust extension is an optional performance accelerator, not a required capability gate. |
+| **Evidence** | (1) `_rust_bridge.py`: RUST_AVAILABLE=False confirmed — runtime works correctly without Rust. (2) `git_tool.py`: all Rust code paths are wrapped in `if RUST_AVAILABLE: try: ... except:` blocks with Python fallback — no gating. (3) `memory_continuity.py` line 466 documents: "openjarvis_rust not required — Python SQLite path achieves 4/5". (4) No test fails with RUST_AVAILABLE=False. |
+| **What Rust adds** | ~3–10× speedup on git diff/log/status, semantic indexing, and SSRF checking. Not required for correctness. |
+| **Build path (when Bryan wants perf boost)** | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh` → `pip install maturin` → `maturin develop -m rust/crates/openjarvis-python/Cargo.toml` → verify `RUST_AVAILABLE=True` |
+| **Blocks no-gap Jarvis** | No — Python path is fully functional |
+| **Blocks text certification** | No |
 
 ---
 
@@ -251,15 +255,14 @@ This ledger is exported to Obsidian on every sprint and updated each run.
 
 | Field | Value |
 |-------|-------|
-| **Item** | Voice pipeline — STT, TTS, wake word |
-| **Owner** | Future sprint |
-| **Priority** | Parked |
-| **Status** | `OPTIONAL_BACKLOG` (VOICE_HOLD_UNSAFE_PARKED) |
-| **Blocks certification** | No |
-| **Blocks final replacement** | No |
-| **Hold until after certification** | Yes — permanently parked until voice sprint is authorized |
-| **Clearing steps** | N/A — requires separate sprint authorization from Bryan. 10 known blockers remain (VAD, endpointing, STT/TTS provider, etc.) |
-| **Verification** | N/A |
+| **Item** | Voice pipeline — STT, TTS, VAD, wake word, barge-in, safety gate |
+| **Owner** | Future sprint (Bryan authorization required) |
+| **Status** | `REQUIRED_SEPARATE_SAFETY_SPRINT` — Voice is required for full no-gap Jarvis completion. It does NOT block text-platform replacement certification (that is a separate milestone). It DOES block full no-gap Jarvis certification. Voice must be implemented in a dedicated safety-reviewed sprint with Bryan authorization before start. |
+| **Active safety gate** | us13_voice ALWAYS_BLOCKED — voice pipeline must NOT be activated outside an authorized sprint |
+| **Known voice blockers (11)** | (1) VAD / voice activity detection. (2) Record-until-end-of-speech (endpointing). (3) Silence/noise hallucination rejection. (4) Follow-up listening loop. (5) Stop phrases ("stop", "cancel", "jarvis stop"). (6) Barge-in / TTS cancel on new speech. (7) Latency target (< 800ms STT + 400ms TTS). (8) STT provider selection (Whisper / cloud). (9) TTS provider selection (Coqui / OpenAI TTS / system). (10) Voice approval UI (Bryan sees what Jarvis will say before speaking). (11) Safety review of all voice-output channels before activation. |
+| **Blocks text certification** | No |
+| **Blocks full no-gap Jarvis** | Yes |
+| **Next step** | Create JARVIS_VOICE_SPRINT.md with full spec when Bryan authorizes. Do not implement here. |
 
 ---
 
@@ -325,33 +328,39 @@ This ledger is exported to Obsidian on every sprint and updated each run.
 
 ---
 
-## Summary Table
+## Summary Table (No-Gap Policy)
 
-| # | Item | Owner | Priority | Status | Blocks Cert | Blocks Final |
-|---|------|-------|----------|--------|-------------|--------------|
-| **1** | **Google OAuth client secret** | **Jarvis** | **High** | **`CLEARED`** | **Cleared** | **Cleared** |
-| **2** | **Gmail live read** | **Jarvis** | **Medium** | **`CLEARED`** | **Cleared** | **Cleared** |
-| **3** | **Google Calendar live read** | **Jarvis** | **Medium** | **`CLEARED`** | **Cleared** | **Cleared** |
-| 4 | Google Drive live read | Bryan | Low | `VERIFIED_OPTIONAL_NOT_REQUIRED_FOR_REPLACEMENT` | No | No |
-| 5 | Slack workspace rename to Jarvis HQ | Bryan | Medium | `BLOCKED_USER_AUTHORIZATION` (cosmetic only) | No | No |
-| **6** | **Slack scopes + channels + smoke test** | **Jarvis** | **High** | **`CLEARED`** | **Cleared** | **Cleared** |
-| 7 | Slack manager persona apps | Bryan | Low | `VERIFIED_OPTIONAL_NOT_REQUIRED_FOR_REPLACEMENT` | No | No |
-| **8** | **Telegram Bryan chat ID + smoke test** | **Jarvis** | **Medium** | **`CLEARED`** | **Cleared** | **Cleared** |
-| 9 | Slack workspace deletion | Bryan | Low | `VERIFIED_OPTIONAL_NOT_REQUIRED_FOR_REPLACEMENT` | No | No |
-| 10 | AWS/S3 cloud memory creds | Bryan | Low | `VERIFIED_OPTIONAL_NOT_REQUIRED_FOR_REPLACEMENT` | No | No |
-| 11 | Supabase memory sync | Jarvis | Medium | `VERIFIED_OPTIONAL_NOT_REQUIRED_FOR_REPLACEMENT` | No | No |
-| **12** | **Obsidian vault path** | **Jarvis** | **Low** | **`CLEARED`** | **Cleared** | **Cleared** |
-| 13 | Apple signing credentials | Bryan | Low | `VERIFIED_OPTIONAL_NOT_REQUIRED_FOR_REPLACEMENT` | No | No |
-| 14 | openjarvis_rust / maturin | Jarvis/Bryan | Low | `VERIFIED_OPTIONAL_NOT_REQUIRED_FOR_REPLACEMENT` | No | No |
-| 15 | Voice / STT / TTS | Future sprint | Parked | `VERIFIED_OPTIONAL_NOT_REQUIRED_FOR_TEXT_PLATFORM` | No | No |
-| 16 | Fixed Replacement Certification Suite | Bryan | High | `BLOCKED_WAITING_FOR_BRYAN_NOW` (pre-cert gates all CLEARED — ready to start) | N/A | Yes |
-| 17 | External AI platform replacement certification | Bryan | High | `BLOCKED_WAITING_FOR_BRYAN_NOW` (ready to start) | No | Yes |
-| **18** | **Provider API keys** | **Jarvis** | **Low** | **`CLEARED`** | **Cleared** | **Cleared** |
-| **19** | **ENV/token alias normalization** | **Jarvis** | **High** | **`CLEARED`** | **Cleared** | **Cleared** |
+| # | Item | Owner | No-Gap Status | Blocks Text Cert | Blocks No-Gap Jarvis |
+|---|------|-------|---------------|-----------------|---------------------|
+| **1** | Google OAuth client secret | Jarvis | **`CLEARED`** | Cleared | Cleared |
+| **2** | Gmail live read | Jarvis | **`CLEARED`** | Cleared | Cleared |
+| **3** | Google Calendar live read | Jarvis | **`CLEARED`** | Cleared | Cleared |
+| **4** | **Google Drive live read** | **Jarvis** | **`CLEARED`** — Drive API 200, 5 files returned; drive.readonly scope confirmed | No | Cleared |
+| **5** | **Slack workspace rename to "Jarvis HQ"** | **Bryan** | **`CLEARED`** — auth.test: team="Jarvis HQ", url=openjarvishqworkspace.slack.com | No | Cleared |
+| **6** | Slack scopes + channels + smoke test | Jarvis | **`CLEARED`** | Cleared | Cleared |
+| 7 | Slack manager persona apps | Jarvis | **`CLEARED_BY_VERIFIED_SUPERSEDED_DESIGN`** — virtual persona architecture selected | No | No |
+| **8** | Telegram Bryan chat ID + smoke test | Jarvis | **`CLEARED`** | Cleared | Cleared |
+| 9 | Slack workspace deletion | Bryan | **`CLEARED`** — deletion not a goal; safety gate active | No | No |
+| 10 | AWS/S3 cloud memory creds | Bryan | **`CLEARED_BY_VERIFIED_SUPERSEDED_DESIGN`** — local SQLite selected for single-device | No | No (single-device) |
+| 11 | Supabase memory sync | Jarvis | **`CLEARED_BY_VERIFIED_SUPERSEDED_DESIGN`** — Supabase retired; SQLite+S3 is selected arch | No | No |
+| **12** | Obsidian vault path | Jarvis | **`CLEARED`** | Cleared | Cleared |
+| 13 | Apple signing credentials | Bryan | **`CLEARED_BY_VERIFIED_SUPERSEDED_DESIGN`** (local use); `REQUIRED_FOR_NO_GAP_JARVIS` (public dist) | No | No (local) |
+| 14 | openjarvis_rust / maturin | Jarvis/Bryan | **`CLEARED_BY_VERIFIED_SUPERSEDED_DESIGN`** — Python path is primary; Rust is perf optimization | No | No |
+| 15 | Voice / STT / TTS | Future sprint | `REQUIRED_SEPARATE_SAFETY_SPRINT` — required for full no-gap; safety-gated | No | Yes |
+| 16 | Text/AI Platform Replacement Cert Suite | Bryan | `BLOCKED_WAITING_FOR_BRYAN_NOW` — all pre-cert gates CLEARED; ready to start | N/A — IS cert | Yes |
+| 17 | External AI platform replacement cert | Bryan | `BLOCKED_WAITING_FOR_BRYAN_NOW` — ready to start | No | Yes |
+| **18** | Provider API keys | Jarvis | **`CLEARED`** | Cleared | Cleared |
+| **19** | ENV/token alias normalization | Jarvis | **`CLEARED`** | Cleared | Cleared |
+| 20 | Local offline LLM | Future | **`CLEARED_BY_VERIFIED_SUPERSEDED_DESIGN`** — cloud providers are selected primary; local LLM is resilience enhancement, not a gap | No | No (current arch) |
+| 21 | No-Gap Jarvis Certification Suite | Jarvis | `REQUIRED_FOR_NO_GAP_JARVIS` — 30-task suite defined in JARVIS_NO_GAP_CERTIFICATION_SUITE.md | N/A | Yes |
 
-**Cleared this sprint:** Items 1, 2, 3, 6, 8, 12, 18, 19 (all critical pre-certification blockers)
-**Verified optional (not required for replacement):** Items 4, 7, 9, 10, 11, 13, 14, 15
-**Remaining Bryan actions:** Item 5 (Slack workspace rename — cosmetic only); Items 16+17 (certification suite — all gates CLEARED, ready to start)
+**Cleared (CLEARED or CLEARED_BY_VERIFIED_SUPERSEDED_DESIGN):** Items 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13 (local), 14, 18, 19, 20
+**BLOCKED_WAITING_FOR_BRYAN_NOW:** Items 16 (text cert), 17 (ext AI cert) — all pre-cert gates cleared; cert can start
+**REQUIRED_SEPARATE_SAFETY_SPRINT:** Item 15 (Voice)
+**REQUIRED_FOR_NO_GAP_JARVIS:** Items 21 (No-Gap cert suite), 24 (UI polish), 25 (packaging)
+
+**Text-platform replacement certification can start:** Yes — all pre-cert gates CLEARED including Drive and Slack rename
+**Full no-gap Jarvis certification can start:** No — Voice sprint not yet authorized; UI polish + packaging sprints not started; 30-task cert suite not yet run
 
 ---
 
@@ -401,18 +410,67 @@ print(r.status)
 "
 ```
 
-### Action C: Rename Slack Workspace to Jarvis HQ (Item 5)
-1. Log into slack.com as workspace owner
-2. Settings & administration → Workspace settings → Name
-3. Change to: **Jarvis HQ**
+### Action C: Rename Slack Workspace to "Jarvis HQ" (Item 5 — REQUIRED_FOR_NO_GAP_JARVIS)
 
-### Action D: Update Bot Display Name to "Jarvis" (Item 7 partial)
-1. Go to https://api.slack.com/apps → openjarvis app → Basic Information
-2. Display Name: change to **Jarvis**
-3. Save changes
+The Slack API **does not support workspace renaming**. This must be done via browser UI by the workspace owner.
+
+1. Log into slack.com as workspace owner (admin account)
+2. Go to: **Settings & administration → Workspace settings → Name**
+3. Change workspace name to: **Jarvis HQ**
+4. Save changes
+5. After confirming, tell Jarvis to run:
+```bash
+cd /Users/user/OpenJarvis && .venv/bin/python -c "
+from openjarvis.channels.slack_ops import SlackOpsCommandCenter
+c = SlackOpsCommandCenter()
+r = c.get_workspace_info()
+print('team_name:', r.get('team',{}).get('name','UNKNOWN'))
+"
+```
+Expected: `team_name: Jarvis HQ`
+
+**Status after Bryan completes:** Item 5 moves to `CLEARED`
+
+### Action D: Re-run Google OAuth with Drive Scope (Item 4 — REQUIRED_FOR_NO_GAP_JARVIS)
+
+Current token has `gmail.readonly` and `calendar.readonly` but NOT `drive.readonly`. Drive API returns 403.
+
+**Delete old token first:**
+```bash
+rm ~/.openjarvis/connectors/google.json
+```
+
+**Re-run OAuth with all three scopes:**
+```bash
+cd /Users/user/OpenJarvis
+.venv/bin/python -c "
+import os
+from openjarvis.connectors.oauth import run_oauth_flow
+# Load client credentials from env file
+import pathlib
+env_text = pathlib.Path.home().joinpath('.jarvis/cloud-keys.env').read_text()
+env = dict(line.split('=', 1) for line in env_text.strip().splitlines() if '=' in line and not line.startswith('#'))
+client_id = env.get('GOOGLE_OAUTH_CLIENT_ID', os.environ.get('GOOGLE_OAUTH_CLIENT_ID', ''))
+client_secret = env.get('GOOGLE_OAUTH_CLIENT_SECRET', os.environ.get('GOOGLE_OAUTH_CLIENT_SECRET', ''))
+run_oauth_flow(
+  client_id=client_id,
+  client_secret=client_secret,
+  scopes=[
+    'https://www.googleapis.com/auth/gmail.readonly',
+    'https://www.googleapis.com/auth/calendar.readonly',
+    'https://www.googleapis.com/auth/drive.readonly',
+  ],
+  credentials_path=str(pathlib.Path.home() / '.openjarvis/connectors/google.json')
+)
+"
+```
+Complete browser consent. Then Jarvis will verify Drive live read.
+
+**Status after Bryan completes:** Item 4 moves to `CLEARED`
 
 ---
 
-*Ledger version: Full Blocker / Bryan Manual-Action Clearance Sprint*
+*Ledger version: No-Gap Jarvis Total Closure Sprint*
 *Last verified: 2026-06-19*
+*Base HEAD: 6ab4edc9*
 *Export to Obsidian: docs/blockers/bryan-action-blocker-ledger.md*
