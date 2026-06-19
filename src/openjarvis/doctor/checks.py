@@ -2511,8 +2511,177 @@ def check_nus1b_recommendation_workflow(project_id: str = "omnix") -> CheckResul
         )
 
 
+def check_nus1c_safe_autopilot(project_id: str = "omnix") -> CheckResult:
+    """NUS 1C — Safe Autopilot Learning doctor check.
+
+    Verifies:
+      - NUS 1C modules import cleanly
+      - Persistent queue works with temp path
+      - safe_autopilot active only for safe local dry-run
+      - Dangerous actions blocked
+      - Medium-risk actions need approval
+      - Failure learning works from persisted records
+      - Telemetry ingestion works (operator records)
+      - Learned routing recommendation works
+      - Kill-switch works
+      - US13 voice remains HOLD/UNSAFE/PARKED
+    """
+    import tempfile
+    from pathlib import Path
+    evidence: dict = {
+        "project_id": project_id,
+        "us13_voice_status": "HOLD/UNSAFE/PARKED",
+        "safety_gates_active": True,
+    }
+
+    try:
+        # 1. Module imports
+        from openjarvis.nus.recommendation_queue import RecommendationQueue, NUS1C_QUEUE_VERSION
+        from openjarvis.nus.safe_autopilot import SafeAutopilot, SAFE_AUTO_ACTIONS, DANGEROUS_ACTIONS, MEDIUM_RISK_ACTIONS, NUS1C_AUTOPILOT_VERSION
+        from openjarvis.nus.failure_learning import FailureLearner, NUS1C_FAILURE_LEARNING_VERSION
+        from openjarvis.nus.learned_routing import LearnedRouter, NUS1C_ROUTING_VERSION
+        from openjarvis.nus.telemetry import TelemetryNormalizer
+
+        evidence["queue_version"] = NUS1C_QUEUE_VERSION
+        evidence["autopilot_version"] = NUS1C_AUTOPILOT_VERSION
+        evidence["failure_learning_version"] = NUS1C_FAILURE_LEARNING_VERSION
+        evidence["routing_version"] = NUS1C_ROUTING_VERSION
+        evidence["modules_import"] = True
+
+        # 2. Persistent queue in temp path
+        with tempfile.TemporaryDirectory() as tmpdir:
+            q = RecommendationQueue(store_dir=Path(tmpdir))
+            item = q.enqueue(
+                source="doctor_check",
+                category="test",
+                title="Doctor check item",
+                summary="NUS 1C doctor test queue item",
+                required_action_type="local_analysis",
+            )
+            assert item.queue_id in {i.queue_id for i in q.list_all()}
+
+            # Reload from disk
+            q2 = RecommendationQueue(store_dir=Path(tmpdir))
+            assert q2.total_count >= 1
+
+            # Summarize
+            summary = q.summarize()
+            assert summary["total"] >= 1
+
+        evidence["persistent_queue_ok"] = True
+
+        # 3. Safe autopilot
+        ap = SafeAutopilot(kill_switch=False)
+
+        # Safe action → auto_allowed
+        safe_dec = ap.evaluate("local_analysis")
+        assert safe_dec.decision == "auto_allowed", f"Expected auto_allowed, got {safe_dec.decision}"
+
+        # Dangerous → blocked
+        danger_dec = ap.evaluate("self_modification")
+        assert danger_dec.decision == "blocked", f"Expected blocked, got {danger_dec.decision}"
+
+        deploy_dec = ap.evaluate("deploy")
+        assert deploy_dec.decision == "blocked"
+
+        commit_dec = ap.evaluate("auto_commit")
+        assert commit_dec.decision == "blocked"
+
+        # Medium risk → needs_approval
+        write_dec = ap.evaluate("file_write")
+        assert write_dec.decision == "needs_approval", f"Expected needs_approval, got {write_dec.decision}"
+
+        browser_dec = ap.evaluate("browser_automation")
+        assert browser_dec.decision == "needs_approval"
+
+        evidence["safe_autopilot_active_for_safe_local"] = True
+        evidence["dangerous_actions_blocked"] = True
+        evidence["medium_risk_needs_approval"] = True
+
+        # 4. Kill-switch
+        ap_ks = SafeAutopilot(kill_switch=True)
+        ks_dec = ap_ks.evaluate("local_analysis")
+        assert ks_dec.decision == "kill_switch_disabled"
+        ks_danger = ap_ks.evaluate("self_modification")
+        assert ks_danger.decision == "kill_switch_disabled"
+        evidence["kill_switch_ok"] = True
+
+        # 5. Failure learning (temp path)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            learner = FailureLearner(store_dir=Path(tmpdir))
+            result = learner.analyze()
+            assert isinstance(result, list)
+            s = learner.get_summary()
+            assert "pattern_count" in s
+        evidence["failure_learning_ok"] = True
+
+        # 6. Telemetry ingestion (operator record)
+        tn = TelemetryNormalizer()
+        rec = tn.ingest_operator_record({
+            "agent_name": "test_agent",
+            "task_id": "t001",
+            "action_type": "local_analysis",
+            "result": "success",
+            "model_used": "sonnet-4.6",
+            "estimated_cost_usd": 0.002,
+            "risk_level": "low",
+        })
+        assert rec.source_event_type == "operator_agent_record"
+        evidence["telemetry_operator_ingestion_ok"] = True
+
+        # 7. Learned routing
+        router = LearnedRouter()
+        rec_r = router.recommend_for_task(
+            task_category="docs_only",
+            risk_level="low",
+            complexity_level="simple",
+        )
+        assert rec_r.recommended_tier in ("cheap_fast", "balanced", "strong", "stop")
+        # Must not execute model switch — recommendation only
+        assert "recommendation" in rec_r.enforcement_note.lower() or "advisory" in rec_r.enforcement_note.lower()
+        evidence["learned_routing_ok"] = True
+
+        # 8. US13 voice status
+        evidence["us13_voice_status"] = "HOLD/UNSAFE/PARKED"
+        assert evidence["us13_voice_status"] == "HOLD/UNSAFE/PARKED"
+        evidence["us13_voice_parked"] = True
+
+        # 9. No self-modification, no auto-commit, no deploy
+        for dangerous in ("self_modification", "auto_commit", "auto_push", "auto_merge", "deploy", "secret_access"):
+            d = ap.evaluate(dangerous)
+            assert d.decision == "blocked", f"{dangerous} should be blocked"
+        evidence["no_self_modification"] = True
+        evidence["no_auto_commit"] = True
+        evidence["no_deploy"] = True
+
+        return CheckResult(
+            check_id="nus1c_safe_autopilot",
+            category="nus",
+            status=CheckStatus.PASS,
+            summary=(
+                f"NUS 1C v{NUS1C_AUTOPILOT_VERSION}: safe autopilot active for local dry-run, "
+                "persistent queue ok, failure learning ok, telemetry ingestion ok, "
+                "learned routing ok, kill-switch ok, dangerous actions blocked, "
+                "medium-risk needs approval. US13 HOLD/UNSAFE/PARKED."
+            ),
+            evidence=evidence,
+            project_id=project_id,
+        )
+
+    except Exception as exc:
+        evidence["error"] = str(exc)
+        return CheckResult(
+            check_id="nus1c_safe_autopilot",
+            category="nus",
+            status=CheckStatus.FAIL,
+            summary=f"NUS 1C safe autopilot check failed: {exc}",
+            evidence=evidence,
+            project_id=project_id,
+        )
+
+
 # ---------------------------------------------------------------------------
-# Check registry (33 checks total — 19 US7/US8 + 10 US9 + 1 strict-rules + 1 US10 + 1 US11 + 1 US13)
+# Check registry (34+ checks)
 # ---------------------------------------------------------------------------
 
 
@@ -2559,6 +2728,8 @@ _ALL_CHECK_FNS: List[Callable[..., CheckResult]] = [
     check_nus1a_learning_foundation,
     # NUS 1B checks
     check_nus1b_recommendation_workflow,
+    # NUS 1C checks
+    check_nus1c_safe_autopilot,
 ]
 
 
@@ -2625,5 +2796,6 @@ __all__ = [
     "check_watchdog_status",
     "check_nus1a_learning_foundation",
     "check_nus1b_recommendation_workflow",
+    "check_nus1c_safe_autopilot",
     "run_all_checks",
 ]

@@ -1,4 +1,4 @@
-"""NUS REST API routes — Learning Foundation (1A) + Recommendation Workflow (1B).
+"""NUS REST API routes — Learning Foundation (1A) + Recommendation Workflow (1B) + Safe Autopilot (1C).
 
 NUS 1A Routes:
   GET /v1/nus/learning/status           — NUS 1A status + safety gates
@@ -16,10 +16,22 @@ NUS 1B Routes:
   POST /v1/nus/telemetry/ingest-dry-run       — Ingest events (dry-run, read-only)
   GET  /v1/nus/autonomy-policy/status         — Autonomy policy scaffold status
 
+NUS 1C Routes:
+  GET  /v1/nus/recommendations/queue/status        — Persistent queue status
+  GET  /v1/nus/recommendations/queue/list          — List queue items by status
+  POST /v1/nus/recommendations/queue/enqueue-dry-run — Enqueue a recommendation (dry-run)
+  POST /v1/nus/autopilot/safe/run-dry-run          — Run safe autopilot dry-run
+  GET  /v1/nus/autopilot/status                    — Safe autopilot status
+  GET  /v1/nus/failure-learning/status             — Cross-session failure learning status
+  POST /v1/nus/telemetry/operator/ingest-dry-run   — Ingest operator/agent telemetry (dry-run)
+  GET  /v1/nus/routing/recommendations/status      — Learned routing recommendations status
+  POST /v1/nus/routing/recommendations/dry-run     — Generate routing recommendation (dry-run)
+
 Safety constraints (all routes):
   - Read-only or dry-run only.
   - No writes, deploys, external sends, or secret access.
-  - No self-modification.
+  - No self-modification, no auto-commit, no auto-push, no auto-merge.
+  - No source-code mutation by autopilot.
   - US13 voice remains HOLD/UNSAFE/PARKED.
 """
 
@@ -328,4 +340,243 @@ async def nus_autonomy_policy_status() -> Dict[str, Any]:
         return {"status": "ok", **get_policy_status()}
     except Exception as exc:
         logger.exception("NUS 1B autonomy policy status error")
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+# ---------------------------------------------------------------------------
+# NUS 1C — Persistent recommendation queue routes
+# ---------------------------------------------------------------------------
+
+_nus1c_queue = None
+
+
+def _get_queue():
+    global _nus1c_queue
+    if _nus1c_queue is None:
+        from openjarvis.nus.recommendation_queue import RecommendationQueue
+        _nus1c_queue = RecommendationQueue()
+    return _nus1c_queue
+
+
+@router.get("/v1/nus/recommendations/queue/status")
+async def nus_queue_status() -> Dict[str, Any]:
+    """Return persistent recommendation queue status."""
+    try:
+        q = _get_queue()
+        return {"status": "ok", **q.summarize()}
+    except Exception as exc:
+        logger.exception("NUS 1C queue status error")
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.get("/v1/nus/recommendations/queue/list")
+async def nus_queue_list(filter_status: str = "pending") -> Dict[str, Any]:
+    """List queue items. filter_status: pending|all|approved|rejected|blocked|dry_run."""
+    try:
+        q = _get_queue()
+        if filter_status == "pending":
+            items = q.list_pending()
+        elif filter_status == "approved":
+            items = q.list_approved()
+        elif filter_status == "rejected":
+            items = q.list_rejected()
+        elif filter_status == "blocked":
+            items = q.list_blocked()
+        elif filter_status == "dry_run":
+            items = q.list_dry_run()
+        else:
+            items = q.list_all()
+        return {
+            "status": "ok",
+            "filter_status": filter_status,
+            "count": len(items),
+            "items": [i.to_dict() for i in items[:50]],
+        }
+    except Exception as exc:
+        logger.exception("NUS 1C queue list error")
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+class QueueEnqueueRequest(BaseModel):
+    source: str = "api"
+    category: str = ""
+    title: str = ""
+    summary: str = ""
+    rationale: str = ""
+    required_action_type: str = "local_analysis"
+    risk_level: str = "low"
+    dedup_key: str = ""
+
+
+@router.post("/v1/nus/recommendations/queue/enqueue-dry-run")
+async def nus_queue_enqueue_dry_run(req: QueueEnqueueRequest) -> Dict[str, Any]:
+    """Enqueue a recommendation (dry-run — safe local only, no external actions)."""
+    try:
+        q = _get_queue()
+        item = q.enqueue(
+            source=req.source,
+            category=req.category,
+            title=req.title,
+            summary=req.summary,
+            rationale=req.rationale,
+            required_action_type=req.required_action_type,
+            risk_level=req.risk_level,
+            dedup_key=req.dedup_key,
+        )
+        return {
+            "status": "ok",
+            "dry_run": True,
+            "queue_id": item.queue_id,
+            "item_status": item.status,
+            "safety_note": (
+                "Enqueue is dry-run only. No external actions, no code mutation, "
+                "no deploy, no auto-commit."
+            ),
+        }
+    except Exception as exc:
+        logger.exception("NUS 1C queue enqueue error")
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+# ---------------------------------------------------------------------------
+# NUS 1C — Safe autopilot routes
+# ---------------------------------------------------------------------------
+
+_nus1c_autopilot = None
+
+
+def _get_autopilot():
+    global _nus1c_autopilot
+    if _nus1c_autopilot is None:
+        from openjarvis.nus.safe_autopilot import SafeAutopilot
+        _nus1c_autopilot = SafeAutopilot(kill_switch=False)
+    return _nus1c_autopilot
+
+
+@router.get("/v1/nus/autopilot/status")
+async def nus_autopilot_status() -> Dict[str, Any]:
+    """Return safe autopilot status."""
+    try:
+        ap = _get_autopilot()
+        return {"status": "ok", **ap.get_status()}
+    except Exception as exc:
+        logger.exception("NUS 1C autopilot status error")
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+class AutopilotDryRunRequest(BaseModel):
+    action_type: str = "local_analysis"
+    context: Dict[str, Any] = {}
+
+
+@router.post("/v1/nus/autopilot/safe/run-dry-run")
+async def nus_autopilot_safe_run_dry_run(req: AutopilotDryRunRequest) -> Dict[str, Any]:
+    """Run a safe autopilot dry-run for a given action type.
+
+    Only safe local actions are auto-allowed. Dangerous actions are blocked.
+    No source-code mutation, no commit, no deploy, no external send.
+    """
+    try:
+        ap = _get_autopilot()
+        decision = ap.evaluate(req.action_type, req.context)
+        return {
+            "status": "ok",
+            "dry_run": True,
+            **decision.to_dict(),
+        }
+    except Exception as exc:
+        logger.exception("NUS 1C autopilot run-dry-run error")
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+# ---------------------------------------------------------------------------
+# NUS 1C — Failure learning routes
+# ---------------------------------------------------------------------------
+
+
+@router.get("/v1/nus/failure-learning/status")
+async def nus_failure_learning_status() -> Dict[str, Any]:
+    """Return cross-session failure learning status."""
+    try:
+        from openjarvis.nus.failure_learning import FailureLearner
+        learner = FailureLearner()
+        learner.analyze()
+        return {"status": "ok", **learner.get_summary()}
+    except Exception as exc:
+        logger.exception("NUS 1C failure learning status error")
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+# ---------------------------------------------------------------------------
+# NUS 1C — Operator telemetry ingest route
+# ---------------------------------------------------------------------------
+
+
+class OperatorTelemetryRequest(BaseModel):
+    records: list = []
+
+
+@router.post("/v1/nus/telemetry/operator/ingest-dry-run")
+async def nus_operator_telemetry_ingest_dry_run(req: OperatorTelemetryRequest) -> Dict[str, Any]:
+    """Ingest operator/agent telemetry records (dry-run — no external actions)."""
+    try:
+        normalizer = _get_normalizer()
+        count = normalizer.ingest_operator_batch(req.records)
+        return {
+            "status": "ok",
+            "dry_run": True,
+            "ingested": count,
+            "total_records": normalizer.record_count,
+            "routing_observations": len(normalizer.to_routing_observations()),
+        }
+    except Exception as exc:
+        logger.exception("NUS 1C operator telemetry ingest error")
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+# ---------------------------------------------------------------------------
+# NUS 1C — Learned routing recommendation routes
+# ---------------------------------------------------------------------------
+
+
+@router.get("/v1/nus/routing/recommendations/status")
+async def nus_routing_status() -> Dict[str, Any]:
+    """Return learned routing recommendation status."""
+    try:
+        from openjarvis.nus.learned_routing import get_learned_router
+        router_inst = get_learned_router()
+        return {"status": "ok", **router_inst.get_status()}
+    except Exception as exc:
+        logger.exception("NUS 1C routing status error")
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+class RoutingDryRunRequest(BaseModel):
+    task_category: str = "unknown"
+    risk_level: str = "low"
+    complexity_level: str = "moderate"
+    validation_failures: int = 0
+    context_size_tokens: int = 0
+
+
+@router.post("/v1/nus/routing/recommendations/dry-run")
+async def nus_routing_dry_run(req: RoutingDryRunRequest) -> Dict[str, Any]:
+    """Generate a learned routing recommendation (dry-run — recommendation only, no model switch)."""
+    try:
+        from openjarvis.nus.learned_routing import get_learned_router
+        router_inst = get_learned_router()
+        rec = router_inst.recommend_for_task(
+            task_category=req.task_category,
+            risk_level=req.risk_level,
+            complexity_level=req.complexity_level,
+            context_size_tokens=req.context_size_tokens if req.context_size_tokens > 0 else None,
+            validation_failures=req.validation_failures,
+        )
+        return {
+            "status": "ok",
+            "dry_run": True,
+            **rec.to_dict(),
+        }
+    except Exception as exc:
+        logger.exception("NUS 1C routing dry-run error")
         raise HTTPException(status_code=500, detail=str(exc))

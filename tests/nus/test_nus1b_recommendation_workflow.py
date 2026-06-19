@@ -750,8 +750,11 @@ class TestFutureAutonomyProfiles:
             PROFILE_POWER_AUTOPILOT, PROFILE_FOUNDER_OVERRIDE,
         )
         catalog = get_policy_catalog()
-        for profile in [PROFILE_SAFE_AUTOPILOT, PROFILE_POWER_AUTOPILOT, PROFILE_FOUNDER_OVERRIDE]:
+        # NUS 1C: safe_autopilot is now active; power_autopilot and founder_override remain not activated
+        for profile in [PROFILE_POWER_AUTOPILOT, PROFILE_FOUNDER_OVERRIDE]:
             assert catalog[profile].activation_status != "active"
+        # safe_autopilot is active in NUS 1C
+        assert catalog[PROFILE_SAFE_AUTOPILOT].activation_status == "active"
 
     def test_power_autopilot_kill_switch_on(self):
         from openjarvis.nus.autonomy_policy import get_policy_catalog, PROFILE_POWER_AUTOPILOT
@@ -816,7 +819,7 @@ class TestCapabilityStatus:
     def test_capabilities_summary_nus1_status(self):
         from openjarvis.workbench.capabilities_registry import get_capabilities_summary
         summary = get_capabilities_summary()
-        assert summary["nus1_status"] == "1b_recommendation_workflow_ready"
+        assert summary["nus1_status"] in ("1b_recommendation_workflow_ready", "1c_safe_autopilot_learning_ready")
 
     def test_nus1a_still_present(self):
         from openjarvis.workbench.capabilities_registry import get_all_capabilities

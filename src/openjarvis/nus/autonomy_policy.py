@@ -256,14 +256,15 @@ def get_policy_catalog() -> Dict[str, AutonomyPolicy]:
         ),
         PROFILE_SAFE_AUTOPILOT: AutonomyPolicy(
             profile=PROFILE_SAFE_AUTOPILOT,
-            activation_status="defined_not_activated",
+            activation_status="active",
             autonomy_kill_switch=False,
             audit_required=True,
             rollback_required=True,
             notes=(
-                "Safe autopilot: local read/analysis/validation auto-allowed. "
-                "All file writes, sends, browser, deploy, secrets remain gated. "
-                "Activation requires NUS 1C+ approval."
+                "NUS 1C ACTIVE: safe autopilot active for local read/analysis/validation/"
+                "scorecard/telemetry/failure-summary/dry-run only. "
+                "All file writes, sends, browser, deploy, secrets remain gated or blocked. "
+                "power_autopilot/founder_override/production_restricted: defined_not_activated."
             ),
         ),
         PROFILE_POWER_AUTOPILOT: AutonomyPolicy(
@@ -316,8 +317,9 @@ def get_policy_status() -> Dict[str, Any]:
         "version": NUS1B_POLICY_VERSION,
         "default_profile": PROFILE_MANUAL,
         "nus1b_active_profiles": [PROFILE_MANUAL],
+        "nus1c_active_profiles": [PROFILE_SAFE_AUTOPILOT],
         "nus1c_profiles_defined_not_activated": [
-            PROFILE_SAFE_AUTOPILOT, PROFILE_POWER_AUTOPILOT,
+            PROFILE_POWER_AUTOPILOT,
             PROFILE_FOUNDER_OVERRIDE, PROFILE_PRODUCTION_RESTRICTED,
         ],
         "always_blocked": sorted(_ALWAYS_BLOCKED),

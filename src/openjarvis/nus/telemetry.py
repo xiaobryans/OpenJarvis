@@ -396,6 +396,119 @@ class TelemetryNormalizer:
             "approval_required_count": sum(1 for r in self._records if r.is_approval_required),
         }
 
+    def ingest_operator_record(self, record: Dict[str, Any]) -> "NormalizedTelemetryRecord":
+        """Normalize an operator/agent telemetry record (NUS 1C).
+
+        Tolerates missing fields. Redacts suspicious secret-looking values.
+        Maps to learning signals, failure pattern updates, recommendations,
+        and routing observations.
+
+        Expected fields (all optional):
+          agent_name / source, task_id, action_type, result,
+          validation_status, model_used, estimated_cost_usd, risk_level,
+          elapsed_time_seconds, blocked_reason, approval_required_reason,
+          related_files, test_command
+        """
+        record = redact_suspicious(record)
+
+        agent_name = str(record.get("agent_name") or record.get("source") or "unknown_operator")
+        task_id = str(record.get("task_id") or "")
+        action_type = str(record.get("action_type") or "unknown")
+        result = str(record.get("result") or "unknown")
+        validation_status = record.get("validation_status")
+        model_used = record.get("model_used")
+        cost = record.get("estimated_cost_usd")
+        risk_level = str(record.get("risk_level") or "low")
+        elapsed = record.get("elapsed_time_seconds")
+        blocked_reason = record.get("blocked_reason")
+        approval_reason = record.get("approval_required_reason")
+        related_files = record.get("related_files", [])
+        test_command = record.get("test_command")
+
+        # Determine flags
+        is_blocked = bool(blocked_reason) or result in ("blocked", "denied")
+        is_approval = bool(approval_reason) or result == "needs_approval"
+        is_failure = result in ("failure", "failed", "error") or validation_status is False
+
+        # Category
+        if is_blocked:
+            category = TELEM_CATEGORY_BLOCKED
+            signal_type = "risk_signal"
+        elif is_approval:
+            category = TELEM_CATEGORY_APPROVAL
+            signal_type = "approval_signal"
+        elif is_failure:
+            category = TELEM_CATEGORY_TASK
+            signal_type = "negative_signal"
+        elif validation_status is True:
+            category = TELEM_CATEGORY_VALIDATION
+            signal_type = "validation_signal"
+        elif cost is not None:
+            category = TELEM_CATEGORY_COST
+            signal_type = "cost_signal"
+        else:
+            category = TELEM_CATEGORY_TASK
+            signal_type = "positive_signal"
+
+        normalized = NormalizedTelemetryRecord(
+            source_event_type="operator_agent_record",
+            category=category,
+            signal_type=signal_type,
+            is_blocked=is_blocked,
+            is_approval_required=is_approval,
+            is_failure=is_failure,
+            model_used=str(model_used) if model_used else None,
+            estimated_cost_usd=float(cost) if cost is not None else None,
+            session_id="",
+            task_id=task_id,
+            title=f"Operator [{agent_name}]: {action_type} → {result}",
+            detail=str(blocked_reason or approval_reason or ""),
+            metadata={
+                "agent_name": agent_name,
+                "action_type": action_type,
+                "result": result,
+                "validation_status": validation_status,
+                "risk_level": risk_level,
+                "elapsed_time_seconds": elapsed,
+                "related_files": related_files[:5] if related_files else [],
+                "test_command": test_command,
+            },
+        )
+        self._records.append(normalized)
+        self._log_event(
+            "operator_telemetry_ingested",
+            f"Operator [{agent_name}] action={action_type} result={result} risk={risk_level}",
+        )
+        return normalized
+
+    def ingest_operator_batch(self, records: List[Dict[str, Any]]) -> int:
+        """Ingest a batch of operator/agent telemetry records. Returns count ingested."""
+        count = 0
+        for rec in records:
+            try:
+                self.ingest_operator_record(rec)
+                count += 1
+            except Exception as exc:
+                logger.debug("Operator telemetry ingest skip: %s", exc)
+        if count:
+            self._log_event("operator_telemetry_ingested", f"Batch ingested {count} operator records.")
+        return count
+
+    def to_routing_observations(self) -> List[Dict[str, Any]]:
+        """Extract routing-relevant observations from telemetry records (NUS 1C)."""
+        observations = []
+        for r in self._records:
+            if r.model_used or r.estimated_cost_usd is not None:
+                observations.append({
+                    "model_used": r.model_used,
+                    "estimated_cost_usd": r.estimated_cost_usd,
+                    "is_failure": r.is_failure,
+                    "is_blocked": r.is_blocked,
+                    "category": r.category,
+                    "source_event_type": r.source_event_type,
+                })
+        return observations
+
     def _log_event(self, event_type: str, detail: str) -> None:
         try:
             from openjarvis.workbench.event_log import WorkbenchEventLog

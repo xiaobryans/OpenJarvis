@@ -377,11 +377,29 @@ uv run python -m pytest tests/wave tests/workbench/test_us15_foundation.py tests
 - US13 voice remains HOLD/UNSAFE/PARKED.
 - Full docs: `docs/NUS1B_RECOMMENDATION_WORKFLOW.md`.
 
-### NUS 1C / 1D / 1E / 1F — Full Self-Improvement Autonomy: NOT STARTED / LOCKED
+### NUS 1C — Safe Autopilot Foundation: READY (local founder V1)
 
-- NUS 1C (safe_autopilot activation, A/B routing, operator telemetry) is locked for a future sprint.
-- NUS 1D (power_autopilot, founder_override activation) is locked for a future sprint.
-- NUS 1E/1F (production-safe execution, deployment recommendation) require explicit owner gate.
+- Modules: `src/openjarvis/nus/recommendation_queue.py`, `src/openjarvis/nus/safe_autopilot.py`,
+  `src/openjarvis/nus/failure_learning.py`, `src/openjarvis/nus/learned_routing.py`
+- Extends: `src/openjarvis/nus/telemetry.py` (operator ingestion), `src/openjarvis/nus/autonomy_policy.py`
+  (safe_autopilot activated)
+- Routes: `/v1/nus/recommendations/queue/*`, `/v1/nus/autopilot/*`, `/v1/nus/failure-learning/*`,
+  `/v1/nus/telemetry/operator/*`, `/v1/nus/routing/*`
+- Capability: `nus1c_safe_autopilot_learning` → `ready`
+- Doctor check: `check_nus1c_safe_autopilot`
+- Tests: `tests/nus/test_nus1c_safe_autopilot.py`
+- Scope: persistent recommendation queue, safe_autopilot active for local analysis/dry-run only,
+  cross-session failure pattern learning, operator telemetry normalization, learned routing
+  recommendations (advisory only). All dangerous actions blocked. Medium-risk gated.
+- US13 voice: HOLD/UNSAFE/PARKED.
+- Full docs: `docs/NUS1C_SAFE_AUTOPILOT.md`.
+
+### NUS 1D / 1E / 1F — Advanced Autonomy: NOT STARTED / LOCKED
+
+- NUS 1D (power_autopilot activation, audited file writes) is locked for a future sprint.
+- NUS 1E (founder_override session activation) requires explicit owner gate.
+- NUS 1F (production-safe execution, deployment recommendation) requires explicit owner gate.
+- Post-NUS company-grade orchestrator: LOCKED — do not implement until explicitly authorized.
 - No `autonomous_upgrade` module exists.
 
 ---

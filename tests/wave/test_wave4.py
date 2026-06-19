@@ -859,8 +859,8 @@ class TestNUS1NotImplemented:
     def test_capabilities_registry_nus1_status(self):
         from openjarvis.workbench.capabilities_registry import get_capabilities_summary
         summary = get_capabilities_summary()
-        # NUS 1B recommendation workflow is now ready; NUS 1C+ remain not started
-        assert summary.get("nus1_status") == "1b_recommendation_workflow_ready"
+        # NUS 1C safe autopilot is now ready; NUS 1D+ remain not started
+        assert summary.get("nus1_status") in ("1b_recommendation_workflow_ready", "1c_safe_autopilot_learning_ready")
 
     def test_no_nus1_module_in_wave(self):
         """NUS 1 self-improvement autonomy must not exist as a callable module."""

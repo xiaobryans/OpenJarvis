@@ -2,6 +2,7 @@
 
 NUS 1A: Learning Foundation (local, read-only, no self-modification).
 NUS 1B: Recommendation Workflow, Persistence, Telemetry, Autonomy Policy Scaffold.
+NUS 1C: Persistent Queue, Safe Autopilot, Failure Learning, Learned Routing.
 """
 from openjarvis.nus.learning_foundation import (
     AgentScorecard,
@@ -26,6 +27,10 @@ from openjarvis.nus.autonomy_policy import (
     get_policy_catalog,
     get_policy_status,
 )
+from openjarvis.nus.recommendation_queue import QueueItem, RecommendationQueue
+from openjarvis.nus.safe_autopilot import AutopilotDecision, SafeAutopilot, get_safe_autopilot
+from openjarvis.nus.failure_learning import CrossSessionPattern, FailureLearner
+from openjarvis.nus.learned_routing import LearnedRouter, RoutingRecommendation, get_learned_router
 
 __all__ = [
     # NUS 1A
@@ -50,4 +55,15 @@ __all__ = [
     "get_default_policy",
     "get_policy_catalog",
     "get_policy_status",
+    # NUS 1C
+    "QueueItem",
+    "RecommendationQueue",
+    "AutopilotDecision",
+    "SafeAutopilot",
+    "get_safe_autopilot",
+    "CrossSessionPattern",
+    "FailureLearner",
+    "LearnedRouter",
+    "RoutingRecommendation",
+    "get_learned_router",
 ]

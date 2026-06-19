@@ -549,8 +549,45 @@ def _nus1b_recommendation_workflow_status() -> CapabilityRecord:
         )
 
 
+def _nus1c_safe_autopilot_learning_status() -> CapabilityRecord:
+    """NUS 1C — Safe Autopilot Learning capability."""
+    try:
+        from openjarvis.nus.recommendation_queue import NUS1C_QUEUE_VERSION, RecommendationQueue  # noqa: F401
+        from openjarvis.nus.safe_autopilot import NUS1C_AUTOPILOT_VERSION, SafeAutopilot  # noqa: F401
+        from openjarvis.nus.failure_learning import NUS1C_FAILURE_LEARNING_VERSION, FailureLearner  # noqa: F401
+        from openjarvis.nus.learned_routing import NUS1C_ROUTING_VERSION, LearnedRouter  # noqa: F401
+        return CapabilityRecord(
+            capability_id="nus1c_safe_autopilot_learning",
+            display_name="NUS 1C — Safe Autopilot Learning",
+            status=STATUS_READY,
+            summary=(
+                "NUS 1C: Persistent recommendation queue, safe_autopilot active for local "
+                "analysis/dry-run only, cross-session failure learning, operator telemetry "
+                "normalization, and learned model-routing recommendations. "
+                "file_write/browser/external sends: needs_approval. "
+                "self_modification/auto_commit/deploy/secret_access: blocked. "
+                "US13 voice HOLD/UNSAFE/PARKED. NUS 1D+: not_started."
+            ),
+            evidence={
+                "queue_version": NUS1C_QUEUE_VERSION,
+                "autopilot_version": NUS1C_AUTOPILOT_VERSION,
+                "failure_learning_version": NUS1C_FAILURE_LEARNING_VERSION,
+                "routing_version": NUS1C_ROUTING_VERSION,
+                "safe_autopilot_active": True,
+                "safety_gates_active": True,
+            },
+        )
+    except Exception as exc:
+        return CapabilityRecord(
+            capability_id="nus1c_safe_autopilot_learning",
+            display_name="NUS 1C — Safe Autopilot Learning",
+            status=STATUS_NOT_IMPLEMENTED,
+            summary=f"NUS 1C safe autopilot learning unavailable: {exc}",
+        )
+
+
 def get_all_capabilities() -> List[CapabilityRecord]:
-    """Return all capability records with truthful status (US15 + Wave 1–4 + NUS 1A/1B)."""
+    """Return all capability records with truthful status (US15 + Wave 1–4 + NUS 1A/1B/1C)."""
     return [
         _assistant_status(),
         _workbench_status(),
@@ -575,6 +612,8 @@ def get_all_capabilities() -> List[CapabilityRecord]:
         _nus1a_learning_foundation_status(),
         # NUS 1B — Recommendation Workflow
         _nus1b_recommendation_workflow_status(),
+        # NUS 1C — Safe Autopilot Learning
+        _nus1c_safe_autopilot_learning_status(),
     ]
 
 
@@ -596,7 +635,11 @@ def get_capabilities_summary() -> Dict[str, Any]:
         "wave4_not_implemented": False,
         "wave3_4_not_implemented": False,
         "wave2_3_4_not_implemented": False,
-        "nus1_status": "1b_recommendation_workflow_ready",
+        "nus1_status": "1c_safe_autopilot_learning_ready",
+        "nus1a_status": "ready",
+        "nus1b_status": "ready",
+        "nus1c_status": "ready",
+        "nus1d_plus_status": "not_started",
     }
 
 
