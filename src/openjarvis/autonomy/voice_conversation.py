@@ -1045,6 +1045,10 @@ class VoiceConversationLoop:
         self._active_session_id: Optional[int] = None
         self._session_deadline: float = 0.0
         self._tts = _TTSPlayback()
+        # Hotkey-only mode: set when wake-word bridge fails at start().
+        # Session is still usable via trigger() (hotkey/mic-button path).
+        self._hotkey_mode: bool = False
+        self._wake_failure_reason: Optional[str] = None
 
         # Event queue — SSE consumers subscribe to this
         self._event_subscribers: List[queue.Queue] = []
@@ -1432,12 +1436,56 @@ class VoiceConversationLoop:
     # ------------------------------------------------------------------ #
 
     def start(self, debug: bool = False) -> Dict[str, Any]:
-        """Start wake-word bridge and register the conversation callback."""
+        """Start wake-word bridge and register the conversation callback.
+
+        If the wake-word bridge fails (worker venv missing, socket error, etc.)
+        the session still starts in hotkey-only mode.  The caller can check
+        ``result["wake_mode"]`` == "hotkey_only" to surface a degraded-mode
+        indicator without blocking the user from recording via trigger().
+        """
         self._bridge.register_callback(self._on_wake)
         result = self._bridge.start(auto_restart=self._auto_restart, debug=debug or self._debug)
         if result.get("ok"):
+            with self._lock:
+                self._hotkey_mode = False
+                self._wake_failure_reason = None
             self._set_state("listening")
-        return result
+            return result
+
+        # Wake-word bridge failed — fall back to hotkey-only mode.
+        # The session is still usable: trigger() fires _on_wake directly.
+        wake_err = result.get("error", "unknown wake-word error")
+        logger.warning(
+            "Wake-word bridge failed (%s) — session starting in hotkey-only mode",
+            wake_err,
+        )
+        with self._lock:
+            self._hotkey_mode = True
+            self._wake_failure_reason = wake_err
+        self._set_state("listening")
+        return {
+            "ok": True,
+            "wake_mode": "hotkey_only",
+            "wake_failure_reason": wake_err,
+            "worker_pid": None,
+            "socket": None,
+        }
+
+    def trigger(self) -> Dict[str, Any]:
+        """Manually trigger a voice recording turn (hotkey/mic-button path).
+
+        Works whether wake-word is active or not.  Safe to call from the
+        POST /v1/voice/session/trigger endpoint.
+        """
+        from openjarvis.autonomy.wakeword_bridge import WakeWordTriggerEvent
+        event = WakeWordTriggerEvent(
+            model="manual_trigger",
+            score=1.0,
+            ts=time.monotonic(),
+            source="hotkey",
+        )
+        self._on_wake(event)
+        return {"ok": True, "triggered_at": time.time(), "source": "hotkey"}
 
     def stop(self) -> None:
         """Stop the wake-word bridge and conversation loop."""
@@ -1455,6 +1503,8 @@ class VoiceConversationLoop:
         with self._lock:
             state = self._state
             turns = self._turns
+            hotkey_mode = self._hotkey_mode
+            wake_failure = self._wake_failure_reason
         return {
             "loop_state": state,
             "turns_completed": turns,
@@ -1464,6 +1514,8 @@ class VoiceConversationLoop:
             "silence_stop_ms": self._silence_stop_ms,
             "language": self._language,
             "session_timeout": self._session_timeout,
+            "wake_mode": "hotkey_only" if hotkey_mode else "wake_word",
+            "wake_failure_reason": wake_failure,
             "bridge": self._bridge.status(),
         }
 

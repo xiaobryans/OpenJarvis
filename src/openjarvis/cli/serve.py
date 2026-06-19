@@ -3,7 +3,34 @@
 from __future__ import annotations
 
 import logging
+import os
+import pathlib
 import sys
+
+
+def _load_project_dotenv() -> None:
+    """Load .env from the project root into os.environ if keys are missing.
+
+    Only sets keys that are NOT already in the environment — never overrides
+    explicit shell exports or CLI-provided env vars. Never logs key values.
+    Safe to call multiple times (idempotent).
+    """
+    # Project root is 4 directories above this file:
+    # src/openjarvis/cli/serve.py → src/openjarvis/cli → src/openjarvis → src → root
+    env_file = pathlib.Path(__file__).parent.parent.parent.parent / ".env"
+    if not env_file.is_file():
+        return
+    try:
+        for line in env_file.read_text(encoding="utf-8", errors="replace").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, val = line.partition("=")
+            key = key.strip()
+            if key and key not in os.environ:
+                os.environ[key] = val.strip()
+    except OSError:
+        pass  # non-fatal — env may already be set
 
 import click
 from rich.console import Console
@@ -106,6 +133,11 @@ def serve(
     agent_name: str | None,
 ) -> None:
     """Start the OpenAI-compatible API server."""
+    # Load project .env FIRST so Deepgram/provider keys are available before
+    # load_config() and engine resolution. Keys already set in the environment
+    # are never overwritten (shell exports or explicit CLI env take priority).
+    _load_project_dotenv()
+
     print_banner(quiet=(ctx.obj or {}).get("quiet", False))
     console = Console(stderr=True)
 

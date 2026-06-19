@@ -912,12 +912,46 @@ async def server_info(request: Request):
 
 @router.get("/health")
 async def health(request: Request):
-    """Health check endpoint."""
+    """Health check with identity fingerprint.
+
+    Returns basic liveness + non-secret config summary so callers can detect
+    stale/wrong-config backends without querying multiple endpoints.
+    No secrets, API keys, or token values are returned.
+    """
+    import os as _os
+    import time as _time
+
     engine = request.app.state.engine
     healthy = engine.health()
     if not healthy:
         raise HTTPException(status_code=503, detail="Engine unhealthy")
-    return {"status": "ok"}
+
+    started_at = getattr(request.app.state, "session_start", None)
+    uptime_s = round(_time.time() - started_at, 1) if started_at else None
+
+    # Provider summary — no secret values
+    stt_provider = "unknown"
+    tts_provider = "unknown"
+    try:
+        from openjarvis.autonomy.voice_pipeline import get_stt_status, get_tts_status
+        _stt = get_stt_status()
+        _tts = get_tts_status()
+        stt_provider = _stt.get("stt_status", "unknown")
+        tts_provider = _tts.get("tts_status", "unknown")
+    except Exception:
+        pass
+
+    return {
+        "status": "ok",
+        "app": "openjarvis",
+        "pid": _os.getpid(),
+        "started_at": started_at,
+        "uptime_s": uptime_s,
+        "engine": getattr(request.app.state, "engine_name", "unknown"),
+        "model": getattr(request.app.state, "model", "unknown"),
+        "stt_provider": stt_provider,
+        "tts_provider": tts_provider,
+    }
 
 
 # ---------------------------------------------------------------------------

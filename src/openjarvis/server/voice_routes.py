@@ -155,21 +155,6 @@ async def start_voice_session(req: VoiceStartRequest) -> Dict[str, Any]:
                     pass
                 _global_session = None
 
-            # Pre-flight: wake-word worker venv
-            _check_bridge = WakeWordBridge()
-            if not _check_bridge.is_available():
-                return {
-                    "ok": False,
-                    "error_code": "wake_worker_missing",
-                    "error": (
-                        "Wake-word worker venv not found. "
-                        "Run: uv venv .wake_worker_venv --python 3.12 && "
-                        "uv pip install --python .wake_worker_venv/bin/python openwakeword sounddevice"
-                    ),
-                    "detail": f"Worker venv path: {_WORKER_VENV}",
-                    "recovery": "Run the setup command above to create the wake-worker venv.",
-                }
-
             # Advisory: STT must be configured
             try:
                 from openjarvis.autonomy.voice_pipeline import get_voice_status
@@ -213,12 +198,14 @@ async def start_voice_session(req: VoiceStartRequest) -> Dict[str, Any]:
 
             result = loop.start(debug=req.debug)
             if not result.get("ok"):
+                # This path should be rare — loop.start() now returns ok=True
+                # even in hotkey-only mode.  Only a hard internal error reaches here.
                 return {
                     "ok": False,
                     "error_code": "loop_start_failed",
-                    "error": result.get("error", "Failed to start worker"),
+                    "error": result.get("error", "Failed to start voice loop"),
                     "detail": result,
-                    "recovery": "Check wake-worker logs and microphone permissions.",
+                    "recovery": "Check server logs. Hotkey trigger via POST /v1/voice/session/trigger.",
                 }
 
             _global_session = loop
@@ -238,11 +225,14 @@ async def start_voice_session(req: VoiceStartRequest) -> Dict[str, Any]:
         except Exception:
             provider_info = {"stt": "unknown", "tts": "unknown"}
 
+        st = loop.status()
         return {
             "ok": True,
             "worker_pid": result.get("worker_pid"),
             "socket": result.get("socket"),
-            "loop_state": loop.status()["loop_state"],
+            "loop_state": st["loop_state"],
+            "wake_mode": result.get("wake_mode", "wake_word"),
+            "wake_failure_reason": result.get("wake_failure_reason"),
             "platform_support": plat,
             "provider_info": provider_info,
         }
@@ -310,8 +300,36 @@ async def get_voice_session_status() -> Dict[str, Any]:
         "session_timeout": st["session_timeout"],
         "worker_running": st.get("bridge", {}).get("worker_running", False),
         "worker_ready": st.get("bridge", {}).get("worker_ready", False),
+        "wake_mode": st.get("wake_mode", "wake_word"),
+        "wake_failure_reason": st.get("wake_failure_reason"),
         "platform_support": plat,
     }
+
+
+# ---------------------------------------------------------------------------
+# POST /v1/voice/session/trigger  (hotkey / manual-mic path)
+# ---------------------------------------------------------------------------
+
+
+@router.post("/v1/voice/session/trigger")
+async def trigger_voice_session() -> Dict[str, Any]:
+    """Manually start a voice recording turn (hotkey / mic-button path).
+
+    Use when:
+    - Wake-word is unavailable (hotkey-only mode).
+    - User pressed Cmd+Shift+Space in the UI.
+    - Frontend mic button clicked while session is listening but idle.
+
+    Requires an active session (POST /v1/voice/session/start first).
+    """
+    sess = _get_session()
+    if sess is None:
+        return {
+            "ok": False,
+            "error": "No active voice session. Call POST /v1/voice/session/start first.",
+            "error_code": "no_session",
+        }
+    return sess.trigger()
 
 
 # ---------------------------------------------------------------------------

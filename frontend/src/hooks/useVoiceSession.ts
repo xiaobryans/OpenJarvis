@@ -52,6 +52,8 @@ export interface VoiceProviderInfo {
   tts_primary?: boolean;
 }
 
+export type WakeMode = 'wake_word' | 'hotkey_only';
+
 export interface VoiceSessionState {
   voiceState: VoiceState;
   interimTranscript: string;
@@ -65,9 +67,17 @@ export interface VoiceSessionState {
   startFailedReason: string | null;
   /** Provider info returned from the backend on session start. */
   providerInfo: VoiceProviderInfo | null;
+  /** Whether wake-word is live or session is in hotkey-only mode. */
+  wakeMode: WakeMode;
+  /** True only when wake-word worker is running and ready. */
+  wakeWorkerReady: boolean;
+  /** Non-null when wake-word failed and session is in hotkey-only mode. */
+  wakeFailureReason: string | null;
 }
 
 export interface VoiceSessionActions {
+  /** Manually trigger a voice recording turn — use in hotkey-only mode. */
+  trigger: () => Promise<boolean>;
   start: (opts?: {
     /**
      * Emergency max-recording cap per turn in seconds.
@@ -120,6 +130,9 @@ export function useVoiceSession(): VoiceSessionState & VoiceSessionActions {
   const [isActive, setIsActive] = useState(false);
   const [startFailedReason, setStartFailedReason] = useState<string | null>(null);
   const [providerInfo, setProviderInfo] = useState<VoiceProviderInfo | null>(null);
+  const [wakeMode, setWakeMode] = useState<WakeMode>('wake_word');
+  const [wakeWorkerReady, setWakeWorkerReady] = useState(false);
+  const [wakeFailureReason, setWakeFailureReason] = useState<string | null>(null);
 
   const esRef = useRef<EventSource | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -215,6 +228,37 @@ export function useVoiceSession(): VoiceSessionState & VoiceSessionActions {
     };
   }, [isActive, connectSSE]);
 
+  // Poll /v1/voice/session/status every 3s while active to track worker_ready
+  // and wake_mode. This catches the case where the wake worker transitions
+  // from starting → ready after the initial start response.
+  useEffect(() => {
+    if (!isActive) return;
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const res = await fetch(`${getBase()}/v1/voice/session/status`, {
+          headers: authHeaders(),
+        });
+        if (!res.ok || cancelled) return;
+        const data = await res.json();
+        if (cancelled) return;
+        setWakeWorkerReady(!!data.worker_ready);
+        if (data.wake_mode) setWakeMode(data.wake_mode as WakeMode);
+        if (data.wake_failure_reason !== undefined) {
+          setWakeFailureReason(data.wake_failure_reason ?? null);
+        }
+      } catch {
+        // non-fatal — polling is best-effort
+      }
+    };
+    poll(); // immediate first check
+    const interval = setInterval(poll, 3000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [isActive]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const start = useCallback(async (opts?: {
     recordSeconds?: number;
     language?: string;
@@ -266,6 +310,14 @@ export function useVoiceSession(): VoiceSessionState & VoiceSessionActions {
       if (data.provider_info) {
         setProviderInfo(data.provider_info as VoiceProviderInfo);
       }
+      if (data.wake_mode) {
+        setWakeMode(data.wake_mode as WakeMode);
+      }
+      if (data.wake_failure_reason) {
+        setWakeFailureReason(data.wake_failure_reason);
+      } else {
+        setWakeFailureReason(null);
+      }
       setIsActive(true);
       return true;
     } catch (e) {
@@ -279,6 +331,19 @@ export function useVoiceSession(): VoiceSessionState & VoiceSessionActions {
     }
   }, []);
 
+  const trigger = useCallback(async (): Promise<boolean> => {
+    try {
+      const res = await fetch(`${getBase()}/v1/voice/session/trigger`, {
+        method: 'POST',
+        headers: authHeaders(),
+      });
+      const data = await res.json();
+      return !!data.ok;
+    } catch {
+      return false;
+    }
+  }, []);
+
   const stop = useCallback(async () => {
     abortRef.current?.abort();
     await fetch(`${getBase()}/v1/voice/session/stop`, {
@@ -287,6 +352,9 @@ export function useVoiceSession(): VoiceSessionState & VoiceSessionActions {
     }).catch(() => {});
     setIsActive(false);
     setVoiceState('idle');
+    setWakeWorkerReady(false);
+    setWakeMode('wake_word');
+    setWakeFailureReason(null);
   }, []);
 
   return {
@@ -300,6 +368,10 @@ export function useVoiceSession(): VoiceSessionState & VoiceSessionActions {
     isActive,
     startFailedReason,
     providerInfo,
+    wakeMode,
+    wakeWorkerReady,
+    wakeFailureReason,
+    trigger,
     start,
     stop,
   };

@@ -146,6 +146,10 @@ export function VoiceOverlay() {
     isActive,
     startFailedReason,
     providerInfo,
+    wakeMode,
+    wakeWorkerReady,
+    wakeFailureReason,
+    trigger,
     start,
     stop,
   } = useVoiceSession();
@@ -229,11 +233,26 @@ export function VoiceOverlay() {
     return 'var(--color-text-tertiary)';
   })();
 
-  // Mic button: stop session (if running) or manually force-start (fallback)
+  // Mic button:
+  // - If running in wake-word mode while listening → do nothing (wake drives it)
+  //   but expand panel so user can see state.
+  // - If running in hotkey-only mode while listening → trigger a recording turn.
+  // - If speaking/recording/transcribing → stop current session.
+  // - If not running → start session.
   const handleMicClick = async () => {
     if (isRunning) {
-      await stop();
-      setExpanded(false);
+      if (isWakeListening && wakeMode === 'hotkey_only') {
+        // In hotkey-only mode, mic button triggers a recording turn
+        await trigger();
+        setExpanded(true);
+      } else if (isWakeListening) {
+        // Wake-word is handling it — just expand panel
+        setExpanded(true);
+      } else {
+        // Active turn in progress → stop
+        await stop();
+        setExpanded(false);
+      }
     } else {
       await start();
       setExpanded(true);
@@ -363,17 +382,53 @@ export function VoiceOverlay() {
               </div>
             )}
 
-            {/* Wake listening idle prompt */}
+            {/* Wake listening idle prompt — content varies by wake mode */}
             {!hasConversation && !error && !startFailedReason && !interimTranscript && isRunning && isWakeListening && (
-              <div
-                className="text-xs text-center py-2"
-                style={{ color: 'var(--color-text-secondary)' }}
-              >
-                Say <strong>"Hey Jarvis"</strong> or press{' '}
-                <kbd className="px-1 rounded text-[10px]" style={{ background: 'var(--color-bg-tertiary)' }}>
-                  ⌘⇧Space
-                </kbd>{' '}
-                to start
+              <div className="space-y-1">
+                {wakeMode === 'hotkey_only' ? (
+                  <div className="text-xs text-center py-2 space-y-1">
+                    <div style={{ color: 'var(--color-text-secondary)' }}>
+                      Press{' '}
+                      <kbd className="px-1 rounded text-[10px]" style={{ background: 'var(--color-bg-tertiary)' }}>
+                        ⌘⇧Space
+                      </kbd>{' '}
+                      or <strong>tap the mic</strong> to speak
+                    </div>
+                    {wakeFailureReason && (
+                      <div
+                        className="text-[10px] px-2 py-1 rounded font-mono"
+                        style={{
+                          color: 'var(--color-text-tertiary)',
+                          background: 'var(--color-bg-tertiary)',
+                        }}
+                      >
+                        Wake-word unavailable: {wakeFailureReason.split('.')[0]}
+                      </div>
+                    )}
+                  </div>
+                ) : wakeWorkerReady ? (
+                  <div
+                    className="text-xs text-center py-2"
+                    style={{ color: 'var(--color-text-secondary)' }}
+                  >
+                    Say <strong>"Hey Jarvis"</strong> or press{' '}
+                    <kbd className="px-1 rounded text-[10px]" style={{ background: 'var(--color-bg-tertiary)' }}>
+                      ⌘⇧Space
+                    </kbd>
+                  </div>
+                ) : (
+                  // Worker venv present but not yet ready (still loading model)
+                  <div
+                    className="text-xs text-center py-2"
+                    style={{ color: 'var(--color-text-secondary)' }}
+                  >
+                    Wake-word loading… press{' '}
+                    <kbd className="px-1 rounded text-[10px]" style={{ background: 'var(--color-bg-tertiary)' }}>
+                      ⌘⇧Space
+                    </kbd>{' '}
+                    or tap mic
+                  </div>
+                )}
               </div>
             )}
 
