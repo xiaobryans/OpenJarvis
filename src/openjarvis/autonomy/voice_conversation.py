@@ -893,6 +893,11 @@ _RUNTIME_QUERY_PATTERNS: Tuple[re.Pattern, ...] = tuple(
         r"\bprovider.*what\b",
         r"\bvoice.*working\b",
         r"\bworking.*voice\b",
+        # Fallback provider questions
+        r"\bfallback\b.*\b(provider|voice|stt|tts|deepgram|fails?|down)\b",
+        r"\b(provider|stt|tts|deepgram)\b.*\bfallback\b",
+        r"\bif deepgram\b",
+        r"\bdeepgram fail",
     ]
 )
 
@@ -930,6 +935,17 @@ def _build_voice_runtime_answer() -> str:
         fallback = voice.get("fallback_providers")
         if fallback:
             fallback_line = f" Fallbacks available: {', '.join(str(f) for f in fallback[:3])}."
+        else:
+            # Report known fallbacks from the STT/TTS discovery path
+            known_fallbacks = []
+            from openjarvis.speech._discovery import _DEFAULT_DISCOVERY_ORDER
+            for p in _DEFAULT_DISCOVERY_ORDER:
+                if p != stt_name:
+                    known_fallbacks.append(p)
+                    if len(known_fallbacks) >= 2:
+                        break
+            if known_fallbacks:
+                fallback_line = f" STT fallbacks (in order): {', '.join(known_fallbacks)}."
 
         return (
             f"Voice is active. {stt_line}. {tts_line}.{fallback_line}"
