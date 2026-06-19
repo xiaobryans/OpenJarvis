@@ -2,64 +2,17 @@
 #
 # Jarvis Remote Execution Workflow
 # =================================
-# PURPOSE: Provides a sandboxed remote execution backend so Jarvis can run
-#          coding/test/build/artifact tasks from any device (including mobile)
-#          even when the local MacBook is off.
-#
-# SAFETY GATES:
-#   - workflow_dispatch only — never auto-triggered on push or PR
-#   - All deploys are BLOCKED in this workflow — deploy mode does not exist
-#   - Only explicit Jarvis-approved modes are accepted:
-#     status | test | build | artifact |
-#     project-init | code-edit | reassign | escalate
-#   - Default mode is 'status' (no-op) — safe if triggered accidentally
-#   - No secrets are hardcoded or logged (GitHub masks repository secrets)
-#   - Bryan authorization is required for any destructive action (none allowed here)
-#   - All outputs are stored as artifacts (7-day retention) — not sent externally
-#   - code-edit mode produces PATCH/DIFF artifact only — never pushes to main
-#   - project-init mode produces scaffold artifact only — never creates real repo
-#   - reassign/escalate produce routing/blocker artifacts only — no external messages
-#
-# MODES:
-#   status       — no-op health check, reports environment and branch (default/safe)
-#   test         — runs pytest test suite on specified branch
-#   build        — runs available build command (npm build, cargo build, etc.)
-#   artifact     — lists and summarizes existing artifacts
-#   project-init — generates a safe project scaffold artifact (no real repo creation)
-#   code-edit    — generates a patch/diff artifact on a safe branch (never pushes to main)
-#   reassign     — emits task-routing/reassignment artifact
-#   escalate     — emits blocker/escalation artifact
-#
-# FORBIDDEN MODES (rejected explicitly):
-#   deploy  — BLOCKED — Bryan must authorize via separate hard-gated mechanism
-#   delete  — BLOCKED
-#   push    — BLOCKED
-#   merge   — BLOCKED
-#   release — BLOCKED
-#   publish — BLOCKED
-#
-# USAGE (via Jarvis API):
-#   POST /v1/remote/trigger-workflow?task_type=status&branch=main
-#   POST /v1/remote/trigger-workflow?task_type=test&branch=localhost-get-tool
-#   POST /v1/remote/trigger-workflow?task_type=project-init&branch=localhost-get-tool
-#   POST /v1/remote/trigger-workflow?task_type=code-edit&branch=localhost-get-tool
-#
-# COST: Free GitHub Actions tier (2000 min/month for private repos)
-# RUNNER: ubuntu-latest (GitHub-hosted, sandboxed, no MacBook required)
-#
 # Sprint: Sprint 3 FINAL Blocker Closure
+# Safe modes: status|test|build|artifact|project-init|code-edit|reassign|escalate
+# Forbidden: deploy|delete|push|merge|release|publish
 
 name: Jarvis Remote Execution
 
 on:
-  # Only manual dispatch — never auto-triggered
   workflow_dispatch:
     inputs:
       mode:
-        description: >
-          Execution mode: status (no-op/default) | test | build | artifact |
-          project-init | code-edit | reassign | escalate.
-          Deploy/delete/push/merge/release/publish are BLOCKED — do not attempt.
+        description: 'Execution mode'
         required: true
         default: 'status'
         type: choice
@@ -73,15 +26,15 @@ on:
           - reassign
           - escalate
       branch:
-        description: 'Target branch (defaults to current branch)'
+        description: 'Target branch'
         required: false
         default: 'localhost-get-tool'
       project_path:
-        description: 'Project subdirectory to operate in (default: repo root)'
+        description: 'Project subdirectory (default: repo root)'
         required: false
         default: '.'
       project_id:
-        description: 'Generic project ID for project-init/code-edit (not OMNIX-specific)'
+        description: 'Generic project ID (not OMNIX-specific)'
         required: false
         default: 'generic-project'
       project_type:
@@ -89,26 +42,24 @@ on:
         required: false
         default: 'python'
       task_description:
-        description: 'Task description for code-edit (what to change — produces diff only)'
+        description: 'Task description for code-edit (produces diff/patch only)'
         required: false
         default: ''
       worker_id:
-        description: 'Stalled worker ID for reassign/escalate modes'
+        description: 'Stalled worker ID for reassign/escalate'
         required: false
         default: ''
       blocker_description:
-        description: 'Exact blocker description for escalate mode'
+        description: 'Exact blocker for escalate mode'
         required: false
         default: ''
       jarvis_task_id:
-        description: 'Jarvis task ID for result routing (optional)'
+        description: 'Jarvis task ID for result routing'
         required: false
         default: ''
 
-# Permissions:
-#   contents: write — needed for code-edit to create a safe diff branch
-#   actions: read   — needed to read workflow run status
-# All write operations produce artifacts or branches only — never push to main.
+# contents:write needed for code-edit safe branch creation
+# All write ops produce artifacts or branches only — never push to main
 permissions:
   contents: write
   actions: read
@@ -120,29 +71,22 @@ jobs:
     timeout-minutes: 15
 
     steps:
-      # ------------------------------------------------------------------
-      # SAFETY CHECK: Reject any attempt to run forbidden modes
-      # (belt-and-suspenders — input is choice-restricted above, but
-      #  an API caller could still send an unexpected value)
-      # ------------------------------------------------------------------
       - name: Safety gate — reject forbidden modes
         shell: bash
         run: |
           MODE="${{ github.event.inputs.mode }}"
-          FORBIDDEN="deploy delete push merge release publish"
-          for f in $FORBIDDEN; do
+          for f in deploy delete push merge release publish; do
             if [ "$MODE" = "$f" ]; then
-              echo "::error::JARVIS_SAFETY_GATE: Mode '$MODE' is BLOCKED."
-              echo "::error::Deploy/delete/push/merge/release/publish require Bryan authorization via a separate hard-gated mechanism."
+              echo "::error::JARVIS_SAFETY_GATE: Mode '$MODE' is BLOCKED. Bryan authorization required."
               exit 1
             fi
           done
           echo "SAFETY_GATE: Mode '$MODE' is permitted."
 
-      # ------------------------------------------------------------------
-      # STATUS / NO-OP (default, safe)
-      # ------------------------------------------------------------------
-      - name: Status check (no-op — safe default)
+      # -----------------------------------------------------------------------
+      # STATUS (no-op, safe default)
+      # -----------------------------------------------------------------------
+      - name: Status check
         if: ${{ github.event.inputs.mode == 'status' }}
         run: |
           echo "JARVIS_REMOTE_STATUS=ok" | tee jarvis-status.txt
@@ -152,11 +96,10 @@ jobs:
           echo "RUNNER=$(uname -a)" >> jarvis-status.txt
           echo "TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> jarvis-status.txt
           echo "Remote execution runtime: AVAILABLE" >> jarvis-status.txt
-          cat jarvis-status.txt
 
-      # ------------------------------------------------------------------
+      # -----------------------------------------------------------------------
       # CHECKOUT (all modes except status)
-      # ------------------------------------------------------------------
+      # -----------------------------------------------------------------------
       - name: Checkout repo
         if: ${{ github.event.inputs.mode != 'status' }}
         uses: actions/checkout@v4
@@ -164,9 +107,9 @@ jobs:
           ref: ${{ github.event.inputs.branch }}
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      # ------------------------------------------------------------------
-      # PYTHON SETUP (test / build / project-init / code-edit)
-      # ------------------------------------------------------------------
+      # -----------------------------------------------------------------------
+      # PYTHON SETUP
+      # -----------------------------------------------------------------------
       - name: Set up Python
         if: >
           ${{ github.event.inputs.mode == 'test' ||
@@ -185,23 +128,21 @@ jobs:
               github.event.inputs.mode == 'project-init' ||
               github.event.inputs.mode == 'code-edit' }}
         working-directory: ${{ github.event.inputs.project_path }}
-        run: |
-          pip install -r requirements.txt 2>&1 | tee jarvis-install.txt || true
+        run: pip install -r requirements.txt 2>&1 | tee jarvis-install.txt || true
 
-      # ------------------------------------------------------------------
-      # TEST — only when mode=test
-      # ------------------------------------------------------------------
+      # -----------------------------------------------------------------------
+      # TEST
+      # -----------------------------------------------------------------------
       - name: Run tests
         if: ${{ github.event.inputs.mode == 'test' }}
         working-directory: ${{ github.event.inputs.project_path }}
         run: |
-          python -m pytest tests/ -q --tb=short --no-header \
-            2>&1 | tee jarvis-test-output.txt || true
+          python -m pytest tests/ -q --tb=short --no-header 2>&1 | tee jarvis-test-output.txt || true
           echo "TEST_RUN_COMPLETE=true" >> jarvis-test-output.txt
 
-      # ------------------------------------------------------------------
-      # BUILD — only when mode=build
-      # ------------------------------------------------------------------
+      # -----------------------------------------------------------------------
+      # BUILD
+      # -----------------------------------------------------------------------
       - name: Run build
         if: ${{ github.event.inputs.mode == 'build' }}
         working-directory: ${{ github.event.inputs.project_path }}
@@ -212,103 +153,92 @@ jobs:
           elif [ -f "Cargo.toml" ]; then
             cargo build 2>&1 | tee jarvis-build-output.txt || true
           else
-            echo "No recognized build system (package.json/Cargo.toml) found." | tee jarvis-build-output.txt
+            echo "No recognized build system found." | tee jarvis-build-output.txt
           fi
           echo "BUILD_RUN_COMPLETE=true" >> jarvis-build-output.txt
 
-      # ------------------------------------------------------------------
-      # ARTIFACT — list available artifacts (no download of raw secrets)
-      # ------------------------------------------------------------------
+      # -----------------------------------------------------------------------
+      # ARTIFACT LIST
+      # -----------------------------------------------------------------------
       - name: List artifacts
         if: ${{ github.event.inputs.mode == 'artifact' }}
         run: |
           echo "ARTIFACT_MODE=list" | tee jarvis-artifact.txt
           echo "Run ID: ${{ github.run_id }}" >> jarvis-artifact.txt
-          echo "Artifacts from this run will be listed after upload." >> jarvis-artifact.txt
 
-      # ------------------------------------------------------------------
-      # PROJECT-INIT — safe scaffold artifact (no real repo creation)
-      # ------------------------------------------------------------------
-      - name: Generate project scaffold artifact
+      # -----------------------------------------------------------------------
+      # PROJECT-INIT — dry-run scaffold artifact (no real repo, no push)
+      # -----------------------------------------------------------------------
+      - name: Generate project scaffold artifact (dry-run)
         if: ${{ github.event.inputs.mode == 'project-init' }}
-        shell: bash
+        shell: python3 {0}
         run: |
-          PROJECT_ID="${{ github.event.inputs.project_id }}"
-          PROJECT_TYPE="${{ github.event.inputs.project_type }}"
-          TASK_ID="${{ github.event.inputs.jarvis_task_id }}"
-          BRANCH="${{ github.event.inputs.branch }}"
-          TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          import os, json
+          from pathlib import Path
 
-          echo "JARVIS_PROJECT_INIT=dry_run" | tee jarvis-project-init.txt
-          echo "PROJECT_ID=${PROJECT_ID}" >> jarvis-project-init.txt
-          echo "PROJECT_TYPE=${PROJECT_TYPE}" >> jarvis-project-init.txt
-          echo "BRANCH=${BRANCH}" >> jarvis-project-init.txt
-          echo "TASK_ID=${TASK_ID}" >> jarvis-project-init.txt
-          echo "TIMESTAMP=${TIMESTAMP}" >> jarvis-project-init.txt
-          echo "" >> jarvis-project-init.txt
-          echo "=== SAFETY NOTE ===" >> jarvis-project-init.txt
-          echo "This is a DRY RUN scaffold. No real repo was created." >> jarvis-project-init.txt
-          echo "No files pushed to any branch. No external actions taken." >> jarvis-project-init.txt
-          echo "" >> jarvis-project-init.txt
+          project_id = "${{ github.event.inputs.project_id }}" or "generic-project"
+          project_type = "${{ github.event.inputs.project_type }}" or "python"
+          task_id = "${{ github.event.inputs.jarvis_task_id }}"
+          branch = "${{ github.event.inputs.branch }}"
+          timestamp = os.popen("date -u +%Y-%m-%dT%H:%M:%SZ").read().strip()
 
-          mkdir -p jarvis-scaffold-${PROJECT_ID}
+          lines = [
+              "JARVIS_PROJECT_INIT=dry_run",
+              f"PROJECT_ID={project_id}",
+              f"PROJECT_TYPE={project_type}",
+              f"BRANCH={branch}",
+              f"TASK_ID={task_id}",
+              f"TIMESTAMP={timestamp}",
+              "",
+              "=== SAFETY NOTE ===",
+              "This is a DRY RUN scaffold. No real repo was created.",
+              "No files pushed to any branch. No external actions taken.",
+              "Bryan approval required before any real repo creation.",
+              "",
+          ]
 
-          if [ "$PROJECT_TYPE" = "python" ]; then
-            echo "=== SCAFFOLD: Python project ===" >> jarvis-project-init.txt
-            cat > "jarvis-scaffold-${PROJECT_ID}/README.md" <<SCAFFOLD_EOF
-# ${PROJECT_ID}
+          scaffold_dir = Path(f"jarvis-scaffold-{project_id}")
+          scaffold_dir.mkdir(exist_ok=True)
 
-Auto-scaffolded by Jarvis Remote Execution (project-init, dry-run)
-Generated: ${TIMESTAMP}
-Project type: ${PROJECT_TYPE}
+          if project_type == "python":
+              lines.append("=== SCAFFOLD: Python project ===")
+              (scaffold_dir / "README.md").write_text(
+                  f"# {project_id}\n\nAuto-scaffolded by Jarvis Remote Execution (project-init, dry-run)\n"
+                  f"Generated: {timestamp}\nProject type: {project_type}\n\n"
+                  f"## Structure\n- src/ -- main source\n- tests/ -- test suite\n- requirements.txt -- dependencies\n"
+              )
+              (scaffold_dir / "requirements.txt").write_text(f"# Auto-generated requirements for {project_id}\npytest>=7.0\n")
+              (scaffold_dir / "src").mkdir(exist_ok=True)
+              (scaffold_dir / "tests").mkdir(exist_ok=True)
+              (scaffold_dir / "src" / "__init__.py").write_text(f"# {project_id} main module\n")
+              (scaffold_dir / "tests" / "__init__.py").write_text(f"# {project_id} tests\n")
 
-## Structure
-- src/ — main source
-- tests/ — test suite
-- requirements.txt — dependencies
-SCAFFOLD_EOF
-            cat > "jarvis-scaffold-${PROJECT_ID}/requirements.txt" <<SCAFFOLD_EOF
-# Auto-generated requirements for ${PROJECT_ID}
-pytest>=7.0
-SCAFFOLD_EOF
-            mkdir -p "jarvis-scaffold-${PROJECT_ID}/src" "jarvis-scaffold-${PROJECT_ID}/tests"
-            echo "# ${PROJECT_ID} main module" > "jarvis-scaffold-${PROJECT_ID}/src/__init__.py"
-            echo "# ${PROJECT_ID} tests" > "jarvis-scaffold-${PROJECT_ID}/tests/__init__.py"
+          elif project_type == "node":
+              lines.append("=== SCAFFOLD: Node.js project ===")
+              pkg = {"name": project_id, "version": "0.1.0",
+                     "description": "Auto-scaffolded by Jarvis Remote Execution",
+                     "scripts": {"test": "echo 'No test yet'"}, "jarvis_generated": True}
+              (scaffold_dir / "package.json").write_text(json.dumps(pkg, indent=2) + "\n")
+              (scaffold_dir / "src").mkdir(exist_ok=True)
+              (scaffold_dir / "src" / "index.js").write_text(f"// {project_id} entry\n")
+          else:
+              lines.append("=== SCAFFOLD: Generic project ===")
+              (scaffold_dir / "README.md").write_text(
+                  f"# {project_id}\n\nAuto-scaffolded by Jarvis Remote Execution (generic)\n"
+                  f"Generated: {timestamp}\n"
+              )
+              (scaffold_dir / "src").mkdir(exist_ok=True)
 
-          elif [ "$PROJECT_TYPE" = "node" ]; then
-            echo "=== SCAFFOLD: Node.js project ===" >> jarvis-project-init.txt
-            cat > "jarvis-scaffold-${PROJECT_ID}/package.json" <<SCAFFOLD_EOF
-{
-  "name": "${PROJECT_ID}",
-  "version": "0.1.0",
-  "description": "Auto-scaffolded by Jarvis Remote Execution",
-  "scripts": { "test": "echo 'No test yet'" },
-  "jarvis_generated": true
-}
-SCAFFOLD_EOF
-            mkdir -p "jarvis-scaffold-${PROJECT_ID}/src"
-            echo "// ${PROJECT_ID} entry" > "jarvis-scaffold-${PROJECT_ID}/src/index.js"
+          files = list(scaffold_dir.rglob("*"))
+          lines.extend([f"  {f.relative_to(scaffold_dir)}" for f in files if f.is_file()])
+          lines.extend(["", "PROJECT_INIT_COMPLETE=true", "ARTIFACT_TYPE=scaffold_dry_run"])
 
-          else
-            echo "=== SCAFFOLD: Generic project ===" >> jarvis-project-init.txt
-            cat > "jarvis-scaffold-${PROJECT_ID}/README.md" <<SCAFFOLD_EOF
-# ${PROJECT_ID}
+          Path("jarvis-project-init.txt").write_text("\n".join(lines) + "\n")
+          print("\n".join(lines))
 
-Auto-scaffolded by Jarvis Remote Execution (generic)
-Generated: ${TIMESTAMP}
-SCAFFOLD_EOF
-            mkdir -p "jarvis-scaffold-${PROJECT_ID}/src"
-          fi
-
-          ls -la jarvis-scaffold-${PROJECT_ID}/ >> jarvis-project-init.txt
-          echo "" >> jarvis-project-init.txt
-          echo "PROJECT_INIT_COMPLETE=true" >> jarvis-project-init.txt
-          echo "ARTIFACT_TYPE=scaffold_dry_run" >> jarvis-project-init.txt
-          cat jarvis-project-init.txt
-
-      # ------------------------------------------------------------------
-      # CODE-EDIT — safe diff/patch artifact (never pushes to main)
-      # ------------------------------------------------------------------
+      # -----------------------------------------------------------------------
+      # CODE-EDIT — diff/patch artifact on safe branch (never pushes to main)
+      # -----------------------------------------------------------------------
       - name: Generate code-edit diff artifact
         if: ${{ github.event.inputs.mode == 'code-edit' }}
         shell: bash
@@ -320,79 +250,67 @@ SCAFFOLD_EOF
           TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
           SAFE_BRANCH="jarvis/code-edit/${PROJECT_ID}-$(date +%s)"
 
-          echo "JARVIS_CODE_EDIT=patch_only" | tee jarvis-code-edit.txt
-          echo "PROJECT_ID=${PROJECT_ID}" >> jarvis-code-edit.txt
-          echo "TASK_DESCRIPTION=${TASK_DESC}" >> jarvis-code-edit.txt
-          echo "SOURCE_BRANCH=${BRANCH}" >> jarvis-code-edit.txt
-          echo "SAFE_BRANCH=${SAFE_BRANCH}" >> jarvis-code-edit.txt
-          echo "TASK_ID=${TASK_ID}" >> jarvis-code-edit.txt
-          echo "TIMESTAMP=${TIMESTAMP}" >> jarvis-code-edit.txt
-          echo "" >> jarvis-code-edit.txt
-          echo "=== SAFETY NOTE ===" >> jarvis-code-edit.txt
-          echo "code-edit produces a DIFF ARTIFACT ONLY." >> jarvis-code-edit.txt
-          echo "No direct push to main. Bryan approval required before any merge." >> jarvis-code-edit.txt
-          echo "Code Sentinel check runs on generated diff." >> jarvis-code-edit.txt
-          echo "" >> jarvis-code-edit.txt
-
-          # Configure git for safe branch operations
           git config user.name "Jarvis Remote"
           git config user.email "jarvis-remote@openjarvis.ai"
-
-          # Create a safe throwaway branch for the edit
           git checkout -b "${SAFE_BRANCH}" 2>&1 || true
 
-          # Simulate a code change: add a Jarvis task marker file
           MARKER_FILE="jarvis-task-${TASK_ID:-unknown}.md"
-          cat > "${MARKER_FILE}" <<MARKER_EOF
-# Jarvis Code-Edit Task
+          printf '%s\n' \
+            "# Jarvis Code-Edit Task" \
+            "" \
+            "- **Task ID**: ${TASK_ID:-unknown}" \
+            "- **Project**: ${PROJECT_ID}" \
+            "- **Description**: ${TASK_DESC:-no description provided}" \
+            "- **Generated**: ${TIMESTAMP}" \
+            "- **Branch**: ${SAFE_BRANCH}" \
+            "- **Status**: PENDING_BRYAN_REVIEW" \
+            "- **Safety**: Diff artifact produced. No merge to main without approval." \
+            "" \
+            "## Code Sentinel Check" \
+            "- No forbidden patterns detected" \
+            "- No secrets in this marker file" \
+            "- Approval gate: REQUIRED before merge" \
+            > "${MARKER_FILE}"
 
-- **Task ID**: ${TASK_ID:-unknown}
-- **Project**: ${PROJECT_ID}
-- **Description**: ${TASK_DESC:-no description provided}
-- **Generated**: ${TIMESTAMP}
-- **Branch**: ${SAFE_BRANCH}
-- **Status**: PENDING_BRYAN_REVIEW
-- **Safety**: Diff artifact produced. No merge to main without approval.
-
-## Code Sentinel Check
-- No forbidden patterns detected
-- No secrets in this marker file
-- Approval gate: REQUIRED before merge
-MARKER_EOF
-
-          # Generate the diff
           git add "${MARKER_FILE}" 2>&1 || true
           git diff --cached > jarvis-code-edit-diff.patch 2>&1 || true
-          git diff --cached --stat >> jarvis-code-edit.txt 2>&1 || true
 
-          echo "" >> jarvis-code-edit.txt
-          echo "=== DIFF PREVIEW ===" >> jarvis-code-edit.txt
-          cat jarvis-code-edit-diff.patch >> jarvis-code-edit.txt 2>/dev/null || echo "(empty diff)" >> jarvis-code-edit.txt
+          printf '%s\n' \
+            "JARVIS_CODE_EDIT=patch_only" \
+            "PROJECT_ID=${PROJECT_ID}" \
+            "TASK_DESCRIPTION=${TASK_DESC}" \
+            "SOURCE_BRANCH=${BRANCH}" \
+            "SAFE_BRANCH=${SAFE_BRANCH}" \
+            "TASK_ID=${TASK_ID}" \
+            "TIMESTAMP=${TIMESTAMP}" \
+            "" \
+            "=== SAFETY NOTE ===" \
+            "code-edit produces a DIFF ARTIFACT ONLY." \
+            "No direct push to main. Bryan approval required before any merge." \
+            "Code Sentinel check runs on generated diff." \
+            "" \
+            "=== CODE SENTINEL CHECK ===" \
+            > jarvis-code-edit.txt
 
-          # Code Sentinel check: scan for forbidden patterns
-          echo "" >> jarvis-code-edit.txt
-          echo "=== CODE SENTINEL CHECK ===" >> jarvis-code-edit.txt
           SENTINEL_FAIL=0
-          FORBIDDEN_PATTERNS="GITHUB_TOKEN SECRET_KEY PRIVATE_KEY password= api_key="
-          for pat in $FORBIDDEN_PATTERNS; do
+          for pat in GITHUB_TOKEN SECRET_KEY PRIVATE_KEY password= api_key=; do
             if grep -qi "$pat" "${MARKER_FILE}" 2>/dev/null; then
               echo "::warning::Code Sentinel: suspicious pattern '${pat}' in diff" | tee -a jarvis-code-edit.txt
               SENTINEL_FAIL=1
             fi
           done
           if [ "$SENTINEL_FAIL" = "0" ]; then
-            echo "SENTINEL=PASS — no forbidden patterns in diff" >> jarvis-code-edit.txt
+            echo "SENTINEL=PASS -- no forbidden patterns in diff" >> jarvis-code-edit.txt
           fi
 
           echo "" >> jarvis-code-edit.txt
-          echo "CODE_EDIT_COMPLETE=true" >> jarvis-code-edit.txt
-          echo "ARTIFACT_TYPE=diff_patch" >> jarvis-code-edit.txt
-          echo "MERGE_GATE=BLOCKED_PENDING_BRYAN_APPROVAL" >> jarvis-code-edit.txt
+          cat jarvis-code-edit-diff.patch >> jarvis-code-edit.txt 2>/dev/null || true
+          printf '%s\n' "" "CODE_EDIT_COMPLETE=true" "ARTIFACT_TYPE=diff_patch" "MERGE_GATE=BLOCKED_PENDING_BRYAN_APPROVAL" >> jarvis-code-edit.txt
           cat jarvis-code-edit.txt
 
-      # ------------------------------------------------------------------
-      # REASSIGN — task routing/reassignment artifact
-      # ------------------------------------------------------------------
+      # -----------------------------------------------------------------------
+      # REASSIGN — routing/reassignment artifact (no external messages)
+      # -----------------------------------------------------------------------
       - name: Generate reassignment routing artifact
         if: ${{ github.event.inputs.mode == 'reassign' }}
         shell: bash
@@ -400,50 +318,56 @@ MARKER_EOF
           WORKER_ID="${{ github.event.inputs.worker_id }}"
           PROJECT_ID="${{ github.event.inputs.project_id }}"
           TASK_ID="${{ github.event.inputs.jarvis_task_id }}"
-          BRANCH="${{ github.event.inputs.branch }}"
           TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
-          echo "JARVIS_REASSIGN=routing_artifact" | tee jarvis-reassign.txt
-          echo "STALLED_WORKER=${WORKER_ID:-unknown}" >> jarvis-reassign.txt
-          echo "PROJECT_ID=${PROJECT_ID}" >> jarvis-reassign.txt
-          echo "TASK_ID=${TASK_ID}" >> jarvis-reassign.txt
-          echo "BRANCH=${BRANCH}" >> jarvis-reassign.txt
-          echo "TIMESTAMP=${TIMESTAMP}" >> jarvis-reassign.txt
-          echo "" >> jarvis-reassign.txt
+          printf '%s\n' \
+            "JARVIS_REASSIGN=routing_artifact" \
+            "STALLED_WORKER=${WORKER_ID:-unknown}" \
+            "PROJECT_ID=${PROJECT_ID}" \
+            "TASK_ID=${TASK_ID}" \
+            "TIMESTAMP=${TIMESTAMP}" \
+            "" \
+            "=== SAFETY ===" \
+            "no_external_messages=true" \
+            "no_deploy=true" \
+            "artifact_only=true" \
+            "" \
+            "REASSIGN_COMPLETE=true" \
+            "ARTIFACT_TYPE=routing_reassignment" \
+            > jarvis-reassign.txt
 
-          cat > jarvis-reassign.json <<REASSIGN_EOF
-{
-  "mode": "reassign",
-  "timestamp": "${TIMESTAMP}",
-  "stalled_worker_id": "${WORKER_ID:-unknown}",
-  "project_id": "${PROJECT_ID:-generic-project}",
-  "task_id": "${TASK_ID:-}",
-  "routing": {
-    "escalated_to": "manager-coding",
-    "cos_notified": true,
-    "verifier_gate": "required_for_any_merge",
-    "reassignment_action": "stall_detected_worker_reassigned_to_next_available",
-    "next_owner": "manager-coding"
-  },
-  "safety": {
-    "no_external_messages": true,
-    "no_deploy": true,
-    "no_production_mutation": true,
-    "artifact_only": true
-  },
-  "status": "REASSIGNMENT_ARTIFACT_EMITTED"
-}
-REASSIGN_EOF
+          python3 -c "
+          import json
+          data = {
+            'mode': 'reassign',
+            'timestamp': '${TIMESTAMP}',
+            'stalled_worker_id': '${WORKER_ID:-unknown}',
+            'project_id': '${PROJECT_ID:-generic-project}',
+            'task_id': '${TASK_ID}',
+            'routing': {
+              'escalated_to': 'manager-coding',
+              'cos_notified': True,
+              'verifier_gate': 'required_for_any_merge',
+              'reassignment_action': 'stall_detected_worker_reassigned_to_next_available',
+              'next_owner': 'manager-coding'
+            },
+            'safety': {
+              'no_external_messages': True,
+              'no_deploy': True,
+              'no_production_mutation': True,
+              'artifact_only': True
+            },
+            'status': 'REASSIGNMENT_ARTIFACT_EMITTED'
+          }
+          print(json.dumps(data, indent=2))
+          " > jarvis-reassign.json
 
           cat jarvis-reassign.json >> jarvis-reassign.txt
-          echo "" >> jarvis-reassign.txt
-          echo "REASSIGN_COMPLETE=true" >> jarvis-reassign.txt
-          echo "ARTIFACT_TYPE=routing_reassignment" >> jarvis-reassign.txt
           cat jarvis-reassign.txt
 
-      # ------------------------------------------------------------------
-      # ESCALATE — blocker/escalation artifact
-      # ------------------------------------------------------------------
+      # -----------------------------------------------------------------------
+      # ESCALATE — blocker/escalation artifact (no external messages)
+      # -----------------------------------------------------------------------
       - name: Generate escalation blocker artifact
         if: ${{ github.event.inputs.mode == 'escalate' }}
         shell: bash
@@ -452,55 +376,61 @@ REASSIGN_EOF
           BLOCKER="${{ github.event.inputs.blocker_description }}"
           PROJECT_ID="${{ github.event.inputs.project_id }}"
           TASK_ID="${{ github.event.inputs.jarvis_task_id }}"
-          BRANCH="${{ github.event.inputs.branch }}"
           TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
-          echo "JARVIS_ESCALATE=blocker_artifact" | tee jarvis-escalate.txt
-          echo "WORKER_ID=${WORKER_ID:-unknown}" >> jarvis-escalate.txt
-          echo "PROJECT_ID=${PROJECT_ID}" >> jarvis-escalate.txt
-          echo "TASK_ID=${TASK_ID}" >> jarvis-escalate.txt
-          echo "BRANCH=${BRANCH}" >> jarvis-escalate.txt
-          echo "TIMESTAMP=${TIMESTAMP}" >> jarvis-escalate.txt
-          echo "" >> jarvis-escalate.txt
+          printf '%s\n' \
+            "JARVIS_ESCALATE=blocker_artifact" \
+            "WORKER_ID=${WORKER_ID:-unknown}" \
+            "PROJECT_ID=${PROJECT_ID}" \
+            "TASK_ID=${TASK_ID}" \
+            "TIMESTAMP=${TIMESTAMP}" \
+            "" \
+            "=== SAFETY ===" \
+            "no_external_messages=true" \
+            "no_deploy=true" \
+            "artifact_only=true" \
+            "" \
+            "ESCALATE_COMPLETE=true" \
+            "ARTIFACT_TYPE=blocker_escalation" \
+            > jarvis-escalate.txt
 
-          cat > jarvis-escalate.json <<ESCALATE_EOF
-{
-  "mode": "escalate",
-  "timestamp": "${TIMESTAMP}",
-  "worker_id": "${WORKER_ID:-unknown}",
-  "project_id": "${PROJECT_ID:-generic-project}",
-  "task_id": "${TASK_ID:-}",
-  "blocker": {
-    "description": "${BLOCKER:-no description provided}",
-    "severity": "STALL_ESCALATION",
-    "next_owner": "cos",
-    "requires_bryan_decision": true
-  },
-  "routing": {
-    "escalated_to": "cos",
-    "gm_notified": true,
-    "verifier_gate": "required",
-    "action": "HOLD_PENDING_BRYAN_DECISION"
-  },
-  "safety": {
-    "no_external_messages": true,
-    "no_deploy": true,
-    "no_production_mutation": true,
-    "artifact_only": true
-  },
-  "status": "ESCALATION_ARTIFACT_EMITTED"
-}
-ESCALATE_EOF
+          python3 -c "
+          import json
+          data = {
+            'mode': 'escalate',
+            'timestamp': '${TIMESTAMP}',
+            'worker_id': '${WORKER_ID:-unknown}',
+            'project_id': '${PROJECT_ID:-generic-project}',
+            'task_id': '${TASK_ID}',
+            'blocker': {
+              'description': '${BLOCKER:-no description provided}',
+              'severity': 'STALL_ESCALATION',
+              'next_owner': 'cos',
+              'requires_bryan_decision': True
+            },
+            'routing': {
+              'escalated_to': 'cos',
+              'gm_notified': True,
+              'verifier_gate': 'required',
+              'action': 'HOLD_PENDING_BRYAN_DECISION'
+            },
+            'safety': {
+              'no_external_messages': True,
+              'no_deploy': True,
+              'no_production_mutation': True,
+              'artifact_only': True
+            },
+            'status': 'ESCALATION_ARTIFACT_EMITTED'
+          }
+          print(json.dumps(data, indent=2))
+          " > jarvis-escalate.json
 
           cat jarvis-escalate.json >> jarvis-escalate.txt
-          echo "" >> jarvis-escalate.txt
-          echo "ESCALATE_COMPLETE=true" >> jarvis-escalate.txt
-          echo "ARTIFACT_TYPE=blocker_escalation" >> jarvis-escalate.txt
           cat jarvis-escalate.txt
 
-      # ------------------------------------------------------------------
-      # UPLOAD ALL OUTPUTS — always, even on partial failure
-      # ------------------------------------------------------------------
+      # -----------------------------------------------------------------------
+      # UPLOAD ALL OUTPUTS
+      # -----------------------------------------------------------------------
       - name: Upload Jarvis task outputs
         if: always()
         uses: actions/upload-artifact@v4
@@ -514,14 +444,13 @@ ESCALATE_EOF
           retention-days: 7
           if-no-files-found: warn
 
-      # ------------------------------------------------------------------
-      # SUMMARY — written to GitHub Actions job summary
-      # ------------------------------------------------------------------
+      # -----------------------------------------------------------------------
+      # JOB SUMMARY
+      # -----------------------------------------------------------------------
       - name: Write job summary
         if: always()
         run: |
           echo "## Jarvis Remote Execution Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|---|---|" >> $GITHUB_STEP_SUMMARY
           echo "| Mode | ${{ github.event.inputs.mode }} |" >> $GITHUB_STEP_SUMMARY
@@ -530,9 +459,7 @@ ESCALATE_EOF
           echo "| Task ID | ${{ github.event.inputs.jarvis_task_id || 'none' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Run ID | ${{ github.run_id }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Status | See artifacts for output |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "> **Deploy/delete/push/merge/release/publish are BLOCKED in this workflow.**" >> $GITHUB_STEP_SUMMARY
-          echo "> **code-edit produces diff/patch artifact only — never pushes to main.**" >> $GITHUB_STEP_SUMMARY
-          echo "> **project-init produces scaffold artifact only — no real repo created.**" >> $GITHUB_STEP_SUMMARY
-          echo "> **reassign/escalate produce routing artifacts only — no external messages.**" >> $GITHUB_STEP_SUMMARY
-          echo "> Bryan authorization required for any merge/deploy action." >> $GITHUB_STEP_SUMMARY
+          echo "> Deploy/delete/push/merge/release/publish are BLOCKED." >> $GITHUB_STEP_SUMMARY
+          echo "> code-edit: diff artifact only, never pushes to main, Bryan approval required." >> $GITHUB_STEP_SUMMARY
+          echo "> project-init: scaffold artifact only, no real repo created." >> $GITHUB_STEP_SUMMARY
+          echo "> reassign/escalate: routing artifacts only, no external messages." >> $GITHUB_STEP_SUMMARY
