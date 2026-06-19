@@ -1,14 +1,15 @@
-"""Deepgram text-to-speech backend (cloud).
+"""Deepgram text-to-speech backend (cloud) — deepgram-sdk v6.
 
-Uses the Deepgram Aura TTS API to synthesize speech.
+Uses the Deepgram Aura TTS API via deepgram-sdk v6.
 Deepgram is the primary/default TTS provider for Jarvis Voice Safety Sprint.
 
 Fallback: macOS 'say' command or OpenAI TTS if Deepgram is unavailable.
+
+Install: uv sync --extra speech-deepgram
 """
 
 from __future__ import annotations
 
-import io
 import os
 from typing import List, Optional
 
@@ -16,12 +17,13 @@ from openjarvis.core.registry import TTSRegistry
 from openjarvis.speech.tts import TTSBackend, TTSResult
 
 try:
-    from deepgram import DeepgramClient, SpeakOptions
+    from deepgram import DeepgramClient
+    _DEEPGRAM_AVAILABLE = True
 except ImportError:
     DeepgramClient = None  # type: ignore[assignment, misc]
-    SpeakOptions = None  # type: ignore[assignment, misc]
+    _DEEPGRAM_AVAILABLE = False
 
-# Deepgram Aura voice model IDs (subset — full list at deepgram.com/docs)
+# Deepgram Aura voice model IDs (v6 supported models)
 DEEPGRAM_VOICES: List[str] = [
     "aura-asteria-en",   # default — clear US female
     "aura-luna-en",
@@ -35,23 +37,36 @@ DEEPGRAM_VOICES: List[str] = [
     "aura-orpheus-en",
     "aura-helios-en",
     "aura-zeus-en",
+    # Aura-2 voices (v6)
+    "aura-2-asteria-en",
+    "aura-2-zeus-en",
 ]
 
 _DEFAULT_VOICE = "aura-asteria-en"
 _DEFAULT_FORMAT = "mp3"
 
+# Encoding map for Deepgram v6 API
+_FORMAT_TO_ENCODING = {
+    "mp3": "mp3",
+    "wav": "linear16",
+    "ogg": "opus",
+    "flac": "flac",
+    "aac": "aac",
+    "opus": "opus",
+}
+
 
 @TTSRegistry.register("deepgram")
 class DeepgramTTSBackend(TTSBackend):
-    """Cloud text-to-speech using Deepgram Aura API."""
+    """Cloud text-to-speech using Deepgram Aura API (deepgram-sdk v6)."""
 
     backend_id = "deepgram"
 
     def __init__(self, api_key: Optional[str] = None) -> None:
         self._api_key = api_key or os.environ.get("DEEPGRAM_API_KEY", "")
         self._client = None
-        if self._api_key and DeepgramClient is not None:
-            self._client = DeepgramClient(self._api_key)
+        if self._api_key and _DEEPGRAM_AVAILABLE:
+            self._client = DeepgramClient(api_key=self._api_key)
 
     def synthesize(
         self,
@@ -61,40 +76,30 @@ class DeepgramTTSBackend(TTSBackend):
         speed: float = 1.0,
         output_format: str = _DEFAULT_FORMAT,
     ) -> TTSResult:
-        """Synthesize text using Deepgram Aura TTS."""
+        """Synthesize text using Deepgram Aura TTS (v6 API)."""
         if self._client is None:
             raise RuntimeError(
-                "Deepgram TTS client not initialized (missing DEEPGRAM_API_KEY?)"
+                "Deepgram TTS client not initialized — "
+                "install deepgram-sdk and set DEEPGRAM_API_KEY"
             )
 
         voice = voice_id or _DEFAULT_VOICE
         if voice not in DEEPGRAM_VOICES:
             voice = _DEFAULT_VOICE
 
-        # Deepgram SDK: speak.rest returns audio bytes
-        speak_kwargs = {"text": text}
-        if SpeakOptions is not None:
-            options = SpeakOptions(model=voice, encoding=output_format)
-        else:
-            options = {"model": voice, "encoding": output_format}
+        encoding = _FORMAT_TO_ENCODING.get(output_format, "mp3")
 
-        response = self._client.speak.rest.v("1").save_to_buffer(
-            speak_kwargs, options
-        )
+        # v6 API: client.speak.v1.audio.generate() returns Iterator[bytes]
+        audio_chunks: List[bytes] = []
+        for chunk in self._client.speak.v1.audio.generate(
+            text=text,
+            model=voice,
+            encoding=encoding,
+        ):
+            if chunk:
+                audio_chunks.append(chunk)
 
-        # response is a buffer-like or bytes object from deepgram SDK
-        if hasattr(response, "stream_memory"):
-            audio_bytes = response.stream_memory.getvalue()
-        elif hasattr(response, "stream"):
-            audio_bytes = response.stream.read()
-        elif isinstance(response, (bytes, bytearray)):
-            audio_bytes = bytes(response)
-        else:
-            # Fallback: try to read as file-like
-            buf = io.BytesIO()
-            for chunk in response.iter_content(chunk_size=4096):  # type: ignore[union-attr]
-                buf.write(chunk)
-            audio_bytes = buf.getvalue()
+        audio_bytes = b"".join(audio_chunks)
 
         return TTSResult(
             audio=audio_bytes,

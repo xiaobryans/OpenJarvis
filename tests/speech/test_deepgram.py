@@ -21,6 +21,7 @@ def test_deepgram_registers():
 
 
 def test_deepgram_transcribe():
+    """Test Deepgram STT backend using v6 SDK API (listen.v1.media.transcribe_file)."""
     mock_client = MagicMock()
     mock_result = MagicMock()
     mock_channel = MagicMock()
@@ -31,7 +32,8 @@ def test_deepgram_transcribe():
     mock_channel.detected_language = "en"
     mock_result.results.channels = [mock_channel]
     mock_result.metadata.duration = 1.8
-    mock_client.listen.rest.v.return_value.transcribe_file.return_value = mock_result
+    # v6 API path: client.listen.v1.media.transcribe_file(request=..., model=..., ...)
+    mock_client.listen.v1.media.transcribe_file.return_value = mock_result
 
     with patch("openjarvis.speech.deepgram.DeepgramClient", return_value=mock_client):
         from openjarvis.speech.deepgram import DeepgramSpeechBackend
@@ -41,6 +43,7 @@ def test_deepgram_transcribe():
 
         assert isinstance(result, TranscriptionResult)
         assert result.text == "Hello from Deepgram"
+        assert result.confidence == 0.92
 
 
 def test_deepgram_health():

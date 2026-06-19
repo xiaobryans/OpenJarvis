@@ -704,13 +704,17 @@ _DANGEROUS_KEYWORDS: frozenset = frozenset({
     "expose", "open port", "tailscale funnel",
 })
 _HIGH_KEYWORDS: frozenset = frozenset({
-    "push", "git push", "run tests",
+    "push", "git push",
     "send", "post to slack", "post to telegram",
+})
+_MEDIUM_KEYWORDS: frozenset = frozenset({
+    "run tests", "run test", "execute tests",
+    "commit", "merge branch",
 })
 _LOW_KEYWORDS: frozenset = frozenset({
     "what", "show", "list", "check", "tell me", "read",
     "status", "help", "how", "explain", "summarize",
-    "draft", "create plan", "scaffold", "set up",
+    "draft", "create plan", "scaffold", "set up", "start a",
     "weather", "time", "calculate",
 })
 
@@ -740,6 +744,15 @@ def classify_voice_action_risk(text: str) -> Dict[str, Any]:
                 "risk_level": VoiceApprovalRisk.HIGH,
                 "reason": f"Matched high-risk keyword: {kw!r}",
                 "action_required": "approval_required — voice can request approval",
+                "original": text,
+            }
+
+    for kw in _MEDIUM_KEYWORDS:
+        if kw in normalized:
+            return {
+                "risk_level": VoiceApprovalRisk.MEDIUM,
+                "reason": f"Matched medium-risk keyword: {kw!r}",
+                "action_required": "route_to_jarvis_for_classification",
                 "original": text,
             }
 

@@ -1,4 +1,4 @@
-"""Deepgram speech-to-text backend (cloud)."""
+"""Deepgram speech-to-text backend (cloud) — deepgram-sdk v6."""
 
 from __future__ import annotations
 
@@ -9,23 +9,24 @@ from openjarvis.core.registry import SpeechRegistry
 from openjarvis.speech._stubs import SpeechBackend, TranscriptionResult
 
 try:
-    from deepgram import DeepgramClient, PrerecordedOptions
+    from deepgram import DeepgramClient
+    _DEEPGRAM_AVAILABLE = True
 except ImportError:
     DeepgramClient = None  # type: ignore[assignment, misc]
-    PrerecordedOptions = None  # type: ignore[assignment, misc]
+    _DEEPGRAM_AVAILABLE = False
 
 
 @SpeechRegistry.register("deepgram")
 class DeepgramSpeechBackend(SpeechBackend):
-    """Cloud speech-to-text using Deepgram API."""
+    """Cloud speech-to-text using Deepgram API (deepgram-sdk v6)."""
 
     backend_id = "deepgram"
 
     def __init__(self, api_key: Optional[str] = None) -> None:
         self._api_key = api_key or os.environ.get("DEEPGRAM_API_KEY", "")
         self._client = None
-        if self._api_key and DeepgramClient is not None:
-            self._client = DeepgramClient(self._api_key)
+        if self._api_key and _DEEPGRAM_AVAILABLE:
+            self._client = DeepgramClient(api_key=self._api_key)
 
     def transcribe(
         self,
@@ -34,53 +35,46 @@ class DeepgramSpeechBackend(SpeechBackend):
         format: str = "wav",
         language: Optional[str] = None,
     ) -> TranscriptionResult:
-        """Transcribe audio using Deepgram's API."""
+        """Transcribe audio using Deepgram's prerecorded API (v6)."""
         if self._client is None:
-            raise RuntimeError("Deepgram client not initialized (missing API key?)")
+            raise RuntimeError(
+                "Deepgram client not initialized — "
+                "install deepgram-sdk and set DEEPGRAM_API_KEY"
+            )
 
-        mime_map = {
-            "wav": "audio/wav",
-            "mp3": "audio/mpeg",
-            "ogg": "audio/ogg",
-            "flac": "audio/flac",
-            "webm": "audio/webm",
-            "m4a": "audio/mp4",
+        kwargs: dict = {
+            "request": audio,
+            "model": "nova-2",
+            "smart_format": True,
         }
-        mime_type = mime_map.get(format, "audio/wav")
-
-        options_kwargs: dict = {"model": "nova-2", "smart_format": True}
         if language:
-            options_kwargs["language"] = language
+            kwargs["language"] = language
         else:
-            options_kwargs["detect_language"] = True
+            kwargs["detect_language"] = True
 
-        payload = {"buffer": audio, "mimetype": mime_type}
+        response = self._client.listen.v1.media.transcribe_file(**kwargs)
 
-        if PrerecordedOptions is not None:
-            options = PrerecordedOptions(**options_kwargs)
-        else:
-            options = options_kwargs
+        # Extract transcript from v6 response
+        text = ""
+        confidence: Optional[float] = None
+        detected_lang: Optional[str] = None
+        duration = 0.0
 
-        response = self._client.listen.rest.v("1").transcribe_file(
-            payload,
-            options,
-        )
+        try:
+            channels = response.results.channels
+            if channels and channels[0].alternatives:
+                alt = channels[0].alternatives[0]
+                text = alt.transcript or ""
+                confidence = getattr(alt, "confidence", None)
+            if channels:
+                detected_lang = getattr(channels[0], "detected_language", None)
+        except (AttributeError, IndexError):
+            pass
 
-        # Extract transcript from response
-        channels = response.results.channels
-        if channels and channels[0].alternatives:
-            alt = channels[0].alternatives[0]
-            text = alt.transcript
-            confidence = getattr(alt, "confidence", None)
-        else:
-            text = ""
-            confidence = None
-
-        detected_lang = None
-        if channels:
-            detected_lang = getattr(channels[0], "detected_language", None)
-
-        duration = getattr(response.metadata, "duration", 0.0)
+        try:
+            duration = float(response.metadata.duration or 0.0)
+        except (AttributeError, TypeError):
+            pass
 
         return TranscriptionResult(
             text=text,
