@@ -1,7 +1,11 @@
 # Jarvis Agent Registry and Contracts
 
-**Status:** Active — NUS 1D/1E sprint  
+**Status:** Active — universalized in `Universalize Jarvis` sprint
 **Machine-readable:** `openjarvis.governance.constitution.AGENT_REGISTRY`
+
+**Universal scope:** Registry and contracts apply to all projects — OMNIX, OpenJarvis,
+personal tasks, research, automation, and future projects. No OMNIX hardcoding in
+universal routing paths. ProjectContext is optional — personal tasks work without it.
 
 ---
 

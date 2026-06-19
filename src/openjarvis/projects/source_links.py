@@ -490,9 +490,12 @@ def validate_source_link(link: ProjectSourceLink) -> ProjectSourceLink:
 class ProjectSourceRegistry:
     """In-memory registry of source links, keyed by (project_id, source_id).
 
-    Bootstrapped from ProjectRegistry OMNIX_PROJECT on first access.
+    Bootstrapped from all registered ProjectRegistry projects on first access.
+    OMNIX (Project 1) is pre-bootstrapped; future projects bootstrap via register().
     Additional sources can be registered at runtime.
     Safe to call clear() for test isolation.
+
+    This registry is universal — OMNIX is one project among many, not the whole system.
     """
 
     _links: Dict[str, Dict[str, ProjectSourceLink]] = {}
@@ -501,8 +504,55 @@ class ProjectSourceRegistry:
     @classmethod
     def _ensure_initialized(cls) -> None:
         if not cls._initialized:
-            cls._bootstrap_omnix()
+            cls._bootstrap_all_registered_projects()
             cls._initialized = True
+
+    @classmethod
+    def _bootstrap_all_registered_projects(cls) -> None:
+        """Bootstrap source links for all currently registered projects.
+
+        OMNIX is bootstrapped via _bootstrap_omnix(). OpenJarvis (the Jarvis
+        repo itself) is bootstrapped via _bootstrap_openjarvis(). Future
+        projects registered in ProjectRegistry are bootstrapped generically.
+        """
+        cls._bootstrap_omnix()
+        cls._bootstrap_openjarvis()
+
+    @classmethod
+    def _bootstrap_openjarvis(cls) -> None:
+        """Bootstrap OpenJarvis source links (the Jarvis/OpenJarvis repo itself)."""
+        import os
+        from pathlib import Path
+        project_id = "openjarvis"
+        if project_id in cls._links:
+            return
+        # Use current repo path — this is the OpenJarvis repo
+        repo_path = os.environ.get("JARVIS_OPENJARVIS_REPO_PATH", "").strip()
+        if not repo_path:
+            # Default to parent of this file's location (src/openjarvis/)
+            try:
+                repo_path = str(Path(__file__).parent.parent.parent.parent)
+            except Exception:
+                repo_path = ""
+        sources = [
+            ProjectSourceLink(
+                source_id="local_repo",
+                project_id=project_id,
+                link_type=ProjectSourceLinkType.LOCAL_REPO,
+                path_or_url=repo_path,
+                display_name="OpenJarvis Local Repository",
+            ),
+            ProjectSourceLink(
+                source_id="memory_namespace",
+                project_id=project_id,
+                link_type=ProjectSourceLinkType.MEMORY_NAMESPACE,
+                path_or_url=f"project:{project_id}",
+                display_name="OpenJarvis Memory Namespace",
+            ),
+        ]
+        cls._links[project_id] = {}
+        for s in sources:
+            cls._links[project_id][s.source_id] = s
 
     @classmethod
     def _bootstrap_omnix(cls) -> None:

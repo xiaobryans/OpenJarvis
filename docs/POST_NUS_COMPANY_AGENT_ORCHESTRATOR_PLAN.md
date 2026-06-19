@@ -1,18 +1,51 @@
 # Post-NUS Company-Grade Agent Orchestrator Plan
 
-**Status:** IMPLEMENTED — Sprint `post_nus_hierarchical_orchestrator` at `7ff06caa`+
-**Previous status:** LOCKED (NUS 1A–1F gate) → ACCEPTED NUS 1F → NOW IMPLEMENTED
+**Status:** IMPLEMENTED — Sprint `post_nus_hierarchical_orchestrator` + universalized in `Universalize Jarvis` sprint
+**Previous status:** LOCKED (NUS 1A–1F gate) → ACCEPTED NUS 1F → NOW IMPLEMENTED → NOW UNIVERSALIZED
 **Implementation module:** `src/openjarvis/orchestrator/`
+
+---
+
+## Jarvis is Bryan's Universal Private AI Operating System
+
+Jarvis is NOT an OMNIX-only assistant. OMNIX is one current project managed by Jarvis.
+Jarvis supports:
+- OMNIX (Project 1)
+- OpenJarvis (self-improvement)
+- Personal tasks
+- Research tasks
+- Automation workflows
+- Business ideas
+- Any future project Bryan creates
+
+No request requires OMNIX context. All routing is universal.
+
+---
+
+## Universal Front Door Architecture
+
+```
+Bryan (any request — no project required)
+    │
+    └── JarvisFrontDoor (universal entry — src/openjarvis/frontdoor/)
+            │ optional: FrontDoorAdapter (OMNIX, OpenJarvis, etc.)
+            └── CosGmOrchestrator (src/openjarvis/orchestrator/cos_gm.py)
+                    │ UniversalTaskRequest → TaskRoutingRequest + ProjectContext
+                    └── DynamicActivationPlanner
+                            │
+                            ├── Domain Managers (activated by metadata, not fixed formula)
+                            └── Specialist Workers → WorkerAdapters
+```
 
 ---
 
 ## Vision
 
-After NUS 1F activates controlled high-autonomy sessions, Jarvis can evolve
+After NUS 1F activates controlled high-autonomy sessions, Jarvis evolves
 from a single-agent personal assistant to a manager/orchestrator that
-decomposes tasks and routes them to up to 30 specialist workers.
+decomposes tasks and routes them to specialist workers.
 
-This document records the plan. **Nothing here is implemented yet.**
+This document records the plan and current implementation status.
 
 ---
 

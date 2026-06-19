@@ -1,7 +1,11 @@
 # Jarvis 95% Automation Target
 
-**Status:** Documented — not fully enabled  
-**NUS phase for controlled high-autonomy:** NUS 1F (NOT STARTED)
+**Status:** Documented — partially enabled via NUS 1F and universal orchestration
+**Universal scope:** Applies to all Bryan tasks — OMNIX, OpenJarvis, personal, research, automation, and future projects
+**NUS phase for controlled high-autonomy:** NUS 1F (IMPLEMENTED)
+
+**Private-first does not mean low quality. Target public-grade/adversarial-grade minimum.**
+**Good enough is not good enough.**
 
 ---
 

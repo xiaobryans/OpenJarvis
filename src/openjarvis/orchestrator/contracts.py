@@ -1,10 +1,11 @@
 """Post-NUS Hierarchical Orchestrator — Core Contracts.
 
 Defines the canonical contract types for all hierarchy layers:
-  - ManagerContract  — domain manager definition
-  - WorkerContract   — specialist worker definition
+  - ProjectContext     — lightweight project/task context (not OMNIX-only)
+  - ManagerContract   — domain manager definition
+  - WorkerContract    — specialist worker definition
   - TaskRoutingRequest — input to the dynamic activation planner
-  - ActivationPlan   — output of the dynamic activation planner
+  - ActivationPlan    — output of the dynamic activation planner
   - ModelProviderSufficiencyGap — model/provider gap disclosure
 
 Design rules:
@@ -14,6 +15,7 @@ Design rules:
   - No raw chain-of-thought. Only structured decision fields.
   - Duplicate IDs are a registry invariant violation (enforced in registries).
   - Registered contracts are not active by default.
+  - ProjectContext is universal — OMNIX, OpenJarvis, any future project, or None.
 """
 
 from __future__ import annotations
@@ -57,6 +59,98 @@ LEVEL_MANAGER = "manager"
 LEVEL_WORKER = "worker"
 LEVEL_VALIDATOR = "validator"
 LEVEL_GOVERNANCE = "governance"
+
+# Task/workflow type constants (universal — not OMNIX-only)
+TASK_TYPE_CODING = "coding"
+TASK_TYPE_RESEARCH = "research"
+TASK_TYPE_PERSONAL = "personal"
+TASK_TYPE_AUTOMATION = "automation"
+TASK_TYPE_BUSINESS = "business"
+TASK_TYPE_OPERATIONS = "operations"
+TASK_TYPE_UNKNOWN = "unknown"
+
+
+# ---------------------------------------------------------------------------
+# ProjectContext — lightweight universal project/task context
+# ---------------------------------------------------------------------------
+
+@dataclass
+class ProjectContext:
+    """Lightweight project or task context attached to any Jarvis request.
+
+    Completely optional — orchestration does NOT require a project context.
+    OMNIX, OpenJarvis, future projects, personal tasks, and non-project
+    requests are all valid inputs to the orchestrator.
+
+    Fields:
+      project_id   — optional; e.g. 'omnix', 'openjarvis', or None for
+                     personal/non-project tasks
+      display_name — human label; defaults to project_id or 'personal'
+      task_type    — broad category (coding, research, personal, etc.)
+      repo_path    — local filesystem path if applicable
+      memory_namespace — NUS/memory namespace; derived if not provided
+      metadata     — extensible catch-all
+    """
+    project_id: Optional[str] = None
+    display_name: str = ""
+    task_type: str = TASK_TYPE_UNKNOWN
+    repo_path: str = ""
+    memory_namespace: str = ""
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if not self.display_name:
+            self.display_name = self.project_id or "personal"
+        if not self.memory_namespace:
+            if self.project_id:
+                self.memory_namespace = f"project:{self.project_id}"
+            else:
+                self.memory_namespace = "global"
+
+    @classmethod
+    def for_project(
+        cls,
+        project_id: str,
+        display_name: str = "",
+        task_type: str = TASK_TYPE_CODING,
+        repo_path: str = "",
+        memory_namespace: str = "",
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> "ProjectContext":
+        """Create a ProjectContext for a named project."""
+        return cls(
+            project_id=project_id,
+            display_name=display_name or project_id,
+            task_type=task_type,
+            repo_path=repo_path,
+            memory_namespace=memory_namespace,
+            metadata=metadata or {},
+        )
+
+    @classmethod
+    def personal(
+        cls,
+        display_name: str = "personal",
+        task_type: str = TASK_TYPE_PERSONAL,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> "ProjectContext":
+        """Create a context for personal/non-project tasks."""
+        return cls(
+            project_id=None,
+            display_name=display_name,
+            task_type=task_type,
+            metadata=metadata or {},
+        )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "project_id": self.project_id,
+            "display_name": self.display_name,
+            "task_type": self.task_type,
+            "repo_path": self.repo_path,
+            "memory_namespace": self.memory_namespace,
+            "metadata": self.metadata,
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -265,6 +359,10 @@ class TaskRoutingRequest:
 
     Describes the task so the planner can select the minimum sufficient
     team of managers and workers without fixed formulas.
+
+    project_context is fully optional. The orchestrator does NOT require
+    OMNIX or any specific project. Personal tasks, research tasks, coding
+    tasks, and non-project tasks are all valid.
     """
     request_id: str
     user_request_summary: str
@@ -280,6 +378,7 @@ class TaskRoutingRequest:
     latency_requirement: str
     autonomy_profile: str
     session_id: Optional[str] = None
+    project_context: Optional[ProjectContext] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
 
     @classmethod
@@ -298,6 +397,7 @@ class TaskRoutingRequest:
         latency_requirement: str = LATENCY_NORMAL,
         autonomy_profile: str = "safe_autopilot",
         session_id: Optional[str] = None,
+        project_context: Optional[ProjectContext] = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> "TaskRoutingRequest":
         return cls(
@@ -315,6 +415,7 @@ class TaskRoutingRequest:
             latency_requirement=latency_requirement,
             autonomy_profile=autonomy_profile,
             session_id=session_id,
+            project_context=project_context,
             metadata=metadata or {},
         )
 
@@ -334,6 +435,7 @@ class TaskRoutingRequest:
             "latency_requirement": self.latency_requirement,
             "autonomy_profile": self.autonomy_profile,
             "session_id": self.session_id,
+            "project_context": self.project_context.to_dict() if self.project_context else None,
             "metadata": self.metadata,
         }
 

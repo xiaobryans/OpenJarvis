@@ -1,7 +1,10 @@
 # Jarvis Routing Model Policy
 
-**Status:** Active — NUS 1D/1E sprint  
-**Enforced by:** `LearnedRouter`, `EvalGateRunner`, `ExecutionClassifier`
+**Status:** Active — universalized in `Universalize Jarvis` sprint
+**Enforced by:** `LearnedRouter`, `EvalGateRunner`, `ExecutionClassifier`, `CosGmOrchestrator`
+
+**Applies to all projects — OMNIX, OpenJarvis, personal tasks, research, and future projects.**
+**Model provider sufficiency must be disclosed; no silent fallback allowed.**
 
 ---
 

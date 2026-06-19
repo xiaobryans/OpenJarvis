@@ -1,7 +1,24 @@
 # Wave 1–4 Platform Roadmap
 
-**Status as of: Wave 1 Final Closeout Sprint**
-**Commit tag: `Close Wave 1 platform readiness`**
+**Status as of: `Universalize Jarvis and close completion gaps` sprint**
+**Commit tag: `Close Wave 1 platform readiness` → `Universalize Jarvis and close completion gaps`**
+
+---
+
+## Jarvis Universal Scope
+
+Jarvis is Bryan's universal private AI operating system. OMNIX is one project.
+All Waves apply to the universal Jarvis OS, not just OMNIX. Future projects
+(OpenJarvis self-improvement, personal tasks, research, automation, business ideas)
+are all first-class citizens.
+
+Universal architecture (implemented):
+- `JarvisFrontDoor` — any request, any project, or no project
+- `ProjectContext` — optional; OMNIX, OpenJarvis, personal, future
+- `CosGmOrchestrator` — routes universal requests
+- `WorkerAdapters` — real execution adapters (dry-run/local)
+- NUS scorecard feedback loop — activation planner reads failure data
+- `JARVIS_COMPLETION_GAP_REGISTER.md` — no vague future scope
 
 ---
 

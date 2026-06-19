@@ -1,8 +1,12 @@
 # Jarvis Token and Cost Governance
 
-**Status:** Active — mandatory for all agents and automations  
-**Enforced by:** AGENTS.md, .cursorrules, doctor checks, governance constitution  
+**Status:** Active — mandatory for all agents and automations
+**Applies to:** All projects — OMNIX, OpenJarvis, personal tasks, research, and future projects
+**Enforced by:** AGENTS.md, .cursorrules, doctor checks, governance constitution, CosGmOrchestrator
 **Machine-readable:** `openjarvis.governance.constitution.COST_CONTROL_LAW`
+
+**Model/provider sufficiency disclosure is mandatory.** No silent fallback.
+Missing provider/key must surface in status/routes/doctor, not silently degrade.
 
 ---
 

@@ -27,6 +27,7 @@ from __future__ import annotations
 POST_NUS_ORCHESTRATOR_VERSION = "1.0.0"
 
 from openjarvis.orchestrator.contracts import (
+    ProjectContext,
     ManagerContract,
     WorkerContract,
     TaskRoutingRequest,
@@ -43,6 +44,13 @@ from openjarvis.orchestrator.contracts import (
     STATUS_INACTIVE,
     STATUS_DEGRADED,
     STATUS_BLOCKED,
+    TASK_TYPE_CODING,
+    TASK_TYPE_RESEARCH,
+    TASK_TYPE_PERSONAL,
+    TASK_TYPE_AUTOMATION,
+    TASK_TYPE_BUSINESS,
+    TASK_TYPE_OPERATIONS,
+    TASK_TYPE_UNKNOWN,
 )
 from openjarvis.orchestrator.manager_registry import (
     ManagerRegistry,
@@ -56,9 +64,20 @@ from openjarvis.orchestrator.activation import (
     DynamicActivationPlanner,
     get_activation_planner,
 )
+from openjarvis.orchestrator.cos_gm import (
+    CosGmOrchestrator,
+    get_cos_gm_orchestrator,
+)
+from openjarvis.orchestrator.worker_adapters import (
+    WorkerAdapterResult,
+    WorkerAdapter,
+    get_worker_adapter,
+    execute_worker,
+)
 
 __all__ = [
     "POST_NUS_ORCHESTRATOR_VERSION",
+    "ProjectContext",
     "ManagerContract",
     "WorkerContract",
     "TaskRoutingRequest",
@@ -75,10 +94,23 @@ __all__ = [
     "STATUS_INACTIVE",
     "STATUS_DEGRADED",
     "STATUS_BLOCKED",
+    "TASK_TYPE_CODING",
+    "TASK_TYPE_RESEARCH",
+    "TASK_TYPE_PERSONAL",
+    "TASK_TYPE_AUTOMATION",
+    "TASK_TYPE_BUSINESS",
+    "TASK_TYPE_OPERATIONS",
+    "TASK_TYPE_UNKNOWN",
     "ManagerRegistry",
     "get_manager_registry",
     "WorkerRegistry",
     "get_worker_registry",
     "DynamicActivationPlanner",
     "get_activation_planner",
+    "CosGmOrchestrator",
+    "get_cos_gm_orchestrator",
+    "WorkerAdapterResult",
+    "WorkerAdapter",
+    "get_worker_adapter",
+    "execute_worker",
 ]

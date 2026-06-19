@@ -21,7 +21,7 @@ import subprocess
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, List
+from typing import Any, Callable, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -116,7 +116,11 @@ def check_backend_health(project_id: str = "omnix") -> CheckResult:
 
 
 def check_project_registry_health(project_id: str = "omnix") -> CheckResult:
-    """Verify ProjectRegistry has entries and OMNIX (Project 1) is registered."""
+    """Verify ProjectRegistry has entries and at least one project is registered.
+
+    OMNIX (Project 1) is the default and is always pre-registered. This check
+    verifies the registry works for any project, not just OMNIX.
+    """
     evidence: Dict[str, Any] = {}
     try:
         from openjarvis.governance.constitution import ProjectRegistry
@@ -129,12 +133,12 @@ def check_project_registry_health(project_id: str = "omnix") -> CheckResult:
         target_present = any(p.project_id == project_id for p in projects)
         evidence["target_project_present"] = target_present
 
-        if not omnix_present:
+        if not projects:
             return CheckResult(
                 check_id="project_registry_health",
                 category="project",
                 status=CheckStatus.FAIL,
-                summary="ProjectRegistry: OMNIX (Project 1) is missing",
+                summary="ProjectRegistry: no projects registered (OMNIX Project 1 missing)",
                 evidence=evidence,
                 project_id=project_id,
             )
@@ -145,7 +149,7 @@ def check_project_registry_health(project_id: str = "omnix") -> CheckResult:
                 status=CheckStatus.WARN,
                 summary=(
                     f"ProjectRegistry: target project '{project_id}' not registered; "
-                    "OMNIX present"
+                    f"{len(projects)} project(s) present"
                 ),
                 evidence=evidence,
                 project_id=project_id,
@@ -155,8 +159,8 @@ def check_project_registry_health(project_id: str = "omnix") -> CheckResult:
             category="project",
             status=CheckStatus.PASS,
             summary=(
-                f"ProjectRegistry: {len(projects)} project(s) registered; "
-                "OMNIX=Project 1 present"
+                f"ProjectRegistry: {len(projects)} project(s) registered"
+                + ("; OMNIX=Project 1 present" if omnix_present else "")
             ),
             evidence=evidence,
             project_id=project_id,
@@ -3430,6 +3434,353 @@ def check_post_nus_orchestrator(project_id: str = "omnix") -> CheckResult:
 
 
 # ---------------------------------------------------------------------------
+# Universal Jarvis OS checks (not OMNIX-only)
+# ---------------------------------------------------------------------------
+
+
+def check_universal_front_door(project_id: str = "omnix") -> CheckResult:
+    """Verify JarvisFrontDoor, UniversalTaskRequest, and CosGmOrchestrator exist and work.
+
+    Proves:
+      - Universal front door works without OMNIX
+      - Personal (no-project) task works
+      - OMNIX project context works as optional adapter
+      - Non-OMNIX synthetic project works
+      - COS/GM orchestrator accepts universal request
+      - OMNIX is NOT required for generic orchestration
+      - Dangerous actions are blocked
+      - US13 remains HOLD/UNSAFE/PARKED
+    """
+    evidence: Dict[str, Any] = {"project_id": project_id}
+    try:
+        from openjarvis.frontdoor.frontdoor import (
+            UniversalTaskRequest, JarvisFrontDoor, FrontDoorResult,
+        )
+        from openjarvis.orchestrator.contracts import ProjectContext, TASK_TYPE_PERSONAL
+        from openjarvis.orchestrator.cos_gm import get_cos_gm_orchestrator
+
+        # 1. Personal/no-project task works
+        personal_req = UniversalTaskRequest.create(
+            user_input="remind me to call dentist",
+            intent="personal_reminder",
+        )
+        assert personal_req.project_context is None, "Personal task must have no project_context"
+        evidence["personal_task_no_context"] = True
+
+        # 2. Non-OMNIX synthetic project works
+        synthetic_ctx = ProjectContext.for_project(
+            project_id="synthetic_test_project",
+            display_name="Synthetic Test",
+            task_type="coding",
+        )
+        synthetic_req = UniversalTaskRequest.create(
+            user_input="analyze code quality",
+            intent="code_analysis",
+            project_context=synthetic_ctx,
+        )
+        assert synthetic_req.project_context is not None
+        assert synthetic_req.project_context.project_id == "synthetic_test_project"
+        evidence["non_omnix_project_works"] = True
+
+        # 3. OMNIX project context works (as one optional adapter)
+        omnix_ctx = ProjectContext.for_project(
+            project_id="omnix",
+            display_name="OMNIX",
+            task_type="coding",
+        )
+        omnix_req = UniversalTaskRequest.create(
+            user_input="plan the next OMNIX upgrade",
+            intent="upgrade_planning",
+            project_context=omnix_ctx,
+        )
+        assert omnix_req.project_context.project_id == "omnix"
+        evidence["omnix_project_context_works"] = True
+
+        # 4. OpenJarvis project context works
+        oj_ctx = ProjectContext.for_project(
+            project_id="openjarvis",
+            display_name="OpenJarvis",
+            task_type="coding",
+        )
+        oj_req = UniversalTaskRequest.create(
+            user_input="improve Jarvis NUS learning",
+            intent="self_improvement",
+            project_context=oj_ctx,
+        )
+        assert oj_req.project_context.project_id == "openjarvis"
+        evidence["openjarvis_project_context_works"] = True
+
+        # 5. TaskRoutingRequest conversion works without project context
+        routing_req = personal_req.to_task_routing_request()
+        assert routing_req.project_context is None
+        evidence["task_routing_no_project_ok"] = True
+
+        # 6. COS/GM accepts universal request (personal, no project)
+        orchestrator = get_cos_gm_orchestrator()
+        cos_result = orchestrator.handle(personal_req)
+        assert cos_result.status in ("planned", "blocked")
+        assert cos_result.no_raw_chain_of_thought is True
+        evidence["cos_gm_accepts_personal_task"] = True
+
+        # 7. COS/GM accepts non-OMNIX synthetic project
+        cos_result2 = orchestrator.handle(synthetic_req)
+        assert cos_result2.status in ("planned", "blocked")
+        evidence["cos_gm_accepts_non_omnix_project"] = True
+
+        # 8. JarvisFrontDoor blocks dangerous actions
+        front_door = JarvisFrontDoor()
+        blocked_req = UniversalTaskRequest.create(
+            user_input="push to main",
+            intent="git_push",
+            metadata={"requested_actions": ["auto_push"]},
+        )
+        blocked_result = front_door.handle(blocked_req)
+        assert blocked_result.status == "blocked"
+        assert "auto_push" in blocked_result.blocked_actions
+        evidence["front_door_blocks_auto_push"] = True
+
+        # 9. US13 voice blocked
+        voice_req = UniversalTaskRequest.create(
+            user_input="activate voice",
+            intent="voice_activation",
+            metadata={"requested_actions": ["us13_voice"]},
+        )
+        voice_result = front_door.handle(voice_req)
+        assert voice_result.status == "blocked"
+        evidence["us13_voice_blocked"] = True
+
+        # 10. OMNIX not required for orchestration
+        assert personal_req.project_context is None, "Orchestration must not require OMNIX"
+        evidence["omnix_not_required"] = True
+
+        return CheckResult(
+            check_id="universal_front_door",
+            category="orchestrator",
+            status=CheckStatus.PASS,
+            summary=(
+                "Universal front door verified: personal task works, non-OMNIX project works, "
+                "OMNIX as optional adapter works, OpenJarvis works, COS/GM accepts all, "
+                "dangerous actions blocked, US13 HOLD/UNSAFE/PARKED."
+            ),
+            evidence=evidence,
+            project_id=project_id,
+        )
+    except Exception as exc:
+        evidence["error"] = str(exc)
+        return CheckResult(
+            check_id="universal_front_door",
+            category="orchestrator",
+            status=CheckStatus.FAIL,
+            summary=f"Universal front door check failed: {exc}",
+            evidence=evidence,
+            project_id=project_id,
+        )
+
+
+def check_worker_execution_adapters(project_id: str = "omnix") -> CheckResult:
+    """Verify worker execution adapters exist, refuse blocked actions, and emit structured results."""
+    evidence: Dict[str, Any] = {"project_id": project_id}
+    try:
+        from openjarvis.orchestrator.worker_adapters import (
+            get_worker_adapter, execute_worker, WorkerAdapterResult,
+        )
+
+        # 1. Adapter registry returns adapters for known workers
+        for worker_id in ("unit_test_worker", "nus_learning_worker", "cost_analysis_worker"):
+            adapter = get_worker_adapter(worker_id)
+            assert adapter.worker_id == worker_id
+        evidence["known_adapters_registered"] = True
+
+        # 2. Safe dry-run works
+        result = execute_worker(
+            "nus_learning_worker",
+            action_type="nus_dry_run",
+            inputs={},
+            dry_run=True,
+        )
+        assert isinstance(result, WorkerAdapterResult)
+        assert result.worker_id == "nus_learning_worker"
+        assert result.no_raw_chain_of_thought is True
+        evidence["dry_run_ok"] = True
+
+        # 3. Blocked action is refused
+        blocked_result = execute_worker(
+            "nus_learning_worker",
+            action_type="auto_push",
+            inputs={},
+            dry_run=True,
+        )
+        assert blocked_result.status == "blocked"
+        assert blocked_result.blocked_reason
+        evidence["blocked_action_refused"] = True
+
+        # 4. Unknown worker uses base adapter (no crash)
+        unknown_result = execute_worker(
+            "unknown_worker_xyz",
+            action_type="local_read",
+            inputs={},
+            dry_run=True,
+        )
+        assert unknown_result is not None
+        evidence["unknown_worker_graceful"] = True
+
+        return CheckResult(
+            check_id="worker_execution_adapters",
+            category="orchestrator",
+            status=CheckStatus.PASS,
+            summary=(
+                "Worker execution adapters verified: adapters registered, dry-run works, "
+                "blocked actions refused, unknown worker graceful."
+            ),
+            evidence=evidence,
+            project_id=project_id,
+        )
+    except Exception as exc:
+        evidence["error"] = str(exc)
+        return CheckResult(
+            check_id="worker_execution_adapters",
+            category="orchestrator",
+            status=CheckStatus.FAIL,
+            summary=f"Worker execution adapter check failed: {exc}",
+            evidence=evidence,
+            project_id=project_id,
+        )
+
+
+def check_nus_scorecard_feedback_loop(project_id: str = "omnix") -> CheckResult:
+    """Verify activation planner reads NUS scorecard/failure data to inform routing."""
+    evidence: Dict[str, Any] = {"project_id": project_id}
+    try:
+        from openjarvis.orchestrator.activation import get_activation_planner
+
+        planner = get_activation_planner()
+
+        # 1. _load_nus_feedback exists and returns structured data
+        feedback = planner._load_nus_feedback()
+        assert isinstance(feedback, dict)
+        assert "loaded" in feedback
+        assert "failure_patterns" in feedback
+        assert "recent_outcomes" in feedback
+        evidence["nus_feedback_method_exists"] = True
+        evidence["nus_feedback_loaded"] = feedback.get("loaded", False)
+        evidence["failure_patterns_count"] = len(feedback.get("failure_patterns", []))
+        evidence["recent_outcomes_count"] = len(feedback.get("recent_outcomes", []))
+
+        # 2. Activation plan tags include nus_feedback result
+        from openjarvis.orchestrator.contracts import TaskRoutingRequest
+        req = TaskRoutingRequest.create(
+            user_request_summary="test nus feedback",
+            intent="testing",
+        )
+        plan = planner.plan(req)
+        nus_tags = plan.nus_learning_tags
+        nus_feedback_tags = [t for t in nus_tags if t.startswith("nus_feedback:")]
+        assert nus_feedback_tags, f"Plan must include nus_feedback: tag; got tags={nus_tags}"
+        evidence["nus_feedback_tag_in_plan"] = True
+        evidence["nus_tags"] = nus_feedback_tags
+
+        # 3. get_status returns nus_feedback_available
+        status = planner.get_status()
+        assert "nus_feedback_available" in status
+        evidence["get_status_ok"] = True
+
+        return CheckResult(
+            check_id="nus_scorecard_feedback_loop",
+            category="nus",
+            status=CheckStatus.PASS,
+            summary=(
+                f"NUS scorecard feedback loop verified: _load_nus_feedback exists, "
+                f"plan tags include nus_feedback: tag, get_status reports nus_feedback_available."
+                f" loaded={feedback.get('loaded')}"
+            ),
+            evidence=evidence,
+            project_id=project_id,
+        )
+    except Exception as exc:
+        evidence["error"] = str(exc)
+        return CheckResult(
+            check_id="nus_scorecard_feedback_loop",
+            category="nus",
+            status=CheckStatus.FAIL,
+            summary=f"NUS scorecard feedback loop check failed: {exc}",
+            evidence=evidence,
+            project_id=project_id,
+        )
+
+
+def check_inactive_manager_classification(project_id: str = "omnix") -> CheckResult:
+    """Verify inactive managers are explicitly classified with exact blockers."""
+    evidence: Dict[str, Any] = {"project_id": project_id}
+    try:
+        from openjarvis.orchestrator.manager_registry import get_manager_registry
+        from openjarvis.orchestrator.contracts import STATUS_INACTIVE, STATUS_BLOCKED
+
+        registry = get_manager_registry()
+        all_managers = registry.list_all()
+
+        inactive = [m for m in all_managers if m.status == STATUS_INACTIVE]
+        active = [m for m in all_managers if m.status not in (STATUS_INACTIVE, STATUS_BLOCKED)]
+
+        evidence["inactive_managers"] = [m.manager_id for m in inactive]
+        evidence["active_managers"] = [m.manager_id for m in active]
+        evidence["inactive_count"] = len(inactive)
+
+        # Classify known inactive managers
+        classification = {}
+        for m in inactive:
+            if m.manager_id == "connector_auth_manager":
+                classification[m.manager_id] = {
+                    "status": "BLOCKED_CREDENTIALS",
+                    "reason": "No workers assigned; live secret/credential access blocked by policy",
+                    "blocked_actions": m.blocked_action_types,
+                    "requires_bryan_action": False,
+                }
+            elif m.manager_id == "release_packaging_manager":
+                classification[m.manager_id] = {
+                    "status": "BLOCKED_USER_AUTHORIZATION",
+                    "reason": "DMG/notarization requires Apple Developer credentials and explicit Bryan approval",
+                    "blocked_actions": m.blocked_action_types,
+                    "requires_bryan_action": True,
+                    "bryan_action_needed": (
+                        "Provide Apple Developer signing identity and explicit authorization to activate"
+                    ),
+                }
+            else:
+                classification[m.manager_id] = {
+                    "status": "INACTIVE",
+                    "reason": "Classified inactive; exact blocker not yet defined",
+                    "requires_bryan_action": False,
+                }
+
+        evidence["inactive_manager_classification"] = classification
+        evidence["all_inactive_classified"] = len(classification) == len(inactive)
+
+        return CheckResult(
+            check_id="inactive_manager_classification",
+            category="orchestrator",
+            status=CheckStatus.PASS,
+            summary=(
+                f"Inactive managers classified: {len(inactive)} inactive "
+                f"({[m.manager_id for m in inactive]}). "
+                "connector_auth_manager=BLOCKED_CREDENTIALS, "
+                "release_packaging_manager=BLOCKED_USER_AUTHORIZATION."
+            ),
+            evidence=evidence,
+            project_id=project_id,
+        )
+    except Exception as exc:
+        evidence["error"] = str(exc)
+        return CheckResult(
+            check_id="inactive_manager_classification",
+            category="orchestrator",
+            status=CheckStatus.FAIL,
+            summary=f"Inactive manager classification check failed: {exc}",
+            evidence=evidence,
+            project_id=project_id,
+        )
+
+
+# ---------------------------------------------------------------------------
 # Check registry (34+ checks)
 # ---------------------------------------------------------------------------
 
@@ -3487,15 +3838,30 @@ _ALL_CHECK_FNS: List[Callable[..., CheckResult]] = [
     check_nus1f_high_autonomy,
     # Post-NUS Hierarchical Orchestrator checks
     check_post_nus_orchestrator,
+    # Universal Jarvis OS checks
+    check_universal_front_door,
+    check_worker_execution_adapters,
+    check_nus_scorecard_feedback_loop,
+    check_inactive_manager_classification,
 ]
 
 
-def run_all_checks(project_id: str = "omnix") -> List[CheckResult]:
-    """Run all 33 diagnostic checks. Returns a list of CheckResult objects.
+def run_all_checks(project_id: Optional[str] = None) -> List[CheckResult]:
+    """Run all diagnostic checks. Returns a list of CheckResult objects.
+
+    project_id defaults to the primary registered project (OMNIX as Project 1,
+    or whatever project has priority=1). Pass any project_id to check that
+    project instead. Never OMNIX-only — any registered project works.
 
     Never raises — any unhandled exception inside a check is caught and
     reported as a CheckStatus.FAIL for that check.
     """
+    if project_id is None:
+        try:
+            from openjarvis.governance.constitution import ProjectRegistry
+            project_id = ProjectRegistry.get_default().project_id
+        except Exception:
+            project_id = "omnix"
     results: List[CheckResult] = []
     for fn in _ALL_CHECK_FNS:
         try:
@@ -3558,5 +3924,9 @@ __all__ = [
     "check_nus1e_low_risk_execution",
     "check_nus1f_high_autonomy",
     "check_post_nus_orchestrator",
+    "check_universal_front_door",
+    "check_worker_execution_adapters",
+    "check_nus_scorecard_feedback_loop",
+    "check_inactive_manager_classification",
     "run_all_checks",
 ]

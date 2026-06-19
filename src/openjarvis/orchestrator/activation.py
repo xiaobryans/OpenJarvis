@@ -202,6 +202,93 @@ class DynamicActivationPlanner:
     ) -> None:
         self._managers = manager_registry or get_manager_registry()
         self._workers = worker_registry or get_worker_registry()
+        self._nus_feedback: Optional[Dict[str, Any]] = None  # loaded lazily
+
+    def _load_nus_feedback(self) -> Dict[str, Any]:
+        """Load available NUS scorecard/failure data to inform activation.
+
+        Reads from LearningStore (failure patterns, outcomes) and LearnedRouter
+        (routing recommendations). Returns empty dict if unavailable — graceful
+        degradation, not a hard failure.
+        """
+        feedback: Dict[str, Any] = {
+            "failure_patterns": [],
+            "recent_outcomes": [],
+            "routing_recommendations": [],
+            "loaded": False,
+        }
+        try:
+            from openjarvis.nus.learning_store import LearningStore
+            store = LearningStore()
+            patterns = store.load_recent_patterns(limit=20)
+            outcomes = store.load_recent_outcomes(limit=20)
+            feedback["failure_patterns"] = patterns
+            feedback["recent_outcomes"] = outcomes
+            feedback["loaded"] = True
+        except Exception as exc:
+            logger.debug("NUS LearningStore not available for activation: %s", exc)
+
+        try:
+            from openjarvis.nus.learned_routing import get_learned_router
+            router = get_learned_router()
+            recs = router.get_recommendations()
+            feedback["routing_recommendations"] = [r.to_dict() for r in recs[-10:]]
+        except Exception as exc:
+            logger.debug("NUS LearnedRouter not available for activation: %s", exc)
+
+        return feedback
+
+    def _apply_nus_feedback(
+        self,
+        feedback: Dict[str, Any],
+        request: TaskRoutingRequest,
+        activation_reasons: Dict[str, str],
+        skip_reasons: Dict[str, str],
+        selected_managers: List[str],
+        selected_workers: List[str],
+        skipped_managers: List[str],
+        skipped_workers: List[str],
+    ) -> List[str]:
+        """Apply NUS failure/scorecard data to augment activation decisions.
+
+        Returns additional NUS-sourced tags.
+        """
+        extra_tags: List[str] = []
+
+        if not feedback.get("loaded"):
+            extra_tags.append("nus_feedback:not_available")
+            return extra_tags
+
+        extra_tags.append("nus_feedback:loaded")
+
+        # Count recent failures for context
+        patterns = feedback.get("failure_patterns", [])
+        outcomes = feedback.get("recent_outcomes", [])
+        failure_count = sum(
+            1 for o in outcomes if o.get("success") is False or o.get("status") == "failed"
+        )
+        if failure_count > 0:
+            extra_tags.append(f"nus_prior_failures:{failure_count}")
+            # Escalate validation requirement if prior failures exist
+            if failure_count >= 3 and "testing_validation_manager" not in selected_managers:
+                mgr = self._managers.get("testing_validation_manager")
+                if mgr and mgr.status == STATUS_ACTIVE:
+                    selected_managers.append("testing_validation_manager")
+                    if "testing_validation_manager" in skipped_managers:
+                        skipped_managers.remove("testing_validation_manager")
+                        skip_reasons.pop("testing_validation_manager", None)
+                    activation_reasons["testing_validation_manager"] = (
+                        f"NUS feedback: {failure_count} recent failures → validation escalated"
+                    )
+                    extra_tags.append("nus_escalated:testing_validation_manager")
+
+        # Tag pattern types
+        for p in patterns[:5]:
+            ptype = p.get("pattern_type", "unknown")
+            if ptype:
+                extra_tags.append(f"nus_pattern:{ptype}")
+
+        return extra_tags
 
     def plan(self, request: TaskRoutingRequest) -> ActivationPlan:
         """Produce an ActivationPlan for the given TaskRoutingRequest.
@@ -318,8 +405,16 @@ class DynamicActivationPlanner:
         # 8. Build stop conditions
         stop_conditions = self._build_stop_conditions(request)
 
-        # 9. NUS learning tags
+        # 9. NUS learning tags + live scorecard feedback
+        nus_feedback = self._load_nus_feedback()
+        extra_nus_tags = self._apply_nus_feedback(
+            nus_feedback, request,
+            activation_reasons, skip_reasons,
+            selected_managers, selected_workers,
+            skipped_managers, skipped_workers,
+        )
         nus_tags = self._build_nus_tags(request, selected_managers, selected_workers)
+        nus_tags.extend(extra_nus_tags)
 
         # 10. Create structured decision record (NUS 1F)
         dr_id = self._create_decision_record(
@@ -709,6 +804,18 @@ class DynamicActivationPlanner:
         elif request.complexity_level == COMPLEXITY_MODERATE:
             base *= 2
         return min(base, request.context_budget)
+
+    def get_status(self) -> Dict[str, Any]:
+        """Return activation planner status summary."""
+        feedback = self._load_nus_feedback()
+        return {
+            "activation_planner": "active",
+            "manager_count": len(self._managers.ids()),
+            "worker_count": len(self._workers.ids()),
+            "nus_feedback_available": feedback.get("loaded", False),
+            "nus_failure_patterns_loaded": len(feedback.get("failure_patterns", [])),
+            "nus_recent_outcomes_loaded": len(feedback.get("recent_outcomes", [])),
+        }
 
 
 # ---------------------------------------------------------------------------

@@ -1,7 +1,19 @@
 # Jarvis Future-Proof Architecture Principles
 
-**Status:** Active — NUS 1D/1E sprint  
+**Status:** Active — universalized in `Universalize Jarvis` sprint
 **Machine-readable:** `openjarvis.governance.constitution.FUTURE_PROOF_ARCHITECTURE`
+
+---
+
+## Jarvis is Bryan's Universal Private AI Operating System
+
+Jarvis is NOT OMNIX-only. OMNIX is Project 1 (one current project). Jarvis must:
+- Support OMNIX, OpenJarvis, personal tasks, research, automation, and any future project
+- Work without any project context (personal tasks require no project_id)
+- Route based on metadata/contracts, never hardcoded project names
+- Never require OMNIX in universal orchestration paths
+
+**Private-first does not mean low quality. Target public-grade/adversarial-grade minimum.**
 
 ---
 
@@ -9,8 +21,8 @@
 
 Every component added to Jarvis — feature, NUS phase, agent, worker, routing layer,
 skill, capability, telemetry path, policy, or workflow — must be designed to remain
-valid and extensible as Jarvis grows to support a multi-agent orchestration
-architecture. This document defines the mandatory principles that enforce that.
+valid and extensible as Jarvis grows to support a universal multi-project,
+multi-agent orchestration architecture. This document defines the mandatory principles.
 
 ---
 

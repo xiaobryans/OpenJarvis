@@ -541,13 +541,13 @@ def generate_v1_report(project_id: str = "omnix") -> Dict[str, Any]:
         ],
         "remaining_limitations": [
             "voice.parse_intent is text-only keyword parser (no real STT)",
-            "ProjectRegistry is in-process only (OMNIX hardcoded; future projects via register())",
+            "ProjectRegistry is in-process only; register() accepts any future project",
             "AutonomyPolicy now persists to SQLite (~/.jarvis/autonomy_modes.db)",
             "No WebSocket/SSE push (Mission Control uses polling)",
             "No project_id field on Mission model (planned schema migration)",
             "Frontend unchanged: doctor/readiness routes are backend-only",
             "US9-US13 capabilities are backend-only (packaged app rebuilt in US13 for gate; no new UI)",
-            "OMNIX local_repo points to Jarvis/OpenJarvis (placeholder); real OMNIX source not yet configured",
+            "OMNIX is Project 1; real OMNIX source path configurable via JARVIS_PROJECT_OMNIX_REPO_PATH",
         ],
         "post_v1_roadmap": [
             "WebSocket/SSE push for Mission Control (replace polling)",
@@ -557,7 +557,7 @@ def generate_v1_report(project_id: str = "omnix") -> Dict[str, Any]:
             "Multi-project config file (add future projects without code changes)",
             "Watchdog results → alert auto-creation pipeline",
             "Skill execution dispatch endpoint",
-            "Configure real OMNIX source: real local repo path, GitHub remote, or OpenClaw workspace",
+            "Set JARVIS_PROJECT_OMNIX_REPO_PATH to real OMNIX repo path when available",
         ],
     }
 
