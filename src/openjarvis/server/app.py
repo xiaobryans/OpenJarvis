@@ -28,6 +28,7 @@ from openjarvis.server.research_router import router as research_router
 from openjarvis.server.routes import router
 from openjarvis.server.upload_router import router as upload_router
 from openjarvis.server.workbench_routes import router as workbench_router
+from openjarvis.server.nus_routes import router as nus_router
 from openjarvis.server.voice_routes import router as voice_router
 
 logger = logging.getLogger(__name__)
@@ -319,6 +320,7 @@ def create_app(
     app.include_router(autonomy_router)
     app.include_router(doctor_router)
     app.include_router(workbench_router)
+    app.include_router(nus_router)
     app.include_router(voice_router)
     include_all_routes(app)
 

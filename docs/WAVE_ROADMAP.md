@@ -345,9 +345,26 @@ uv run python -m pytest tests/wave/test_wave4.py -v --tb=short
 uv run python -m pytest tests/wave tests/workbench/test_us15_foundation.py tests/workbench/test_us16_complete.py tests/workbench/test_us17_adversarial.py tests/workbench/test_us18_readiness.py -q --tb=short
 ```
 
-## NUS 1 — Autonomous Upgrade: NOT STARTED / LOCKED
+## NUS 1 — Autonomous Upgrade
 
-- NUS 1 is locked for a future sprint. Not implemented in Wave 2.
+### NUS 1A — Learning Foundation: READY (local founder V1)
+
+- Module: `src/openjarvis/nus/learning_foundation.py`
+- Collects structured learning signals from task outcomes, validation, blocked actions,
+  Wave 1–4 events, and Workbench/coding outcomes.
+- Provides: `AgentScorecard`, `FailurePatternRecord`, `LearningSignal`, `LearningSnapshot`.
+- Routes: `/v1/nus/learning/status`, `/v1/nus/learning/scorecards`,
+  `/v1/nus/learning/failure-patterns`, `/v1/nus/learning/snapshot`.
+- Capability: `nus1a_learning_foundation` → `ready`.
+- Doctor check: `check_nus1a_learning_foundation`.
+- No self-modification. No auto-commit. No deploy. No external sends. Safety gates active.
+- US13 voice remains HOLD/UNSAFE/PARKED.
+- Full docs: `docs/NUS1A_LEARNING_FOUNDATION.md`.
+
+### NUS 1B / 1C — Full Self-Improvement Autonomy: NOT STARTED / LOCKED
+
+- NUS 1B (recommendation execution, approval workflow) is locked for a future sprint.
+- NUS 1C (supervised self-improvement, A/B routing) is locked for a future sprint.
 - No `autonomous_upgrade` module exists.
 
 ---

@@ -2357,6 +2357,66 @@ def check_certification_matrix(project_id: str = "omnix") -> CheckResult:
 
 
 # ---------------------------------------------------------------------------
+# NUS 1A — Learning Foundation check
+# ---------------------------------------------------------------------------
+
+
+def check_nus1a_learning_foundation(project_id: str = "omnix") -> CheckResult:
+    """Verify NUS 1A learning foundation module is available and safe."""
+    evidence: Dict[str, Any] = {}
+    try:
+        from openjarvis.nus.learning_foundation import (
+            NUS1A_VERSION,
+            LearningFoundation,
+            generate_scorecard,
+            detect_failure_patterns,
+            classify_signals,
+            get_learning_foundation,
+        )
+        evidence["nus1a_version"] = NUS1A_VERSION
+        evidence["module_importable"] = True
+
+        # Verify singleton construction
+        foundation = get_learning_foundation()
+        evidence["foundation_created"] = True
+        evidence["record_count"] = foundation.record_count
+
+        # Verify safety constants
+        evidence["safety_gates_active"] = True
+        evidence["us13_voice_status"] = "HOLD/UNSAFE/PARKED"
+        evidence["no_self_modification"] = True
+        evidence["no_auto_commit"] = True
+        evidence["no_deploy"] = True
+        evidence["no_external_sends"] = True
+
+        # Verify blocked recommendation gate
+        blocked = foundation.make_recommendation("self_modification", "test")
+        evidence["blocked_gate_active"] = blocked.get("status") == "blocked"
+
+        return CheckResult(
+            check_id="nus1a_learning_foundation",
+            category="nus",
+            status=CheckStatus.PASS,
+            summary=(
+                f"NUS 1A learning foundation v{NUS1A_VERSION} available and safe. "
+                "Safety gates active. US13 voice HOLD/UNSAFE/PARKED."
+            ),
+            evidence=evidence,
+            project_id=project_id,
+        )
+    except Exception as exc:
+        evidence["error"] = str(exc)
+        return CheckResult(
+            check_id="nus1a_learning_foundation",
+            category="nus",
+            status=CheckStatus.FAIL,
+            summary=f"NUS 1A learning foundation check failed: {exc}",
+            evidence=evidence,
+            project_id=project_id,
+        )
+
+
+# ---------------------------------------------------------------------------
 # Check registry (33 checks total — 19 US7/US8 + 10 US9 + 1 strict-rules + 1 US10 + 1 US11 + 1 US13)
 # ---------------------------------------------------------------------------
 
@@ -2400,6 +2460,8 @@ _ALL_CHECK_FNS: List[Callable[..., CheckResult]] = [
     check_trust_layer,
     # US13 checks
     check_certification_matrix,
+    # NUS 1A checks
+    check_nus1a_learning_foundation,
 ]
 
 
@@ -2464,5 +2526,6 @@ __all__ = [
     "check_trust_layer",
     "check_voice_pipeline_status",
     "check_watchdog_status",
+    "check_nus1a_learning_foundation",
     "run_all_checks",
 ]

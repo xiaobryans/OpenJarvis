@@ -488,8 +488,35 @@ def _wave4_autonomous_expansion_status() -> CapabilityRecord:
         )
 
 
+def _nus1a_learning_foundation_status() -> CapabilityRecord:
+    """NUS 1A — Learning Foundation capability."""
+    try:
+        from openjarvis.nus.learning_foundation import NUS1A_VERSION, LearningFoundation  # noqa: F401
+        return CapabilityRecord(
+            capability_id="nus1a_learning_foundation",
+            display_name="NUS 1A — Learning Foundation",
+            status=STATUS_READY,
+            summary=(
+                "NUS 1A: Local learning foundation. Collects structured signals "
+                "from task outcomes, validation, blocked actions, Wave 1–4 events, "
+                "and Workbench outcomes. Scorecard, failure-pattern detection, and "
+                "read-only snapshots available. No self-modification, no auto-commit, "
+                "no deploy, no external sends. US13 voice HOLD/UNSAFE/PARKED. "
+                "NUS 1B/1C (full self-improvement) not started."
+            ),
+            evidence={"nus1a_version": NUS1A_VERSION, "safety_gates_active": True},
+        )
+    except Exception as exc:
+        return CapabilityRecord(
+            capability_id="nus1a_learning_foundation",
+            display_name="NUS 1A — Learning Foundation",
+            status=STATUS_NOT_IMPLEMENTED,
+            summary=f"NUS 1A learning foundation unavailable: {exc}",
+        )
+
+
 def get_all_capabilities() -> List[CapabilityRecord]:
-    """Return all capability records with truthful status (US15 + Wave 1–4)."""
+    """Return all capability records with truthful status (US15 + Wave 1–4 + NUS 1A)."""
     return [
         _assistant_status(),
         _workbench_status(),
@@ -510,6 +537,8 @@ def get_all_capabilities() -> List[CapabilityRecord]:
         _wave3_content_media_studio_status(),
         # Wave 4 Autonomous Expansion (Epic H)
         _wave4_autonomous_expansion_status(),
+        # NUS 1A — Learning Foundation
+        _nus1a_learning_foundation_status(),
     ]
 
 
@@ -531,7 +560,7 @@ def get_capabilities_summary() -> Dict[str, Any]:
         "wave4_not_implemented": False,
         "wave3_4_not_implemented": False,
         "wave2_3_4_not_implemented": False,
-        "nus1_status": "not_started",
+        "nus1_status": "1a_learning_foundation_ready",
     }
 
 

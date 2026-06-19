@@ -856,10 +856,11 @@ class TestNUS1NotImplemented:
         info = get_expansion_status()
         assert info["nus1_status"] == "not_started"
 
-    def test_capabilities_registry_nus1_not_started(self):
+    def test_capabilities_registry_nus1_status(self):
         from openjarvis.workbench.capabilities_registry import get_capabilities_summary
         summary = get_capabilities_summary()
-        assert summary.get("nus1_status") == "not_started"
+        # NUS 1A learning foundation is now ready; NUS 1B/1C remain not started
+        assert summary.get("nus1_status") == "1a_learning_foundation_ready"
 
     def test_no_nus1_module_in_wave(self):
         """NUS 1 self-improvement autonomy must not exist as a callable module."""
