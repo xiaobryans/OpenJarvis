@@ -93,3 +93,36 @@ US13 voice remains HOLD/UNSAFE/PARKED throughout NUS 1D/1E.
 - `docs/POST_NUS_COMPANY_AGENT_ORCHESTRATOR_PLAN.md`
 - `docs/NUS1C_SAFE_AUTOPILOT.md`
 - `src/openjarvis/nus/autonomy_policy.py`
+
+---
+
+## NUS 1F Update — Controlled High-Autonomy Session Framework
+
+NUS 1F implements the first concrete framework toward the 95% target:
+
+### What "95% automated" means
+- **Policy-controlled delegated autonomy** — not unsafe unrestricted access.
+- Routine safe work is auto-allowed under active policy.
+- Medium-risk work is sandboxed or approval/policy-gated.
+- High-risk work is strict policy-controlled.
+- Dangerous work is permanently blocked.
+
+### Action Tier Classification (NUS 1F)
+| Tier | Fraction of actions (target) | Examples |
+|---|---|---|
+| `auto_allowed` | ~40–50% | local_read, health_check |
+| `auto_allowed_with_audit` | ~20–25% | scorecard_generation, test_run_local |
+| `dry_run_only` | ~10–15% | session_create_dry_run, eval_gate_dry_run |
+| `needs_approval` | ~10% | source_code_mutation, config_update |
+| `strict_policy_controlled` | ~3–5% | staging_deploy_dry_run |
+| `blocked` | ~5% | production_deploy, secret_access, auto_push |
+
+### Implementation
+- `src/openjarvis/nus/autonomy_action_policy.py` — 6-tier classification
+- `src/openjarvis/nus/high_autonomy_session.py` — session objects
+- `src/openjarvis/nus/production_gate.py` — production gate (dry-run only in NUS 1F)
+
+### Current state
+Production execution remains blocked or dry-run only. NUS 1F lays the policy and session boundary infrastructure. Real autonomy expansion happens in future sprints with explicit Bryan authorization.
+
+See `docs/NUS1F_CONTROLLED_HIGH_AUTONOMY.md` for full specification.

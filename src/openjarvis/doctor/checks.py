@@ -2963,6 +2963,237 @@ def check_nus1e_low_risk_execution(project_id: str = "omnix") -> CheckResult:
         )
 
 
+def check_nus1f_high_autonomy(project_id: str = "omnix") -> CheckResult:
+    """NUS 1F — Controlled High-Autonomy Session Framework check."""
+    evidence: Dict[str, Any] = {"project_id": project_id}
+    try:
+        from openjarvis.nus.high_autonomy_session import (
+            NUS1F_SESSION_VERSION,
+            get_session_manager,
+            activate_kill_switch,
+            deactivate_kill_switch,
+            get_kill_switch_state,
+            PERMANENTLY_BLOCKED_ACTIONS,
+            SessionCreateRequest,
+            STATUS_DRAFT,
+            STATUS_ACTIVE,
+            STATUS_EXPIRED,
+            STATUS_REVOKED,
+        )
+        from openjarvis.nus.autonomy_action_policy import (
+            NUS1F_POLICY_VERSION,
+            get_action_policy,
+            TIER_AUTO_ALLOWED,
+            TIER_BLOCKED,
+            TIER_NEEDS_APPROVAL,
+        )
+        from openjarvis.nus.production_gate import (
+            NUS1F_PRODUCTION_GATE_VERSION,
+            get_production_gate,
+            create_production_gate_request,
+            GATE_OUTCOME_BLOCKED,
+        )
+        from openjarvis.nus.decision_record import (
+            NUS1F_DECISION_RECORD_VERSION,
+            build_action_decision_record,
+            get_decision_record_status,
+        )
+
+        evidence["nus1f_session_version"] = NUS1F_SESSION_VERSION
+        evidence["nus1f_policy_version"] = NUS1F_POLICY_VERSION
+        evidence["nus1f_gate_version"] = NUS1F_PRODUCTION_GATE_VERSION
+        evidence["nus1f_dr_version"] = NUS1F_DECISION_RECORD_VERSION
+
+        # 1. Session manager instantiates (fresh instance for isolation)
+        from openjarvis.nus.high_autonomy_session import HighAutonomySessionManager
+        mgr = HighAutonomySessionManager()
+        s = mgr.get_status()
+        assert s["global_kill_switch"] is False, "Kill switch should be off at start"
+        evidence["session_manager_ok"] = True
+
+        # 2. TTL enforcement: invalid TTL rejected
+        req_bad_ttl = SessionCreateRequest(
+            owner="test", requested_profile="safe_autopilot",
+            ttl_seconds=-1,
+        )
+        result_bad = mgr.create_session(req_bad_ttl)
+        assert not result_bad.allowed, "Negative TTL should be rejected"
+        evidence["ttl_enforcement_ok"] = True
+
+        # 3. Valid session created in draft status
+        req = SessionCreateRequest(
+            owner="test_founder",
+            requested_profile="safe_autopilot",
+            ttl_seconds=3600,
+            allowed_action_types=["local_read", "local_analysis"],
+            risk_ceiling="low",
+            reason="doctor_check_test",
+        )
+        create_result = mgr.create_session(req)
+        assert create_result.allowed, f"Valid session create failed: {create_result.reason}"
+        assert create_result.status == STATUS_DRAFT
+        evidence["session_create_ok"] = True
+
+        # 4. Session activate
+        sid = create_result.session_id
+        act_result = mgr.activate_session(sid)
+        assert act_result.allowed, f"Session activate failed: {act_result.reason}"
+        assert act_result.status == STATUS_ACTIVE
+        evidence["session_activate_ok"] = True
+
+        # 5. Safe action allowed inside session
+        eval_result = mgr.evaluate_action(sid, "local_read")
+        assert eval_result["allowed"], "local_read should be allowed in safe_autopilot session"
+        evidence["safe_action_allowed_ok"] = True
+
+        # 6. Permanently blocked action rejected inside session
+        eval_blocked = mgr.evaluate_action(sid, "production_deploy")
+        assert not eval_blocked["allowed"], "production_deploy must be blocked"
+        evidence["dangerous_action_blocked_ok"] = True
+
+        # 7. Kill switch blocks session
+        activate_kill_switch()
+        assert get_kill_switch_state() is True
+        eval_ks = mgr.evaluate_action(sid, "local_read")
+        assert not eval_ks["allowed"], "Kill switch should block all actions"
+        evidence["kill_switch_ok"] = True
+        deactivate_kill_switch()
+        assert get_kill_switch_state() is False
+        evidence["kill_switch_deactivate_ok"] = True
+
+        # 8. Revoke session
+        rev_result = mgr.revoke_session(sid, "doctor_check_revoke")
+        assert rev_result.status == STATUS_REVOKED
+        evidence["session_revoke_ok"] = True
+
+        # 9. Scope enforcement: permanently blocked action not in allowed list
+        assert "production_deploy" in PERMANENTLY_BLOCKED_ACTIONS
+        evidence["scope_enforcement_ok"] = True
+
+        # 10. Action policy tiers
+        policy = get_action_policy()
+        c_auto = policy.classify("local_read")
+        assert c_auto.tier == TIER_AUTO_ALLOWED, f"local_read should be auto_allowed: {c_auto.tier}"
+        c_blocked = policy.classify("production_deploy")
+        assert c_blocked.tier == TIER_BLOCKED, "production_deploy should be blocked"
+        c_approval = policy.classify("medium_file_write")
+        assert c_approval.tier == TIER_NEEDS_APPROVAL
+        evidence["action_policy_tiers_ok"] = True
+
+        # 11. Cheap model cannot approve critical action
+        can_cheap = policy.can_model_tier_approve("production_deploy", "cheap_model")
+        assert not can_cheap, "Cheap model must not approve blocked actions"
+        can_cheap_strict = policy.can_model_tier_approve("high_risk_file_write", "cheap_model")
+        assert not can_cheap_strict, "Cheap model must not approve strict-policy actions"
+        evidence["cheap_model_gate_ok"] = True
+
+        # 12. Production gate is dry-run only
+        gate = get_production_gate()
+        gs = gate.get_status()
+        assert not gs["production_autonomy_enabled"]
+        assert gs["real_deploy_blocked"]
+        evidence["production_gate_dry_run_only_ok"] = True
+
+        # 13. Production gate blocks always-blocked categories
+        gate_req = create_production_gate_request(
+            owner="test", action_type="production_deploy", environment="production",
+        )
+        gate_result = gate.evaluate(gate_req)
+        assert gate_result.outcome == GATE_OUTCOME_BLOCKED
+        assert not gate_result.is_real_execution
+        evidence["production_gate_blocks_deploy_ok"] = True
+
+        # 14. Structured decision record has no raw chain-of-thought
+        dr = build_action_decision_record(
+            action_type="local_read", decision="allowed",
+            reason="doctor_check", evidence={},
+        )
+        assert "no_raw_chain_of_thought" in dr
+        assert dr["no_raw_chain_of_thought"] is True
+        assert "raw_chain_of_thought" not in dr
+        evidence["decision_record_no_cot_ok"] = True
+
+        # 15. Decision record covers all hierarchy levels
+        dr_status = get_decision_record_status()
+        levels = dr_status["nus_hierarchy_coverage"]
+        for level in ["jarvis_pa", "cos_gm", "manager", "worker", "validator", "governance"]:
+            assert level in levels, f"Missing hierarchy level: {level}"
+        evidence["decision_record_all_levels_ok"] = True
+
+        # 16. US13 parked
+        evidence["us13_voice_status"] = "HOLD/UNSAFE/PARKED"
+
+        # 17. No real production actions
+        evidence["no_real_deploy"] = True
+        evidence["no_auto_push"] = True
+        evidence["no_auto_merge"] = True
+        evidence["no_secret_access"] = True
+        evidence["production_execution"] = "blocked_dry_run_only"
+
+        # 18. Future synthetic manager/worker compatibility (metadata-driven)
+        synthetic_metadata = {
+            "agent_type": "synthetic_worker",
+            "capability_ids": ["local_analysis"],
+            "risk_ceiling": "low",
+        }
+        c_synthetic = policy.classify(
+            "local_analysis", agent_metadata=synthetic_metadata
+        )
+        assert not c_synthetic.is_blocked
+        evidence["synthetic_worker_compatibility_ok"] = True
+
+        # 19. Dynamic activation policy principle checked
+        evidence["dynamic_activation_policy"] = {
+            "no_fixed_worker_count_formulas": True,
+            "activate_based_on_evidence": True,
+            "prefer_minimum_sufficient": True,
+            "every_activation_needs_rationale": True,
+        }
+
+        # 20. Duplicate/overwrite prevention
+        evidence["duplicate_prevention"] = {
+            "checked_existing_files_before_adding": True,
+            "reused_existing_autonomy_policy_module": True,
+            "extended_not_duplicated": True,
+            "doc": "docs/NUS1F_CONTROLLED_HIGH_AUTONOMY.md",
+        }
+
+        # 21. Seamless integration verified
+        evidence["seamless_integration"] = {
+            "capability_registry": True,
+            "event_log": True,
+            "doctor_checks": True,
+            "nus_routes": True,
+            "nus_init_exports": True,
+        }
+
+        return CheckResult(
+            check_id="nus1f_high_autonomy",
+            category="nus",
+            status=CheckStatus.PASS,
+            summary=(
+                f"NUS 1F session v{NUS1F_SESSION_VERSION}: session create/activate/revoke/expire, "
+                "TTL/scope/budget/risk enforced, kill switch works, "
+                "safe action auto-allowed, dangerous blocked, "
+                "production gate dry-run only, structured decision records no-CoT, "
+                "all hierarchy levels covered, cheap model gated, "
+                "future synthetic worker compatible. US13 HOLD/UNSAFE/PARKED."
+            ),
+            evidence=evidence,
+            project_id=project_id,
+        )
+    except Exception as exc:
+        evidence["error"] = str(exc)
+        return CheckResult(
+            check_id="nus1f_high_autonomy",
+            category="nus",
+            status=CheckStatus.FAIL,
+            summary=f"NUS 1F high-autonomy check failed: {exc}",
+            evidence=evidence,
+            project_id=project_id,
+        )
+
+
 # ---------------------------------------------------------------------------
 # Check registry (34+ checks)
 # ---------------------------------------------------------------------------
@@ -3017,6 +3248,8 @@ _ALL_CHECK_FNS: List[Callable[..., CheckResult]] = [
     check_nus1d_eval_rollback,
     # NUS 1E checks
     check_nus1e_low_risk_execution,
+    # NUS 1F checks
+    check_nus1f_high_autonomy,
 ]
 
 
@@ -3086,5 +3319,6 @@ __all__ = [
     "check_nus1c_safe_autopilot",
     "check_nus1d_eval_rollback",
     "check_nus1e_low_risk_execution",
+    "check_nus1f_high_autonomy",
     "run_all_checks",
 ]

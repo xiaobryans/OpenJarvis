@@ -105,3 +105,33 @@ Future agents inherit these rules via AGENTS.md — no per-agent configuration n
 - `docs/JARVIS_CONSTITUTION.md` — § 7 (Cost-Control Law)
 - `.cursor/rules/10-api-token-and-model.mdc`
 - `.cursor/rules/07-strict-targeted-access.mdc`
+
+---
+
+## NUS 1F Update — Budget-Bounded Session Governance
+
+NUS 1F adds explicit budget enforcement to high-autonomy sessions:
+
+### Session budget fields
+Every `HighAutonomySession` carries:
+- `cost_budget` — maximum cost spend in this session (float)
+- `token_budget` — maximum token count (int)
+- `time_budget` — maximum wall clock seconds (float)
+
+These are recorded in the session object and structured decision records. Budget enforcement against live usage tracking is a future sprint task.
+
+### Cost-control compliance
+NUS 1F implementation follows Bryan's Pay-On-Demand Cost-Control Law:
+- Only files directly relevant to NUS 1F were inspected
+- No broad repo audit
+- No reread of accepted NUS 1A–1E internals
+- Changed-file-only validation
+- grep → narrow read → edit → one validation pass
+
+### Token governance in action classification
+The `AutonomyActionPolicy` supports cost/token fields in structured decision records:
+- `cost_estimate` — estimated cost impact per decision
+- `token_estimate` — estimated token count
+These feed into NUS learning for future budget optimization.
+
+See `docs/NUS1F_CONTROLLED_HIGH_AUTONOMY.md` for session budget fields specification.

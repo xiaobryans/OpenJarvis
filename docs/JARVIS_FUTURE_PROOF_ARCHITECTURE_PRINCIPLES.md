@@ -132,3 +132,31 @@ Future agents add new action types by extending this taxonomy, not by bypassing 
 - `docs/JARVIS_TOKEN_COST_GOVERNANCE.md`
 - `docs/POST_NUS_COMPANY_AGENT_ORCHESTRATOR_PLAN.md`
 - `src/openjarvis/nus/execution_classifier.py` — reference implementation
+
+---
+
+## NUS 1F Update — Future-Proof Session and Decision Framework
+
+NUS 1F applies the future-proof principles to autonomy sessions and decisions:
+
+### Principle: No hardcoded agent names
+All session policies, action classification, and decision records evaluate by metadata/contract fields — not hardcoded agent names. Future agents/workers inherit compatibility automatically.
+
+### Principle: Schema-additive, never removing
+Structured decision record schema (`decision_record.py`) is additive-only. Fields are added in future versions; none removed. All callers are forward-compatible.
+
+### Principle: Registry/metadata/contract-driven
+- `HighAutonomySession.allowed_action_types` — list-driven, not hardcoded
+- `AutonomyActionPolicy` — type-driven classification, not name-driven
+- `StructuredDecisionRecord.hierarchy_level` — metadata tag covering all levels
+
+### Principle: NUS applies to all hierarchy levels
+Decision records carry `hierarchy_level`: jarvis_pa, cos_gm, manager, worker, validator, governance. NUS learns from every level — not only Jarvis PA.
+
+### Principle: Dynamic activation
+No fixed worker-count formulas. Every activation requires evidence-based rationale. Post-NUS orchestrator will build on this scaffolding.
+
+### Principle: Duplicate/overwrite prevention
+NUS 1F extended existing modules (`autonomy_policy.py`, `power_autopilot.py`) by adding new files, not replacing accepted working code.
+
+See `docs/NUS1F_CONTROLLED_HIGH_AUTONOMY.md` for implementation details.

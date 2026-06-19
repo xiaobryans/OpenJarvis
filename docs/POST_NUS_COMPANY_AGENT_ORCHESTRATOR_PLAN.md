@@ -115,3 +115,30 @@ Post-NUS orchestrator requires:
 - `docs/JARVIS_AGENT_REGISTRY_AND_CONTRACTS.md`
 - `docs/JARVIS_95_PERCENT_AUTONOMY_TARGET.md`
 - `docs/JARVIS_CONSTITUTION.md`
+
+---
+
+## NUS 1F Readiness Update
+
+NUS 1F provides the infrastructure that the post-NUS company-grade orchestrator will build on:
+
+### Session boundaries
+`HighAutonomySession` objects define explicit scope, TTL, budget, risk ceiling, and kill switch. The company-grade orchestrator will assign sessions to manager/worker pools within these boundaries.
+
+### Structured decision records
+`StructuredDecisionRecord` schema covers all hierarchy levels (jarvis_pa, cos_gm, manager, worker, validator, governance). The orchestrator will emit decision records at each level for NUS learning aggregation.
+
+### Action policy
+`AutonomyActionPolicy` 6-tier classification will govern which worker actions are auto-allowed vs. approval-required. The orchestrator inherits this policy without code changes.
+
+### Dynamic activation policy
+The policy principles are documented and tested in NUS 1F. The orchestrator must:
+- Never use fixed worker-count formulas
+- Activate based on evidence
+- Prefer minimum sufficient team
+- Every activation needs rationale
+
+### Hard lock
+The company-grade hierarchical orchestrator (100+ workers, COS/GM, domain managers) remains **LOCKED** until explicitly authorized by Bryan. NUS 1F does not implement it — only provides scaffolding readiness.
+
+See `docs/NUS1F_CONTROLLED_HIGH_AUTONOMY.md` for NUS 1F details.

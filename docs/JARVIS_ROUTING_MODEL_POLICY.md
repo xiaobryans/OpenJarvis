@@ -84,3 +84,33 @@ provider pools for specific safe task categories. That requires:
 - `docs/JARVIS_FUTURE_PROOF_ARCHITECTURE_PRINCIPLES.md`
 - `docs/JARVIS_95_PERCENT_AUTONOMY_TARGET.md`
 - Rule `10-api-token-and-model.mdc` — user always picks model in Cursor
+
+---
+
+## NUS 1F Update — Session-Aware Provider Pool Routing
+
+NUS 1F adds provider/model tier constraints to the routing policy:
+
+### Model tier constraints for action approval
+Cheap models cannot approve critical or strict-policy actions:
+
+| Action tier | Minimum model tier |
+|---|---|
+| `auto_allowed` | Any (including cheap) |
+| `auto_allowed_with_audit` | Any |
+| `dry_run_only` | standard_model |
+| `needs_approval` | standard_model |
+| `strict_policy_controlled` | premium_model |
+| `blocked` | No model — permanently blocked |
+
+### Session-bounded routing
+All model routing within a `HighAutonomySession` must respect:
+- `risk_ceiling` field — no model may route actions exceeding session risk ceiling
+- No new external provider keys
+- No secrets in routing metadata
+- Validation failure escalates — repeated failure stops and reports blocker
+
+### Future-proof routing
+Routing recommendations use metadata/contract fields, not hardcoded agent names. Future workers/managers pass capability metadata; the router evaluates transparently.
+
+See `docs/NUS1F_CONTROLLED_HIGH_AUTONOMY.md` for session framework and `src/openjarvis/nus/autonomy_action_policy.py` for model tier implementation.

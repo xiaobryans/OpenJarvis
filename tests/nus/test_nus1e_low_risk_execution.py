@@ -403,7 +403,7 @@ class TestCapabilityStatus1E:
         s = get_capabilities_summary()
         assert s["nus1d_status"] == "ready"
         assert s["nus1e_status"] == "ready"
-        assert s["nus1f_status"] == "not_started"
+        assert s["nus1f_status"] == "ready"
 
 
 # ---------------------------------------------------------------------------

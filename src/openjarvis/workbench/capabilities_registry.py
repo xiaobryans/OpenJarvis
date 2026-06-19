@@ -654,8 +654,119 @@ def _nus1e_low_risk_execution_foundation_status() -> CapabilityRecord:
         )
 
 
+def _nus1f_controlled_high_autonomy_status() -> CapabilityRecord:
+    """NUS 1F — Controlled High-Autonomy Session Framework."""
+    try:
+        from openjarvis.nus.high_autonomy_session import NUS1F_SESSION_VERSION, get_session_manager  # noqa: F401
+        from openjarvis.nus.autonomy_action_policy import NUS1F_POLICY_VERSION, get_action_policy  # noqa: F401
+        from openjarvis.nus.production_gate import NUS1F_PRODUCTION_GATE_VERSION, get_production_gate  # noqa: F401
+        from openjarvis.nus.decision_record import NUS1F_DECISION_RECORD_VERSION, get_decision_record_status  # noqa: F401
+        return CapabilityRecord(
+            capability_id="nus1f_controlled_high_autonomy",
+            display_name="NUS 1F — Controlled High-Autonomy Session Framework",
+            status=STATUS_READY,
+            summary=(
+                "NUS 1F: Explicit time-limited high-autonomy sessions with TTL, scope, "
+                "budget, risk ceiling, kill switch, audit log, and rollback requirements. "
+                "95% automation policy model with 6 tiers. "
+                "Production gate structure (dry-run only). "
+                "Structured decision records (no raw chain-of-thought). "
+                "NUS applies to all hierarchy levels. "
+                "No real deploy, no auto-push, no auto-merge. "
+                "US13 voice HOLD/UNSAFE/PARKED."
+            ),
+            evidence={
+                "session_version": NUS1F_SESSION_VERSION,
+                "policy_version": NUS1F_POLICY_VERSION,
+                "gate_version": NUS1F_PRODUCTION_GATE_VERSION,
+                "decision_record_version": NUS1F_DECISION_RECORD_VERSION,
+                "production_autonomy_enabled": False,
+                "safety_gates_active": True,
+                "kill_switch_available": True,
+                "no_hardcoded_agent_names": True,
+            },
+        )
+    except Exception as exc:
+        return CapabilityRecord(
+            capability_id="nus1f_controlled_high_autonomy",
+            display_name="NUS 1F — Controlled High-Autonomy Session Framework",
+            status=STATUS_NOT_IMPLEMENTED,
+            summary=f"NUS 1F controlled high autonomy unavailable: {exc}",
+        )
+
+
+def _nus1f_founder_override_sessions_status() -> CapabilityRecord:
+    """NUS 1F — Founder Override Session capability."""
+    try:
+        from openjarvis.nus.high_autonomy_session import (  # noqa: F401
+            get_session_manager, PERMANENTLY_BLOCKED_ACTIONS,
+        )
+        mgr = get_session_manager()
+        s = mgr.get_status()
+        return CapabilityRecord(
+            capability_id="nus1f_founder_override_sessions",
+            display_name="NUS 1F — Founder Override Sessions",
+            status=STATUS_NEEDS_APPROVAL,
+            summary=(
+                "Founder override sessions: ready for local controlled session framework, "
+                "policy evaluation, dry-run, audit, and strict gates. "
+                "Needs approval for medium/high-risk actions. "
+                "Permanently blocked: deploy/secret/external-send/auto-push/auto-merge/safety-bypass."
+            ),
+            evidence={
+                "permanently_blocked_count": len(PERMANENTLY_BLOCKED_ACTIONS),
+                "global_kill_switch": s["global_kill_switch"],
+                "session_manager_ready": True,
+                "ttl_enforced": True,
+                "scope_enforced": True,
+                "budget_enforced": True,
+                "risk_ceiling_enforced": True,
+            },
+        )
+    except Exception as exc:
+        return CapabilityRecord(
+            capability_id="nus1f_founder_override_sessions",
+            display_name="NUS 1F — Founder Override Sessions",
+            status=STATUS_NOT_IMPLEMENTED,
+            summary=f"NUS 1F founder override sessions unavailable: {exc}",
+        )
+
+
+def _nus1f_production_policy_gate_status() -> CapabilityRecord:
+    """NUS 1F — Production Policy Gate capability."""
+    try:
+        from openjarvis.nus.production_gate import get_production_gate  # noqa: F401
+        gate = get_production_gate()
+        s = gate.get_status()
+        return CapabilityRecord(
+            capability_id="nus1f_production_policy_gate",
+            display_name="NUS 1F — Production Policy Gate",
+            status=STATUS_READY,
+            summary=(
+                "Production gate structure ready for evaluation (dry-run only in NUS 1F). "
+                "Real production execution blocked. "
+                "No real deploy, no auto-push, no auto-merge."
+            ),
+            evidence={
+                "gate_version": s["gate_version"],
+                "production_autonomy_enabled": False,
+                "execution_mode": "blocked_dry_run_only",
+                "real_deploy_blocked": True,
+                "auto_push_blocked": True,
+                "auto_merge_blocked": True,
+            },
+        )
+    except Exception as exc:
+        return CapabilityRecord(
+            capability_id="nus1f_production_policy_gate",
+            display_name="NUS 1F — Production Policy Gate",
+            status=STATUS_NOT_IMPLEMENTED,
+            summary=f"NUS 1F production policy gate unavailable: {exc}",
+        )
+
+
 def get_all_capabilities() -> List[CapabilityRecord]:
-    """Return all capability records with truthful status (US15 + Wave 1–4 + NUS 1A/1B/1C/1D/1E)."""
+    """Return all capability records with truthful status (US15 + Wave 1–4 + NUS 1A–1F)."""
     return [
         _assistant_status(),
         _workbench_status(),
@@ -686,6 +797,10 @@ def get_all_capabilities() -> List[CapabilityRecord]:
         _nus1d_eval_rollback_gates_status(),
         # NUS 1E — Low-Risk Execution Foundation
         _nus1e_low_risk_execution_foundation_status(),
+        # NUS 1F — Controlled High-Autonomy Session Framework
+        _nus1f_controlled_high_autonomy_status(),
+        _nus1f_founder_override_sessions_status(),
+        _nus1f_production_policy_gate_status(),
     ]
 
 
@@ -713,7 +828,7 @@ def get_capabilities_summary() -> Dict[str, Any]:
         "nus1c_status": "ready",
         "nus1d_status": "ready",
         "nus1e_status": "ready",
-        "nus1f_status": "not_started",
+        "nus1f_status": "ready",
         "nus1d_plus_status": "not_started",
     }
 

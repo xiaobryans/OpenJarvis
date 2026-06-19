@@ -1,4 +1,4 @@
-"""NUS REST API routes — Learning Foundation (1A) + Recommendation Workflow (1B) + Safe Autopilot (1C).
+"""NUS REST API routes — Learning Foundation (1A) + Recommendation Workflow (1B) + Safe Autopilot (1C) + NUS 1F.
 
 NUS 1A Routes:
   GET /v1/nus/learning/status           — NUS 1A status + safety gates
@@ -27,11 +27,22 @@ NUS 1C Routes:
   GET  /v1/nus/routing/recommendations/status      — Learned routing recommendations status
   POST /v1/nus/routing/recommendations/dry-run     — Generate routing recommendation (dry-run)
 
+NUS 1F Routes:
+  GET  /v1/nus/high-autonomy/status                      — NUS 1F framework status
+  POST /v1/nus/high-autonomy/session/dry-run-create      — Create session (dry-run)
+  POST /v1/nus/high-autonomy/session/evaluate-dry-run    — Evaluate action in session (dry-run)
+  POST /v1/nus/high-autonomy/session/revoke-dry-run      — Revoke session (dry-run)
+  GET  /v1/nus/high-autonomy/policy/status               — 95% automation policy status
+  GET  /v1/nus/production-gate/status                    — Production gate status
+  POST /v1/nus/production-gate/evaluate-dry-run          — Evaluate production gate (dry-run)
+  POST /v1/nus/decision-records/dry-run                  — Create decision record (dry-run)
+
 Safety constraints (all routes):
   - Read-only or dry-run only.
   - No writes, deploys, external sends, or secret access.
   - No self-modification, no auto-commit, no auto-push, no auto-merge.
   - No source-code mutation by autopilot.
+  - Production execution blocked — dry-run only in NUS 1F.
   - US13 voice remains HOLD/UNSAFE/PARKED.
 """
 
@@ -724,4 +735,226 @@ async def nus_governance_future_proof_status() -> Dict[str, Any]:
         }
     except Exception as exc:
         logger.exception("NUS governance future-proof status error")
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+# ---------------------------------------------------------------------------
+# NUS 1F — Controlled High-Autonomy Session Framework routes
+# ---------------------------------------------------------------------------
+
+
+@router.get("/v1/nus/high-autonomy/status")
+async def nus_high_autonomy_status() -> Dict[str, Any]:
+    """Return NUS 1F controlled high-autonomy framework status."""
+    try:
+        from openjarvis.nus.high_autonomy_session import get_session_manager, NUS1F_SESSION_VERSION
+        from openjarvis.nus.autonomy_action_policy import get_action_policy
+        from openjarvis.nus.production_gate import get_production_gate
+        from openjarvis.nus.decision_record import get_decision_record_status
+
+        mgr = get_session_manager()
+        policy = get_action_policy()
+        gate = get_production_gate()
+        dr_status = get_decision_record_status()
+
+        return {
+            "status": "ok",
+            "nus1f_session_version": NUS1F_SESSION_VERSION,
+            "session_manager": mgr.get_status(),
+            "action_policy": policy.get_status(),
+            "production_gate": gate.get_status(),
+            "decision_record_schema": dr_status,
+            "production_autonomy_enabled": False,
+            "us13_voice_status": "HOLD/UNSAFE/PARKED",
+            "safety_gates_active": True,
+            "no_real_deploy": True,
+            "no_auto_push": True,
+            "no_auto_merge": True,
+        }
+    except Exception as exc:
+        logger.exception("NUS 1F high-autonomy status error")
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+class HighAutonomySessionDryRunRequest(BaseModel):
+    owner: str = "founder"
+    requested_profile: str = "safe_autopilot"
+    ttl_seconds: float = 3600.0
+    allowed_domains: list = []
+    allowed_action_types: list = []
+    blocked_action_types: list = []
+    allowed_repos_or_paths: list = []
+    cost_budget: float = 0.0
+    token_budget: int = 0
+    time_budget: float = 0.0
+    risk_ceiling: str = "low"
+    tool_policy: Dict[str, Any] = {}
+    validation_policy: Dict[str, Any] = {}
+    rollback_policy: Dict[str, Any] = {}
+    reason: str = ""
+
+
+@router.post("/v1/nus/high-autonomy/session/dry-run-create")
+async def nus_session_dry_run_create(req: HighAutonomySessionDryRunRequest) -> Dict[str, Any]:
+    """Dry-run create a high-autonomy session. No real execution."""
+    try:
+        from openjarvis.nus.high_autonomy_session import (
+            get_session_manager, SessionCreateRequest,
+        )
+        mgr = get_session_manager()
+        create_req = SessionCreateRequest(
+            owner=req.owner,
+            requested_profile=req.requested_profile,
+            ttl_seconds=req.ttl_seconds,
+            allowed_domains=req.allowed_domains,
+            allowed_action_types=req.allowed_action_types,
+            blocked_action_types=req.blocked_action_types,
+            allowed_repos_or_paths=req.allowed_repos_or_paths,
+            cost_budget=req.cost_budget,
+            token_budget=req.token_budget,
+            time_budget=req.time_budget,
+            risk_ceiling=req.risk_ceiling,
+            tool_policy=req.tool_policy,
+            validation_policy=req.validation_policy,
+            rollback_policy=req.rollback_policy,
+            reason=req.reason,
+        )
+        result = mgr.create_session(create_req)
+        return {"status": "ok", "dry_run": True, **result.to_dict()}
+    except Exception as exc:
+        logger.exception("NUS 1F session dry-run create error")
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+class SessionActionEvalRequest(BaseModel):
+    session_id: str
+    action_type: str = "local_read"
+
+
+@router.post("/v1/nus/high-autonomy/session/evaluate-dry-run")
+async def nus_session_evaluate_dry_run(req: SessionActionEvalRequest) -> Dict[str, Any]:
+    """Evaluate whether an action is allowed in a session. Dry-run only."""
+    try:
+        from openjarvis.nus.high_autonomy_session import get_session_manager
+        mgr = get_session_manager()
+        result = mgr.evaluate_action(req.session_id, req.action_type)
+        return {"status": "ok", "dry_run": True, **result}
+    except Exception as exc:
+        logger.exception("NUS 1F session evaluate error")
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+class SessionRevokeRequest(BaseModel):
+    session_id: str
+    reason: str = ""
+
+
+@router.post("/v1/nus/high-autonomy/session/revoke-dry-run")
+async def nus_session_revoke_dry_run(req: SessionRevokeRequest) -> Dict[str, Any]:
+    """Revoke a high-autonomy session. Dry-run only."""
+    try:
+        from openjarvis.nus.high_autonomy_session import get_session_manager
+        mgr = get_session_manager()
+        result = mgr.revoke_session(req.session_id, req.reason)
+        return {"status": "ok", "dry_run": True, **result.to_dict()}
+    except Exception as exc:
+        logger.exception("NUS 1F session revoke error")
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.get("/v1/nus/high-autonomy/policy/status")
+async def nus_high_autonomy_policy_status() -> Dict[str, Any]:
+    """Return 95% automation action policy status."""
+    try:
+        from openjarvis.nus.autonomy_action_policy import get_action_policy
+        policy = get_action_policy()
+        return {"status": "ok", **policy.get_status()}
+    except Exception as exc:
+        logger.exception("NUS 1F policy status error")
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.get("/v1/nus/production-gate/status")
+async def nus_production_gate_status() -> Dict[str, Any]:
+    """Return production gate status. Production execution blocked in NUS 1F."""
+    try:
+        from openjarvis.nus.production_gate import get_production_gate
+        gate = get_production_gate()
+        return {"status": "ok", **gate.get_status()}
+    except Exception as exc:
+        logger.exception("NUS 1F production gate status error")
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+class ProductionGateDryRunRequest(BaseModel):
+    owner: str = "founder"
+    action_type: str = "staging_deploy"
+    environment: str = "staging"
+    rollback_plan: Dict[str, Any] = {}
+    validation_plan: Dict[str, Any] = {}
+    audit_log_id: str = ""
+    risk_review: Dict[str, Any] = {}
+    cost_budget: float = 0.0
+    secret_leakage_checked: bool = False
+    kill_switch_available: bool = False
+    owner_authorization: str = ""
+    staging_preconditions: Dict[str, Any] = {}
+    reason: str = ""
+
+
+@router.post("/v1/nus/production-gate/evaluate-dry-run")
+async def nus_production_gate_evaluate_dry_run(req: ProductionGateDryRunRequest) -> Dict[str, Any]:
+    """Evaluate production gate dry-run. No real execution. Always blocked or dry-run in NUS 1F."""
+    try:
+        from openjarvis.nus.production_gate import get_production_gate, create_production_gate_request
+        gate = get_production_gate()
+        gate_req = create_production_gate_request(
+            owner=req.owner,
+            action_type=req.action_type,
+            environment=req.environment,
+            rollback_plan=req.rollback_plan,
+            validation_plan=req.validation_plan,
+            audit_log_id=req.audit_log_id,
+            risk_review=req.risk_review,
+            cost_budget=req.cost_budget,
+            secret_leakage_checked=req.secret_leakage_checked,
+            kill_switch_available=req.kill_switch_available,
+            owner_authorization=req.owner_authorization,
+            staging_preconditions=req.staging_preconditions,
+            reason=req.reason,
+        )
+        result = gate.evaluate(gate_req)
+        return {"status": "ok", "dry_run": True, **result.to_dict()}
+    except Exception as exc:
+        logger.exception("NUS 1F production gate evaluate error")
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+class DecisionRecordDryRunRequest(BaseModel):
+    action_type: str = "local_read"
+    decision: str = "allowed"
+    reason: str = "test"
+    evidence: Dict[str, Any] = {}
+    session_id: str = ""
+    hierarchy_level: str = "jarvis_pa"
+    risk_level: str = "low"
+
+
+@router.post("/v1/nus/decision-records/dry-run")
+async def nus_decision_record_dry_run(req: DecisionRecordDryRunRequest) -> Dict[str, Any]:
+    """Create a structured decision record (dry-run). No raw chain-of-thought stored."""
+    try:
+        from openjarvis.nus.decision_record import build_action_decision_record
+        dr = build_action_decision_record(
+            action_type=req.action_type,
+            decision=req.decision,
+            reason=req.reason,
+            evidence=req.evidence,
+            session_id=req.session_id,
+            hierarchy_level=req.hierarchy_level,
+            risk_level=req.risk_level,
+        )
+        return {"status": "ok", "dry_run": True, "decision_record": dr}
+    except Exception as exc:
+        logger.exception("NUS 1F decision record error")
         raise HTTPException(status_code=500, detail=str(exc))

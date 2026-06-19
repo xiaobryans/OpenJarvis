@@ -96,3 +96,30 @@ Violations result in action blocked at the autonomy policy layer.
 - `docs/POST_NUS_COMPANY_AGENT_ORCHESTRATOR_PLAN.md`
 - `src/openjarvis/nus/execution_classifier.py`
 - `src/openjarvis/nus/eval_gate.py`
+
+---
+
+## NUS 1F Update — Session-Level Contracts
+
+NUS 1F extends agent/worker contracts to include session scope boundaries:
+
+### Session contract fields (new in NUS 1F)
+When an agent/worker operates inside a `HighAutonomySession`, its contract is extended with:
+- `allowed_action_types` — scope whitelist (empty = no restriction beyond permanently blocked)
+- `blocked_action_types` — explicit scope blacklist
+- `allowed_repos_or_paths` — filesystem scope
+- `risk_ceiling` — max risk tier this agent/worker may operate at
+- `cost_budget`, `token_budget`, `time_budget` — resource ceilings
+- `audit_log_id` — mandatory audit log reference
+- `rollback_policy` — rollback contract
+
+### Metadata-driven classification
+The `AutonomyActionPolicy` classifies actions by `action_type` and `agent_metadata` — never by hardcoded agent names. Future agents/workers pass their capability metadata and are evaluated transparently.
+
+### Structured decision records
+All agent decisions must emit `StructuredDecisionRecord` objects with:
+- `hierarchy_level` indicating the emitting level
+- `agent_metadata` with capability/contract fields
+- `no_raw_chain_of_thought: True` always
+
+See `docs/NUS1F_CONTROLLED_HIGH_AUTONOMY.md` for full session framework specification.

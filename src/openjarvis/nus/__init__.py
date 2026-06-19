@@ -5,6 +5,8 @@ NUS 1B: Recommendation Workflow, Persistence, Telemetry, Autonomy Policy Scaffol
 NUS 1C: Persistent Queue, Safe Autopilot, Failure Learning, Learned Routing.
 NUS 1D: Eval Gates, Rollback Enforcement, Approval Workflow, Power Autopilot Boundary.
 NUS 1E: Low-Risk Execution Classifier, Auto-Commit Foundation, Production-Safe Gate.
+NUS 1F: Controlled High-Autonomy Session Framework, 95% Automation Policy,
+        Production Gate, Structured Decision Records.
 """
 from openjarvis.nus.learning_foundation import (
     AgentScorecard,
@@ -39,6 +41,61 @@ from openjarvis.nus.approval_workflow import ApprovalDecision, ApprovalWorkflow
 from openjarvis.nus.power_autopilot import PowerAutopilot, PowerAutopilotDecision
 from openjarvis.nus.execution_classifier import ClassificationResult, ExecutionClassifier
 from openjarvis.nus.low_risk_execution import AutoCommitCandidate, LowRiskExecutionManager
+from openjarvis.nus.high_autonomy_session import (
+    HighAutonomySession,
+    HighAutonomySessionManager,
+    SessionCreateRequest,
+    SessionEvaluation,
+    get_session_manager,
+    get_kill_switch_state,
+    activate_kill_switch,
+    deactivate_kill_switch,
+    PERMANENTLY_BLOCKED_ACTIONS,
+    NUS1F_SESSION_VERSION,
+    STATUS_DRAFT,
+    STATUS_ACTIVE,
+    STATUS_EXPIRED,
+    STATUS_REVOKED,
+    STATUS_BLOCKED,
+    STATUS_COMPLETED,
+)
+from openjarvis.nus.autonomy_action_policy import (
+    AutonomyActionPolicy,
+    ActionClassification,
+    get_action_policy,
+    TIER_AUTO_ALLOWED,
+    TIER_AUTO_ALLOWED_WITH_AUDIT,
+    TIER_DRY_RUN_ONLY,
+    TIER_NEEDS_APPROVAL,
+    TIER_STRICT_POLICY_CONTROLLED,
+    TIER_BLOCKED,
+    NUS1F_POLICY_VERSION,
+)
+from openjarvis.nus.production_gate import (
+    ProductionGate,
+    ProductionGateRequest,
+    ProductionGateEvaluation,
+    create_production_gate_request,
+    get_production_gate,
+    NUS1F_PRODUCTION_GATE_VERSION,
+    GATE_OUTCOME_DRY_RUN_ONLY,
+    GATE_OUTCOME_BLOCKED,
+)
+from openjarvis.nus.decision_record import (
+    StructuredDecisionRecord,
+    build_session_decision_record,
+    build_action_decision_record,
+    get_decision_record_status,
+    NUS1F_DECISION_RECORD_VERSION,
+    DECISION_ALLOWED,
+    DECISION_BLOCKED as DECISION_RECORD_BLOCKED,
+    LEVEL_JARVIS_PA,
+    LEVEL_COS_GM,
+    LEVEL_MANAGER,
+    LEVEL_WORKER,
+    LEVEL_VALIDATOR,
+    LEVEL_GOVERNANCE,
+)
 
 __all__ = [
     # NUS 1A
@@ -91,4 +148,52 @@ __all__ = [
     "ExecutionClassifier",
     "AutoCommitCandidate",
     "LowRiskExecutionManager",
+    # NUS 1F
+    "HighAutonomySession",
+    "HighAutonomySessionManager",
+    "SessionCreateRequest",
+    "SessionEvaluation",
+    "get_session_manager",
+    "get_kill_switch_state",
+    "activate_kill_switch",
+    "deactivate_kill_switch",
+    "PERMANENTLY_BLOCKED_ACTIONS",
+    "NUS1F_SESSION_VERSION",
+    "STATUS_DRAFT",
+    "STATUS_ACTIVE",
+    "STATUS_EXPIRED",
+    "STATUS_REVOKED",
+    "STATUS_BLOCKED",
+    "STATUS_COMPLETED",
+    "AutonomyActionPolicy",
+    "ActionClassification",
+    "get_action_policy",
+    "TIER_AUTO_ALLOWED",
+    "TIER_AUTO_ALLOWED_WITH_AUDIT",
+    "TIER_DRY_RUN_ONLY",
+    "TIER_NEEDS_APPROVAL",
+    "TIER_STRICT_POLICY_CONTROLLED",
+    "TIER_BLOCKED",
+    "NUS1F_POLICY_VERSION",
+    "ProductionGate",
+    "ProductionGateRequest",
+    "ProductionGateEvaluation",
+    "create_production_gate_request",
+    "get_production_gate",
+    "NUS1F_PRODUCTION_GATE_VERSION",
+    "GATE_OUTCOME_DRY_RUN_ONLY",
+    "GATE_OUTCOME_BLOCKED",
+    "StructuredDecisionRecord",
+    "build_session_decision_record",
+    "build_action_decision_record",
+    "get_decision_record_status",
+    "NUS1F_DECISION_RECORD_VERSION",
+    "DECISION_ALLOWED",
+    "DECISION_RECORD_BLOCKED",
+    "LEVEL_JARVIS_PA",
+    "LEVEL_COS_GM",
+    "LEVEL_MANAGER",
+    "LEVEL_WORKER",
+    "LEVEL_VALIDATOR",
+    "LEVEL_GOVERNANCE",
 ]
