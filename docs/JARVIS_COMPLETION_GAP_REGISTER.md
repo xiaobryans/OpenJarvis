@@ -778,3 +778,49 @@ No item is left as plain "future scope."
 | Voice sprint reopen | VAD, endpointing, STT/TTS provider, silence rejection, approval UI | `OPTIONAL_BACKLOG` | Only when Bryan explicitly authorizes |
 
 **After Cloud Memory sprint:** Update burn-in certification status; reassess Cursor/Windsurf full replacement verdict.
+
+---
+
+## Sprint: Cloud Memory / Obsidian / Cache / Slack-Telegram Ops / Agent Roster
+
+**Date:** 2026-06-19
+**Branch:** localhost-get-tool
+**Base HEAD:** 19bcf3b2
+
+### New Components Delivered
+
+| Component | File | Score | Status | Verdict |
+|-----------|------|-------|--------|---------|
+| Cloud Memory Architecture | `src/openjarvis/memory/cloud_memory.py` | 4/5 | `DAILY_DRIVER_ACCEPT` | Local SQLite operational; S3/Supabase BLOCKED_CREDENTIALS |
+| Obsidian Knowledge Mirror | `src/openjarvis/knowledge/obsidian_mirror.py` | 4/5 | `DAILY_DRIVER_ACCEPT` | Markdown vault, frontmatter, redaction, idempotency — no Obsidian app required |
+| Prompt/Context Cache | `src/openjarvis/prompt/context_cache.py` | 4/5 | `DAILY_DRIVER_ACCEPT` | Stable-block ordering, hash registry, invalidation rules, telemetry, provider matrix |
+| Slack Ops Command Center | `src/openjarvis/channels/slack_ops.py` | 4/5 | `DAILY_DRIVER_ACCEPT` | Policy, allowlist, rate limits, audit, cleanup plan, workspace deletion guardrail |
+| Telegram Ops | `src/openjarvis/channels/telegram_ops.py` | 4/5 | `DAILY_DRIVER_ACCEPT` | Policy, rate limits, audit, BLOCKED_USER_AUTHORIZATION until TELEGRAM_BRYAN_CHAT_ID set |
+| Agent Roster / Persona Registry | `src/openjarvis/agents/roster.py` | 4/5 | `DAILY_DRIVER_ACCEPT` | Registry-driven, 9 real bots, 4 virtual workers, escalation Worker→Manager→GM→COS→Bryan |
+| Bryan-Action Blocker Ledger | `docs/JARVIS_BLOCKER_LEDGER.md` | 4/5 | `DAILY_DRIVER_ACCEPT` | 18 items, complete with owner/priority/clearing steps |
+
+### Smoke Test Results
+
+| Surface | Status | Reason |
+|---------|--------|--------|
+| Slack smoke test (#jarvis-ops) | `BLOCKED_CREDENTIALS` | SLACK_BOT_TOKEN not set in shell env. OPENCLAW_SLACK_BOT_TOKEN found in .env but not mapped to SLACK_BOT_TOKEN. Bryan action required. |
+| Telegram smoke test | `BLOCKED_USER_AUTHORIZATION` | TELEGRAM_BOT_TOKEN and TELEGRAM_BRYAN_CHAT_ID not set. See clearing steps in blocker ledger item 8. |
+
+### Verdicts
+
+| Area | Verdict |
+|------|---------|
+| Jarvis text/coding/platform foundation | `DAILY_DRIVER_ACCEPT` |
+| Cloud memory architecture | `DAILY_DRIVER_ACCEPT` (local SQLite operational; cloud `BLOCKED_CREDENTIALS`) |
+| Obsidian knowledge mirror | `DAILY_DRIVER_ACCEPT` |
+| Prompt/context cache | `DAILY_DRIVER_ACCEPT` |
+| Slack ops command center | `DAILY_DRIVER_ACCEPT` (policy + guardrails verified; live sends `BLOCKED_CREDENTIALS`) |
+| Telegram ops | `DAILY_DRIVER_ACCEPT` (policy + guardrails verified; live sends `BLOCKED_USER_AUTHORIZATION`) |
+| Dynamic agent roster | `DAILY_DRIVER_ACCEPT` |
+| Cursor/Windsurf replacement | `JARVIS_PRIMARY_CURSOR_FALLBACK` — burn-in not complete |
+| External AI apps replacement | `JARVIS_PRIMARY_EXTERNAL_APPS_FALLBACK` — burn-in not complete |
+| Voice | `VOICE_HOLD_UNSAFE_PARKED` / `OPTIONAL_BACKLOG` |
+
+### Tests
+
+96 tests added and passing. All new modules covered.
