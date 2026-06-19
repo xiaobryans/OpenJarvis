@@ -1,8 +1,8 @@
 # Jarvis Completion Gap Register — 4/5 Completion Matrix
 
 **Last updated:** 2026-06-19
-**Sprint:** Core Daily-Driver Runtime Mega Sprint (Prompt 1)
-**Base HEAD:** eabe316c | **Sprint HEAD:** (post-sprint)
+**Sprint:** Private Daily-Driver Hardening Mega Sprint (Prompt 2)
+**Base HEAD:** c98d88d1 | **Sprint HEAD:** (uncommitted — Prompt 2)
 **Branch:** localhost-get-tool
 
 ---
@@ -13,16 +13,19 @@ This register is the authoritative 4/5 Completion Matrix for Jarvis as a
 universal private AI operating system. No vague future scope. Every item
 is classified with current score, target score, blocker, and acceptance criteria.
 
-**Score scale:**
+**Score scale (0–5 only):**
 - 0 = Not started / missing entirely
 - 1 = Stub/placeholder only
 - 2 = Partial — key path exists but incomplete
 - 3 = Functional for happy path; adversarial/edge cases missing
-- 4 = Daily-driver ready: works for Bryan in normal use
-- 5 = Public/hostile-grade: adversarial inputs handled, full test coverage, no silent failures
+- 4 = Daily-driver ready (`DAILY_DRIVER_ACCEPT` minimum)
+- 5 = Public/hostile-grade (`PUBLIC_READY_ACCEPT`)
 
-**Minimum target:** 4/5 (daily-driver ready) for all required items.
+**Minimum target:** current_score ≥ **4/5** (`DAILY_DRIVER_ACCEPT`) for all required items.
 **5/5 required** where public/hostile-ready applies (security, governance, NUS gates).
+
+Matrix columns use **Score** = current_score (0–5) and **Target** = target_score (0–5).
+Scorecard uses explicit **current_score/target_score** notation (e.g. 3/5 → 4/5).
 
 ---
 
@@ -321,28 +324,199 @@ The sprint prompt listed 11 items to check. Status:
 
 ---
 
-## Summary Table
+## Prompt 2 — Private Daily-Driver Hardening Items (NEW)
 
-| Category | Items | ACCEPT | PLANNED | BLOCKED_IMPL | BLOCKED_CREDS | BLOCKED_PROVIDER | BLOCKED_SAFETY | BLOCKED_AUTH | OPTIONAL |
-|----------|-------|--------|---------|--------------|--------------|-----------------|----------------|--------------|---------|
-| Universal Front Door | 7 | 7 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| COS/GM Runtime | 8 | 7 | 1 | 0 | 0 | 0 | 0 | 0 | 0 |
-| Activation Planner + NUS | 8 | 7 | 1 | 0 | 0 | 0 | 0 | 0 | 0 |
-| Worker Adapters | 9 | 7 | 1 | 0 | 0 | 1 | 0 | 0 | 0 |
-| OMNIX Universalization | 8 | 8 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| ProjectRegistry/Multi-Project | 3 | 1 | 2 | 2 | 0 | 0 | 0 | 0 | 0 |
-| connector_auth_manager | 4 | 1 | 1 | 2 | 1 | 0 | 1 | 0 | 0 |
-| release_packaging_manager | 4 | 1 | 0 | 0 | 1 | 0 | 0 | 2 | 0 |
-| Provider/Model Sufficiency | 7 | 2 | 2 | 2 | 0 | 3 | 0 | 0 | 0 |
-| US13 Voice | 11 | 1 | 0 | 8 | 0 | 2 | 1 | 0 | 0 |
-| Doctor/Readiness | 7 | 7 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| Documentation | 7 | 5 | 2 | 1 | 0 | 0 | 0 | 0 | 0 |
-| NUS Full Stack | 5 | 5 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| Governance & Safety | 5 | 5 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| Execution Capability Registry (NEW) | 8 | 7 | 0 | 0 | 0 | 1 | 0 | 0 | 0 |
-| Runtime Trace / Observability (NEW) | 15 | 13 | 1 | 1 | 0 | 0 | 0 | 0 | 0 |
-| Adversarial / Injection Suite (NEW) | 5 | 4 | 1 | 0 | 0 | 0 | 0 | 0 | 0 |
-| **TOTAL** | **121** | **88** | **12** | **8** | **2** | **7** | **2** | **2** | **0** |
+### 18. Provider Readiness and Blocker Dashboard
+
+| Item | Classification | Score | Target | Status | Assigned Prompt | Blocker | Bryan Action | Acceptance Criteria |
+|------|---------------|-------|--------|--------|-----------------|---------|--------------|---------------------|
+| `get_provider_readiness()` | NEW | 4 | 4 | `DAILY_DRIVER_ACCEPT` | Prompt 2 | — | — | Returns structured report; no key values; 3 providers checked; doctor-visible |
+| LLM-in-loop orchestration (OpenAI) | NEW | 2 | 4 | `BLOCKED_PROVIDER` | Prompt 2 | `OPENAI_API_KEY` missing | Set `OPENAI_API_KEY` in `~/.jarvis/cloud-keys.env` | Real LLM call succeeds; validated output |
+| LLM-in-loop orchestration (Anthropic) | NEW | 2 | 4 | `BLOCKED_PROVIDER` | Prompt 2 | `ANTHROPIC_API_KEY` missing | Set `ANTHROPIC_API_KEY` in `~/.jarvis/cloud-keys.env` | Real LLM call succeeds |
+| LLM-in-loop orchestration (OpenRouter) | NEW | 2 | 4 | `BLOCKED_PROVIDER` | Prompt 2 | `OPENROUTER_API_KEY` missing | Set `OPENROUTER_API_KEY` in `~/.jarvis/cloud-keys.env` | Multi-model routing works |
+| `coding_patch_propose` (real LLM) | NEW | 1 | 4 | `BLOCKED_PROVIDER` | Prompt 2 | Any LLM key missing | Set any LLM key | Produces real patch; validated by tests |
+| `check_provider_readiness` doctor | NEW | 4 | 4 | `DAILY_DRIVER_ACCEPT` | Prompt 2 | — | — | PASS when key present; WARN when missing; never FAIL without error |
+
+---
+
+### 19. Trace Persistence
+
+| Item | Classification | Score | Target | Status | Assigned Prompt | Blocker | Bryan Action | Acceptance Criteria |
+|------|---------------|-------|--------|--------|-----------------|---------|--------------|---------------------|
+| Disk trace writes (`~/.jarvis/traces/`) | NEW | 4 | 4 | `DAILY_DRIVER_ACCEPT` | Prompt 2 | — | — | Traces written as JSONL; readable after restart |
+| `load_trace_from_disk(trace_id)` | NEW | 4 | 4 | `DAILY_DRIVER_ACCEPT` | Prompt 2 | — | — | Cross-restart trace retrieval works |
+| Bounded retention (_MAX_TRACE_FILES=500) | NEW | 4 | 4 | `DAILY_DRIVER_ACCEPT` | Prompt 2 | — | — | Old files pruned when over limit |
+| Graceful disk-unavailable degradation | NEW | 4 | 4 | `DAILY_DRIVER_ACCEPT` | Prompt 2 | — | — | Disk failure → in-memory only; no crash |
+| `check_trace_persistence` doctor | NEW | 4 | 4 | `DAILY_DRIVER_ACCEPT` | Prompt 2 | — | — | Probe write + status visible in doctor |
+| Front-door auto-persist on completion | NEW | 4 | 4 | `DAILY_DRIVER_ACCEPT` | Prompt 2 | — | — | Every completed request has trace on disk |
+
+---
+
+### 20. ProjectRegistry Persistence
+
+| Item | Classification | Score | Target | Status | Assigned Prompt | Blocker | Bryan Action | Acceptance Criteria |
+|------|---------------|-------|--------|--------|-----------------|---------|--------------|---------------------|
+| `persist_registry()` to JSON | NEW | 4 | 4 | `DAILY_DRIVER_ACCEPT` | Prompt 2 | — | — | Registry survives restart; all projects reloaded |
+| `load_registry()` from JSON | NEW | 4 | 4 | `DAILY_DRIVER_ACCEPT` | Prompt 2 | — | — | OMNIX and OpenJarvis always present after load |
+| OpenJarvis project auto-registration | NEW | 4 | 4 | `DAILY_DRIVER_ACCEPT` | Prompt 2 | — | — | `openjarvis` project registered alongside OMNIX |
+| Atomic write (tmp + rename) | NEW | 4 | 4 | `DAILY_DRIVER_ACCEPT` | Prompt 2 | — | — | No corrupt file on crash mid-write |
+| Personal/no-project tasks unaffected | NEW | 4 | 4 | `DAILY_DRIVER_ACCEPT` | Prompt 2 | — | — | Works without any persisted project |
+| `check_project_registry_persistence` doctor | NEW | 4 | 4 | `DAILY_DRIVER_ACCEPT` | Prompt 2 | — | — | PASS when OMNIX+OpenJarvis present |
+
+---
+
+### 21. Runtime Recovery
+
+| Item | Classification | Score | Target | Status | Assigned Prompt | Blocker | Bryan Action | Acceptance Criteria |
+|------|---------------|-------|--------|--------|-----------------|---------|--------------|---------------------|
+| `RuntimeStatusRecord` with no raw CoT | NEW | 4 | 4 | `DAILY_DRIVER_ACCEPT` | Prompt 2 | — | — | Snapshot recorded; `no_raw_chain_of_thought=True` |
+| `FailedTaskRecord` (no raw CoT) | NEW | 4 | 4 | `DAILY_DRIVER_ACCEPT` | Prompt 2 | — | — | Failed tasks recorded with blocker type + safe resume |
+| Disk persistence (`runtime_recovery.json`) | NEW | 4 | 4 | `DAILY_DRIVER_ACCEPT` | Prompt 2 | — | — | Survives restart; unresolved failures visible |
+| No automatic dangerous resume | NEW | 4 | 4 | `DAILY_DRIVER_ACCEPT` | Prompt 2 | — | — | `safe_resume_guidance` only; no auto-re-run |
+| `check_runtime_recovery` doctor | NEW | 4 | 4 | `DAILY_DRIVER_ACCEPT` | Prompt 2 | — | — | Unresolved failure count visible in doctor |
+
+---
+
+### 22. Connector Dry-Run Framework
+
+| Item | Classification | Score | Target | Status | Assigned Prompt | Blocker | Bryan Action | Acceptance Criteria |
+|------|---------------|-------|--------|--------|-----------------|---------|--------------|---------------------|
+| Gmail dry-run capability | NEW | 4 | 4 | `DAILY_DRIVER_ACCEPT` | Prompt 2 | — | — | `plan_connector_action("gmail", ...)` returns plan; no live call |
+| Calendar dry-run capability | NEW | 4 | 4 | `DAILY_DRIVER_ACCEPT` | Prompt 2 | — | — | Same as Gmail |
+| Slack dry-run (safety-blocked sends) | NEW | 4 | 5 | `DAILY_DRIVER_ACCEPT` | Prompt 2 | `BLOCKED_SAFETY` (live sends) | Per-message authorization | Dry-run plan produced; live sends permanently blocked without auth |
+| Telegram dry-run (safety-blocked sends) | NEW | 4 | 5 | `DAILY_DRIVER_ACCEPT` | Prompt 2 | `BLOCKED_SAFETY` (live sends) | Per-message authorization | Same as Slack |
+| GitHub dry-run capability | NEW | 4 | 4 | `DAILY_DRIVER_ACCEPT` | Prompt 2 | — | — | PR/issue plans producible without live call |
+| Drive dry-run capability | NEW | 4 | 4 | `DAILY_DRIVER_ACCEPT` | Prompt 2 | — | — | File listing plans producible |
+| `check_connector_dryrun_framework` doctor | NEW | 4 | 4 | `DAILY_DRIVER_ACCEPT` | Prompt 2 | — | — | 6 connectors registered; PASS in doctor |
+
+---
+
+### 23. Connector Auth Manager Classification
+
+| Item | Classification | Score | Target | Status | Assigned Prompt | Blocker | Bryan Action | Acceptance Criteria |
+|------|---------------|-------|--------|--------|-----------------|---------|--------------|---------------------|
+| BLOCKED_IMPLEMENTATION (no workers) | CLASSIFIED | 4 | 4 | `DAILY_DRIVER_ACCEPT` | Prompt 2 | `BLOCKED_IMPLEMENTATION` | Code change required | Explicitly classified; not combined with other blockers |
+| BLOCKED_CREDENTIALS (no tokens) | CLASSIFIED | 4 | 4 | `DAILY_DRIVER_ACCEPT` | Prompt 2 | `BLOCKED_CREDENTIALS` | Set tokens in `cloud-keys.env` | Explicitly classified |
+| BLOCKED_SAFETY (live secret access) | CLASSIFIED | 4 | 5 | `DAILY_DRIVER_ACCEPT` | Prompt 2 | `BLOCKED_SAFETY` (permanent) | None — intentional | Classified as permanent; no bypass |
+| BLOCKED_USER_AUTHORIZATION (per-connector) | CLASSIFIED | 4 | 4 | `DAILY_DRIVER_ACCEPT` | Prompt 2 | `BLOCKED_USER_AUTHORIZATION` | `jarvis connect <connector>` | Classified; unblockable after impl+creds |
+
+---
+
+### 24. Memory Quality Matrix
+
+| Item | Classification | Score | Target | Status | Assigned Prompt | Blocker | Bryan Action | Acceptance Criteria |
+|------|---------------|-------|--------|--------|-----------------|---------|--------------|---------------------|
+| `MemoryQualityMatrix.assess()` | NEW | 4 | 4 | `DAILY_DRIVER_ACCEPT` | Prompt 2 | — | — | Stale/no-provenance/low-confidence entries flagged; quality score computed |
+| `StaleConflictDetector` | NEW | 4 | 4 | `DAILY_DRIVER_ACCEPT` | Prompt 2 | — | — | Stale entries + prefix-based conflicts detected |
+| `insufficient_evidence()` response | NEW | 4 | 5 | `DAILY_DRIVER_ACCEPT` | Prompt 2 | — | — | Structured response; never auto-fills missing data |
+| Semantic deduplication | NEW | 1 | 4 | `BLOCKED_PROVIDER` | Prompt 3 | Embedding model required | Set LLM key | Prefix-only for now; semantic requires embedding |
+| `check_memory_quality_matrix` doctor | NEW | 4 | 4 | `DAILY_DRIVER_ACCEPT` | Prompt 2 | — | — | Entry count, stale count, conflict count visible |
+
+---
+
+### 25. Human Correction Ingestion
+
+| Item | Classification | Score | Target | Status | Assigned Prompt | Blocker | Bryan Action | Acceptance Criteria |
+|------|---------------|-------|--------|--------|-----------------|---------|--------------|---------------------|
+| `CorrectionRecord` schema | NEW | 4 | 4 | `DAILY_DRIVER_ACCEPT` | Prompt 2 | — | — | 6 categories; provenance required; no raw CoT |
+| JSONL append-only disk persistence | NEW | 4 | 4 | `DAILY_DRIVER_ACCEPT` | Prompt 2 | — | — | Corrections survive restart |
+| NUS hook (best-effort) | NEW | 3 | 4 | `PLANNED_IN_EXISTING_PROMPT` | Prompt 3 | NUS `LearningStore` API TBD | — | Hook writes to NUS; confirmed with integration test |
+| `check_human_correction_store` doctor | NEW | 4 | 4 | `DAILY_DRIVER_ACCEPT` | Prompt 2 | — | — | Count and pending visible in doctor |
+
+---
+
+### 26. Cursor/Windsurf Replacement Evidence
+
+| Item | Evidence Status | Score | Blocker | Notes |
+|------|----------------|-------|---------|-------|
+| Jarvis-only bug fix | NO EVIDENCE | 1 | `BLOCKED_PROVIDER` | Requires real LLM key for code generation |
+| Jarvis-only medium feature | NO EVIDENCE | 1 | `BLOCKED_PROVIDER` | Same |
+| Failed-test repair | PARTIAL | 2 | `BLOCKED_PROVIDER` | `CodingSafeWorkerAdapter._run_tests()` can detect failures; LLM fix blocked |
+| Multi-file change | NO EVIDENCE | 1 | `BLOCKED_PROVIDER` | `FileInspectionWorkerAdapter` + planning only |
+| Rollback proof | PARTIAL | 2 | — | `_rollback_plan()` produces `git restore` plan; requires Bryan auth |
+| Validation proof | PARTIAL | 4 | — | Full test suites run via worker; doctor validation proven; status=`DAILY_DRIVER_ACCEPT` for validation path |
+| Model/provider sufficiency proof | PARTIAL | 4 | — | `ExecutionCapabilityRegistry` + `provider_readiness` prove exact blockers; status=`DAILY_DRIVER_ACCEPT` for sufficiency reporting |
+| **Overall verdict** | **HOLD** | 1/5 | `BLOCKED_PROVIDER` | Set any LLM key to start collecting real evidence; target=4/5 |
+
+---
+
+### 27. Memory Storage Backend (Rust Extension)
+
+Pre-existing test failure — classified in blocker ledger (not a Prompt 2 regression).
+
+| Item | Classification | current_score | target_score | Status | Assigned Prompt | Blocker | Bryan Action | Blocks Prompt 2 memory 4/5? | Acceptance Criteria |
+|------|---------------|---------------|--------------|--------|-----------------|---------|--------------|----------------------------|---------------------|
+| `openjarvis_rust` native extension | EXISTING (not built) | 1 | 4 | `BLOCKED_IMPLEMENTATION` | Memory/Storage Sprint | Native extension not compiled into `.venv`; `ModuleNotFoundError: No module named 'openjarvis_rust'` | Optional — only if advanced storage backend needed: `uv run maturin develop -m rust/crates/openjarvis-python/Cargo.toml` (requires rustc ≥ 1.88) | **No** — does not block Prompt 2 `JarvisMemory` quality matrix (uses `memory/store.py` SQLite path; doctor check passes) | Extension import succeeds; `RUST_AVAILABLE=True` |
+| `tests/memory/test_storage_suite.py` | EXISTING | 1 | 4 | `BLOCKED_IMPLEMENTATION` | Memory/Storage Sprint | 11 tests fail when `openjarvis_rust` missing; affects `tools/storage/sqlite.py` and hybrid backend only | Same as above — build step, not a product credential | **No** for Prompt 2 daily-driver memory quality path; **Yes** for advanced storage backend 4/5 | Full storage suite passes after extension built |
+| Rust toolchain (rustc ≥ 1.88) | ENV | 0 | 4 | `BLOCKED_HARDWARE` | Memory/Storage Sprint | Maturin build requires rustc ≥ 1.88 if extension not pre-built | Install/update Rust toolchain if build attempted | Only if attempting maturin build | `rustc --version` ≥ 1.88; maturin develop succeeds |
+
+**Summary:** Prompt 2 memory readiness (`MemoryQualityMatrix`, `StaleConflictDetector`, `JarvisMemory` at `~/.jarvis/memory.db`) is **not blocked** by this failure. The failing suite covers an optional/advanced native storage backend. Classification: `BLOCKED_IMPLEMENTATION` (extension not built). Bryan action: **not required** for Prompt 2 daily-driver memory path; optional build step if advanced storage is needed.
+
+---
+
+## Status Count Table
+
+Counts below use the **Status** column only. No plain "ACCEPT" — split into `DAILY_DRIVER_ACCEPT` (current_score ≥ 4/5) and `PUBLIC_READY_ACCEPT` (current_score = 5/5).
+
+| Category | Items | DAILY_DRIVER_ACCEPT | PUBLIC_READY_ACCEPT | PLANNED_IN_EXISTING_PROMPT | BLOCKED_PROVIDER | BLOCKED_IMPLEMENTATION | BLOCKED_CREDENTIALS | BLOCKED_SAFETY | BLOCKED_USER_AUTHORIZATION | BLOCKED_HARDWARE | OPTIONAL_BACKLOG |
+|----------|-------|---------------------|---------------------|----------------------------|------------------|------------------------|---------------------|----------------|----------------------------|------------------|------------------|
+| Universal Front Door | 7 | 5 | 1 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| COS/GM Runtime | 8 | 4 | 2 | 2 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Activation Planner + NUS | 8 | 4 | 3 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Worker Adapters | 9 | 6 | 1 | 2 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| OMNIX Universalization | 8 | 2 | 6 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| ProjectRegistry/Multi-Project | 3 | 0 | 1 | 2 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| connector_auth_manager | 4 | 0 | 0 | 2 | 0 | 0 | 1 | 1 | 0 | 0 | 0 |
+| release_packaging_manager | 3 | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 2 | 0 | 0 |
+| Provider/Model Sufficiency | 7 | 1 | 1 | 2 | 3 | 0 | 0 | 0 | 0 | 0 | 0 |
+| US13 Voice | 11 | 0 | 0 | 0 | 2 | 8 | 0 | 1 | 0 | 0 | 0 |
+| Doctor/Readiness | 7 | 6 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Documentation | 7 | 4 | 0 | 3 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| NUS Full Stack | 5 | 2 | 3 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Governance & Safety | 5 | 1 | 4 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Execution Capability Registry | 8 | 6 | 2 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Runtime Trace / Observability | 15 | 13 | 1 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Adversarial / Injection Suite | 5 | 0 | 3 | 2 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Provider Readiness Dashboard (P2) | 6 | 2 | 0 | 0 | 4 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Trace Persistence (P2) | 6 | 6 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| ProjectRegistry Persistence (P2) | 6 | 6 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Runtime Recovery (P2) | 5 | 5 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Connector Dry-Run Framework (P2) | 7 | 7 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Connector Auth Manager Classification (P2) | 4 | 4 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Memory Quality Matrix (P2) | 5 | 4 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Human Correction Ingestion (P2) | 4 | 3 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Cursor/Windsurf Replacement Evidence (P2) | 5 | 0 | 0 | 0 | 5 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Memory Storage Backend (Rust) (P2 ledger) | 3 | 0 | 0 | 0 | 0 | 2 | 0 | 0 | 0 | 1 | 0 |
+| **TOTAL** | **171** | **91** | **28** | **20** | **15** | **10** | **2** | **2** | **2** | **1** | **0** |
+
+---
+
+## Private Daily-Driver Scorecard (Prompt 2)
+
+**Score scale:** 0–5 only. Daily-driver minimum = **4/5**. Public/hostile-ready = **5/5**.
+
+*A category reaches DAILY_DRIVER_ACCEPT only if current_score ≥ 4/5 and integrated, tested, and observable per register criteria.*
+
+| Category | current_score | target_score | Status | Blocker | Next Action |
+|----------|---------------|--------------|--------|---------|-------------|
+| AI assistant replacement | 3/5 | 4/5 | `BLOCKED_PROVIDER` | No LLM keys — natural language understanding limited | Set OPENAI_API_KEY or ANTHROPIC_API_KEY |
+| Coding agent | 2/5 | 4/5 | `BLOCKED_PROVIDER` | `coding_patch_propose` + `coding_repair_loop` blocked without LLM key | Set any LLM key |
+| Project/task routing | 4/5 | 4/5 | `DAILY_DRIVER_ACCEPT` | — | Front door → COS/GM → worker dispatch proven; universal not OMNIX-only |
+| Memory/context continuity | 3/5 | 4/5 | `PLANNED_IN_EXISTING_PROMPT` | Quality matrix + stale detection added; NUS hook partial; no cross-session semantic recall | Prompt 3: semantic embeddings |
+| Tool/connector execution | 3/5 | 4/5 | `BLOCKED_CREDENTIALS` | Connectors registered + dry-run planning ready; live execution blocked until credentials + auth | Configure connector credentials |
+| Model/provider routing | 3/5 | 4/5 | `BLOCKED_PROVIDER` | Registry + readiness dashboard built; no real model routing until any LLM key set | Set any LLM key |
+| Cost/provider fallback | 3/5 | 4/5 | `BLOCKED_PROVIDER` | Fallback logic designed; cannot execute without provider key | Set any LLM key |
+| Safety/approvals | 5/5 | 5/5 | `PUBLIC_READY_ACCEPT` | Hard gates enforced; adversarial tests pass; no raw CoT; BLOCKED_SAFETY correct | None — fully hardened |
+| Observability/debugging | 4/5 | 4/5 | `DAILY_DRIVER_ACCEPT` | Trace persistence + doctor checks + replay by trace_id all working | Add metric aggregation in Prompt 3 |
+| Reliability/recovery | 4/5 | 4/5 | `DAILY_DRIVER_ACCEPT` | RuntimeRecoveryStore + ProjectRegistry persistence + restart recovery | Prompt 3: auto-heal integration |
+| Cursor/Windsurf replacement | 1/5 | 4/5 | `BLOCKED_PROVIDER` | Evidence collection HOLD — all real coding evidence blocked by missing LLM key | Set any LLM key, then collect evidence |
+| Single AI platform replacement | 1/5 | 4/5 | `BLOCKED_PROVIDER` | Not claimable without real LLM + connector execution + proven coding agent | Set LLM key; authorize connectors; collect evidence |
+
+**Scorecard summary:** 3 of 12 categories at `DAILY_DRIVER_ACCEPT` (current_score ≥ 4/5); 1 at `PUBLIC_READY_ACCEPT` (5/5); 8 below daily-driver minimum (4/5).
+
+**Verdict: NOT DAILY_DRIVER_ACCEPT** — overall private daily-driver platform not at 4/5 minimum.
+Primary blocker: `BLOCKED_PROVIDER` for all LLM-dependent capabilities.
+Bryan action: Set any LLM key (`OPENAI_API_KEY` or `ANTHROPIC_API_KEY`) in `~/.jarvis/cloud-keys.env`.
 
 ---
 

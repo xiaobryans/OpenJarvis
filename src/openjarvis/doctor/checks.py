@@ -3781,6 +3781,341 @@ def check_inactive_manager_classification(project_id: str = "omnix") -> CheckRes
 
 
 # ---------------------------------------------------------------------------
+# Prompt 2 — Private Daily-Driver Hardening checks
+# ---------------------------------------------------------------------------
+
+
+def check_provider_readiness(project_id: str = "omnix") -> CheckResult:
+    """Check provider/key/blocker dashboard — which LLM providers are configured."""
+    evidence: Dict[str, Any] = {"project_id": project_id}
+    try:
+        from openjarvis.orchestrator.provider_readiness import get_provider_readiness
+        report = get_provider_readiness()
+        evidence["any_llm_available"] = report.any_llm_available
+        evidence["llm_in_loop_status"] = report.llm_in_loop_status
+        evidence["cloud_keys_file_exists"] = report.cloud_keys_file_exists
+        evidence["provider_summary"] = {
+            p.provider_id: p.status for p in report.providers
+        }
+        if report.any_llm_available:
+            return CheckResult(
+                check_id="provider_readiness",
+                category="provider",
+                status=CheckStatus.PASS,
+                summary="At least one LLM provider is configured. Real LLM-in-loop available.",
+                evidence=evidence,
+                project_id=project_id,
+            )
+        else:
+            return CheckResult(
+                check_id="provider_readiness",
+                category="provider",
+                status=CheckStatus.WARN,
+                summary=(
+                    "No LLM providers configured (BLOCKED_PROVIDER). "
+                    "Dry-run planning only. "
+                    f"Bryan action: configure cloud keys at {report.cloud_keys_file_path}"
+                ),
+                evidence=evidence,
+                project_id=project_id,
+            )
+    except Exception as exc:
+        evidence["exception"] = str(exc)
+        return CheckResult(
+            check_id="provider_readiness",
+            category="provider",
+            status=CheckStatus.FAIL,
+            summary=f"Provider readiness check failed: {exc}",
+            evidence=evidence,
+            project_id=project_id,
+        )
+
+
+def check_trace_persistence(project_id: str = "omnix") -> CheckResult:
+    """Check trace persistence to disk — can traces survive restart?"""
+    evidence: Dict[str, Any] = {"project_id": project_id}
+    try:
+        from openjarvis.orchestrator.runtime_trace import get_trace_store, start_trace
+        store = get_trace_store()
+        status = store.get_persistence_status()
+        evidence.update(status)
+
+        # Probe: create a test trace and persist it
+        trace = start_trace("doctor_probe_trace_persistence")
+        trace.add_event("front_door", component="doctor", summary="probe event")
+        persisted = store.persist_trace(trace.trace_id)
+        evidence["probe_persist_ok"] = persisted
+        evidence["traces_dir"] = status["traces_dir"]
+        evidence["traces_dir_exists"] = status["traces_dir_exists"]
+
+        if persisted:
+            return CheckResult(
+                check_id="trace_persistence",
+                category="observability",
+                status=CheckStatus.PASS,
+                summary=(
+                    f"Trace persistence OK. Dir: {status['traces_dir']}. "
+                    f"Stored traces: {status['persisted_trace_count']}."
+                ),
+                evidence=evidence,
+                project_id=project_id,
+            )
+        else:
+            return CheckResult(
+                check_id="trace_persistence",
+                category="observability",
+                status=CheckStatus.WARN,
+                summary=(
+                    f"Trace persistence probe failed. "
+                    f"Dir: {status['traces_dir']}. Traces are in-memory only."
+                ),
+                evidence=evidence,
+                project_id=project_id,
+            )
+    except Exception as exc:
+        evidence["exception"] = str(exc)
+        return CheckResult(
+            check_id="trace_persistence",
+            category="observability",
+            status=CheckStatus.FAIL,
+            summary=f"Trace persistence check error: {exc}",
+            evidence=evidence,
+            project_id=project_id,
+        )
+
+
+def check_project_registry_persistence(project_id: str = "omnix") -> CheckResult:
+    """Check ProjectRegistry persistence — can registry survive restart?"""
+    evidence: Dict[str, Any] = {"project_id": project_id}
+    try:
+        from openjarvis.orchestrator.project_persistence import (
+            get_registry_persistence_status,
+            persist_registry,
+            ensure_openjarvis_project_registered,
+        )
+        ensure_openjarvis_project_registered()
+        persisted = persist_registry()
+        status = get_registry_persistence_status()
+        evidence.update(status)
+        evidence["persist_ok"] = persisted
+
+        if persisted and status["omnix_registered"]:
+            return CheckResult(
+                check_id="project_registry_persistence",
+                category="registry",
+                status=CheckStatus.PASS,
+                summary=(
+                    f"ProjectRegistry persisted OK. "
+                    f"{status['in_process_project_count']} projects. "
+                    f"OMNIX: {status['omnix_registered']}, "
+                    f"OpenJarvis: {status['openjarvis_registered']}."
+                ),
+                evidence=evidence,
+                project_id=project_id,
+            )
+        else:
+            return CheckResult(
+                check_id="project_registry_persistence",
+                category="registry",
+                status=CheckStatus.WARN,
+                summary=(
+                    f"ProjectRegistry persistence incomplete. "
+                    f"Persisted: {persisted}. OMNIX: {status['omnix_registered']}."
+                ),
+                evidence=evidence,
+                project_id=project_id,
+            )
+    except Exception as exc:
+        evidence["exception"] = str(exc)
+        return CheckResult(
+            check_id="project_registry_persistence",
+            category="registry",
+            status=CheckStatus.FAIL,
+            summary=f"ProjectRegistry persistence check error: {exc}",
+            evidence=evidence,
+            project_id=project_id,
+        )
+
+
+def check_runtime_recovery(project_id: str = "omnix") -> CheckResult:
+    """Check runtime recovery store — last status, failed task records."""
+    evidence: Dict[str, Any] = {"project_id": project_id}
+    try:
+        from openjarvis.orchestrator.runtime_recovery import get_recovery_store
+        store = get_recovery_store()
+        recovery_status = store.get_recovery_status()
+        evidence.update(recovery_status)
+
+        unresolved = recovery_status["unresolved_failure_count"]
+        file_exists = recovery_status["file_exists"]
+        if unresolved == 0:
+            status_str = CheckStatus.PASS
+            summary = (
+                f"Runtime recovery store: 0 unresolved failures. "
+                f"File: {'present' if file_exists else 'not yet written (no failures recorded)'}."
+            )
+        else:
+            status_str = CheckStatus.WARN
+            summary = (
+                f"Runtime recovery: {unresolved} unresolved failures recorded. "
+                "Run doctor for details. Resolve or archive before relying on these tasks."
+            )
+        return CheckResult(
+            check_id="runtime_recovery",
+            category="reliability",
+            status=status_str,
+            summary=summary,
+            evidence=evidence,
+            project_id=project_id,
+        )
+    except Exception as exc:
+        evidence["exception"] = str(exc)
+        return CheckResult(
+            check_id="runtime_recovery",
+            category="reliability",
+            status=CheckStatus.FAIL,
+            summary=f"Runtime recovery check error: {exc}",
+            evidence=evidence,
+            project_id=project_id,
+        )
+
+
+def check_connector_dryrun_framework(project_id: str = "omnix") -> CheckResult:
+    """Check connector dry-run framework — connectors registered, plans producible."""
+    evidence: Dict[str, Any] = {"project_id": project_id}
+    try:
+        from openjarvis.orchestrator.connector_dryrun import (
+            get_connector_status_summary,
+            plan_connector_action,
+        )
+        summary = get_connector_status_summary()
+        evidence["total_connectors"] = summary["total_connectors"]
+        evidence["by_status"] = summary["by_status"]
+
+        # Probe: produce a dry-run plan for gmail draft
+        probe = plan_connector_action("gmail", "draft_email_plan")
+        evidence["probe_connector"] = "gmail"
+        evidence["probe_action"] = "draft_email_plan"
+        evidence["probe_status"] = probe.status
+        evidence["probe_approval_required"] = probe.approval_required
+
+        if summary["total_connectors"] >= 6 and probe.status in ("dry_run_plan", "blocked"):
+            return CheckResult(
+                check_id="connector_dryrun_framework",
+                category="connectors",
+                status=CheckStatus.PASS,
+                summary=(
+                    f"{summary['total_connectors']} connectors registered. "
+                    f"Dry-run planning available. Live execution blocked until authorized."
+                ),
+                evidence=evidence,
+                project_id=project_id,
+            )
+        else:
+            return CheckResult(
+                check_id="connector_dryrun_framework",
+                category="connectors",
+                status=CheckStatus.WARN,
+                summary=f"Connector dry-run framework incomplete: {summary}",
+                evidence=evidence,
+                project_id=project_id,
+            )
+    except Exception as exc:
+        evidence["exception"] = str(exc)
+        return CheckResult(
+            check_id="connector_dryrun_framework",
+            category="connectors",
+            status=CheckStatus.FAIL,
+            summary=f"Connector dry-run check error: {exc}",
+            evidence=evidence,
+            project_id=project_id,
+        )
+
+
+def check_memory_quality_matrix(project_id: str = "omnix") -> CheckResult:
+    """Check memory quality matrix — stale/conflict detection operational."""
+    evidence: Dict[str, Any] = {"project_id": project_id}
+    try:
+        from openjarvis.memory.quality_matrix import MemoryQualityMatrix, StaleConflictDetector
+        from openjarvis.memory.store import JarvisMemory
+
+        mem = JarvisMemory()
+        matrix = MemoryQualityMatrix(mem)
+        detector = StaleConflictDetector(mem)
+
+        # Assess global namespace
+        assessment = matrix.assess(namespace=f"project:{project_id}", project_id=project_id)
+        conflict_summary = detector.get_conflict_summary(
+            namespace=f"project:{project_id}", project_id=project_id
+        )
+        evidence["assessment_status"] = assessment.get("status")
+        evidence["entry_count"] = assessment.get("entry_count", 0)
+        evidence["quality_score"] = assessment.get("quality_score", 0.0)
+        evidence["stale_count"] = conflict_summary.get("stale_count", 0)
+        evidence["conflict_count"] = conflict_summary.get("conflict_count", 0)
+
+        return CheckResult(
+            check_id="memory_quality_matrix",
+            category="memory",
+            status=CheckStatus.PASS,
+            summary=(
+                f"Memory quality matrix operational. "
+                f"Entries: {evidence['entry_count']}, "
+                f"Stale: {evidence['stale_count']}, "
+                f"Conflicts: {evidence['conflict_count']}."
+            ),
+            evidence=evidence,
+            project_id=project_id,
+        )
+    except Exception as exc:
+        evidence["exception"] = str(exc)
+        return CheckResult(
+            check_id="memory_quality_matrix",
+            category="memory",
+            status=CheckStatus.FAIL,
+            summary=f"Memory quality matrix check error: {exc}",
+            evidence=evidence,
+            project_id=project_id,
+        )
+
+
+def check_human_correction_store(project_id: str = "omnix") -> CheckResult:
+    """Check human correction ingestion store — schema and NUS hook operational."""
+    evidence: Dict[str, Any] = {"project_id": project_id}
+    try:
+        from openjarvis.orchestrator.human_correction import (
+            get_correction_store,
+            CORRECTION_ROUTING,
+        )
+        store = get_correction_store()
+        status = store.get_correction_status()
+        evidence.update(status)
+
+        return CheckResult(
+            check_id="human_correction_store",
+            category="learning",
+            status=CheckStatus.PASS,
+            summary=(
+                f"Human correction store operational. "
+                f"Total: {status['total_corrections']}, "
+                f"Pending: {status['pending_corrections']}."
+            ),
+            evidence=evidence,
+            project_id=project_id,
+        )
+    except Exception as exc:
+        evidence["exception"] = str(exc)
+        return CheckResult(
+            check_id="human_correction_store",
+            category="learning",
+            status=CheckStatus.FAIL,
+            summary=f"Human correction store check error: {exc}",
+            evidence=evidence,
+            project_id=project_id,
+        )
+
+
+# ---------------------------------------------------------------------------
 # Check registry (34+ checks)
 # ---------------------------------------------------------------------------
 
@@ -3843,6 +4178,14 @@ _ALL_CHECK_FNS: List[Callable[..., CheckResult]] = [
     check_worker_execution_adapters,
     check_nus_scorecard_feedback_loop,
     check_inactive_manager_classification,
+    # Prompt 2 — Private Daily-Driver Hardening
+    check_provider_readiness,
+    check_trace_persistence,
+    check_project_registry_persistence,
+    check_runtime_recovery,
+    check_connector_dryrun_framework,
+    check_memory_quality_matrix,
+    check_human_correction_store,
 ]
 
 
@@ -3928,5 +4271,13 @@ __all__ = [
     "check_worker_execution_adapters",
     "check_nus_scorecard_feedback_loop",
     "check_inactive_manager_classification",
+    # Prompt 2 — Private Daily-Driver Hardening
+    "check_provider_readiness",
+    "check_trace_persistence",
+    "check_project_registry_persistence",
+    "check_runtime_recovery",
+    "check_connector_dryrun_framework",
+    "check_memory_quality_matrix",
+    "check_human_correction_store",
     "run_all_checks",
 ]

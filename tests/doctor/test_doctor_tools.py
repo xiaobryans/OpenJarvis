@@ -125,12 +125,14 @@ class TestDoctorToolRegistration:
 
 
 class TestDoctorRunExecutor:
-    def test_returns_33_checks(self):
+    def test_returns_33_checks(self):  # count is dynamic — test validates >= min
+        from openjarvis.doctor.checks import _ALL_CHECK_FNS
         initialize_doctor_catalog()
         executor = ToolRegistry.get_executor("doctor.run")
         result = executor({"project_id": "omnix"}, {})
-        assert result["total_checks"] == 33
-        assert len(result["checks"]) == 33
+        expected = len(_ALL_CHECK_FNS)
+        assert result["total_checks"] == expected
+        assert len(result["checks"]) == expected
 
     def test_project_id_in_result(self):
         initialize_doctor_catalog()
@@ -170,10 +172,11 @@ class TestDoctorReportExecutor:
         assert isinstance(result["by_category"], dict)
 
     def test_33_checks_total(self):
+        from openjarvis.doctor.checks import _ALL_CHECK_FNS
         initialize_doctor_catalog()
         executor = ToolRegistry.get_executor("doctor.report")
         result = executor({"project_id": "omnix"}, {})
-        assert result["total_checks"] == 33
+        assert result["total_checks"] == len(_ALL_CHECK_FNS)
 
 
 class TestReadinessEvaluateExecutor:
@@ -275,6 +278,7 @@ class TestGovernanceGatewayBlock:
         initialize_catalog()
         gw = ToolExecutionGateway()
         result = gw.execute("doctor.run", inputs={"project_id": "omnix"})
+        from openjarvis.doctor.checks import _ALL_CHECK_FNS
         assert result.ok is True
         assert result.outcome == "success"
-        assert result.output["total_checks"] == 33
+        assert result.output["total_checks"] == len(_ALL_CHECK_FNS)

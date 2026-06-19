@@ -146,9 +146,12 @@ class TestUS9ReadinessCategories:
 
 
 class TestRunAllChecksIncludes29:
-    def test_run_all_checks_returns_33(self):
+    def test_run_all_checks_returns_33(self):  # count is dynamic
+        from openjarvis.doctor.checks import _ALL_CHECK_FNS
         results = run_all_checks()
-        assert len(results) == 33, f"Expected 33 checks, got {len(results)}"
+        assert len(results) == len(_ALL_CHECK_FNS), (
+            f"Expected {len(_ALL_CHECK_FNS)} checks, got {len(results)}"
+        )
 
     def test_all_us9_check_ids_present(self):
         results = run_all_checks()

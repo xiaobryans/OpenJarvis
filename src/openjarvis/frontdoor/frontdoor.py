@@ -410,6 +410,13 @@ class JarvisFrontDoor:
         result.elapsed_ms = (time.time() - start) * 1000
         if trace_id and "trace_id" not in result.metadata:
             result.metadata["trace_id"] = trace_id
+        # Persist completed trace to disk (best-effort)
+        if trace_id:
+            try:
+                from openjarvis.orchestrator.runtime_trace import persist_trace
+                persist_trace(trace_id)
+            except Exception:
+                pass
         return result
 
 

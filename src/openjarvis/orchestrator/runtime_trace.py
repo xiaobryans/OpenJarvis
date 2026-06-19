@@ -15,14 +15,25 @@ Design rules:
   - Survives individual component failures (graceful degradation).
   - Reuses existing core/events.py EventBus where possible; does not replace it.
   - Extends workbench/event_log.py concept to orchestrator level.
+  - Persists completed traces to ~/.jarvis/traces/ as JSONL (bounded retention).
+  - Disk writes are best-effort; failure does not break in-memory operation.
 """
 
 from __future__ import annotations
 
+import json
+import logging
 import time
 import uuid
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+logger = logging.getLogger(__name__)
+
+# Disk persistence path — private, bounded
+_TRACES_DIR = Path.home() / ".jarvis" / "traces"
+_MAX_TRACE_FILES = 500  # retained files on disk
 
 
 # ---------------------------------------------------------------------------
@@ -135,16 +146,19 @@ class OrchestratorTrace:
 # ---------------------------------------------------------------------------
 
 class RuntimeTraceStore:
-    """In-memory store for recent orchestrator traces.
+    """In-memory + disk store for orchestrator traces.
 
-    Keeps the last N traces for debugging and replay.
-    Does not persist to disk in this implementation (PLANNED for Persistence Sprint).
+    In-memory: keeps last N traces for fast lookup and replay.
+    Disk: persists completed traces to ~/.jarvis/traces/ as JSONL files
+          (one file per trace). Bounded to _MAX_TRACE_FILES files.
+          Disk writes are best-effort — failures degrade gracefully.
     """
 
-    def __init__(self, max_traces: int = 200) -> None:
+    def __init__(self, max_traces: int = 200, persist: bool = True) -> None:
         self._traces: Dict[str, OrchestratorTrace] = {}
         self._order: List[str] = []
         self._max = max_traces
+        self._persist = persist
 
     def create_trace(self, request_id: str, trace_id: Optional[str] = None) -> OrchestratorTrace:
         """Create a new trace for a request. Returns the OrchestratorTrace."""
@@ -157,6 +171,120 @@ class RuntimeTraceStore:
             old = self._order.pop(0)
             self._traces.pop(old, None)
         return trace
+
+    def persist_trace(self, trace_id: str) -> bool:
+        """Persist a completed trace to disk. Returns True on success.
+
+        Writes to ~/.jarvis/traces/<trace_id>.jsonl (one event per line).
+        Best-effort — disk failures never raise to callers.
+        Enforces _MAX_TRACE_FILES retention limit by removing oldest files.
+        """
+        if not self._persist:
+            return False
+        trace = self._traces.get(trace_id)
+        if trace is None:
+            return False
+        try:
+            _TRACES_DIR.mkdir(parents=True, exist_ok=True)
+            trace_file = _TRACES_DIR / f"{trace_id}.jsonl"
+            lines: List[str] = []
+            # Header line: trace metadata
+            header = {
+                "record_type": "trace_header",
+                "trace_id": trace.trace_id,
+                "request_id": trace.request_id,
+                "start_time_ms": trace.start_time_ms,
+                "elapsed_ms": trace.elapsed_ms(),
+                "event_count": len(trace.events),
+            }
+            lines.append(json.dumps(header))
+            # One line per event
+            for evt in trace.events:
+                lines.append(json.dumps(evt.to_dict()))
+            trace_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
+            # Enforce retention limit
+            self._enforce_retention()
+            return True
+        except Exception as exc:
+            logger.debug("Trace persistence failed (non-fatal): %s", exc)
+            return False
+
+    def load_trace_from_disk(self, trace_id: str) -> Optional[OrchestratorTrace]:
+        """Load a trace from disk by trace_id. Returns None if not found.
+
+        Used for cross-restart replay. In-memory traces are preferred.
+        """
+        if trace_id in self._traces:
+            return self._traces[trace_id]
+        trace_file = _TRACES_DIR / f"{trace_id}.jsonl"
+        if not trace_file.exists():
+            return None
+        try:
+            lines = trace_file.read_text(encoding="utf-8").splitlines()
+            if not lines:
+                return None
+            header = json.loads(lines[0])
+            trace = OrchestratorTrace(
+                trace_id=header["trace_id"],
+                request_id=header["request_id"],
+                start_time_ms=header.get("start_time_ms", 0.0),
+            )
+            for line in lines[1:]:
+                if not line.strip():
+                    continue
+                evt_data = json.loads(line)
+                evt = RuntimeTraceEvent(
+                    trace_id=evt_data["trace_id"],
+                    event_type=evt_data["event_type"],
+                    timestamp_ms=evt_data["timestamp_ms"],
+                    component=evt_data["component"],
+                    summary=evt_data["summary"],
+                    payload=evt_data.get("payload", {}),
+                )
+                trace.events.append(evt)
+            return trace
+        except Exception as exc:
+            logger.debug("Trace load from disk failed: %s", exc)
+            return None
+
+    def _enforce_retention(self) -> None:
+        """Remove oldest trace files if over _MAX_TRACE_FILES."""
+        try:
+            files = sorted(_TRACES_DIR.glob("*.jsonl"), key=lambda f: f.stat().st_mtime)
+            while len(files) > _MAX_TRACE_FILES:
+                files.pop(0).unlink(missing_ok=True)
+        except Exception:
+            pass
+
+    def list_persisted_traces(self) -> List[str]:
+        """Return list of trace_ids available on disk."""
+        if not _TRACES_DIR.exists():
+            return []
+        try:
+            return [f.stem for f in sorted(
+                _TRACES_DIR.glob("*.jsonl"),
+                key=lambda f: f.stat().st_mtime,
+                reverse=True,
+            )]
+        except Exception:
+            return []
+
+    def get_persistence_status(self) -> Dict[str, Any]:
+        """Return disk persistence status for doctor checks."""
+        exists = _TRACES_DIR.exists()
+        count = 0
+        if exists:
+            try:
+                count = sum(1 for _ in _TRACES_DIR.glob("*.jsonl"))
+            except Exception:
+                pass
+        return {
+            "persist_enabled": self._persist,
+            "traces_dir": str(_TRACES_DIR),
+            "traces_dir_exists": exists,
+            "persisted_trace_count": count,
+            "max_files": _MAX_TRACE_FILES,
+        }
 
     def get(self, trace_id: str) -> Optional[OrchestratorTrace]:
         return self._traces.get(trace_id)
@@ -199,6 +327,7 @@ class RuntimeTraceStore:
             "total_traces_stored": len(self._traces),
             "max_traces": self._max,
             "recent_trace_ids": self._order[-5:],
+            "persistence": self.get_persistence_status(),
         }
 
 
@@ -223,8 +352,19 @@ def start_trace(request_id: str, trace_id: Optional[str] = None) -> Orchestrator
 
 
 def get_trace(trace_id: str) -> Optional[OrchestratorTrace]:
-    """Retrieve an existing trace by trace_id."""
-    return get_trace_store().get(trace_id)
+    """Retrieve an existing trace by trace_id. Checks memory then disk."""
+    store = get_trace_store()
+    # Memory first
+    trace = store.get(trace_id)
+    if trace is not None:
+        return trace
+    # Fall back to disk
+    return store.load_trace_from_disk(trace_id)
+
+
+def persist_trace(trace_id: str) -> bool:
+    """Persist a completed trace to disk. Best-effort."""
+    return get_trace_store().persist_trace(trace_id)
 
 
 __all__ = [
@@ -234,6 +374,7 @@ __all__ = [
     "get_trace_store",
     "start_trace",
     "get_trace",
+    "persist_trace",
     "EVENT_FRONT_DOOR",
     "EVENT_ROUTING",
     "EVENT_COS_GM",
