@@ -5,7 +5,9 @@ from __future__ import annotations
 import logging
 import os
 import pathlib
+import signal
 import sys
+import time
 
 
 def _load_project_dotenv() -> None:
@@ -31,6 +33,122 @@ def _load_project_dotenv() -> None:
                 os.environ[key] = val.strip()
     except OSError:
         pass  # non-fatal — env may already be set
+
+
+# ---------------------------------------------------------------------------
+# Backend single-instance lifecycle
+# ---------------------------------------------------------------------------
+
+class _PortDecision:
+    """Outcome of _check_port_lifecycle()."""
+    REUSE = "reuse"             # healthy OpenJarvis with matching config — reuse it
+    RESTARTED = "restarted"     # stale/wrong-config OpenJarvis — stopped it, caller may spawn
+    FOREIGN = "foreign"         # non-OpenJarvis process — do NOT kill
+    FREE = "free"               # nothing listening, spawn normally
+
+
+def _check_port_lifecycle(
+    host: str,
+    port: int,
+    engine_name: str,
+    model_name: str,
+    console=None,
+) -> tuple[str, str]:
+    """Check if port is free or occupied; decide whether to reuse, restart, or error.
+
+    Returns ``(decision, message)`` where ``decision`` is one of the
+    ``_PortDecision`` constants and ``message`` is a human-readable string
+    for the console (empty for FREE/REUSE when nothing needs saying).
+
+    Rules (strict):
+    - ``FREE``: nothing responds on the port → proceed normally.
+    - ``REUSE``: OpenJarvis with compatible engine+model → skip re-launch.
+    - ``RESTARTED``: OpenJarvis with wrong config, unhealthy, or no identity
+      fingerprint → SIGTERM the PID found in /health; caller re-spawns.
+    - ``FOREIGN``: non-OpenJarvis (no ``"app": "openjarvis"`` in /health) →
+      never kill; surface owner PID + lsof hint for manual resolution.
+    """
+    import json
+    import urllib.request
+    import urllib.error
+
+    url = f"http://127.0.0.1:{port}/health"
+    try:
+        with urllib.request.urlopen(url, timeout=2) as resp:
+            raw = resp.read().decode("utf-8", errors="replace")
+    except urllib.error.URLError:
+        # Nothing listening — port is free
+        return _PortDecision.FREE, ""
+    except Exception:
+        return _PortDecision.FREE, ""
+
+    # Something is listening — parse the fingerprint
+    try:
+        data = json.loads(raw)
+    except Exception:
+        # Unrecognised response — treat as foreign
+        return (
+            _PortDecision.FOREIGN,
+            f"Port {port} is in use by an unrecognised server "
+            f"(non-JSON /health response). "
+            f"Identify it with: lsof -i :{port}",
+        )
+
+    if data.get("app") != "openjarvis":
+        return (
+            _PortDecision.FOREIGN,
+            f"Port {port} is in use by a non-OpenJarvis process. "
+            f"Identify it with: lsof -i :{port}",
+        )
+
+    # It is an OpenJarvis backend — check compatibility
+    existing_engine = data.get("engine", "")
+    existing_model = data.get("model", "")
+    existing_pid = data.get("pid")
+    existing_commit = data.get("git_commit", "unknown")
+
+    engine_matches = (not engine_name) or (existing_engine == engine_name)
+    model_matches = (not model_name) or (existing_model == model_name)
+
+    if engine_matches and model_matches and data.get("status") == "ok":
+        return (
+            _PortDecision.REUSE,
+            f"Reusing existing OpenJarvis backend on port {port} "
+            f"(pid={existing_pid}, engine={existing_engine}, "
+            f"model={existing_model}, commit={existing_commit}).",
+        )
+
+    # Wrong config or unhealthy — stop the existing OpenJarvis process
+    reason = []
+    if not engine_matches:
+        reason.append(f"engine mismatch: running={existing_engine!r} wanted={engine_name!r}")
+    if not model_matches:
+        reason.append(f"model mismatch: running={existing_model!r} wanted={model_name!r}")
+    if data.get("status") != "ok":
+        reason.append(f"status={data.get('status')!r}")
+
+    msg = (
+        f"Stopping stale OpenJarvis backend on port {port} "
+        f"(pid={existing_pid}, {', '.join(reason)}) and restarting."
+    )
+
+    if existing_pid:
+        try:
+            os.kill(int(existing_pid), signal.SIGTERM)
+            # Give it up to 5 seconds to release the port
+            deadline = time.time() + 5.0
+            while time.time() < deadline:
+                try:
+                    urllib.request.urlopen(url, timeout=0.5)
+                    time.sleep(0.3)
+                except Exception:
+                    break  # port released
+        except ProcessLookupError:
+            pass  # already gone
+        except Exception as exc:
+            msg += f" (SIGTERM failed: {exc})"
+
+    return _PortDecision.RESTARTED, msg
 
 import click
 from rich.console import Console
@@ -734,6 +852,25 @@ def serve(
             "enabled on non-loopback interface. This allows any website to make "
             "authenticated requests to your instance."
         )
+
+    # Single-instance lifecycle: reuse, restart, or surface exact error before
+    # uvicorn tries to bind (which would give a raw OSError otherwise).
+    _decision, _msg = _check_port_lifecycle(bind_host, bind_port, engine_name, model_name, console)
+    if _decision == _PortDecision.REUSE:
+        console.print(f"[green]{_msg}[/green]")
+        console.print("[green]Backend already healthy — not spawning a new process.[/green]")
+        return  # nothing more to do; existing backend handles requests
+    elif _decision == _PortDecision.RESTARTED:
+        console.print(f"[yellow]{_msg}[/yellow]")
+        # Brief pause to let the OS release the port after SIGTERM
+        import time as _t; _t.sleep(0.5)
+    elif _decision == _PortDecision.FOREIGN:
+        console.print(
+            f"[red bold]Cannot start:[/red bold] {_msg}\n"
+            "Stop that process manually, then relaunch."
+        )
+        sys.exit(1)
+    # FREE or RESTARTED — fall through to uvicorn.run()
 
     import uvicorn
 

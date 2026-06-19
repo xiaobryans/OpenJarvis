@@ -1015,13 +1015,8 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
         }
     }
 
-    // Do NOT attach to existing servers. The packaged app must run its own
-    // backend to ensure voice_routes and other new features are available.
-    // Attaching to a stale old server (e.g., from a previous commit) causes
-    // "Method Not Allowed" errors for new routes like /v1/voice/session/start.
-    //
-    // If port is in use, surface an actionable error telling the user to stop
-    // the old server or change the port.
+    // Single-instance lifecycle: reuse compatible backend, restart stale one,
+    // surface actionable error for foreign processes. Never blindly kill.
     {
         let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(2))
@@ -1032,28 +1027,139 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
             .send()
             .await
         {
-            Ok(resp) => {
-                // Something is already listening on our port. Don't attach —
-                // the packaged app needs its own backend with latest code.
-                let lsof_hint = if cfg!(target_os = "windows") {
-                    format!("netstat -ano | findstr :{}", JARVIS_PORT)
-                } else {
-                    format!("lsof -i :{}", JARVIS_PORT)
-                };
-                let mut s = status.lock().await;
-                s.error = Some(format!(
-                    "Port {} is already in use by another server (HTTP {}). \
-                     The packaged app requires its own backend to ensure voice \
-                     and other new features work. Stop the old server or change \
-                     the OpenJarvis port, then relaunch.\n\nTo identify it:\n  {}",
-                    JARVIS_PORT,
-                    resp.status(),
-                    lsof_hint,
-                ));
-                return;
-            }
             Err(_) => {
-                // Nothing listening — proceed to the normal spawn path.
+                // Nothing listening — proceed to spawn path normally.
+            }
+            Ok(resp) => {
+                // Parse the identity fingerprint added in febe50f6.
+                let http_status = resp.status();
+                let body = resp.text().await.unwrap_or_default();
+                let fingerprint: serde_json::Value =
+                    serde_json::from_str(&body).unwrap_or(serde_json::Value::Null);
+
+                let is_openjarvis = fingerprint.get("app")
+                    .and_then(|v| v.as_str())
+                    == Some("openjarvis");
+
+                if !is_openjarvis {
+                    // Foreign process — never kill; surface actionable error.
+                    let lsof_hint = if cfg!(target_os = "windows") {
+                        format!("netstat -ano | findstr :{}", JARVIS_PORT)
+                    } else {
+                        format!("lsof -i :{}", JARVIS_PORT)
+                    };
+                    let mut s = status.lock().await;
+                    s.error = Some(format!(
+                        "Port {} is in use by a non-OpenJarvis process (HTTP {}). \
+                         OpenJarvis will not kill unknown processes.\n\n\
+                         Stop it manually, then relaunch:\n  {}",
+                        JARVIS_PORT, http_status, lsof_hint,
+                    ));
+                    return;
+                }
+
+                // It is an OpenJarvis backend. Check if it is compatible.
+                let existing_engine = fingerprint.get("engine")
+                    .and_then(|v| v.as_str()).unwrap_or("unknown");
+                let existing_model = fingerprint.get("model")
+                    .and_then(|v| v.as_str()).unwrap_or("unknown");
+                let existing_pid = fingerprint.get("pid")
+                    .and_then(|v| v.as_i64());
+                let existing_commit = fingerprint.get("git_commit")
+                    .and_then(|v| v.as_str()).unwrap_or("unknown");
+                let existing_stt = fingerprint.get("stt_provider")
+                    .and_then(|v| v.as_str()).unwrap_or("unknown");
+                let health_ok = http_status.is_success()
+                    && fingerprint.get("status").and_then(|v| v.as_str()) == Some("ok");
+
+                // Determine wanted engine/model from the boot plan.
+                let wanted_engine = plan.serve_args.iter()
+                    .position(|a| a == "--engine")
+                    .and_then(|i| plan.serve_args.get(i + 1))
+                    .map(|s| s.as_str())
+                    .unwrap_or("");
+                let wanted_model_arg = if let Some(ref m) = serve_model_override {
+                    m.as_str()
+                } else {
+                    plan.serve_args.iter()
+                        .position(|a| a == "--model")
+                        .and_then(|i| plan.serve_args.get(i + 1))
+                        .map(|s| s.as_str())
+                        .unwrap_or("")
+                };
+
+                let engine_ok = wanted_engine.is_empty() || existing_engine == wanted_engine;
+                let model_ok = wanted_model_arg.is_empty() || existing_model == wanted_model_arg;
+
+                if health_ok && engine_ok && model_ok {
+                    // Healthy OpenJarvis with compatible config — reuse it.
+                    {
+                        let mut s = status.lock().await;
+                        s.detail = format!(
+                            "Reusing existing OpenJarvis backend (pid={pid}, \
+                             engine={engine}, model={model}, stt={stt}, \
+                             commit={commit}).",
+                            pid = existing_pid.map(|p| p.to_string()).unwrap_or("?".into()),
+                            engine = existing_engine,
+                            model = existing_model,
+                            stt = existing_stt,
+                            commit = existing_commit,
+                        );
+                        s.server_ready = true;
+                        s.phase = "ready".into();
+                    }
+                    // Skip uv sync + spawn — mark remaining phases complete.
+                    {
+                        let mut s = status.lock().await;
+                        s.model_ready = true;
+                        s.detail = "All systems ready (reused existing backend).".into();
+                    }
+                    return;
+                }
+
+                // Stale or wrong-config OpenJarvis — SIGTERM its PID and respawn.
+                let mut mismatch = vec![];
+                if !engine_ok { mismatch.push(format!("engine: running={existing_engine:?} wanted={wanted_engine:?}")); }
+                if !model_ok  { mismatch.push(format!("model: running={existing_model:?} wanted={wanted_model_arg:?}")); }
+                if !health_ok { mismatch.push(format!("health={http_status}")); }
+
+                {
+                    let mut s = status.lock().await;
+                    s.detail = format!(
+                        "Stopping stale OpenJarvis backend (pid={pid}, {reason}) and restarting...",
+                        pid = existing_pid.map(|p| p.to_string()).unwrap_or("?".into()),
+                        reason = mismatch.join(", "),
+                    );
+                }
+
+                // Send SIGTERM to the OpenJarvis PID only.
+                if let Some(pid) = existing_pid {
+                    #[cfg(unix)]
+                    {
+                        use std::process::Command;
+                        let _ = Command::new("kill").args(["-TERM", &pid.to_string()]).status();
+                    }
+                    #[cfg(windows)]
+                    {
+                        use std::process::Command;
+                        let _ = Command::new("taskkill")
+                            .args(["/PID", &pid.to_string(), "/F"])
+                            .status();
+                    }
+                    // Wait up to 5 s for the port to release.
+                    let deadline = tokio::time::Instant::now()
+                        + Duration::from_secs(5);
+                    loop {
+                        tokio::time::sleep(Duration::from_millis(300)).await;
+                        if tokio::time::Instant::now() >= deadline { break; }
+                        if reqwest::get(format!("http://127.0.0.1:{}/health", JARVIS_PORT))
+                            .await.is_err()
+                        {
+                            break; // port released
+                        }
+                    }
+                }
+                // Fall through to normal uv sync + spawn path.
             }
         }
     }

@@ -941,10 +941,34 @@ async def health(request: Request):
     except Exception:
         pass
 
+    # Package version
+    version = "unknown"
+    try:
+        import importlib.metadata as _meta
+        version = _meta.version("openjarvis")
+    except Exception:
+        pass
+
+    # Git commit (short hash) — best-effort, never raises
+    git_commit = "unknown"
+    try:
+        import subprocess as _sp
+        result = _sp.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            capture_output=True, text=True, timeout=2,
+            cwd=_os.path.dirname(_os.path.abspath(__file__)),
+        )
+        if result.returncode == 0:
+            git_commit = result.stdout.strip()
+    except Exception:
+        pass
+
     return {
         "status": "ok",
         "app": "openjarvis",
         "pid": _os.getpid(),
+        "version": version,
+        "git_commit": git_commit,
         "started_at": started_at,
         "uptime_s": uptime_s,
         "engine": getattr(request.app.state, "engine_name", "unknown"),
