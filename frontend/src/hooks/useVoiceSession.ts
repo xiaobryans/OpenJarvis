@@ -23,7 +23,7 @@ export type VoiceState =
   | 'error';
 
 export interface VoiceEvent {
-  type: 'state' | 'interim_transcript' | 'transcript' | 'response' | 'latency' | 'error' | 'stopped';
+  type: 'state' | 'interim_transcript' | 'transcript' | 'response' | 'latency' | 'error' | 'stopped' | 'vad';
   state?: VoiceState;
   text?: string;
   stage?: string;
@@ -33,6 +33,18 @@ export interface VoiceEvent {
   score?: number;
   reason?: string;
   ts?: number;
+  trigger_source?: string;
+  // vad event fields
+  stop_reason?: string;
+  duration_s?: number;
+  silence_stop_ms?: number;
+}
+
+export interface VadEvent {
+  stop_reason: string;
+  duration_s: number;
+  trigger_source: string;
+  silence_stop_ms: number;
 }
 
 export interface LatencyMap {
@@ -89,6 +101,10 @@ export interface VoiceSessionState {
     configured_shortcut: string | null;
     wake_failure_reason: string | null;
   };
+  /** Last VAD recording event — stop_reason, duration, trigger source. Null until first turn. */
+  lastVadEvent: VadEvent | null;
+  /** Source of the most recent trigger: 'wake_word' | 'manual_button' | null. */
+  lastTriggerSource: string | null;
 }
 
 export interface VoiceSessionActions {
@@ -149,6 +165,8 @@ export function useVoiceSession(): VoiceSessionState & VoiceSessionActions {
   const [wakeMode, setWakeMode] = useState<WakeMode>('wake_word');
   const [wakeWorkerReady, setWakeWorkerReady] = useState(false);
   const [wakeFailureReason, setWakeFailureReason] = useState<string | null>(null);
+  const [lastVadEvent, setLastVadEvent] = useState<VadEvent | null>(null);
+  const [lastTriggerSource, setLastTriggerSource] = useState<string | null>(null);
 
   const esRef = useRef<EventSource | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -200,10 +218,15 @@ export function useVoiceSession(): VoiceSessionState & VoiceSessionActions {
   const handleEvent = useCallback((ev: VoiceEvent) => {
     if (ev.type === 'state' && ev.state) {
       setVoiceState(ev.state);
-      if (ev.state === 'wake_detected' || ev.state === 'follow_up_listening') {
+      if (ev.state === 'wake_detected') {
+        // Capture trigger source from the wake_detected event
+        if (ev.trigger_source) setLastTriggerSource(ev.trigger_source);
         // Latency values belong to one turn only. Without resetting here,
         // a follow-up's total_turn_ms was displayed beside the original
         // wake_to_record_start_ms, producing impossible-looking metrics.
+        setLatency({});
+      }
+      if (ev.state === 'follow_up_listening') {
         setLatency({});
       }
       if (ev.state === 'recording') {
@@ -211,6 +234,14 @@ export function useVoiceSession(): VoiceSessionState & VoiceSessionActions {
         setFinalTranscript('');
         setJarvisResponse('');
       }
+    }
+    if (ev.type === 'vad') {
+      setLastVadEvent({
+        stop_reason: ev.stop_reason ?? 'unknown',
+        duration_s: ev.duration_s ?? 0,
+        trigger_source: ev.trigger_source ?? 'unknown',
+        silence_stop_ms: ev.silence_stop_ms ?? 4000,
+      });
     }
     if (ev.type === 'interim_transcript' && ev.text) {
       setInterimTranscript(ev.text);
@@ -233,7 +264,7 @@ export function useVoiceSession(): VoiceSessionState & VoiceSessionActions {
       setVoiceState('idle');
       setIsActive(false);
     }
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Re-connect SSE when active
   useEffect(() => {
@@ -371,6 +402,7 @@ export function useVoiceSession(): VoiceSessionState & VoiceSessionActions {
     setWakeWorkerReady(false);
     setWakeMode('wake_word');
     setWakeFailureReason(null);
+    setLastTriggerSource(null);
   }, []);
 
   return {
@@ -390,6 +422,8 @@ export function useVoiceSession(): VoiceSessionState & VoiceSessionActions {
     wakePhraseActive: wakeMode === 'wake_word' && wakeWorkerReady,
     manualTriggerAvailable: isActive,
     configuredShortcut: null,
+    lastVadEvent,
+    lastTriggerSource,
     wakeDiagnostics: {
       wake_mode: isActive ? wakeMode : null,
       wake_worker_ready: wakeWorkerReady,

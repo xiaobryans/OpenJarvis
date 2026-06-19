@@ -1174,21 +1174,26 @@ class VoiceConversationLoop:
 
         model = getattr(event, "model", "unknown")
         score = getattr(event, "score", 0.0)
-        logger.info("Wake word fired: model=%s score=%.3f", model, score)
+        trigger_source = getattr(event, "source", "unknown")
+        logger.info(
+            "Wake word fired: model=%s score=%.3f source=%s",
+            model, score, trigger_source,
+        )
         self._emit_event({
             "type": "state",
             "state": "wake_detected",
             "model": str(model),
             "score": float(score),
+            "trigger_source": trigger_source,
         })
         threading.Thread(
             target=self._process_turn,
-            args=(session_id,),
+            args=(session_id, trigger_source),
             daemon=True,
             name="jarvis-voice-turn",
         ).start()
 
-    def _process_turn(self, session_id: int) -> None:
+    def _process_turn(self, session_id: int, trigger_source: str = "wake_word") -> None:
         """Full conversation session: greeting → [record→STT→Jarvis→TTS] loop.
 
         A single call handles the entire session (greeting + all follow-up turns
@@ -1273,6 +1278,14 @@ class VoiceConversationLoop:
                     logger.error("Recording failed: %s", exc)
                     break
                 _rec_end = time.monotonic()
+                # Emit non-secret VAD diagnostics so the UI can show endpointing truth.
+                self._emit_event({
+                    "type": "vad",
+                    "stop_reason": vad_stop_reason,
+                    "duration_s": round(_rec_end - _rec_start, 2),
+                    "trigger_source": trigger_source,
+                    "silence_stop_ms": self._silence_stop_ms,
+                })
                 if is_first_turn:
                     self._emit_latency(
                         "wake_to_record_start_ms",
@@ -1471,21 +1484,26 @@ class VoiceConversationLoop:
             "socket": None,
         }
 
-    def trigger(self) -> Dict[str, Any]:
-        """Manually trigger a voice recording turn (hotkey/mic-button path).
+    def trigger(self, source: str = "manual_button") -> Dict[str, Any]:
+        """Manually trigger a voice recording turn (mic-button / manual path).
 
         Works whether wake-word is active or not.  Safe to call from the
         POST /v1/voice/session/trigger endpoint.
+
+        Parameters
+        ----------
+        source:
+            Non-secret label for diagnostics — e.g. "manual_button", "hotkey".
         """
         from openjarvis.autonomy.wakeword_bridge import WakeWordTriggerEvent
         event = WakeWordTriggerEvent(
             model="manual_trigger",
             score=1.0,
             ts=time.monotonic(),
-            source="hotkey",
+            source=source,
         )
         self._on_wake(event)
-        return {"ok": True, "triggered_at": time.time(), "source": "hotkey"}
+        return {"ok": True, "triggered_at": time.time(), "source": source}
 
     def stop(self) -> None:
         """Stop the wake-word bridge and conversation loop."""

@@ -10,6 +10,7 @@ import {
   ChevronDown,
   MessageSquare,
   AlertTriangle,
+  Play,
 } from 'lucide-react';
 import { useVoiceSession, VOICE_STATE_LABEL, type VoiceState } from '../hooks/useVoiceSession';
 
@@ -54,26 +55,6 @@ function statePulse(state: VoiceState): string {
       return 'animate-spin';
     case 'speaking':
       return 'animate-bounce';
-    default:
-      return '';
-  }
-}
-
-function stateRing(state: VoiceState): string {
-  switch (state) {
-    case 'recording':
-    case 'waiting_for_silence':
-      return 'ring-2 ring-red-500/60';
-    case 'thinking':
-    case 'transcribing':
-      return 'ring-2 ring-accent/60';
-    case 'speaking':
-      return 'ring-2 ring-green-500/60';
-    case 'wake_detected':
-    case 'acknowledging':
-    case 'active_conversation':
-    case 'follow_up_listening':
-      return 'ring-2 ring-accent/40';
     default:
       return '';
   }
@@ -150,8 +131,9 @@ export function VoiceOverlay() {
     wakeWorkerReady,
     wakeFailureReason,
     wakePhraseActive,
-    manualTriggerAvailable,
     configuredShortcut,
+    lastVadEvent,
+    lastTriggerSource,
     trigger,
     start,
     stop,
@@ -197,9 +179,11 @@ export function VoiceOverlay() {
     if (ACTIVE_CONV_STATES.includes(voiceState)) {
       setExpanded(true);
     }
-    // Auto-collapse after session returns to background wake-listening
+    // Auto-collapse 30 s after returning to background wake-listening —
+    // 8 s was too short; a turn ending would collapse the panel before
+    // the user had a chance to read the response or say something again.
     if (voiceState === 'listening' || voiceState === 'wake_listening') {
-      const t = setTimeout(() => setExpanded(false), 8000);
+      const t = setTimeout(() => setExpanded(false), 30000);
       return () => clearTimeout(t);
     }
   }, [voiceState]);
@@ -209,7 +193,10 @@ export function VoiceOverlay() {
     if (startFailedReason && autoStartDone) setExpanded(true);
   }, [startFailedReason, autoStartDone]);
 
-  const isRunning = isActive && voiceState !== 'idle' && voiceState !== 'stopped' && voiceState !== 'session_ended';
+  // session_ended is a brief transitional state between one turn ending and
+  // returning to wake-listening. Do NOT exclude it from isRunning — doing so
+  // causes a visible "stopped → listening" bounce every time a turn completes.
+  const isRunning = isActive && voiceState !== 'idle' && voiceState !== 'stopped';
   const isWakeListening = isRunning && (voiceState === 'listening' || voiceState === 'wake_listening');
   const hasConversation = !!finalTranscript || !!jarvisResponse;
 
@@ -243,27 +230,23 @@ export function VoiceOverlay() {
     return 'var(--color-text-tertiary)';
   })();
 
-  // Mic button:
-  // - If listening (any wake mode) → always trigger a recording turn. The
-  //   mic button is the primary reliable manual trigger regardless of whether
-  //   the wake-word worker is active, loading, or unavailable.
-  // - If active turn in progress (recording/transcribing/speaking) → stop.
-  // - If not running → start session.
+  // Mic button = voice system ON / OFF only.
+  // It does NOT trigger a command recording turn — use "Speak now" for that.
   const handleMicClick = async () => {
-    if (isRunning) {
-      if (isWakeListening) {
-        // Always trigger — works whether wake-word is active or unavailable.
-        await trigger();
-        setExpanded(true);
-      } else {
-        // Active turn in progress → stop
-        await stop();
-        setExpanded(false);
-      }
+    if (isActive) {
+      await stop();
+      setExpanded(false);
     } else {
       await start();
       setExpanded(true);
     }
+  };
+
+  // "Speak now" / manual command trigger — calls /v1/voice/session/trigger.
+  // Works when wake-word is unavailable, unreliable, or simply not wanted.
+  const handleSpeakNow = async () => {
+    await trigger();
+    setExpanded(true);
   };
 
   return (
@@ -389,58 +372,40 @@ export function VoiceOverlay() {
               </div>
             )}
 
-            {/* Wake listening idle prompt — truthful, mic-button-first */}
-            {!hasConversation && !error && !startFailedReason && !interimTranscript && isRunning && isWakeListening && (
-              <div className="space-y-1">
+            {/* "Speak now" manual trigger button — always visible when listening.
+                This is the primary reliable command trigger for daily-driver use.
+                Separate from the mic enable/disable button. */}
+            {isActive && isWakeListening && (
+              <div className="pt-1 pb-0.5 space-y-2">
+                <button
+                  onClick={handleSpeakNow}
+                  className="w-full py-2.5 rounded-lg font-medium text-sm flex items-center justify-center gap-2 transition-opacity hover:opacity-90 active:opacity-75"
+                  style={{
+                    background: 'var(--color-success, #22c55e)',
+                    color: '#fff',
+                  }}
+                  title="Start one command recording turn (uses VAD silence endpointing)"
+                  aria-label="Start voice command — speak after clicking"
+                >
+                  <Play size={15} />
+                  Speak now
+                </button>
+
+                {/* Wake-phrase hint below the button */}
                 {wakePhraseActive ? (
-                  // Wake-word confirmed active
-                  <div className="text-xs text-center py-2 space-y-1">
-                    <div style={{ color: 'var(--color-text-secondary)' }}>
-                      Say <strong>"Hey Jarvis"</strong>
-                      {configuredShortcut ? (
-                        <> or press{' '}
-                          <kbd className="px-1 rounded text-[10px]" style={{ background: 'var(--color-bg-tertiary)' }}>
-                            {configuredShortcut}
-                          </kbd>
-                        </>
-                      ) : (
-                        ' or tap the mic'
-                      )}
-                    </div>
+                  <div className="text-[11px] text-center" style={{ color: 'var(--color-text-tertiary)' }}>
+                    Or say <strong>"Hey Jarvis"</strong>
+                    {configuredShortcut ? <> or <kbd className="px-1 rounded text-[10px]" style={{ background: 'var(--color-bg-tertiary)' }}>{configuredShortcut}</kbd></> : null}
                   </div>
                 ) : (
-                  // Wake-word unavailable or loading — mic is the trigger
-                  <div className="text-xs text-center py-2 space-y-1">
-                    <div style={{ color: 'var(--color-text-secondary)' }}>
-                      {configuredShortcut ? (
-                        <>Press{' '}
-                          <kbd className="px-1 rounded text-[10px]" style={{ background: 'var(--color-bg-tertiary)' }}>
-                            {configuredShortcut}
-                          </kbd>{' '}
-                          or{' '}
-                        </>
-                      ) : null}
-                      <strong>Tap the mic</strong> to speak
-                    </div>
+                  <div className="text-[11px] text-center space-y-0.5">
                     {wakeFailureReason && (
-                      <div
-                        className="text-[10px] px-2 py-1 rounded font-mono"
-                        style={{
-                          color: 'var(--color-text-tertiary)',
-                          background: 'var(--color-bg-tertiary)',
-                        }}
-                      >
+                      <div className="font-mono" style={{ color: 'var(--color-text-tertiary)' }}>
                         Wake-word unavailable: {wakeFailureReason.split('.')[0]}
                       </div>
                     )}
                     {!wakeFailureReason && wakeMode === 'wake_word' && !wakeWorkerReady && (
-                      <div
-                        className="text-[10px] px-2 py-1 rounded font-mono"
-                        style={{
-                          color: 'var(--color-text-tertiary)',
-                          background: 'var(--color-bg-tertiary)',
-                        }}
-                      >
+                      <div style={{ color: 'var(--color-text-tertiary)' }}>
                         Wake-word model loading…
                       </div>
                     )}
@@ -468,8 +433,8 @@ export function VoiceOverlay() {
             )}
           </div>
 
-          {/* Footer: turns + latency toggle */}
-          {(turnsCompleted > 0 || Object.keys(latency).length > 0) && (
+          {/* Footer: turns + VAD diagnostics + latency toggle */}
+          {(turnsCompleted > 0 || Object.keys(latency).length > 0 || lastVadEvent) && (
             <div
               className="px-3 py-1.5 space-y-1"
               style={{ borderTop: '1px solid var(--color-border)' }}
@@ -477,17 +442,36 @@ export function VoiceOverlay() {
               <div className="flex items-center justify-between">
                 <span className="text-[10px]" style={{ color: 'var(--color-text-tertiary)' }}>
                   Turns: {turnsCompleted}
+                  {lastTriggerSource && (
+                    <> · trigger: {lastTriggerSource}</>
+                  )}
                 </span>
                 <button
                   onClick={() => setShowLatency((v) => !v)}
                   className="text-[10px] flex items-center gap-0.5"
                   style={{ color: 'var(--color-text-tertiary)' }}
                 >
-                  Latency {showLatency ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
+                  Diag {showLatency ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
                 </button>
               </div>
               {showLatency && (
                 <div className="space-y-0.5">
+                  {lastVadEvent && (
+                    <>
+                      <div className="flex justify-between text-[10px]" style={{ color: 'var(--color-text-tertiary)' }}>
+                        <span>VAD stop reason</span>
+                        <span className="font-mono">{lastVadEvent.stop_reason}</span>
+                      </div>
+                      <div className="flex justify-between text-[10px]" style={{ color: 'var(--color-text-tertiary)' }}>
+                        <span>Recording duration</span>
+                        <span className="font-mono">{lastVadEvent.duration_s.toFixed(1)} s</span>
+                      </div>
+                      <div className="flex justify-between text-[10px]" style={{ color: 'var(--color-text-tertiary)' }}>
+                        <span>Silence threshold</span>
+                        <span className="font-mono">{lastVadEvent.silence_stop_ms} ms</span>
+                      </div>
+                    </>
+                  )}
                   <LatencyRow label="Wake → ack" ms={latency.wake_to_ack_ms} />
                   <LatencyRow label="Wake → record start" ms={latency.wake_to_record_start_ms} />
                   <LatencyRow label="STT duration" ms={latency.stt_duration_ms} />
@@ -506,10 +490,10 @@ export function VoiceOverlay() {
             style={{ borderTop: '1px solid var(--color-border)' }}
           >
             <span className="text-[10px]" style={{ color: 'var(--color-text-tertiary)' }}>
-              {isRunning ? (
-                <>Say <em>"stop"</em>, <em>"cancel"</em>, or <em>"never mind"</em> to end</>
+              {isActive ? (
+                <>Say <em>"stop"</em> or click mic to turn off</>
               ) : (
-                'Voice session inactive'
+                'Voice off — click mic to enable'
               )}
             </span>
             <a
@@ -551,30 +535,16 @@ export function VoiceOverlay() {
 
         <button
           onClick={handleMicClick}
-          className={`w-12 h-12 rounded-full flex items-center justify-center shadow-lg transition-all ${stateRing(voiceState)}`}
+          className="w-12 h-12 rounded-full flex items-center justify-center shadow-lg transition-all"
           style={{
-            background: isRunning
-              ? voiceState === 'recording' || voiceState === 'waiting_for_silence'
-                ? 'var(--color-error, #ef4444)'
-                : 'var(--color-accent)'
-              : 'var(--color-bg-secondary)',
+            background: isActive ? 'var(--color-accent)' : 'var(--color-bg-secondary)',
             border: '1px solid var(--color-border)',
-            color: isRunning ? '#fff' : 'var(--color-text-secondary)',
+            color: isActive ? '#fff' : 'var(--color-text-secondary)',
           }}
-          title={
-            isRunning
-              ? isWakeListening
-                ? wakePhraseActive
-                  ? `Say "Hey Jarvis" or click to trigger manually`
-                  : 'Click to trigger recording (wake word unavailable)'
-                : 'Stop voice session'
-              : 'Start voice session manually'
-          }
-          aria-label={isRunning ? 'Stop Jarvis voice session' : 'Start Jarvis voice session'}
+          title={isActive ? 'Turn off voice system' : 'Turn on voice system'}
+          aria-label={isActive ? 'Turn off Jarvis voice' : 'Turn on Jarvis voice'}
         >
-          {voiceState === 'thinking' || voiceState === 'transcribing' ? (
-            <Loader2 size={20} className="animate-spin" />
-          ) : isRunning ? (
+          {isActive ? (
             <Mic size={20} />
           ) : (
             <MicOff size={20} />
