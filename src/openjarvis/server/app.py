@@ -31,6 +31,7 @@ from openjarvis.server.workbench_routes import router as workbench_router
 from openjarvis.server.nus_routes import router as nus_router
 from openjarvis.server.voice_routes import router as voice_router
 from openjarvis.server.orchestrator_routes import router as orchestrator_router
+from openjarvis.server.company_org_routes import router as company_org_router
 
 logger = logging.getLogger(__name__)
 
@@ -324,6 +325,7 @@ def create_app(
     app.include_router(nus_router)
     app.include_router(voice_router)
     app.include_router(orchestrator_router)
+    app.include_router(company_org_router)
     include_all_routes(app)
 
     # Restore SendBlue channel bindings from database on startup
