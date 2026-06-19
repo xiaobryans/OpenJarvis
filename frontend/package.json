@@ -1,7 +1,7 @@
 {
   "name": "openjarvis-chat",
   "private": true,
-  "version": "1.0.1",
+  "version": "1.0.2",
   "type": "module",
   "engines": {
     "node": ">=20"
@@ -12,6 +12,9 @@
     "build:tauri": "tsc -b && vite build --outDir dist",
     "preview": "vite preview",
     "tauri": "tauri",
+    "build:tauri:local": "tauri build --bundles app --config '{\"bundle\":{\"createUpdaterArtifacts\":false},\"plugins\":{\"updater\":{\"active\":false}}}'",
+    "build:tauri:release": "tauri build",
+    "build:local:safe": "bash ../scripts/build-local.sh",
     "test": "vitest run"
   },
   "dependencies": {
