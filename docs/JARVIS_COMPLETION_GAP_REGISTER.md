@@ -540,11 +540,11 @@ Extended real-world trial required before CURSOR_WINDSURF_REPLACEMENT_ACCEPT.
 | Connector live reads | 4/5 | 4/5 | `DAILY_DRIVER_ACCEPT` | Slack/GitHub/Telegram live; Gmail/Calendar/Drive BLOCKED_CREDENTIALS |
 | Slack HQ migration | 4/5 | 4/5 | `DAILY_DRIVER_ACCEPT` | Model implemented; workspace rename = Bryan manual action |
 
-**Overall score (required categories): 4.1/5** (voice excluded as OPTIONAL_BACKLOG)
-**Platform verdict: `JARVIS_SINGLE_AI_PLATFORM_ACCEPT`**
-**Voice verdict: `VOICE_HOLD_UNSAFE_PARKED`** (OPTIONAL_BACKLOG for text platform)
-**ChatGPT replacement verdict: `JARVIS_PRIMARY_EXTERNAL_APPS_FALLBACK`**
-**Cursor/Windsurf verdict: `JARVIS_PRIMARY_CURSOR_FALLBACK`**
+**Overall score (required categories): 4.1/5** (voice excluded — VERIFIED_OPTIONAL_NOT_REQUIRED_FOR_REPLACEMENT)
+**Platform verdict: `DAILY_DRIVER_ACCEPT_FOUNDATION_PENDING_CERTIFICATION`** — Foundation proven; Slack live ops and Google connectors must be CLEARED before full platform certification claim.
+**Voice verdict: `VOICE_HOLD_UNSAFE_PARKED`** (VERIFIED_OPTIONAL_NOT_REQUIRED_FOR_TEXT_PLATFORM)
+**ChatGPT replacement verdict: `JARVIS_PRIMARY_EXTERNAL_APPS_FALLBACK_PENDING_CERTIFICATION`**
+**Cursor/Windsurf verdict: `JARVIS_PRIMARY_CURSOR_FALLBACK_PENDING_CERTIFICATION`**
 
 Voice justification for OPTIONAL_BACKLOG: Bryan's target is replacing text-based AI frontends (ChatGPT web, Cursor, Windsurf). None are voice-primary. Voice is a different interaction modality, planned for a dedicated Voice Sprint. All 10 known blockers remain; us13_voice safety gate active.
 
@@ -652,12 +652,12 @@ Counts below use the **Status** column only. No plain "ACCEPT" — split into `D
 
 **Scorecard summary:** 14 of 16 categories at `DAILY_DRIVER_ACCEPT` (≥ 4/5); 1 at `PUBLIC_READY_ACCEPT` (5/5); 1 OPTIONAL_BACKLOG (voice).
 
-**Verdict: JARVIS_SINGLE_AI_PLATFORM_ACCEPT** — All required platform categories are at 4/5 DAILY_DRIVER_ACCEPT. Memory continuity proven with 7-proof suite. Model/provider matrix complete. Voice reclassified OPTIONAL_BACKLOG. Connectors: Slack/GitHub/Telegram proven; Google BLOCKED_CREDENTIALS with exact Bryan action.
+**Verdict: DAILY_DRIVER_ACCEPT_FOUNDATION_PENDING_CERTIFICATION** — Foundation categories are at 4/5. Memory continuity proven. Model/provider matrix complete. Remaining blockers: Slack live ops (missing chat:write/channels:manage scopes) and Google OAuth (client secret missing) must be cleared before full certification claim. Voice VERIFIED_OPTIONAL_NOT_REQUIRED_FOR_TEXT_PLATFORM.
 
-**Platform verdict:** `JARVIS_SINGLE_AI_PLATFORM_ACCEPT`
-**ChatGPT verdict:** `JARVIS_PRIMARY_EXTERNAL_APPS_FALLBACK` (burn-in pending)
-**Cursor/Windsurf verdict:** `JARVIS_PRIMARY_CURSOR_FALLBACK` (extended trial pending)
-**Voice verdict:** `VOICE_HOLD_UNSAFE_PARKED / OPTIONAL_BACKLOG`
+**Platform verdict:** `DAILY_DRIVER_ACCEPT_FOUNDATION_PENDING_CERTIFICATION`
+**ChatGPT/external AI verdict:** `JARVIS_PRIMARY_EXTERNAL_APPS_FALLBACK_PENDING_CERTIFICATION` (Fixed Certification Suite not yet run)
+**Cursor/Windsurf verdict:** `JARVIS_PRIMARY_CURSOR_FALLBACK_PENDING_CERTIFICATION` (Fixed Certification Suite not yet run)
+**Voice verdict:** `VOICE_HOLD_UNSAFE_PARKED` / `VERIFIED_OPTIONAL_NOT_REQUIRED_FOR_TEXT_PLATFORM`
 
 ---
 
@@ -774,7 +774,7 @@ No item is left as plain "future scope."
 | AWS/S3 memory sync | Store memory entries in S3 for cross-device access | `PLANNED_IN_EXISTING_PROMPT` | Local SQLite is daily-driver sufficient; S3 is enhancement |
 | Obsidian vault sync | Bidirectional sync between Jarvis memory and Obsidian notes | `PLANNED_IN_EXISTING_PROMPT` | Requires Obsidian plugin API or local vault path |
 | Prompt/context cache optimization | Cache frequent prompts to reduce latency + API cost | `PLANNED_IN_EXISTING_PROMPT` | OpenAI/Anthropic prompt caching APIs available |
-| Burn-in certification | 30+ day daily-driver trial before claiming final replacement | `PLANNED_IN_EXISTING_PROMPT` | Required for CURSOR_WINDSURF_REPLACEMENT_ACCEPT |
+| Fixed Certification Suite | Fixed-count Jarvis Replacement Certification Suite (not open-ended daily-use testing) — determines whether Jarvis replaces ChatGPT/Cursor/Windsurf | `BLOCKED_WAITING_FOR_BRYAN_NOW` | Requires all required blockers CLEARED first |
 | Voice sprint reopen | VAD, endpointing, STT/TTS provider, silence rejection, approval UI | `OPTIONAL_BACKLOG` | Only when Bryan explicitly authorizes |
 
 **After Cloud Memory sprint:** Update burn-in certification status; reassess Cursor/Windsurf full replacement verdict.
@@ -814,12 +814,12 @@ No item is left as plain "future scope."
 | Cloud memory architecture | `DAILY_DRIVER_ACCEPT` (local SQLite operational; cloud `BLOCKED_CREDENTIALS`) |
 | Obsidian knowledge mirror | `DAILY_DRIVER_ACCEPT` |
 | Prompt/context cache | `DAILY_DRIVER_ACCEPT` |
-| Slack ops command center | `DAILY_DRIVER_ACCEPT` (policy + guardrails verified; live sends `BLOCKED_CREDENTIALS`) |
-| Telegram ops | `DAILY_DRIVER_ACCEPT` (policy + guardrails verified; live sends `BLOCKED_USER_AUTHORIZATION`) |
+| Slack ops command center | `BLOCKED_WAITING_FOR_BRYAN_NOW` (policy + guardrails verified; missing chat:write + channels:manage scopes — Bryan must add scopes at api.slack.com) |
+| Telegram ops | `CLEARED` (smoke test SENT message_id=9; JARVIS_TELEGRAM_CHAT_ID alias resolved) |
 | Dynamic agent roster | `DAILY_DRIVER_ACCEPT` |
-| Cursor/Windsurf replacement | `JARVIS_PRIMARY_CURSOR_FALLBACK` — burn-in not complete |
-| External AI apps replacement | `JARVIS_PRIMARY_EXTERNAL_APPS_FALLBACK` — burn-in not complete |
-| Voice | `VOICE_HOLD_UNSAFE_PARKED` / `OPTIONAL_BACKLOG` |
+| Cursor/Windsurf replacement | `JARVIS_PRIMARY_CURSOR_FALLBACK_PENDING_CERTIFICATION` — Fixed Certification Suite not yet run |
+| External AI platform replacement certification | `JARVIS_PRIMARY_EXTERNAL_APPS_FALLBACK_PENDING_CERTIFICATION` — Fixed Certification Suite not yet run |
+| Voice | `VOICE_HOLD_UNSAFE_PARKED` / `VERIFIED_OPTIONAL_NOT_REQUIRED_FOR_TEXT_PLATFORM` |
 
 ### Tests
 

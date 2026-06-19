@@ -106,8 +106,13 @@ class TelegramOutboundPolicy:
         self._audit_log: List[TelegramAuditRecord] = []
 
     def get_allowed_chat_id(self) -> Optional[str]:
-        """Get Bryan's approved Telegram chat ID without logging it."""
-        return os.environ.get("TELEGRAM_BRYAN_CHAT_ID", "").strip() or None
+        """Get Bryan's approved Telegram chat ID without logging it.
+
+        Checks TELEGRAM_BRYAN_CHAT_ID first, then alias JARVIS_TELEGRAM_CHAT_ID.
+        """
+        from openjarvis.channels.credentials import get_telegram_bryan_chat_id
+        val, _ = get_telegram_bryan_chat_id()
+        return val or None
 
     def check_send(self, message_category: str) -> Tuple[bool, str]:
         if message_category not in ALLOWED_TELEGRAM_CATEGORIES:
@@ -175,7 +180,10 @@ class TelegramOpsCommandCenter:
         bot_token: str = "",
         policy: Optional[TelegramOutboundPolicy] = None,
     ) -> None:
-        self._token = bot_token or os.environ.get("TELEGRAM_BOT_TOKEN", "")
+        from openjarvis.channels.credentials import get_telegram_bot_token
+        _loaded, _src = get_telegram_bot_token()
+        self._token = bot_token or _loaded
+        self._credential_source = _src if (bot_token or _loaded) else "MISSING"
         self._policy = policy or TelegramOutboundPolicy()
 
     def _has_token(self) -> bool:

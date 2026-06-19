@@ -104,8 +104,9 @@ class TestSlackOutboundPolicy:
 
 class TestSlackOpsCommandCenter:
     def test_blocked_without_token(self):
-        center = SlackOpsCommandCenter(bot_token="")
-        with mock.patch.dict(os.environ, {"SLACK_BOT_TOKEN": ""}):
+        # Patch credential loader to return empty token for isolation
+        with mock.patch("openjarvis.channels.credentials.get_slack_bot_token", return_value=("", "MISSING")):
+            center = SlackOpsCommandCenter(bot_token="")
             record = center.send_ops_message(
                 "jarvis-ops", "test msg", "sprint_status_update"
             )

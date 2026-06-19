@@ -289,7 +289,10 @@ class SlackOpsCommandCenter:
         bot_token: str = "",
         policy: Optional[SlackOutboundPolicy] = None,
     ) -> None:
-        self._token = bot_token or os.environ.get("SLACK_BOT_TOKEN", "")
+        from openjarvis.channels.credentials import get_slack_bot_token
+        _loaded, _src = get_slack_bot_token()
+        self._token = bot_token or _loaded
+        self._credential_source = _src if (bot_token or _loaded) else "MISSING"
         self._policy = policy or SlackOutboundPolicy()
 
     def _headers(self) -> Dict[str, str]:
