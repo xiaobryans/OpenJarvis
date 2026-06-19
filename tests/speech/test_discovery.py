@@ -40,9 +40,9 @@ def test_get_speech_backend_returns_none_if_nothing_available():
 
 
 def test_auto_discovery_priority():
-    """Auto mode tries backends in priority order."""
+    """Auto mode tries backends in priority order — deepgram is primary (Voice Safety Sprint)."""
     from openjarvis.speech._discovery import DISCOVERY_ORDER
 
-    assert DISCOVERY_ORDER[0] == "faster-whisper"
+    assert DISCOVERY_ORDER[0] == "deepgram"
+    assert "faster-whisper" in DISCOVERY_ORDER
     assert "openai" in DISCOVERY_ORDER
-    assert "deepgram" in DISCOVERY_ORDER

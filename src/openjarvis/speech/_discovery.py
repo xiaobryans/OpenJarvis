@@ -1,20 +1,43 @@
-"""Auto-discover available speech-to-text backends."""
+"""Auto-discover available speech-to-text backends.
+
+Priority (Voice Safety Sprint):
+  Deepgram is the primary/default STT provider.
+  JARVIS_STT_PROVIDER env var overrides discovery order.
+  Existing providers (faster-whisper, openai) remain as fallback.
+"""
 
 from __future__ import annotations
 
 import os
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, List, Optional
 
 if TYPE_CHECKING:
     from openjarvis.core.config import JarvisConfig
     from openjarvis.speech._stubs import SpeechBackend
 
-# Priority order: local first, then cloud
-DISCOVERY_ORDER = [
+# Default priority: deepgram primary, local as fallback
+_DEFAULT_DISCOVERY_ORDER: List[str] = [
+    "deepgram",
     "faster-whisper",
     "openai",
-    "deepgram",
 ]
+
+# Legacy alias kept for import compatibility
+DISCOVERY_ORDER = _DEFAULT_DISCOVERY_ORDER
+
+
+def _get_discovery_order() -> List[str]:
+    """Return STT discovery order, respecting JARVIS_STT_PROVIDER override."""
+    stt_provider = os.environ.get("JARVIS_STT_PROVIDER", "").strip().lower()
+    if not stt_provider or stt_provider == "deepgram":
+        # Deepgram first (default)
+        return _DEFAULT_DISCOVERY_ORDER
+    # Explicit override: put the requested provider first, then default order
+    order = [stt_provider]
+    for p in _DEFAULT_DISCOVERY_ORDER:
+        if p != stt_provider:
+            order.append(p)
+    return order
 
 
 def _create_backend(
@@ -66,7 +89,8 @@ def get_speech_backend(config: "JarvisConfig") -> Optional["SpeechBackend"]:
     """Resolve the speech backend from config.
 
     If ``config.speech.backend`` is ``"auto"``, tries backends in
-    priority order and returns the first healthy one.
+    priority order (deepgram first by default) and returns the first healthy one.
+    Override with JARVIS_STT_PROVIDER env var.
     """
     # Trigger registration of built-in backends
     import openjarvis.speech  # noqa: F401
@@ -76,8 +100,8 @@ def get_speech_backend(config: "JarvisConfig") -> Optional["SpeechBackend"]:
     if backend_key != "auto":
         return _create_backend(backend_key, config)
 
-    # Auto-discovery: try each in priority order; skip unhealthy backends
-    for key in DISCOVERY_ORDER:
+    # Auto-discovery: deepgram first unless JARVIS_STT_PROVIDER overrides
+    for key in _get_discovery_order():
         backend = _create_backend(key, config)
         if backend is not None and backend.health():
             return backend

@@ -65,6 +65,9 @@ STOP_PHRASES: List[str] = [
     "stop listening",
     "stop",
     "cancel",
+    "never mind",
+    "nevermind",
+    "pause",
     "that's all",
     "thats all",
     "go back to sleep",
@@ -351,9 +354,9 @@ def transcribe_command_result(
         return backend.transcribe(audio_bytes, format="wav", language=language)
 
     if engine == STTEngine.DEEPGRAM:
-        from openjarvis.speech.deepgram import DeepgramBackend
+        from openjarvis.speech.deepgram import DeepgramSpeechBackend
 
-        backend = DeepgramBackend()
+        backend = DeepgramSpeechBackend()
         return backend.transcribe(audio_bytes, format="wav", language=language)
 
     raise RuntimeError(
@@ -574,7 +577,9 @@ def speak_response(
 ) -> bool:
     """Speak ``text`` using the configured TTS engine.
 
-    Reuses the existing TTS path (get_tts_status → macOS say / OpenAI TTS).
+    TTS priority (Voice Safety Sprint):
+      Deepgram Aura (primary) → macOS say → OpenAI TTS → not_configured
+    Override with JARVIS_TTS_PROVIDER env var.
     Runs synchronously so the loop waits for speech to finish before
     returning to wake-word listening.
 
@@ -589,6 +594,45 @@ def speak_response(
     engine = tts.get("tts_status", TTSEngine.NOT_CONFIGURED)
 
     logger.debug("TTS speak: engine=%s text=%r", engine, text[:80])
+
+    if engine == TTSEngine.DEEPGRAM:
+        import tempfile
+        import os as _os
+        try:
+            from openjarvis.speech.deepgram_tts import DeepgramTTSBackend
+            api_key = _os.environ.get("DEEPGRAM_API_KEY", "")
+            if not api_key:
+                logger.warning("Deepgram TTS: DEEPGRAM_API_KEY not set — skipping")
+                return False
+            if cancel_check is not None and cancel_check():
+                return False
+            backend = DeepgramTTSBackend(api_key=api_key)
+            result = backend.synthesize(text, output_format="mp3")
+            if not result.audio:
+                logger.warning("Deepgram TTS returned empty audio")
+                return False
+            with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp:
+                tmp_path = tmp.name
+                tmp.write(result.audio)
+            if cancel_check is not None and cancel_check():
+                _os.unlink(tmp_path)
+                return False
+            proc = subprocess.Popen(["afplay", tmp_path])
+            if playback is not None:
+                playback._set_proc(proc)
+            try:
+                if playback is not None:
+                    playback._wait_proc(proc, 60.0)
+                else:
+                    proc.wait(timeout=60)
+            finally:
+                try:
+                    _os.unlink(tmp_path)
+                except Exception:
+                    pass
+        except Exception as exc:
+            logger.warning("Deepgram TTS failed: %s", exc)
+        return not (cancel_check is not None and cancel_check())
 
     if engine == TTSEngine.MACOS_SAY:
         try:
@@ -649,7 +693,11 @@ def speak_response(
             logger.warning("OpenAI TTS failed: %s", exc)
         return not (cancel_check is not None and cancel_check())
 
-    logger.warning("TTS not configured (status=%r) — response not spoken", engine)
+    logger.warning(
+        "TTS not configured (status=%r) — response not spoken. "
+        "Set DEEPGRAM_API_KEY for primary Deepgram TTS.",
+        engine,
+    )
     return False
 
 

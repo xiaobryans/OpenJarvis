@@ -54,6 +54,7 @@ class STTEngine:
 
 
 class TTSEngine:
+    DEEPGRAM = "deepgram"
     MACOS_SAY = "macos_say"
     OPENAI_TTS = "openai_tts"
     NOT_CONFIGURED = "not_configured"
@@ -180,7 +181,64 @@ def get_wake_word_status() -> Dict[str, Any]:
 
 
 def get_stt_status() -> Dict[str, Any]:
-    """Check speech-to-text engine availability."""
+    """Check speech-to-text engine availability.
+
+    Priority (Voice Safety Sprint):
+      Deepgram is the primary/default STT provider.
+      Override with JARVIS_STT_PROVIDER env var.
+      Existing providers (faster-whisper, openai) are fallback only.
+    """
+    try:
+        from openjarvis.projects.source_links import _load_openjarvis_env
+        _load_openjarvis_env()
+    except Exception:
+        pass
+
+    stt_override = os.environ.get("JARVIS_STT_PROVIDER", "").strip().lower()
+
+    # Deepgram check — primary/default unless JARVIS_STT_PROVIDER says otherwise
+    if stt_override in ("", "deepgram"):
+        deepgram_key = os.environ.get("DEEPGRAM_API_KEY", "")
+        if deepgram_key:
+            return {
+                "stt_status": STTEngine.DEEPGRAM,
+                "engine": STTEngine.DEEPGRAM,
+                "is_configured": True,
+                "requires_api_key": True,
+                "key_env_var": "DEEPGRAM_API_KEY",
+                "primary": True,
+                "blocker": None,
+            }
+
+    # Explicit override to faster-whisper or openai
+    if stt_override == "faster-whisper" or stt_override == "faster_whisper":
+        try:
+            from faster_whisper import WhisperModel  # noqa: F401
+            return {
+                "stt_status": STTEngine.FASTER_WHISPER,
+                "engine": STTEngine.FASTER_WHISPER,
+                "is_configured": True,
+                "requires_api_key": False,
+                "primary": False,
+                "blocker": None,
+            }
+        except ImportError:
+            pass
+
+    if stt_override == "openai":
+        openai_key = os.environ.get("OPENAI_API_KEY", "")
+        if openai_key:
+            return {
+                "stt_status": STTEngine.OPENAI_WHISPER,
+                "engine": STTEngine.OPENAI_WHISPER,
+                "is_configured": True,
+                "requires_api_key": True,
+                "key_env_var": "OPENAI_API_KEY",
+                "primary": False,
+                "blocker": None,
+            }
+
+    # Fallback chain: faster-whisper → openai (deepgram key missing)
     try:
         from faster_whisper import WhisperModel  # noqa: F401
         return {
@@ -188,15 +246,11 @@ def get_stt_status() -> Dict[str, Any]:
             "engine": STTEngine.FASTER_WHISPER,
             "is_configured": True,
             "requires_api_key": False,
+            "primary": False,
+            "fallback_reason": "DEEPGRAM_API_KEY not set",
             "blocker": None,
         }
     except ImportError:
-        pass
-
-    try:
-        from openjarvis.projects.source_links import _load_openjarvis_env
-        _load_openjarvis_env()
-    except Exception:
         pass
 
     openai_key = os.environ.get("OPENAI_API_KEY", "")
@@ -207,17 +261,8 @@ def get_stt_status() -> Dict[str, Any]:
             "is_configured": True,
             "requires_api_key": True,
             "key_env_var": "OPENAI_API_KEY",
-            "blocker": None,
-        }
-
-    deepgram_key = os.environ.get("DEEPGRAM_API_KEY", "")
-    if deepgram_key:
-        return {
-            "stt_status": STTEngine.DEEPGRAM,
-            "engine": STTEngine.DEEPGRAM,
-            "is_configured": True,
-            "requires_api_key": True,
-            "key_env_var": "DEEPGRAM_API_KEY",
+            "primary": False,
+            "fallback_reason": "DEEPGRAM_API_KEY not set",
             "blocker": None,
         }
 
@@ -226,15 +271,16 @@ def get_stt_status() -> Dict[str, Any]:
         "engine": STTEngine.NOT_CONFIGURED,
         "is_configured": False,
         "blockers": [
-            "faster-whisper not installed (run: pip install faster-whisper)",
-            "OPENAI_API_KEY not set",
-            "DEEPGRAM_API_KEY not set",
+            "DEEPGRAM_API_KEY not set — set in .env (primary provider)",
+            "faster-whisper not installed — run: pip install faster-whisper (fallback)",
+            "OPENAI_API_KEY not set (fallback)",
         ],
         "install_options": [
-            "pip install faster-whisper  # local, free, no API key",
-            "Set OPENAI_API_KEY for OpenAI Whisper cloud STT",
-            "Set DEEPGRAM_API_KEY for Deepgram cloud STT",
+            "Set DEEPGRAM_API_KEY in .env for Deepgram cloud STT (primary)",
+            "pip install faster-whisper  # local fallback, no API key",
+            "Set OPENAI_API_KEY for OpenAI Whisper cloud STT (fallback)",
         ],
+        "setup": "BLOCKED_WAITING_FOR_BRYAN_NOW — add DEEPGRAM_API_KEY to .env",
     }
 
 
@@ -244,19 +290,52 @@ def get_stt_status() -> Dict[str, Any]:
 
 
 def get_tts_status() -> Dict[str, Any]:
-    """Check text-to-speech engine availability."""
+    """Check text-to-speech engine availability.
+
+    Priority (Voice Safety Sprint):
+      Deepgram is the primary/default TTS provider.
+      Override with JARVIS_TTS_PROVIDER env var.
+      macOS say and OpenAI TTS are fallback.
+    """
+    try:
+        from openjarvis.projects.source_links import _load_openjarvis_env
+        _load_openjarvis_env()
+    except Exception:
+        pass
+
+    tts_override = os.environ.get("JARVIS_TTS_PROVIDER", "").strip().lower()
+
+    # Deepgram TTS — primary/default
+    if tts_override in ("", "deepgram"):
+        deepgram_key = os.environ.get("DEEPGRAM_API_KEY", "")
+        if deepgram_key:
+            return {
+                "tts_status": TTSEngine.DEEPGRAM,
+                "engine": TTSEngine.DEEPGRAM,
+                "is_configured": True,
+                "requires_api_key": True,
+                "key_env_var": "DEEPGRAM_API_KEY",
+                "primary": True,
+                "note": "Deepgram Aura TTS (primary)",
+            }
+
+    # macOS say — always available on macOS as fallback
     is_macos = platform.system() == "Darwin"
     say_path = shutil.which("say")
-    if is_macos and say_path:
-        return {
-            "tts_status": TTSEngine.MACOS_SAY,
-            "engine": TTSEngine.MACOS_SAY,
-            "is_configured": True,
-            "requires_api_key": False,
-            "say_path": say_path,
-            "note": "macOS built-in TTS ('say' command) available",
-        }
+    if tts_override in ("macos_say", "say") or (tts_override == "" and is_macos and say_path):
+        if is_macos and say_path:
+            return {
+                "tts_status": TTSEngine.MACOS_SAY,
+                "engine": TTSEngine.MACOS_SAY,
+                "is_configured": True,
+                "requires_api_key": False,
+                "say_path": say_path,
+                "primary": False,
+                "fallback_reason": "DEEPGRAM_API_KEY not set",
+                "note": "macOS built-in TTS ('say' command) — fallback",
+            }
 
+    # OpenAI TTS fallback
     openai_key = os.environ.get("OPENAI_API_KEY", "")
     if openai_key:
         return {
@@ -265,6 +344,21 @@ def get_tts_status() -> Dict[str, Any]:
             "is_configured": True,
             "requires_api_key": True,
             "key_env_var": "OPENAI_API_KEY",
+            "primary": False,
+            "fallback_reason": "DEEPGRAM_API_KEY not set",
+        }
+
+    # macOS say as last resort
+    if is_macos and say_path:
+        return {
+            "tts_status": TTSEngine.MACOS_SAY,
+            "engine": TTSEngine.MACOS_SAY,
+            "is_configured": True,
+            "requires_api_key": False,
+            "say_path": say_path,
+            "primary": False,
+            "fallback_reason": "DEEPGRAM_API_KEY not set",
+            "note": "macOS built-in TTS ('say' command) — fallback",
         }
 
     return {
@@ -272,6 +366,7 @@ def get_tts_status() -> Dict[str, Any]:
         "engine": TTSEngine.NOT_CONFIGURED,
         "is_configured": False,
         "blockers": [
+            "DEEPGRAM_API_KEY not set — set in .env (primary Deepgram TTS)",
             f"macOS 'say' command not found (platform={platform.system()})",
             "OPENAI_API_KEY not set",
         ],
@@ -505,7 +600,18 @@ def get_voice_status() -> Dict[str, Any]:
         "microphone_device": fb.get("microphone_device", ""),
         "stt_status": stt.get("stt_status", STTEngine.NOT_CONFIGURED),
         "tts_status": tts.get("tts_status", TTSEngine.NOT_CONFIGURED),
+        "stt_primary": stt.get("primary", False),
+        "tts_primary": tts.get("primary", False),
+        "stt_fallback_reason": stt.get("fallback_reason", ""),
+        "tts_fallback_reason": tts.get("fallback_reason", ""),
         "approval_pin_status": pin_status,
+        # Voice provider config (env-based)
+        "voice_provider_config": {
+            "JARVIS_VOICE_PROVIDER": os.environ.get("JARVIS_VOICE_PROVIDER", "deepgram (default)"),
+            "JARVIS_STT_PROVIDER": os.environ.get("JARVIS_STT_PROVIDER", "deepgram (default)"),
+            "JARVIS_TTS_PROVIDER": os.environ.get("JARVIS_TTS_PROVIDER", "deepgram (default)"),
+            "deepgram_key_set": bool(os.environ.get("DEEPGRAM_API_KEY", "")),
+        },
         # Raw sub-statuses
         "wake_word": wake,
         "stt": stt,
@@ -586,6 +692,73 @@ def classify_voice_risk(action_class: str) -> str:
     if action_class in _VOICE_HARD_BLOCKED:
         return VoiceApprovalRisk.DANGEROUS
     return _RISK_FOR_ACTION.get(action_class, VoiceApprovalRisk.MEDIUM)
+
+
+# Natural language keywords → risk tiers for voice transcript classification
+_DANGEROUS_KEYWORDS: frozenset = frozenset({
+    "delete", "destroy", "wipe", "remove file", "drop table",
+    "deploy", "push to production", "publish", "go live",
+    "send message", "send slack", "send telegram", "send email",
+    "merge to main", "force push",
+    "change billing", "stripe", "vercel deploy", "aws", "supabase",
+    "expose", "open port", "tailscale funnel",
+})
+_HIGH_KEYWORDS: frozenset = frozenset({
+    "push", "git push", "run tests",
+    "send", "post to slack", "post to telegram",
+})
+_LOW_KEYWORDS: frozenset = frozenset({
+    "what", "show", "list", "check", "tell me", "read",
+    "status", "help", "how", "explain", "summarize",
+    "draft", "create plan", "scaffold", "set up",
+    "weather", "time", "calculate",
+})
+
+
+def classify_voice_action_risk(text: str) -> Dict[str, Any]:
+    """Classify a natural language voice transcript into a risk tier.
+
+    This maps free-form speech to action risk levels so voice safety gates
+    can be applied before any action is executed.
+
+    Returns a dict with 'risk_level' and 'reason'.
+    """
+    normalized = text.lower().strip()
+
+    for kw in _DANGEROUS_KEYWORDS:
+        if kw in normalized:
+            return {
+                "risk_level": VoiceApprovalRisk.DANGEROUS,
+                "reason": f"Matched dangerous keyword: {kw!r}",
+                "action_required": "approval_required — voice cannot auto-approve",
+                "original": text,
+            }
+
+    for kw in _HIGH_KEYWORDS:
+        if kw in normalized:
+            return {
+                "risk_level": VoiceApprovalRisk.HIGH,
+                "reason": f"Matched high-risk keyword: {kw!r}",
+                "action_required": "approval_required — voice can request approval",
+                "original": text,
+            }
+
+    for kw in _LOW_KEYWORDS:
+        if kw in normalized:
+            return {
+                "risk_level": VoiceApprovalRisk.LOW,
+                "reason": f"Matched low-risk keyword: {kw!r}",
+                "action_required": "none — route through normal Jarvis path",
+                "original": text,
+            }
+
+    # Unknown / ambiguous → medium by default
+    return {
+        "risk_level": VoiceApprovalRisk.MEDIUM,
+        "reason": "No specific risk keyword matched — defaulting to medium",
+        "action_required": "route_to_jarvis_for_classification",
+        "original": text,
+    }
 
 
 def issue_approval_challenge(
@@ -745,6 +918,7 @@ __all__ = [
     "tts_test",
     "stt_test",
     "classify_voice_risk",
+    "classify_voice_action_risk",
     "issue_approval_challenge",
     "confirm_voice_approval",
     "parse_voice_approval",

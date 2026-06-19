@@ -324,12 +324,28 @@ def test_full_no_gap_remains_hold_sprint3():
 # 16. Voice remains gated
 # ---------------------------------------------------------------------------
 
-def test_voice_remains_separate_sprint_closure():
-    """Sprint 3 closure: voice status must be SEPARATE_SPRINT_REQUIRED."""
+def test_voice_sprint_status_reflects_current_phase():
+    """Voice Safety Sprint is now authorized and in progress.
+
+    Sprint 3 closure accepted voice as SEPARATE_SPRINT_REQUIRED.
+    Voice Safety Sprint (authorized at HEAD 36f77f88) changed status
+    to VOICE_SAFETY_SPRINT_IN_PROGRESS.
+
+    Full no-gap certification remains HOLD until voice sprint is accepted.
+    """
     from openjarvis.jarvis_os.manifest import build_capability_manifest
     m = build_capability_manifest()
-    assert "SEPARATE_SPRINT" in m["voice_status"], (
-        f"Voice must remain SEPARATE_SPRINT_REQUIRED, got: {m['voice_status']}"
+    voice_status = m["voice_status"]
+    # Accept either Sprint 3 guard or Voice Safety Sprint in-progress
+    assert (
+        "SEPARATE_SPRINT" in voice_status
+        or "VOICE_SAFETY_SPRINT" in voice_status
+    ), (
+        f"Voice status must reflect either SEPARATE_SPRINT or VOICE_SAFETY_SPRINT phase, got: {voice_status}"
+    )
+    # Full no-gap must still be HOLD
+    assert "HOLD" in m.get("no_gap_status", ""), (
+        "Full no-gap certification must remain HOLD until voice sprint is accepted"
     )
 
 

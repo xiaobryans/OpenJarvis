@@ -96,6 +96,18 @@ def _remote_backend_status() -> Dict[str, Any]:
         return {"backend": "github_actions", "configured": False, "classification": "INSUFFICIENT_DATA_TO_VERIFY"}
 
 
+def _voice_manifest_status() -> str:
+    """Return Deepgram primary voice provider status (secret-safe)."""
+    try:
+        import os as _os
+        deepgram_key = _os.environ.get("DEEPGRAM_API_KEY", "")
+        if deepgram_key:
+            return "AVAILABLE — DEEPGRAM_API_KEY configured; deepgram is primary STT+TTS"
+        return "BLOCKED_WAITING_FOR_BRYAN_NOW — DEEPGRAM_API_KEY not set; add to .env"
+    except Exception:
+        return "INSUFFICIENT_DATA_TO_VERIFY"
+
+
 def build_capability_manifest() -> Dict[str, Any]:
     """Build and return the full capability manifest."""
     git = _git_info()
@@ -285,7 +297,14 @@ def build_capability_manifest() -> Dict[str, Any]:
         "missing": missing,
         "all_items": [i.to_dict() for i in items],
         "no_gap_status": "HOLD — see blockers",
-        "voice_status": "SEPARATE_SPRINT_REQUIRED — text fallback required and documented",
+        "voice_status": "VOICE_SAFETY_SPRINT_IN_PROGRESS — Deepgram primary wired; DEEPGRAM_API_KEY required for live STT/TTS",
+        "deepgram_primary_voice_provider": _voice_manifest_status(),
+        "voice_provider_fallback": "faster-whisper (STT) / macOS-say (TTS) — available as fallback",
+        "wake_loop_status": "hotkey_fallback — openwakeword blocked on macOS x86_64/CPython 3.13",
+        "voice_safety_gate_status": "AVAILABLE — VoiceApprovalRisk gates wired; dangerous actions always blocked",
+        "desktop_voice_status": "AVAILABLE — Tauri app voice route wired; requires mic permission + DEEPGRAM_API_KEY",
+        "mobile_voice_status": "AVAILABLE — backend API voice route; browser mic requires WebRTC; text fallback always works",
+        "text_fallback_status": "AVAILABLE — text input path always active",
         "mobile_continuity_status": (
             "WIRED_AND_TESTED (LAN+MacBook-on); MacBook-off: "
             + ("AVAILABLE" if github_token_set else "BLOCKED_WAITING_FOR_BRYAN_NOW — token invalid")
