@@ -1,10 +1,17 @@
 """Voice conversation session REST + SSE API.
 
-Routes:
+Routes (legacy session loop — wake-word path):
   POST /v1/voice/session/start   — start the voice conversation loop
   POST /v1/voice/session/stop    — stop the loop
   GET  /v1/voice/session/status  — current loop state + bridge info
   GET  /v1/voice/session/events  — SSE stream of state/transcript/latency events
+
+Routes (new deterministic turn engine — manual-command-first):
+  POST /v1/voice/turn/start         — start one manual recording turn
+  POST /v1/voice/turn/cancel        — cancel the current turn at any stage
+  POST /v1/voice/turn/end_recording — force-submit captured audio (End & send)
+  GET  /v1/voice/turn/status        — current turn engine state
+  GET  /v1/voice/turn/events        — SSE stream of turn state/transcript/vad events
 
 Platform support (honest declaration):
   macOS (founder platform): SUPPORTED
@@ -39,7 +46,7 @@ from typing import Any, Dict, Optional
 logger = logging.getLogger(__name__)
 
 try:
-    from fastapi import APIRouter
+    from fastapi import APIRouter, Request
     from fastapi.responses import StreamingResponse
     from pydantic import BaseModel, Field
 except ImportError:
@@ -455,6 +462,93 @@ async def stream_voice_events() -> StreamingResponse:
         finally:
             if sess is not None:
                 sess.unsubscribe_events(eq)
+
+    return StreamingResponse(
+        _generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
+# Deterministic turn engine routes — manual-command-first
+# ---------------------------------------------------------------------------
+
+
+def _get_turn_engine():
+    from openjarvis.autonomy.voice_turn_engine import get_engine as _get
+
+    return _get()
+
+
+@router.post("/v1/voice/turn/start")
+async def voice_turn_start(request: Request) -> Dict[str, Any]:
+    """Start one manual recording turn immediately.
+
+    Returns error_code='turn_in_progress' if a turn is already running.
+    Wake word is NOT used — this is the manual-command-first path.
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+
+    language = str(body.get("language", "en"))
+    engine = _get_turn_engine()
+    return engine.start_turn(language=language)
+
+
+@router.post("/v1/voice/turn/cancel")
+async def voice_turn_cancel() -> Dict[str, Any]:
+    """Cancel the current turn at whatever stage it's in."""
+    engine = _get_turn_engine()
+    return engine.cancel_turn()
+
+
+@router.post("/v1/voice/turn/end_recording")
+async def voice_turn_end_recording() -> Dict[str, Any]:
+    """Force-submit captured audio immediately (End & send).
+
+    Triggers the abort_event on the active VAD loop so the recording
+    stops and proceeds to STT without waiting for silence endpointing.
+    Returns error_code='not_recording' if no VAD loop is active.
+    """
+    engine = _get_turn_engine()
+    return engine.end_recording_now()
+
+
+@router.get("/v1/voice/turn/status")
+async def voice_turn_status() -> Dict[str, Any]:
+    """Current turn engine state — safe to poll."""
+    engine = _get_turn_engine()
+    return engine.status()
+
+
+@router.get("/v1/voice/turn/events")
+async def voice_turn_events() -> StreamingResponse:
+    """SSE stream: state changes, transcript, vad diagnostics, keepalives."""
+    engine = _get_turn_engine()
+    sub_q = engine.subscribe()
+
+    async def _generate():
+        loop = asyncio.get_event_loop()
+        try:
+            while True:
+                try:
+                    event = await loop.run_in_executor(
+                        None, lambda: sub_q.get(timeout=15.0)
+                    )
+                    yield f"data: {json.dumps(event)}\n\n"
+                except queue.Empty:
+                    yield ": keepalive\n\n"
+        except asyncio.CancelledError:
+            pass
+        finally:
+            engine.unsubscribe(sub_q)
 
     return StreamingResponse(
         _generate(),
