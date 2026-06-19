@@ -602,34 +602,61 @@ class TestModelProviderSufficiency:
 
 class TestCompletionGapRegister:
     def test_gap_register_exists(self):
-        import os
         from pathlib import Path
         register_path = Path(__file__).parent.parent.parent / "docs" / "JARVIS_COMPLETION_GAP_REGISTER.md"
         assert register_path.exists(), f"Gap register must exist at {register_path}"
 
     def test_gap_register_has_no_vague_future_scope(self):
         from pathlib import Path
+        import re
         register_path = Path(__file__).parent.parent.parent / "docs" / "JARVIS_COMPLETION_GAP_REGISTER.md"
         content = register_path.read_text()
-        # Must not contain vague "future scope" without classification
-        assert "DONE" in content, "Gap register must have DONE items"
-        assert "BLOCKED" in content, "Gap register must classify blockers"
-        # Must not have unclassified "TODO" or "later" as gap status
-        import re
-        # Check it doesn't have raw TODO/later as gap status (these would be problematic)
+        # Must use 4/5 matrix classification codes, not vague language
+        assert "DAILY_DRIVER_ACCEPT" in content, "Gap register must have DAILY_DRIVER_ACCEPT items"
+        assert "BLOCKED_" in content, "Gap register must classify blockers"
+        # Must include score columns
+        assert "Score" in content, "Gap register must include Score column"
+        assert "Target" in content, "Gap register must include Target score column"
+        # Must not have unclassified TODO or 'later' as a status cell
         vague_lines = [
             line for line in content.splitlines()
             if re.match(r"^\|.*`TODO`.*\|", line) or re.match(r"^\|.*`later`.*\|", line)
         ]
         assert not vague_lines, f"Gap register has vague status: {vague_lines}"
 
-    def test_gap_register_classifies_all_statuses(self):
+    def test_gap_register_classifies_all_required_statuses(self):
         from pathlib import Path
         register_path = Path(__file__).parent.parent.parent / "docs" / "JARVIS_COMPLETION_GAP_REGISTER.md"
         content = register_path.read_text()
-        # Required classification types must be present
-        for status in ("DONE", "BLOCKED", "REQUIRES_BRYAN_ACTION"):
-            assert status in content, f"Gap register must contain {status} classification"
+        # Required 4/5 matrix classification types must be present
+        required = (
+            "DAILY_DRIVER_ACCEPT",
+            "BLOCKED_IMPLEMENTATION",
+            "BLOCKED_PROVIDER",
+            "PLANNED_IN_EXISTING_PROMPT",
+        )
+        for status in required:
+            assert status in content, f"Gap register must contain '{status}' classification"
+
+    def test_gap_register_has_us13_voice_section(self):
+        from pathlib import Path
+        register_path = Path(__file__).parent.parent.parent / "docs" / "JARVIS_COMPLETION_GAP_REGISTER.md"
+        content = register_path.read_text()
+        assert "US13" in content, "Gap register must have US13 voice section"
+        assert "HOLD" in content or "PARKED" in content, "US13 must be HOLD/PARKED"
+        assert "VAD" in content, "US13 section must list VAD blocker"
+        assert "barge-in" in content.lower() or "barge_in" in content.lower(), (
+            "US13 section must list barge-in blocker"
+        )
+
+    def test_gap_register_has_bryan_action_table(self):
+        from pathlib import Path
+        register_path = Path(__file__).parent.parent.parent / "docs" / "JARVIS_COMPLETION_GAP_REGISTER.md"
+        content = register_path.read_text()
+        assert "Bryan Action" in content or "Required Bryan Actions" in content, (
+            "Gap register must have Bryan action instructions"
+        )
+        assert "cloud-keys.env" in content, "Bryan action must reference cloud-keys.env"
 
 
 # ---------------------------------------------------------------------------

@@ -1,182 +1,299 @@
-# Jarvis Completion Gap Register
+# Jarvis Completion Gap Register — 4/5 Completion Matrix
 
-**Last updated:** 2026-06-19  
-**Sprint:** Universalize Jarvis and close completion gaps  
-**Base HEAD:** ed6e7527
+**Last updated:** 2026-06-19
+**Sprint:** Universalize Jarvis and close completion gaps
+**Base HEAD:** ed6e7527 | **Sprint HEAD:** c75dce19
+**Branch:** localhost-get-tool
 
 ---
 
 ## Purpose
 
-This register tracks every known gap in Jarvis's universal private AI operating system
-architecture. No vague "future scope." Every gap is explicitly classified.
+This register is the authoritative 4/5 Completion Matrix for Jarvis as a
+universal private AI operating system. No vague future scope. Every item
+is classified with current score, target score, blocker, and acceptance criteria.
 
-Jarvis is Bryan's universal private AI operating system. OMNIX is one project
-under Jarvis — not the root, not the default, not the only purpose.
+**Score scale:**
+- 0 = Not started / missing entirely
+- 1 = Stub/placeholder only
+- 2 = Partial — key path exists but incomplete
+- 3 = Functional for happy path; adversarial/edge cases missing
+- 4 = Daily-driver ready: works for Bryan in normal use
+- 5 = Public/hostile-grade: adversarial inputs handled, full test coverage, no silent failures
+
+**Minimum target:** 4/5 (daily-driver ready) for all required items.
+**5/5 required** where public/hostile-ready applies (security, governance, NUS gates).
 
 ---
 
-## Classification Legend
+## Status Legend
 
-| Status | Meaning |
-|--------|---------|
-| `DONE` | Implemented, tested, accepted |
-| `BLOCKED_SAFETY` | Blocked by safety/governance policy — intentional permanent block |
-| `BLOCKED_PROVIDER` | Blocked: missing model/provider/API key |
-| `BLOCKED_CREDENTIALS` | Blocked: missing authentication credentials |
-| `BLOCKED_USER_AUTHORIZATION` | Blocked: requires explicit Bryan authorization |
-| `REQUIRES_BRYAN_ACTION` | Bryan must take a specific action to unblock |
+| Code | Meaning |
+|------|---------|
+| `DAILY_DRIVER_ACCEPT` | Score ≥ 4; works for Bryan in normal use |
+| `PUBLIC_READY_ACCEPT` | Score = 5; adversarial/hostile-grade |
+| `BLOCKED_BRYAN_ACTION` | Bryan must take a specific action to unblock |
+| `BLOCKED_PROVIDER` | Missing model/provider API key |
+| `BLOCKED_CREDENTIALS` | Missing non-model credential (Apple ID, OAuth token, etc.) |
+| `BLOCKED_HARDWARE` | Missing hardware/system permission |
+| `BLOCKED_SAFETY` | Intentional permanent safety block |
+| `BLOCKED_IMPLEMENTATION` | Code not yet written; no Bryan action can unblock it |
+| `PLANNED_IN_EXISTING_PROMPT` | Planned in a defined future prompt/sprint |
 | `OPTIONAL_BACKLOG` | Not required for core Jarvis OS; optional enhancement |
 
 ---
 
-## Gap Register
+## Matrix
 
-### Universal Front Door Architecture
+### 1. Universal Front Door Architecture
 
-| Item | Status | Evidence | Notes |
-|------|--------|----------|-------|
-| `UniversalTaskRequest` — generic request type for any Bryan request | `DONE` | `src/openjarvis/frontdoor/frontdoor.py` | Works without OMNIX; project_context optional |
-| `ProjectContext` — universal project/task context | `DONE` | `src/openjarvis/orchestrator/contracts.py` | Supports OMNIX, OpenJarvis, personal, research, any future project |
-| `JarvisFrontDoor` — universal entry point | `DONE` | `src/openjarvis/frontdoor/frontdoor.py` | Routes any request; OMNIX is one optional adapter |
-| `FrontDoorAdapter` ABC | `DONE` | `src/openjarvis/frontdoor/frontdoor.py` | OMNIX plugs in as OmnixFrontDoorAdapter |
-| `OmnixFrontDoorAdapter` | `DONE` | `src/openjarvis/frontdoor/omnix_adapter.py` | OMNIX as optional enrichment adapter |
-| `FrontDoorResult` — unified structured result | `DONE` | `src/openjarvis/frontdoor/frontdoor.py` | No raw chain-of-thought |
-| Non-OMNIX project works | `DONE` | `tests/orchestrator/test_universal_jarvis.py` | Synthetic project and personal task verified |
-| Personal (no-project) task works | `DONE` | `tests/orchestrator/test_universal_jarvis.py` | No project_context required |
-
-### COS/GM Runtime
-
-| Item | Status | Evidence | Notes |
-|------|--------|----------|-------|
-| `CosGmOrchestrator` class | `DONE` | `src/openjarvis/orchestrator/cos_gm.py` | Receives UniversalTaskRequest, classifies, activates, returns FrontDoorResult |
-| Universal request routing (not OMNIX-only) | `DONE` | `src/openjarvis/orchestrator/cos_gm.py` | project_context optional |
-| Structured decision record emitted | `DONE` | via DynamicActivationPlanner + NUS decision_record | |
-| Dangerous actions permanently blocked | `DONE` | `_ALWAYS_BLOCKED_ACTIONS` in cos_gm.py | auto_push, auto_merge, production_deploy, external_send |
-| US13 voice HOLD/UNSAFE/PARKED | `DONE` | cos_gm.py + governance_plan | Not activated |
-
-### NUS Scorecard Feedback Loop
-
-| Item | Status | Evidence | Notes |
-|------|--------|----------|-------|
-| Activation planner reads NUS failure patterns | `DONE` | `activation.py::_load_nus_feedback()` | Reads LearningStore; graceful degradation |
-| Activation planner reads NUS routing recommendations | `DONE` | `activation.py::_load_nus_feedback()` | Reads LearnedRouter; graceful degradation |
-| Prior failures escalate validation | `DONE` | `activation.py::_apply_nus_feedback()` | ≥3 failures → testing_validation_manager activated |
-| NUS feedback tagged in plan | `DONE` | `nus_learning_tags` in ActivationPlan | `nus_feedback:loaded` or `nus_feedback:not_available` |
-| get_status() reports nus_feedback_available | `DONE` | `DynamicActivationPlanner.get_status()` | |
-
-### Worker Execution Adapters
-
-| Item | Status | Evidence | Notes |
-|------|--------|----------|-------|
-| `WorkerAdapter` base class | `DONE` | `src/openjarvis/orchestrator/worker_adapters.py` | Gate checking, blocked action enforcement |
-| `DoctorValidationWorkerAdapter` | `DONE` | worker_adapters.py | Dry-run doctor check execution |
-| `NUSLearningWorkerAdapter` | `DONE` | worker_adapters.py | NUS learning store summarization |
-| `CostAnalysisWorkerAdapter` | `DONE` | worker_adapters.py | Routing analysis |
-| Base adapter dry-run (all workers) | `DONE` | WorkerAdapter._execute_safe() | Falls back to base for unregistered workers |
-| Blocked actions refused by all adapters | `DONE` | `_ALWAYS_BLOCKED_ADAPTER_ACTIONS` | auto_push, production_deploy, etc. |
-| NUS gate checked before execution | `DONE` | WorkerAdapter._check_nus_gate() | Uses LowRiskExecutionManager |
-
-### OMNIX Universalization
-
-| Item | Status | Evidence | Notes |
-|------|--------|----------|-------|
-| `omnix_frontdoor.py` not root front door | `DONE` | JarvisFrontDoor replaces it as root | omnix_frontdoor.py = OMNIX-specific script |
-| OMNIX as one ProjectContext | `DONE` | `constitution.py::OMNIX_PROJECT` | OMNIX = Project 1, not the whole system |
-| OMNIX as one FrontDoorAdapter | `DONE` | `OmnixFrontDoorAdapter` | Optional enrichment |
-| Orchestration path has no OMNIX hardcoding | `DONE` | activation.py, cos_gm.py, contracts.py | Verified by tests |
-| Doctor checks accept any project_id | `DONE` | check_project_registry_health refactored | No longer fails if only non-OMNIX projects |
-| `run_all_checks` default uses ProjectRegistry | `DONE` | `run_all_checks(project_id=None)` resolves via `ProjectRegistry.get_default()` | |
-| readiness.py OMNIX-hardcoded messages fixed | `DONE` | readiness.py | Generic language used |
-| source_links.py bootstraps OpenJarvis | `DONE` | `_bootstrap_openjarvis()` added | |
-
-### Provider/Model Sufficiency
-
-| Item | Status | Evidence | Notes |
-|------|--------|----------|-------|
-| `ModelProviderSufficiencyGap` type | `DONE` | `orchestrator/contracts.py` | Surfaced in ActivationPlan |
-| Gaps disclosed in activation plan | `DONE` | DynamicActivationPlanner `_build_model_routing_plan()` | |
-| `get_status()` reports nus_feedback_available | `DONE` | DynamicActivationPlanner | |
-| Real autonomous execution providers | `BLOCKED_PROVIDER` | — | **REQUIRES_BRYAN_ACTION**: See below |
-
-**REQUIRES_BRYAN_ACTION — Model Provider Setup:**
-
-For real autonomous execution (beyond dry-run/local-analysis), Jarvis needs live model API access:
-
-| Provider | Key Needed | Where to Set | Why Needed | Current Status |
-|----------|-----------|--------------|------------|----------------|
-| OpenAI (GPT-4) | `OPENAI_API_KEY` | `~/.jarvis/cloud-keys.env` | Premium model for high-risk tasks | Missing → dry-run only |
-| Anthropic (Claude) | `ANTHROPIC_API_KEY` | `~/.jarvis/cloud-keys.env` | Mid/premium model for complex tasks | Missing → dry-run only |
-| OpenRouter | `OPENROUTER_API_KEY` | `~/.jarvis/cloud-keys.env` | Model routing across providers | Configured or missing |
-
-**What cannot be completed without providers:** Real autonomous code execution, real LLM-reviewed plans, real model-in-the-loop orchestration.  
-**What works now:** Dry-run planning, local analysis, NUS gate checking, doctor validation, structured decision records.
-
-### Inactive Manager Classification
-
-| Manager | Status | Exact Blocker | Bryan Action Required |
-|---------|--------|---------------|----------------------|
-| `connector_auth_manager` | `BLOCKED_CREDENTIALS` | No workers assigned; live secret/credential access blocked by policy | None — correctly inactive |
-| `release_packaging_manager` | `BLOCKED_USER_AUTHORIZATION` | DMG build + Apple notarization requires Apple Developer signing identity and explicit Bryan approval | Provide Apple Developer credentials + authorize release build |
-
-### Package/DMG/Notarization
-
-| Item | Status | Notes |
-|------|--------|-------|
-| DMG build | `BLOCKED_USER_AUTHORIZATION` | Requires explicit Bryan authorization for `release_packaging_manager` activation |
-| Apple notarization | `REQUIRES_BRYAN_ACTION` | Apple Developer signing identity needed; set `APPLE_DEVELOPER_IDENTITY` and `APPLE_TEAM_ID` in secure config |
-| Release packaging manager activation | `BLOCKED_USER_AUTHORIZATION` | Currently `STATUS_INACTIVE`; Bryan must authorize before activation |
-| `release_packaging_worker` activation | `BLOCKED_USER_AUTHORIZATION` | Paired with release_packaging_manager; same authorization required |
-
-**Bryan Action Required for Package/DMG:**
-1. Authorize activation of `release_packaging_manager` and `release_packaging_worker`
-2. Provide `APPLE_DEVELOPER_IDENTITY` (e.g. `"Developer ID Application: Bryan..."`)
-3. Provide `APPLE_TEAM_ID`
-4. Place in `~/.jarvis/cloud-keys.env` (never committed)
-
-### US13 Voice
-
-| Item | Status | Notes |
-|------|--------|-------|
-| US13 voice pipeline | `BLOCKED_REQUIRED_LATER` | Technical blockers: no real STT (whisper.cpp or cloud), no voice approval UI, no real-time audio pipeline |
-| Voice activation | `BLOCKED_SAFETY` | Permanently blocked in COS/GM and JarvisFrontDoor; `us13_voice` is in `_ALWAYS_BLOCKED` |
-| Voice re-enablement | `REQUIRES_BRYAN_ACTION` | Bryan must explicitly reopen voice sprint, provide STT provider, and authorize activation |
-
-### Documentation
-
-| Item | Status | Notes |
-|------|--------|-------|
-| JARVIS_COMPLETION_GAP_REGISTER.md | `DONE` | This file |
-| POST_NUS_COMPANY_AGENT_ORCHESTRATOR_PLAN.md updated | `DONE` | Updated for universal Jarvis |
-| JARVIS_FUTURE_PROOF_ARCHITECTURE_PRINCIPLES.md updated | `DONE` | Updated |
-| JARVIS_ROUTING_MODEL_POLICY.md updated | `DONE` | Updated |
-| WAVE_ROADMAP.md updated | `DONE` | Updated |
-
-### Doctor/Readiness Checks
-
-| Item | Status | Notes |
-|------|--------|-------|
-| `check_universal_front_door` | `DONE` | Verifies universal front door, non-OMNIX project, personal task, blocked actions |
-| `check_worker_execution_adapters` | `DONE` | Verifies adapter registry, dry-run, blocked action refusal |
-| `check_nus_scorecard_feedback_loop` | `DONE` | Verifies activation planner reads NUS feedback |
-| `check_inactive_manager_classification` | `DONE` | Classifies inactive managers with exact blockers |
+| Item | Classification | Score | Target | Status | Assigned Prompt | Blocker | Bryan Action | Acceptance Criteria |
+|------|---------------|-------|--------|--------|-----------------|---------|--------------|---------------------|
+| `UniversalTaskRequest` | EXISTING | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | Works without project_context; OMNIX, personal, research all valid inputs |
+| `ProjectContext` | EXISTING | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | Supports OMNIX, OpenJarvis, personal (None), any future project; no OMNIX-specific field required |
+| `JarvisFrontDoor` | EXISTING | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | Routes any request; dangerous actions blocked; adapters optional |
+| `FrontDoorAdapter` ABC | EXISTING | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | OMNIX plugs in as OmnixFrontDoorAdapter; future projects add adapters |
+| `OmnixFrontDoorAdapter` | EXISTING | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | OMNIX as optional enrichment; not required by JarvisFrontDoor |
+| `FrontDoorResult` | EXISTING | 4 | 5 | `PLANNED_IN_EXISTING_PROMPT` | Public Hardening | — | — | Structured result, no raw CoT; 5/5 requires adversarial input hardening |
+| OMNIX not required for orchestration | EXISTING | 5 | 5 | `PUBLIC_READY_ACCEPT` | — | — | — | Personal task with no project_context routes successfully through full stack |
 
 ---
 
-## Summary
+### 2. COS/GM Runtime
 
-| Category | DONE | BLOCKED | REQUIRES_BRYAN_ACTION | OPTIONAL |
-|----------|------|---------|-----------------------|----------|
-| Universal front door | 8 | 0 | 0 | 0 |
-| COS/GM runtime | 5 | 0 | 0 | 0 |
-| NUS scorecard feedback | 5 | 0 | 0 | 0 |
-| Worker execution adapters | 7 | 0 | 0 | 0 |
-| OMNIX universalization | 8 | 0 | 0 | 0 |
-| Provider/model sufficiency | 4 | 1 | 1 | 0 |
-| Inactive manager classification | 2 | 2 | 1 | 0 |
-| Package/DMG/notarization | 0 | 1 | 3 | 0 |
-| US13 voice | 1 | 1 | 1 | 0 |
-| Docs | 5 | 0 | 0 | 0 |
-| Doctor checks | 4 | 0 | 0 | 0 |
+| Item | Classification | Score | Target | Status | Assigned Prompt | Blocker | Bryan Action | Acceptance Criteria |
+|------|---------------|-------|--------|--------|-----------------|---------|--------------|---------------------|
+| `CosGmOrchestrator` class | EXISTING (new) | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | Receives UniversalTaskRequest, classifies, routes to planner, returns FrontDoorResult |
+| Intent/risk/complexity classification | EXISTING | 3 | 4 | `PLANNED_IN_EXISTING_PROMPT` | COS/GM Hardening | — | — | Keyword-based; 4/5 requires domain-model scoring, not just keyword scan |
+| Structured decision record emitted | EXISTING | 4 | 5 | `PLANNED_IN_EXISTING_PROMPT` | Public Hardening | — | — | Every activation emits NUS 1F decision record; 5/5 requires record store query proof |
+| Dangerous actions permanently blocked | EXISTING | 5 | 5 | `PUBLIC_READY_ACCEPT` | — | — | — | auto_push, auto_merge, production_deploy, external_send, us13_voice all blocked |
+| US13 voice HOLD/UNSAFE/PARKED | EXISTING | 5 | 5 | `PUBLIC_READY_ACCEPT` | — | — | — | Blocked in CosGmOrchestrator and JarvisFrontDoor; not activatable |
+| Project context routed correctly | EXISTING | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | Project label appears in FrontDoorResult; non-OMNIX project routes correctly |
 
-**No vague future scope.** Every gap is DONE, BLOCKED (with exact reason), or REQUIRES_BRYAN_ACTION (with exact instructions).
+---
+
+### 3. DynamicActivationPlanner + NUS Integration
+
+| Item | Classification | Score | Target | Status | Assigned Prompt | Blocker | Bryan Action | Acceptance Criteria |
+|------|---------------|-------|--------|--------|-----------------|---------|--------------|---------------------|
+| Dynamic activation (no fixed formula) | EXISTING | 5 | 5 | `PUBLIC_READY_ACCEPT` | — | — | — | Different tasks produce different teams; proven in test_dynamic_activation.py |
+| Skip reasons for all non-selected roles | EXISTING | 5 | 5 | `PUBLIC_READY_ACCEPT` | — | — | — | All managers accounted: selected ∪ skipped = all |
+| NUS feedback: `_load_nus_feedback()` | EXISTING (new) | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | Reads LearningStore + LearnedRouter; graceful degradation if unavailable |
+| NUS feedback: prior failures escalate validation | EXISTING (new) | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | ≥3 failures → testing_validation_manager activated |
+| NUS feedback tag in activation plan | EXISTING (new) | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | `nus_feedback:loaded` or `nus_feedback:not_available` in nus_learning_tags |
+| `get_status()` reports nus_feedback_available | EXISTING (new) | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | `status["nus_feedback_available"]` is bool |
+| Cheap model blocked for critical actions | EXISTING | 5 | 5 | `PUBLIC_READY_ACCEPT` | — | — | — | `cheap_model_blocked_for_approval: True` in model_routing_plan |
+| Model/provider sufficiency disclosed | EXISTING | 4 | 5 | `PLANNED_IN_EXISTING_PROMPT` | Provider Sprint | `BLOCKED_PROVIDER` (see §8) | See §8 | `provider_sufficiency` key in model_routing_plan; 5/5 requires live provider check |
+
+---
+
+### 4. Worker Execution Adapters
+
+| Item | Classification | Score | Target | Status | Assigned Prompt | Blocker | Bryan Action | Acceptance Criteria |
+|------|---------------|-------|--------|--------|-----------------|---------|--------------|---------------------|
+| `WorkerAdapter` base class | EXISTING (new) | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | Gate checks: always-blocked, registry check, NUS gate, delegate to _execute_safe() |
+| `DoctorValidationWorkerAdapter` | EXISTING (new) | 3 | 4 | `PLANNED_IN_EXISTING_PROMPT` | Worker Hardening | — | — | Runs doctor checks via local_validation; 4/5 requires full check suite dispatch |
+| `NUSLearningWorkerAdapter` | EXISTING (new) | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | Reads LearningStore.summarize(); dry-run safe |
+| `CostAnalysisWorkerAdapter` | EXISTING (new) | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | Reads LearnedRouter.get_status(); dry-run safe |
+| Blocked actions refused by all adapters | EXISTING (new) | 5 | 5 | `PUBLIC_READY_ACCEPT` | — | — | — | auto_push, production_deploy, external_send refused at adapter level |
+| NUS gate checked before execution | EXISTING (new) | 3 | 4 | `PLANNED_IN_EXISTING_PROMPT` | Worker Hardening | — | — | Safe local actions pass; non-dry-run requires LowRiskExecutionManager; 4/5 needs integration test |
+| Real coding/refactor worker execution | MISSING | 0 | 4 | `PLANNED_IN_EXISTING_PROMPT` | Worker Execution Sprint | `BLOCKED_IMPLEMENTATION` | — | Workbench coding manager connected to workers; safe local execution through NUS gates |
+
+---
+
+### 5. OMNIX Universalization
+
+| Item | Classification | Score | Target | Status | Assigned Prompt | Blocker | Bryan Action | Acceptance Criteria |
+|------|---------------|-------|--------|--------|-----------------|---------|--------------|---------------------|
+| OMNIX not root/default front door | EXISTING | 5 | 5 | `PUBLIC_READY_ACCEPT` | — | — | — | JarvisFrontDoor works without OMNIX; OMNIX is OmnixFrontDoorAdapter (optional) |
+| OMNIX as one ProjectContext | EXISTING | 5 | 5 | `PUBLIC_READY_ACCEPT` | — | — | — | constitution.py OMNIX_PROJECT is ProjectProfile; ProjectRegistry.get_default() resolves dynamically |
+| No OMNIX hardcoding in orchestration | EXISTING | 5 | 5 | `PUBLIC_READY_ACCEPT` | — | — | — | activation.py, cos_gm.py, contracts.py: grep for OMNIX returns 0 results in routing logic |
+| `check_project_registry_health` universal | EXISTING (fixed) | 5 | 5 | `PUBLIC_READY_ACCEPT` | — | — | — | Passes if any project registered; OMNIX not required for PASS verdict |
+| `run_all_checks` default universal | EXISTING (fixed) | 5 | 5 | `PUBLIC_READY_ACCEPT` | — | — | — | `project_id=None` resolves via `ProjectRegistry.get_default()` |
+| readiness.py generic messages | EXISTING (fixed) | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | No "OMNIX hardcoded" language in remaining_limitations |
+| OpenJarvis project bootstrap | EXISTING (new) | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | `_bootstrap_openjarvis()` in ProjectSourceRegistry |
+| Non-OMNIX project routes end-to-end | EXISTING (new) | 5 | 5 | `PUBLIC_READY_ACCEPT` | — | — | — | Proven in test_universal_jarvis.py: synthetic_test_project, openjarvis, personal tasks |
+
+---
+
+### 6. ProjectRegistry and Multi-Project
+
+| Item | Classification | Score | Target | Status | Assigned Prompt | Blocker | Bryan Action | Acceptance Criteria |
+|------|---------------|-------|--------|--------|-----------------|---------|--------------|---------------------|
+| `ProjectProfile` + `ProjectRegistry` | EXISTING | 5 | 5 | `PUBLIC_READY_ACCEPT` | — | — | — | In constitution.py; OMNIX pre-registered; future projects via register() |
+| In-process registry (not persisted) | PARTIAL | 2 | 4 | `PLANNED_IN_EXISTING_PROMPT` | Persistence Sprint | `BLOCKED_IMPLEMENTATION` | — | SQLite/config-file persistence; survives restart |
+| Multi-project concurrent supervision | PARTIAL | 2 | 4 | `PLANNED_IN_EXISTING_PROMPT` | Multi-Project Sprint | `BLOCKED_IMPLEMENTATION` | — | Jarvis supervises all active projects simultaneously; currently OMNIX + OpenJarvis bootstrapped only |
+
+---
+
+### 7. Inactive Manager Classification
+
+#### connector_auth_manager
+
+This manager has four distinct blockers — each classified separately:
+
+| Sub-item | Classification | Score | Target | Status | Blocker Type | Bryan Action | Acceptance Criteria |
+|----------|---------------|-------|--------|--------|-------------|--------------|---------------------|
+| Workers assigned | MISSING | 0 | 4 | `PLANNED_IN_EXISTING_PROMPT` | `BLOCKED_IMPLEMENTATION` | None — code change required | At least one connector_auth_worker registered and active |
+| Live secret/credential access policy | EXISTING | 5 | 5 | `BLOCKED_SAFETY` | `BLOCKED_SAFETY` (permanent) | None — intentional | `access_live_secrets` and `rotate_credentials` permanently in blocked_action_types |
+| Live connector credentials (OAuth tokens, API keys) | MISSING | 0 | 4 | `BLOCKED_CREDENTIALS` | `BLOCKED_CREDENTIALS` | Configure connector credentials in `~/.jarvis/cloud-keys.env`: `GOOGLE_OAUTH_CLIENT_ID`, `SLACK_BOT_TOKEN`, etc. | Connector health check passes for configured connectors |
+| Full connector auth implementation | MISSING | 0 | 4 | `PLANNED_IN_EXISTING_PROMPT` | `BLOCKED_IMPLEMENTATION` | None — code change required | `connector_auth_manager` moves to STATUS_ACTIVE after workers implemented |
+
+**Summary:** `connector_auth_manager` is STATUS_INACTIVE for two distinct reasons: (1) no workers assigned (BLOCKED_IMPLEMENTATION), and (2) live secret access permanently blocked by safety policy (BLOCKED_SAFETY). Credentials are also missing (BLOCKED_CREDENTIALS). This does NOT block Core Runtime.
+
+---
+
+#### release_packaging_manager
+
+Scope: packaging/release only. Does NOT block Core Runtime.
+
+| Sub-item | Classification | Score | Target | Status | Blocker Type | Bryan Action | Acceptance Criteria |
+|----------|---------------|-------|--------|--------|-------------|--------------|---------------------|
+| release_packaging_worker active | EXISTING | 1 | 4 | `BLOCKED_USER_AUTHORIZATION` | `BLOCKED_USER_AUTHORIZATION` | Authorize activation explicitly | Worker moves to STATUS_ACTIVE after Bryan authorization |
+| DMG build | MISSING | 0 | 4 | `BLOCKED_USER_AUTHORIZATION` | `BLOCKED_USER_AUTHORIZATION` | Authorize release packaging sprint | DMG builds successfully for local distribution |
+| Apple notarization | MISSING | 0 | 4 | `BLOCKED_CREDENTIALS` | `BLOCKED_CREDENTIALS` | Set `APPLE_DEVELOPER_IDENTITY` (e.g. `"Developer ID Application: Bryan…"`) and `APPLE_TEAM_ID` in `~/.jarvis/cloud-keys.env` (never committed) | Notarization passes; Gatekeeper clears DMG |
+| Core Runtime impact | N/A | — | — | None — packaging scope only | — | — | release_packaging_manager STATUS_INACTIVE does not affect Core Runtime operation |
+
+---
+
+### 8. Provider/Model Sufficiency
+
+| Item | Classification | Score | Target | Status | Assigned Prompt | Blocker | Bryan Action | Acceptance Criteria |
+|------|---------------|-------|--------|--------|-----------------|---------|--------------|---------------------|
+| `ModelProviderSufficiencyGap` type | EXISTING | 5 | 5 | `PUBLIC_READY_ACCEPT` | — | — | — | Disclosed in ActivationPlan.model_provider_gaps |
+| `provider_sufficiency` in model_routing_plan | EXISTING | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | Key present in every plan; no silent fallback |
+| OpenAI GPT-4 for premium tasks | MISSING | 0 | 4 | `BLOCKED_PROVIDER` | `BLOCKED_PROVIDER` | Set `OPENAI_API_KEY` in `~/.jarvis/cloud-keys.env`. Without it: dry-run planning only; no real LLM-reviewed orchestration. | `OPENAI_API_KEY` present → `ModelProviderSufficiencyGap` resolved for openai tier |
+| Anthropic Claude for mid/premium tasks | MISSING | 0 | 4 | `BLOCKED_PROVIDER` | `BLOCKED_PROVIDER` | Set `ANTHROPIC_API_KEY` in `~/.jarvis/cloud-keys.env`. Without it: no Claude-based orchestration. | `ANTHROPIC_API_KEY` present → gap resolved for anthropic tier |
+| OpenRouter for model routing | PARTIAL | 2 | 4 | `BLOCKED_PROVIDER` | `BLOCKED_PROVIDER` | Set `OPENROUTER_API_KEY` in `~/.jarvis/cloud-keys.env` | OpenRouter routing active; model selection follows `JARVIS_ROUTING_MODEL_POLICY.md` |
+| Local model fallback | PARTIAL | 2 | 4 | `PLANNED_IN_EXISTING_PROMPT` | Local Model Sprint | `BLOCKED_IMPLEMENTATION` | — | Local model (Ollama/llama.cpp) used when cloud providers unavailable |
+| Live provider availability check | MISSING | 0 | 4 | `PLANNED_IN_EXISTING_PROMPT` | Provider Sprint | `BLOCKED_IMPLEMENTATION` | — | Doctor check pings provider endpoints; surfaces gaps in status route |
+
+---
+
+### 9. US13 Voice
+
+**Overall status: HOLD / UNSAFE / PARKED**
+
+US13 is explicitly not activated in this sprint. Voice is assigned to the Voice/Public Hardening prompt. Bryan must explicitly reopen.
+
+| Blocker | Type | Score | Target | Notes |
+|---------|------|-------|--------|-------|
+| VAD / endpointing | `BLOCKED_IMPLEMENTATION` | 0 | 4 | No voice activity detection; no ability to determine when user starts/stops speaking |
+| Record-until-end-of-speech | `BLOCKED_IMPLEMENTATION` | 0 | 4 | No mechanism to stop recording when user stops; fixed duration or manual stop only |
+| Silence / noise hallucination rejection | `BLOCKED_IMPLEMENTATION` | 0 | 4 | Background noise and silence trigger false STT transcriptions; no rejection filter |
+| Follow-up listening (multi-turn) | `BLOCKED_IMPLEMENTATION` | 0 | 4 | No re-trigger after Jarvis responds; single-shot only |
+| Stop phrases / cancellation commands | `BLOCKED_IMPLEMENTATION` | 0 | 4 | "Stop", "cancel", "never mind" mid-response not handled |
+| Barge-in / TTS cancellation | `BLOCKED_IMPLEMENTATION` | 0 | 4 | User cannot interrupt Jarvis TTS playback; no barge-in detection |
+| Latency (round-trip < 500ms target) | `BLOCKED_IMPLEMENTATION` | 0 | 4 | No latency budget enforced; cloud STT + LLM + TTS likely > 2s |
+| STT provider / API key | `BLOCKED_PROVIDER` | 0 | 4 | No STT provider configured; `WHISPER_API_KEY` or `OPENAI_API_KEY` with Whisper endpoint required |
+| TTS provider / API key | `BLOCKED_PROVIDER` | 0 | 4 | No TTS provider configured; ElevenLabs, OpenAI TTS, or local TTS required |
+| Voice approval UI | `BLOCKED_IMPLEMENTATION` | 0 | 4 | No voice approval flow in Mission Control UI |
+| Safety: `us13_voice` in always-blocked | `BLOCKED_SAFETY` | 5 | 5 | Permanently blocked in JarvisFrontDoor and CosGmOrchestrator until explicitly reopened |
+
+**Assigned prompt:** Voice/Public Hardening (do not activate before all implementation blockers resolved)
+
+**Bryan action to reopen:** Explicitly authorize Voice sprint + provide STT/TTS provider API keys + authorize UI changes.
+
+---
+
+### 10. Doctor/Readiness Checks
+
+| Item | Classification | Score | Target | Status | Assigned Prompt | Blocker | Bryan Action | Acceptance Criteria |
+|------|---------------|-------|--------|--------|-----------------|---------|--------------|---------------------|
+| `check_universal_front_door` | EXISTING (new) | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | Personal task, non-OMNIX, OMNIX adapter, blocked actions, US13 all verified |
+| `check_worker_execution_adapters` | EXISTING (new) | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | Adapter registry, dry-run, blocked refusal, unknown worker graceful |
+| `check_nus_scorecard_feedback_loop` | EXISTING (new) | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | _load_nus_feedback, plan tags, get_status verified |
+| `check_inactive_manager_classification` | EXISTING (new) | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | connector_auth_manager and release_packaging_manager classified with exact blockers |
+| `check_post_nus_orchestrator` | EXISTING | 4 | 5 | `PLANNED_IN_EXISTING_PROMPT` | Public Hardening | — | — | 4/5 now; 5/5 requires adversarial input proof |
+| Doctor route (HTTP) | EXISTING | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | `/api/doctor/check` endpoint returns structured results |
+| Full doctor run covers all 42+ checks | EXISTING | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | `run_all_checks()` includes universal front door + worker adapter checks |
+
+---
+
+### 11. Documentation
+
+| Item | Classification | Score | Target | Status | Assigned Prompt | Blocker | Bryan Action | Acceptance Criteria |
+|------|---------------|-------|--------|--------|-----------------|---------|--------------|---------------------|
+| `JARVIS_COMPLETION_GAP_REGISTER.md` | EXISTING (new) | 4 | 5 | `PLANNED_IN_EXISTING_PROMPT` | Ongoing — updated each sprint | — | — | This file; 5/5 when all items tracked with full matrix fields |
+| `POST_NUS_COMPANY_AGENT_ORCHESTRATOR_PLAN.md` | EXISTING (updated) | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | Universal scope documented; COS/GM architecture correct |
+| `JARVIS_FUTURE_PROOF_ARCHITECTURE_PRINCIPLES.md` | EXISTING (updated) | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | "Not OMNIX-only" principle stated; universal scope |
+| `JARVIS_ROUTING_MODEL_POLICY.md` | EXISTING (updated) | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | Provider sufficiency disclosure requirement stated |
+| `WAVE_ROADMAP.md` | EXISTING (updated) | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | Universal Jarvis scope stated |
+| `JARVIS_CONSTITUTION.md` | EXISTING | 4 | 5 | `PLANNED_IN_EXISTING_PROMPT` | Governance Hardening | — | — | 5/5 requires adversarial/hostile input coverage of all hard gates |
+| User-facing docs / README | PARTIAL | 2 | 4 | `PLANNED_IN_EXISTING_PROMPT` | Public Docs Sprint | `BLOCKED_IMPLEMENTATION` | — | docs/index.md and README accurately describe universal Jarvis OS scope |
+
+---
+
+### 12. NUS Full Stack
+
+| Item | Classification | Score | Target | Status | Assigned Prompt | Blocker | Bryan Action | Acceptance Criteria |
+|------|---------------|-------|--------|--------|-----------------|---------|--------------|---------------------|
+| NUS 1A–1F (learning foundation through high-autonomy) | EXISTING | 5 | 5 | `PUBLIC_READY_ACCEPT` | — | — | — | 551 NUS tests pass; all hierarchy levels covered |
+| NUS applies to all hierarchy levels | EXISTING | 5 | 5 | `PUBLIC_READY_ACCEPT` | — | — | — | jarvis_pa, cos_gm, manager, worker, validator, governance all emit decision records |
+| Structured decision records (no raw CoT) | EXISTING | 5 | 5 | `PUBLIC_READY_ACCEPT` | — | — | — | `no_raw_chain_of_thought: True` on all plans and results |
+| NUS learning store persistence | EXISTING | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | LearningStore writes to `~/.jarvis/nus/` |
+| NUS scorecard feedback in activation | EXISTING (new) | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | _load_nus_feedback reads from LearningStore + LearnedRouter; graceful degradation |
+
+---
+
+### 13. Governance and Safety
+
+| Item | Classification | Score | Target | Status | Assigned Prompt | Blocker | Bryan Action | Acceptance Criteria |
+|------|---------------|-------|--------|--------|-----------------|---------|--------------|---------------------|
+| Hard gates permanently blocked | EXISTING | 5 | 5 | `PUBLIC_READY_ACCEPT` | — | — | — | production_deploy, auto_push, auto_merge, external_send blocked in CosGmOrchestrator, JarvisFrontDoor, WorkerAdapters |
+| Governance safety manager active | EXISTING | 5 | 5 | `PUBLIC_READY_ACCEPT` | — | — | — | governance_safety_manager activated for high/blocked risk tasks |
+| Cheap model blocked for critical approvals | EXISTING | 5 | 5 | `PUBLIC_READY_ACCEPT` | — | — | — | cheap_model_blocked_for_approval: True in model_routing_plan |
+| Approval workflow (manual gate) | EXISTING | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | ApprovalRecord, ApprovalWorkflow in nus/approval_workflow.py |
+| Production gate | EXISTING | 5 | 5 | `PUBLIC_READY_ACCEPT` | — | — | — | ProductionGate in nus/production_gate.py; always-blocked enforced |
+
+---
+
+## Summary Table
+
+| Category | Items | ACCEPT | PLANNED | BLOCKED_IMPL | BLOCKED_CREDS | BLOCKED_PROVIDER | BLOCKED_SAFETY | BLOCKED_AUTH | OPTIONAL |
+|----------|-------|--------|---------|--------------|--------------|-----------------|----------------|--------------|---------|
+| Universal Front Door | 7 | 7 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| COS/GM Runtime | 6 | 5 | 1 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Activation Planner + NUS | 8 | 7 | 1 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Worker Adapters | 7 | 5 | 1 | 1 | 0 | 0 | 0 | 0 | 0 |
+| OMNIX Universalization | 8 | 8 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| ProjectRegistry/Multi-Project | 3 | 1 | 2 | 2 | 0 | 0 | 0 | 0 | 0 |
+| connector_auth_manager | 4 | 1 | 1 | 2 | 1 | 0 | 1 | 0 | 0 |
+| release_packaging_manager | 4 | 1 | 0 | 0 | 1 | 0 | 0 | 2 | 0 |
+| Provider/Model Sufficiency | 7 | 2 | 2 | 2 | 0 | 3 | 0 | 0 | 0 |
+| US13 Voice | 11 | 1 | 0 | 8 | 0 | 2 | 1 | 0 | 0 |
+| Doctor/Readiness | 7 | 6 | 1 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Documentation | 7 | 5 | 2 | 1 | 0 | 0 | 0 | 0 | 0 |
+| NUS Full Stack | 5 | 5 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Governance & Safety | 5 | 5 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| **TOTAL** | **89** | **59** | **11** | **8** | **2** | **5** | **2** | **2** | **0** |
+
+---
+
+## Required Bryan Actions (Exact)
+
+All items below require Bryan to take a specific action before they can progress:
+
+| Item | Action | Where | Priority |
+|------|--------|-------|---------|
+| OpenAI API key | Set `OPENAI_API_KEY=sk-...` | `~/.jarvis/cloud-keys.env` | High — unlocks real LLM orchestration |
+| Anthropic API key | Set `ANTHROPIC_API_KEY=sk-ant-...` | `~/.jarvis/cloud-keys.env` | High — unlocks Claude-based orchestration |
+| OpenRouter API key | Set `OPENROUTER_API_KEY=sk-or-...` | `~/.jarvis/cloud-keys.env` | Medium — model routing across providers |
+| Apple Developer signing identity | Set `APPLE_DEVELOPER_IDENTITY="Developer ID Application: ..."` | `~/.jarvis/cloud-keys.env` | Low — release packaging only |
+| Apple Team ID | Set `APPLE_TEAM_ID=XXXXXXXXXX` | `~/.jarvis/cloud-keys.env` | Low — release packaging only |
+| Release packaging authorization | Explicitly authorize release sprint | Bryan approval | Low — release packaging only |
+| Voice sprint reopen | Explicitly authorize Voice sprint + STT/TTS provider keys | Bryan approval | Low — US13 HOLD/PARKED |
+| Connector credentials | Set OAuth tokens and connector API keys | `~/.jarvis/cloud-keys.env` | Medium — unlocks connector_auth_manager workers |
+
+**File:** `~/.jarvis/cloud-keys.env` — never committed to git, never logged, never shown in responses.
+
+---
+
+## No Vague Future Scope
+
+Every item in this register is classified as one of:
+`DAILY_DRIVER_ACCEPT`, `PUBLIC_READY_ACCEPT`, `BLOCKED_BRYAN_ACTION`, `BLOCKED_PROVIDER`,
+`BLOCKED_CREDENTIALS`, `BLOCKED_HARDWARE`, `BLOCKED_SAFETY`, `BLOCKED_IMPLEMENTATION`,
+`PLANNED_IN_EXISTING_PROMPT`, or `OPTIONAL_BACKLOG`.
+
+No item is left as plain "future scope."
