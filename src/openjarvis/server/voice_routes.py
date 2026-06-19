@@ -333,6 +333,29 @@ async def trigger_voice_session() -> Dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# POST /v1/voice/session/end_recording  ("End & send" / force-stop recording)
+# ---------------------------------------------------------------------------
+
+
+@router.post("/v1/voice/session/end_recording")
+async def end_recording_session() -> Dict[str, Any]:
+    """Force-end the current VAD recording and submit captured audio to STT.
+
+    Use when silence detection hasn't fired (noisy room, soft speaker).
+    Safe to call at any time — if recording is not active, no-ops cleanly.
+    The vad SSE event will show stop_reason='manually_ended'.
+    """
+    sess = _get_session()
+    if sess is None:
+        return {
+            "ok": False,
+            "error": "No active voice session.",
+            "error_code": "no_session",
+        }
+    return sess.end_recording()
+
+
+# ---------------------------------------------------------------------------
 # GET /v1/voice/diagnostics
 # ---------------------------------------------------------------------------
 

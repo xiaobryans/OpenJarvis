@@ -135,9 +135,18 @@ def _env_float(key: str, default: float) -> float:
 _DEFAULT_MIN_RECORD_SECONDS: float = 1.0
 _DEFAULT_SILENCE_STOP_MS: float = 4000.0
 _DEFAULT_MAX_RECORD_SECONDS: float = 120.0
-_DEFAULT_SILENCE_RMS: float = 150.0
+# Raised from 150 → 300: typical laptop fan/HVAC ambient is 100-250 RMS (int16).
+# A threshold of 300 ensures ambient noise is always classified as silence while
+# still comfortably detecting normal conversational speech (800-3000 RMS).
+# Override via JARVIS_VOICE_SILENCE_RMS if your environment differs.
+_DEFAULT_SILENCE_RMS: float = 300.0
 
 _VAD_CHUNK_MS: int = 100  # analyse audio in 100 ms windows
+
+# Adaptive noise-floor calibration — first N chunks are used to measure
+# ambient noise before applying the speech/silence threshold.
+_NOISE_CALIB_CHUNKS: int = 5          # 500 ms calibration window
+_NOISE_CALIB_MULTIPLIER: float = 2.5  # effective_threshold ≥ noise_floor × this
 
 
 def record_command_audio(
@@ -183,14 +192,22 @@ def record_command_audio_vad(
     sample_rate: int = 16000,
     silence_rms_threshold: float = _DEFAULT_SILENCE_RMS,
     on_state: Optional[Callable[[str], None]] = None,
+    abort_event: Optional[threading.Event] = None,
+    on_calibrated: Optional[Callable[[float, float], None]] = None,
 ) -> Tuple[bytes, str]:
-    """Record with VAD-based silence endpointing.
+    """Record with adaptive VAD-based silence endpointing.
+
+    The first ``_NOISE_CALIB_CHUNKS`` × 100 ms are used to measure the
+    ambient noise floor.  The effective silence threshold is then set to
+    ``max(silence_rms_threshold, noise_floor × _NOISE_CALIB_MULTIPLIER)``.
+    This prevents fixed-threshold failures when real-world ambient noise
+    (fans, HVAC, keyboard) exceeds the static default of 150 RMS.
 
     Normal turn-ending condition: ``silence_stop_ms`` of consecutive audio
-    below ``silence_rms_threshold`` after at least ``min_seconds`` have elapsed.
+    below the *effective* threshold after at least ``min_seconds`` elapsed.
 
-    Emergency cap: ``max_seconds`` (default 120 s). This is NOT the normal end
-    condition — it only fires if the user keeps talking without any silence gap.
+    Emergency cap: ``max_seconds`` (default 120 s). This fires only if the
+    user keeps talking without any silence gap — it is NOT the normal end.
 
     Parameters
     ----------
@@ -199,24 +216,32 @@ def record_command_audio_vad(
         Prevents premature cutoff on brief ambient noise at session start.
     silence_stop_ms:
         Consecutive milliseconds of sub-threshold audio that end the turn.
-        Default 4000 ms — tolerates thinking pauses and natural speech rhythm.
+        Default 4000 ms — tolerates natural thinking pauses.
     max_seconds:
-        Emergency cap. 120 s by default. Normal turns end much earlier via
-        silence detection.
+        Emergency cap. 120 s by default. Normal turns end much earlier.
     silence_rms_threshold:
-        RMS level below which a 100 ms chunk is considered silence.
-        Default 150 (int16 range). Tune via JARVIS_VOICE_SILENCE_RMS.
+        Floor for the effective threshold. Default 150.
+        Actual threshold used = max(this, noise_floor × multiplier).
+        Tune via JARVIS_VOICE_SILENCE_RMS.
     on_state:
-        Optional callback invoked with state strings: ``"recording"`` while
-        speech is detected, ``"waiting_for_silence"`` during post-speech silence.
+        Optional callback invoked with ``"recording"`` (speech) or
+        ``"waiting_for_silence"`` (post-speech silence accumulating).
+    abort_event:
+        Optional ``threading.Event``. When set, recording stops immediately
+        and returns ``stop_reason="manually_ended"`` with whatever audio
+        was captured so far.  Used by the "End & send" UI button.
+    on_calibrated:
+        Optional callback fired after calibration with
+        ``(noise_floor_rms, effective_threshold)``.
 
     Returns
     -------
     (wav_bytes, stop_reason)
         ``stop_reason`` is one of:
         - ``"silence_endpointed"`` — ended normally on silence
-        - ``"max_duration"``       — hit the emergency cap
-        - ``"pre_speech_timeout"`` — no speech detected before max_seconds
+        - ``"max_duration"``       — hit the 120 s emergency cap
+        - ``"pre_speech_timeout"`` — no speech detected within max_seconds
+        - ``"manually_ended"``     — abort_event was set ("End & send")
     """
     try:
         import numpy as np
@@ -236,11 +261,8 @@ def record_command_audio_vad(
     silence_consecutive: int = 0
     speech_detected: bool = False
     stop_reason: str = "max_duration"
-
-    logger.debug(
-        "VAD recording: min=%.1fs silence_stop=%.0fms max=%.1fs rms_thresh=%.0f",
-        min_seconds, silence_stop_ms, max_seconds, silence_rms_threshold,
-    )
+    noise_floor_rms: float = 0.0
+    effective_threshold: float = silence_rms_threshold
 
     stream = sd.InputStream(
         samplerate=sample_rate,
@@ -250,13 +272,25 @@ def record_command_audio_vad(
     )
     stream.start()
     try:
-        for chunk_idx in range(max_chunks):
+        # ── Phase 1: Calibration + early speech detection ─────────────────
+        # Read the first N chunks. Run speech detection with the STATIC
+        # threshold so early speech (user starts talking immediately) is
+        # never missed.  Only sub-threshold (quiet) chunks contribute to
+        # the noise floor estimate so that speech-level audio doesn't
+        # artificially inflate the adaptive threshold.
+        calib_n = min(_NOISE_CALIB_CHUNKS, max_chunks)
+        calib_quiet_rmss: List[float] = []  # only quiet chunks for noise floor
+
+        for _ in range(calib_n):
+            if abort_event is not None and abort_event.is_set():
+                stop_reason = "manually_ended"
+                break
             data, _overflowed = stream.read(chunk_samples)
             all_chunks.append(data.copy())
-
             chunk_flat = data.flatten().astype(np.float64)
             rms = float(np.sqrt(np.mean(chunk_flat ** 2)))
 
+            # Use STATIC threshold for speech detection during calibration
             if rms >= silence_rms_threshold:
                 speech_detected = True
                 silence_consecutive = 0
@@ -264,22 +298,75 @@ def record_command_audio_vad(
                     on_state("recording")
             else:
                 silence_consecutive += 1
+                calib_quiet_rmss.append(rms)   # quiet chunk → noise floor data
+
+        if stop_reason != "manually_ended":
+            # Noise floor from quiet-only calibration chunks.
+            # If ALL calibration was speech, fall back to static threshold
+            # (can't estimate ambient — user may have started talking immediately).
+            if calib_quiet_rmss:
+                noise_floor_rms = float(np.percentile(calib_quiet_rmss, 75))
+                adaptive = noise_floor_rms * _NOISE_CALIB_MULTIPLIER
+                effective_threshold = max(silence_rms_threshold, adaptive)
+            else:
+                noise_floor_rms = 0.0
+                effective_threshold = silence_rms_threshold
+            logger.info(
+                "VAD calibrated: noise_floor=%.1f rms  static_thresh=%.0f "
+                "adaptive=%.1f  effective=%.1f  silence_stop=%.0fms  max=%.1fs",
+                noise_floor_rms, silence_rms_threshold,
+                noise_floor_rms * _NOISE_CALIB_MULTIPLIER,
+                effective_threshold, silence_stop_ms, max_seconds,
+            )
+            if on_calibrated is not None:
+                on_calibrated(noise_floor_rms, effective_threshold)
+
+        # ── Phase 2: Main recording loop (adaptive threshold) ─────────────
+        for chunk_idx in range(calib_n, max_chunks):
+            if abort_event is not None and abort_event.is_set():
+                stop_reason = "manually_ended"
+                break
+
+            data, _overflowed = stream.read(chunk_samples)
+            all_chunks.append(data.copy())
+
+            chunk_flat = data.flatten().astype(np.float64)
+            rms = float(np.sqrt(np.mean(chunk_flat ** 2)))
+
+            if rms >= effective_threshold:
+                speech_detected = True
+                silence_consecutive = 0
+                if on_state is not None:
+                    on_state("recording")
+                logger.debug("VAD chunk %d: rms=%.0f >= thresh=%.0f → speech", chunk_idx, rms, effective_threshold)
+            else:
+                silence_consecutive += 1
+                logger.debug(
+                    "VAD chunk %d: rms=%.0f < thresh=%.0f → silence %d/%d",
+                    chunk_idx, rms, effective_threshold, silence_consecutive, silence_chunks_needed,
+                )
                 if speech_detected and silence_consecutive >= 3 and on_state is not None:
                     on_state("waiting_for_silence")
 
-            # Only endpoint after min_seconds have elapsed AND speech was heard
+            # Only endpoint after min_seconds elapsed AND speech was heard
             if chunk_idx >= min_chunks and speech_detected:
                 if silence_consecutive >= silence_chunks_needed:
                     stop_reason = "silence_endpointed"
                     break
+
     finally:
         stream.stop()
         stream.close()
 
-    if not speech_detected:
+    if not speech_detected and stop_reason not in ("manually_ended",):
         stop_reason = "pre_speech_timeout"
 
-    audio_array = np.concatenate(all_chunks, axis=0)
+    if not all_chunks:
+        # Degenerate: aborted before any audio was captured
+        audio_array = np.zeros((chunk_samples,), dtype=np.int16)
+    else:
+        audio_array = np.concatenate(all_chunks, axis=0)
+
     buf = io.BytesIO()
     with wave.open(buf, "wb") as wf:
         wf.setnchannels(1)
@@ -288,9 +375,12 @@ def record_command_audio_vad(
         wf.writeframes(audio_array.tobytes())
 
     elapsed_s = len(all_chunks) * _VAD_CHUNK_MS / 1000.0
-    logger.debug(
-        "VAD recorded %.1fs — stop_reason=%s silence_chunks=%d/%d",
-        elapsed_s, stop_reason, silence_consecutive, silence_chunks_needed,
+    logger.info(
+        "VAD finished: %.1fs — stop=%s  speech=%s  silence=%d/%d  "
+        "noise_floor=%.1f  effective_thresh=%.1f",
+        elapsed_s, stop_reason, speech_detected,
+        silence_consecutive, silence_chunks_needed,
+        noise_floor_rms, effective_threshold,
     )
     return buf.getvalue(), stop_reason
 
@@ -1050,6 +1140,10 @@ class VoiceConversationLoop:
         self._hotkey_mode: bool = False
         self._wake_failure_reason: Optional[str] = None
 
+        # Abort event for the "End & send" UI button — set to force-stop
+        # the current VAD recording loop and submit whatever audio was captured.
+        self._recording_abort: threading.Event = threading.Event()
+
         # Event queue — SSE consumers subscribe to this
         self._event_subscribers: List[queue.Queue] = []
         self._events_history: collections.deque = collections.deque(maxlen=200)
@@ -1264,6 +1358,14 @@ class VoiceConversationLoop:
                     "type": "interim_transcript",
                     "text": "Speak freely — ends automatically on silence",
                 })
+                # Calibration results stored via callback so they can be included
+                # in the vad SSE event after recording completes.
+                _calib: dict = {}
+                def _on_calibrated(noise_floor: float, effective_threshold: float) -> None:
+                    _calib["noise_floor_rms"] = round(noise_floor, 1)
+                    _calib["effective_threshold"] = round(effective_threshold, 1)
+
+                self._recording_abort.clear()
                 try:
                     audio, vad_stop_reason = record_command_audio_vad(
                         min_seconds=self._min_record_seconds,
@@ -1272,19 +1374,23 @@ class VoiceConversationLoop:
                         sample_rate=16000,
                         silence_rms_threshold=self._silence_rms_threshold,
                         on_state=lambda s: self._set_state(s),
+                        abort_event=self._recording_abort,
+                        on_calibrated=_on_calibrated,
                     )
-                    logger.debug("VAD stop reason: %s", vad_stop_reason)
+                    logger.info("VAD stop reason: %s", vad_stop_reason)
                 except Exception as exc:
                     logger.error("Recording failed: %s", exc)
                     break
                 _rec_end = time.monotonic()
-                # Emit non-secret VAD diagnostics so the UI can show endpointing truth.
+                # Emit non-secret VAD diagnostics for UI truth-state and debugging.
                 self._emit_event({
                     "type": "vad",
                     "stop_reason": vad_stop_reason,
                     "duration_s": round(_rec_end - _rec_start, 2),
                     "trigger_source": trigger_source,
                     "silence_stop_ms": self._silence_stop_ms,
+                    "noise_floor_rms": _calib.get("noise_floor_rms"),
+                    "effective_threshold": _calib.get("effective_threshold"),
                 })
                 if is_first_turn:
                     self._emit_latency(
@@ -1483,6 +1589,19 @@ class VoiceConversationLoop:
             "worker_pid": None,
             "socket": None,
         }
+
+    def end_recording(self) -> Dict[str, Any]:
+        """Force-end the current VAD recording turn and submit captured audio.
+
+        Sets the abort_event that record_command_audio_vad checks per-chunk.
+        Returns immediately; STT and response happen asynchronously as normal.
+
+        Use from the "End & send" UI button when silence detection is unreliable
+        (noisy room, soft speaker, held note).  Returns stop_reason=manually_ended
+        in the vad SSE event.
+        """
+        self._recording_abort.set()
+        return {"ok": True, "action": "end_recording"}
 
     def trigger(self, source: str = "manual_button") -> Dict[str, Any]:
         """Manually trigger a voice recording turn (mic-button / manual path).

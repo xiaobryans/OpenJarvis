@@ -135,6 +135,7 @@ export function VoiceOverlay() {
     lastVadEvent,
     lastTriggerSource,
     trigger,
+    endRecording,
     start,
     stop,
   } = useVoiceSession();
@@ -248,6 +249,14 @@ export function VoiceOverlay() {
     await trigger();
     setExpanded(true);
   };
+
+  // "End & send" — force-stop active VAD recording and submit captured audio.
+  // Use when silence detection hasn't fired (noisy room, soft speaker).
+  const handleEndRecording = async () => {
+    await endRecording();
+  };
+
+  const isRecordingActive = isActive && (voiceState === 'recording' || voiceState === 'waiting_for_silence');
 
   return (
     <div
@@ -420,16 +429,35 @@ export function VoiceOverlay() {
                 className="text-xs text-center py-1"
                 style={{ color: 'var(--color-text-secondary)' }}
               >
-                Speak freely — ends on silence (max 120 s)
+                Recording — ends automatically on silence
               </div>
             )}
             {isRunning && voiceState === 'waiting_for_silence' && (
               <div
                 className="text-xs text-center py-1 animate-pulse"
-                style={{ color: 'var(--color-text-tertiary)' }}
+                style={{ color: 'var(--color-text-secondary)' }}
               >
-                Waiting for silence…
+                Silence detected — endpointing…
               </div>
+            )}
+
+            {/* "End & send" rescue button — visible during recording/waiting_for_silence.
+                Submits captured audio immediately when VAD hasn't fired.
+                Use in noisy rooms or when speaking softly. */}
+            {isRecordingActive && (
+              <button
+                onClick={handleEndRecording}
+                className="w-full py-2 rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 transition-opacity hover:opacity-90"
+                style={{
+                  background: 'color-mix(in srgb, var(--color-accent) 15%, transparent)',
+                  color: 'var(--color-accent)',
+                  border: '1px solid color-mix(in srgb, var(--color-accent) 30%, transparent)',
+                }}
+                title="Force-end recording and submit audio to STT now"
+                aria-label="End recording and send to Jarvis"
+              >
+                End &amp; send
+              </button>
             )}
           </div>
 
@@ -467,9 +495,21 @@ export function VoiceOverlay() {
                         <span className="font-mono">{lastVadEvent.duration_s.toFixed(1)} s</span>
                       </div>
                       <div className="flex justify-between text-[10px]" style={{ color: 'var(--color-text-tertiary)' }}>
-                        <span>Silence threshold</span>
+                        <span>Silence window</span>
                         <span className="font-mono">{lastVadEvent.silence_stop_ms} ms</span>
                       </div>
+                      {lastVadEvent.noise_floor_rms != null && (
+                        <div className="flex justify-between text-[10px]" style={{ color: 'var(--color-text-tertiary)' }}>
+                          <span>Noise floor RMS</span>
+                          <span className="font-mono">{lastVadEvent.noise_floor_rms.toFixed(1)}</span>
+                        </div>
+                      )}
+                      {lastVadEvent.effective_threshold != null && (
+                        <div className="flex justify-between text-[10px]" style={{ color: 'var(--color-text-tertiary)' }}>
+                          <span>Effective threshold</span>
+                          <span className="font-mono">{lastVadEvent.effective_threshold.toFixed(1)}</span>
+                        </div>
+                      )}
                     </>
                   )}
                   <LatencyRow label="Wake → ack" ms={latency.wake_to_ack_ms} />

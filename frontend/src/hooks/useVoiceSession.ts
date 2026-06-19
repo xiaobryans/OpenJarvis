@@ -38,6 +38,8 @@ export interface VoiceEvent {
   stop_reason?: string;
   duration_s?: number;
   silence_stop_ms?: number;
+  noise_floor_rms?: number | null;
+  effective_threshold?: number | null;
 }
 
 export interface VadEvent {
@@ -45,6 +47,10 @@ export interface VadEvent {
   duration_s: number;
   trigger_source: string;
   silence_stop_ms: number;
+  /** Measured ambient noise floor RMS during calibration window. */
+  noise_floor_rms: number | null;
+  /** Effective RMS threshold used: max(configured, noise_floor × 2.5). */
+  effective_threshold: number | null;
 }
 
 export interface LatencyMap {
@@ -110,6 +116,8 @@ export interface VoiceSessionState {
 export interface VoiceSessionActions {
   /** Manually trigger a voice recording turn — use in hotkey-only mode. */
   trigger: () => Promise<boolean>;
+  /** Force-end active VAD recording and submit captured audio to STT. */
+  endRecording: () => Promise<boolean>;
   start: (opts?: {
     /**
      * Emergency max-recording cap per turn in seconds.
@@ -241,6 +249,8 @@ export function useVoiceSession(): VoiceSessionState & VoiceSessionActions {
         duration_s: ev.duration_s ?? 0,
         trigger_source: ev.trigger_source ?? 'unknown',
         silence_stop_ms: ev.silence_stop_ms ?? 4000,
+        noise_floor_rms: ev.noise_floor_rms ?? null,
+        effective_threshold: ev.effective_threshold ?? null,
       });
     }
     if (ev.type === 'interim_transcript' && ev.text) {
@@ -391,6 +401,19 @@ export function useVoiceSession(): VoiceSessionState & VoiceSessionActions {
     }
   }, []);
 
+  const endRecording = useCallback(async (): Promise<boolean> => {
+    try {
+      const res = await fetch(`${getBase()}/v1/voice/session/end_recording`, {
+        method: 'POST',
+        headers: authHeaders(),
+      });
+      const data = await res.json();
+      return !!data.ok;
+    } catch {
+      return false;
+    }
+  }, []);
+
   const stop = useCallback(async () => {
     abortRef.current?.abort();
     await fetch(`${getBase()}/v1/voice/session/stop`, {
@@ -434,6 +457,7 @@ export function useVoiceSession(): VoiceSessionState & VoiceSessionActions {
       wake_failure_reason: wakeFailureReason,
     },
     trigger,
+    endRecording,
     start,
     stop,
   };
