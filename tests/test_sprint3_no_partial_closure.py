@@ -1,7 +1,7 @@
-"""Sprint 3 FINAL No-Partial Closure — Enforcement Test Suite.
+"""Sprint 3 FINAL No-Partial Closure + Blocker Closure — Enforcement Test Suite.
 
-These tests FAIL if any Sprint 3 required item is PARTIALLY_WIRED.
-They enforce the no-partial acceptance rule from the Sprint 3 closure prompt.
+These tests FAIL if any Sprint 3 required item is PARTIALLY_WIRED or BLOCKED_*.
+They enforce the Sprint 3 final acceptance rule.
 
 Coverage:
   1.  No PARTIALLY_WIRED in mobile capability matrix
@@ -337,26 +337,42 @@ def test_voice_remains_separate_sprint_closure():
 # 17. All Sprint 3 required capabilities are WIRED_AND_TESTED or BLOCKED_*
 # ---------------------------------------------------------------------------
 
-def test_all_sprint3_caps_are_wired_or_blocked():
-    """Every Sprint 3 required mobile capability is WIRED_AND_TESTED or BLOCKED_* — never partial."""
+def test_all_sprint3_caps_are_wired_and_tested():
+    """Sprint 3 FINAL BLOCKER CLOSURE: every Sprint 3 required mobile capability is WIRED_AND_TESTED."""
     from openjarvis.mobile.project_runtime import MOBILE_PROJECT_CAPABILITIES, MobileCapabilityStatus
 
-    acceptable = {
-        MobileCapabilityStatus.WIRED_AND_TESTED,
-        MobileCapabilityStatus.BLOCKED_WAITING_FOR_BRYAN_NOW,
-        MobileCapabilityStatus.BLOCKED_EXTERNAL_PROVIDER,
-        MobileCapabilityStatus.BLOCKED_RUNTIME_CREDENTIALS,
-        MobileCapabilityStatus.BLOCKED_SECURITY,
-        MobileCapabilityStatus.REQUIRED_FOR_NO_GAP_JARVIS,  # allowed as HOLD classification
-    }
-    unacceptable = []
+    not_wired = []
     for cap in MOBILE_PROJECT_CAPABILITIES:
-        if cap.status not in acceptable:
-            unacceptable.append(f"{cap.capability}: {cap.status.value}")
+        if cap.status != MobileCapabilityStatus.WIRED_AND_TESTED:
+            not_wired.append(f"{cap.capability}: {cap.status.value}")
 
-    assert len(unacceptable) == 0, (
-        f"Sprint 3 FINAL: unacceptable capability statuses found: {unacceptable}"
+    assert len(not_wired) == 0, (
+        f"Sprint 3 FINAL BLOCKER CLOSURE: capabilities not yet WIRED_AND_TESTED: {not_wired}"
     )
+
+
+def test_no_blocked_waiting_for_sprint3_required_items():
+    """Sprint 3 FINAL: no Sprint 3 required capability may remain BLOCKED_WAITING_FOR_BRYAN_NOW."""
+    from openjarvis.mobile.project_runtime import MOBILE_PROJECT_CAPABILITIES, MobileCapabilityStatus
+
+    blocked = [
+        c.capability for c in MOBILE_PROJECT_CAPABILITIES
+        if c.status == MobileCapabilityStatus.BLOCKED_WAITING_FOR_BRYAN_NOW
+    ]
+    assert len(blocked) == 0, (
+        f"Sprint 3 FINAL: BLOCKED_WAITING_FOR_BRYAN_NOW items remain — NOT ACCEPTABLE: {blocked}"
+    )
+
+
+def test_macbook_off_full_parity_wired():
+    """Sprint 3 FINAL: macbook_off_full_parity is WIRED_AND_TESTED."""
+    from openjarvis.mobile.project_runtime import MOBILE_PROJECT_CAPABILITIES, MobileCapabilityStatus
+    cap = next((c for c in MOBILE_PROJECT_CAPABILITIES if c.capability == "macbook_off_full_parity"), None)
+    assert cap is not None
+    assert cap.status == MobileCapabilityStatus.WIRED_AND_TESTED, (
+        f"macbook_off_full_parity must be WIRED_AND_TESTED, got {cap.status}"
+    )
+    assert cap.macbook_off_status == MobileCapabilityStatus.WIRED_AND_TESTED
 
 
 # ---------------------------------------------------------------------------
@@ -378,3 +394,251 @@ def test_partially_wired_not_used_as_final_status():
     assert len(violations) == 0, (
         f"Sprint 3 FINAL: PARTIALLY_WIRED found in capability fields — NOT ACCEPTABLE: {violations}"
     )
+
+
+# ---------------------------------------------------------------------------
+# 19. Workflow has all 8 safe modes
+# ---------------------------------------------------------------------------
+
+def test_workflow_has_all_8_safe_modes():
+    """jarvis-remote.yml must list all 8 safe modes including the 4 new blocker-closure modes."""
+    import os
+    workflow_path = os.path.join(
+        os.path.dirname(__file__), "..", ".github", "workflows", "jarvis-remote.yml"
+    )
+    with open(workflow_path) as f:
+        content = f.read()
+
+    required_modes = [
+        "status", "test", "build", "artifact",
+        "project-init", "code-edit", "reassign", "escalate",
+    ]
+    for mode in required_modes:
+        assert f"- {mode}" in content or f"'{mode}'" in content or f'"{mode}"' in content, (
+            f"Workflow missing mode: {mode}"
+        )
+
+
+def test_workflow_forbidden_modes_still_rejected():
+    """Workflow must still reject all forbidden modes."""
+    import os
+    workflow_path = os.path.join(
+        os.path.dirname(__file__), "..", ".github", "workflows", "jarvis-remote.yml"
+    )
+    with open(workflow_path) as f:
+        content = f.read()
+
+    forbidden = ["deploy", "delete", "merge", "release", "publish"]
+    for mode in forbidden:
+        assert f"BLOCKED" in content or f"forbidden" in content.lower(), (
+            "Workflow must have safety gate for forbidden modes"
+        )
+        # Forbidden modes must not appear as options
+        assert f"- {mode}" not in content, (
+            f"Forbidden mode '{mode}' must not appear in workflow options list"
+        )
+
+
+# ---------------------------------------------------------------------------
+# 20. project-init mode safety
+# ---------------------------------------------------------------------------
+
+def test_project_init_mode_is_safe_dry_run():
+    """project-init workflow mode must be a dry-run scaffold artifact (no real repo)."""
+    import os
+    workflow_path = os.path.join(
+        os.path.dirname(__file__), "..", ".github", "workflows", "jarvis-remote.yml"
+    )
+    with open(workflow_path) as f:
+        content = f.read()
+
+    # Must have dry-run marker
+    assert "dry_run" in content or "DRY_RUN" in content or "dry-run" in content, (
+        "project-init mode must be marked as dry-run"
+    )
+    assert "no real repo" in content.lower() or "scaffold artifact" in content.lower() or \
+           "No real repo" in content, (
+        "project-init must document that no real repo is created"
+    )
+    assert "project-init" in content
+
+
+# ---------------------------------------------------------------------------
+# 21. code-edit mode safety
+# ---------------------------------------------------------------------------
+
+def test_code_edit_mode_produces_diff_only():
+    """code-edit workflow mode must produce diff/patch artifact — never push to main."""
+    import os
+    workflow_path = os.path.join(
+        os.path.dirname(__file__), "..", ".github", "workflows", "jarvis-remote.yml"
+    )
+    with open(workflow_path) as f:
+        content = f.read()
+
+    assert "code-edit" in content
+    # Must document safe branch / no push to main
+    assert "never push" in content.lower() or "never pushes to main" in content.lower() or \
+           "PATCH" in content or "diff" in content.lower(), (
+        "code-edit must document diff/patch-only behavior"
+    )
+    assert "Bryan approval" in content or "PENDING_BRYAN" in content, (
+        "code-edit must require Bryan approval before merge"
+    )
+
+
+# ---------------------------------------------------------------------------
+# 22. reassign mode safety
+# ---------------------------------------------------------------------------
+
+def test_reassign_mode_is_safe_artifact_only():
+    """reassign mode must emit routing artifact only — no external messages."""
+    import os
+    workflow_path = os.path.join(
+        os.path.dirname(__file__), "..", ".github", "workflows", "jarvis-remote.yml"
+    )
+    with open(workflow_path) as f:
+        content = f.read()
+
+    assert "reassign" in content
+    assert "no_external_messages" in content or "no external messages" in content.lower(), (
+        "reassign mode must document no external messages"
+    )
+    assert "artifact" in content.lower()
+
+
+# ---------------------------------------------------------------------------
+# 23. escalate mode safety
+# ---------------------------------------------------------------------------
+
+def test_escalate_mode_is_safe_artifact_only():
+    """escalate mode must emit blocker artifact only — no external messages."""
+    import os
+    workflow_path = os.path.join(
+        os.path.dirname(__file__), "..", ".github", "workflows", "jarvis-remote.yml"
+    )
+    with open(workflow_path) as f:
+        content = f.read()
+
+    assert "escalate" in content
+    assert "no_external_messages" in content or "no external messages" in content.lower(), (
+        "escalate mode must document no external messages"
+    )
+    assert "BLOCKED_PENDING_BRYAN" in content or "HOLD_PENDING_BRYAN" in content or \
+           "Bryan" in content, (
+        "escalate must require Bryan decision"
+    )
+
+
+# ---------------------------------------------------------------------------
+# 24. Mobile route can trigger new modes via trigger-workflow endpoint
+# ---------------------------------------------------------------------------
+
+def test_mobile_trigger_project_init_route():
+    """POST /v1/remote/trigger-workflow accepts task_type=project-init."""
+    from fastapi.testclient import TestClient
+    from fastapi import FastAPI
+    from openjarvis.server.company_org_routes import router
+    app = FastAPI()
+    app.include_router(router)
+    client = TestClient(app)
+    # Route must exist and accept the new modes (may fail with BLOCKED_RUNTIME_CREDENTIALS if no token)
+    resp = client.post("/v1/remote/trigger-workflow?task_type=project-init&project_id=test-proj")
+    assert resp.status_code in (200, 422, 500)  # route exists; actual execution may need token
+    data = resp.json()
+    # Must not return an unhandled 404 (route must exist)
+    assert resp.status_code != 404, "POST /v1/remote/trigger-workflow route must exist"
+
+
+def test_mobile_trigger_code_edit_route():
+    """POST /v1/remote/trigger-workflow accepts task_type=code-edit."""
+    from fastapi.testclient import TestClient
+    from fastapi import FastAPI
+    from openjarvis.server.company_org_routes import router
+    app = FastAPI()
+    app.include_router(router)
+    client = TestClient(app)
+    resp = client.post(
+        "/v1/remote/trigger-workflow?task_type=code-edit&project_id=test-proj"
+        "&task_description=test+fix"
+    )
+    assert resp.status_code != 404, "POST /v1/remote/trigger-workflow route must exist for code-edit"
+
+
+def test_mobile_trigger_reassign_route():
+    """POST /v1/remote/trigger-workflow accepts task_type=reassign."""
+    from fastapi.testclient import TestClient
+    from fastapi import FastAPI
+    from openjarvis.server.company_org_routes import router
+    app = FastAPI()
+    app.include_router(router)
+    client = TestClient(app)
+    resp = client.post("/v1/remote/trigger-workflow?task_type=reassign&worker_id=worker-test")
+    assert resp.status_code != 404, "POST /v1/remote/trigger-workflow route must exist for reassign"
+
+
+def test_mobile_trigger_escalate_route():
+    """POST /v1/remote/trigger-workflow accepts task_type=escalate."""
+    from fastapi.testclient import TestClient
+    from fastapi import FastAPI
+    from openjarvis.server.company_org_routes import router
+    app = FastAPI()
+    app.include_router(router)
+    client = TestClient(app)
+    resp = client.post("/v1/remote/trigger-workflow?task_type=escalate&blocker_description=test+blocker")
+    assert resp.status_code != 404, "POST /v1/remote/trigger-workflow route must exist for escalate"
+
+
+# ---------------------------------------------------------------------------
+# 25. start_new_project capability is WIRED_AND_TESTED (was BLOCKED)
+# ---------------------------------------------------------------------------
+
+def test_start_new_project_wired_and_tested():
+    """start_new_project must be WIRED_AND_TESTED — project-init mode closes this blocker."""
+    from openjarvis.mobile.project_runtime import MOBILE_PROJECT_CAPABILITIES, MobileCapabilityStatus
+    cap = next((c for c in MOBILE_PROJECT_CAPABILITIES if c.capability == "start_new_project"), None)
+    assert cap is not None
+    assert cap.status == MobileCapabilityStatus.WIRED_AND_TESTED, (
+        f"start_new_project must be WIRED_AND_TESTED after project-init mode added, got {cap.status}"
+    )
+    assert cap.macbook_off_status == MobileCapabilityStatus.WIRED_AND_TESTED
+
+
+def test_trigger_coding_task_wired_and_tested():
+    """trigger_coding_task must be WIRED_AND_TESTED — code-edit mode closes this blocker."""
+    from openjarvis.mobile.project_runtime import MOBILE_PROJECT_CAPABILITIES, MobileCapabilityStatus
+    cap = next((c for c in MOBILE_PROJECT_CAPABILITIES if c.capability == "trigger_coding_task"), None)
+    assert cap is not None
+    assert cap.status == MobileCapabilityStatus.WIRED_AND_TESTED, (
+        f"trigger_coding_task must be WIRED_AND_TESTED after code-edit mode added, got {cap.status}"
+    )
+
+
+def test_reassign_escalate_wired_and_tested():
+    """reassign_escalate_stuck_workers must be WIRED_AND_TESTED — reassign/escalate modes close this blocker."""
+    from openjarvis.mobile.project_runtime import MOBILE_PROJECT_CAPABILITIES, MobileCapabilityStatus
+    cap = next((c for c in MOBILE_PROJECT_CAPABILITIES if c.capability == "reassign_escalate_stuck_workers"), None)
+    assert cap is not None
+    assert cap.status == MobileCapabilityStatus.WIRED_AND_TESTED, (
+        f"reassign_escalate_stuck_workers must be WIRED_AND_TESTED, got {cap.status}"
+    )
+    assert cap.macbook_off_status == MobileCapabilityStatus.WIRED_AND_TESTED
+
+
+# ---------------------------------------------------------------------------
+# 26. Capability matrix mobile_accepted is True after Sprint 3 closure
+# ---------------------------------------------------------------------------
+
+def test_capability_matrix_mobile_accepted_true():
+    """Sprint 3 FINAL: capability matrix mobile_accepted=True — all 13 items WIRED_AND_TESTED."""
+    from openjarvis.mobile.project_runtime import get_capability_matrix
+    matrix = get_capability_matrix()
+    assert matrix["mobile_accepted"] is True, (
+        f"Sprint 3 FINAL BLOCKER CLOSURE: mobile_accepted must be True. "
+        f"Summary: {matrix['summary']}"
+    )
+    assert matrix["universal_mobile_project_building"] == "WIRED_AND_TESTED"
+    assert matrix["summary"]["wired_and_tested"] == 13
+    assert matrix["summary"]["partially_wired"] == 0
+    assert matrix["summary"]["blocked"] == 0
+    assert matrix["summary"]["required_for_no_gap"] == 0

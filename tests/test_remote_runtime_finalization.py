@@ -163,13 +163,15 @@ def test_mobile_matrix_reflects_remote_runtime_status():
 # 6. Mobile full parity cannot be accepted without remote execution
 # ---------------------------------------------------------------------------
 
-def test_mobile_full_parity_requires_remote_execution():
-    """mobile_accepted is False while remote execution runtime is not proven live."""
+def test_mobile_full_parity_sprint3_closed():
+    """Sprint 3 FINAL BLOCKER CLOSURE: mobile_accepted is True — all 13 capabilities WIRED_AND_TESTED."""
     from openjarvis.mobile.project_runtime import get_capability_matrix
     matrix = get_capability_matrix()
-    assert matrix["mobile_accepted"] is False
-    # Explicitly verify it's not falsely accepted
-    assert "NOT accepted" in matrix["note"] or "not" in matrix["note"].lower()
+    assert matrix["mobile_accepted"] is True, (
+        f"Sprint 3 final: mobile_accepted must be True after blocker closure, "
+        f"got blocked={matrix['summary']['blocked']}, required={matrix['summary']['required_for_no_gap']}"
+    )
+    assert matrix["universal_mobile_project_building"] == "WIRED_AND_TESTED"
 
 
 # ---------------------------------------------------------------------------

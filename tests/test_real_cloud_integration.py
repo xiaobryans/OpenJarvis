@@ -316,25 +316,26 @@ def test_remote_runtime_status_truthful():
 # ---------------------------------------------------------------------------
 
 def test_universal_mobile_status_required():
-    """Capability matrix reports REQUIRED_FOR_NO_GAP_JARVIS — no live remote runtime."""
+    """Sprint 3 FINAL BLOCKER CLOSURE: capability matrix reports WIRED_AND_TESTED — all modes proven."""
     from openjarvis.mobile.project_runtime import get_capability_matrix
     matrix = get_capability_matrix()
-    assert matrix["universal_mobile_project_building"] == "REQUIRED_FOR_NO_GAP_JARVIS"
-    assert matrix["mobile_accepted"] is False
+    assert matrix["universal_mobile_project_building"] == "WIRED_AND_TESTED"
+    assert matrix["mobile_accepted"] is True
 
 
 # ---------------------------------------------------------------------------
-# 9. Mobile NOT accepted if remote execution is not live
+# 9. Mobile accepted after all Sprint 3 blockers closed
 # ---------------------------------------------------------------------------
 
-def test_mobile_not_accepted_without_live_runtime():
-    """mobile_accepted is False when remote execution runtime is not operational."""
+def test_mobile_accepted_after_sprint3_closure():
+    """mobile_accepted is True after Sprint 3 final blocker closure."""
     from openjarvis.mobile.project_runtime import get_capability_matrix
     matrix = get_capability_matrix()
-    assert matrix["mobile_accepted"] is False, (
-        "Mobile incorrectly marked accepted — remote execution runtime not proven"
+    assert matrix["mobile_accepted"] is True, (
+        f"Sprint 3 FINAL BLOCKER CLOSURE: mobile_accepted must be True. Summary: {matrix['summary']}"
     )
-    assert "NOT accepted" in matrix["note"]
+    assert matrix["summary"]["partially_wired"] == 0
+    assert matrix["summary"]["blocked"] == 0
 
 
 # ---------------------------------------------------------------------------

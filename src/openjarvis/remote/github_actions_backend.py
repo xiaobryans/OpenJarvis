@@ -562,13 +562,19 @@ class GitHubActionsBackend:
         task_type: str = "status",
         task_params: Optional[Dict[str, Any]] = None,
         jarvis_task_id: Optional[str] = None,
+        project_id: str = "generic-project",
+        project_type: str = "python",
+        task_description: str = "",
+        worker_id: str = "",
+        blocker_description: str = "",
     ) -> WorkflowTriggerResult:
         """Trigger a workflow_dispatch event on GitHub.
 
         Gated by:
         - Valid token with workflow+repo scopes
         - Workflow file must exist on the remote (committed+pushed)
-        - Only safe modes: status | test | build | artifact
+        - Safe modes: status | test | build | artifact |
+                      project-init | code-edit | reassign | escalate
 
         FORBIDDEN modes (rejected before dispatch):
         - deploy, delete, push, merge, release, publish
@@ -623,9 +629,14 @@ class GitHubActionsBackend:
             dispatch_payload = {
                 "ref": branch,
                 "inputs": {
-                    "mode": task_type,       # matches workflow input name
+                    "mode": task_type,
                     "branch": branch,
                     "jarvis_task_id": jarvis_task_id or "",
+                    "project_id": project_id or "generic-project",
+                    "project_type": project_type or "python",
+                    "task_description": task_description or "",
+                    "worker_id": worker_id or "",
+                    "blocker_description": blocker_description or "",
                 },
             }
             body = json.dumps(dispatch_payload).encode()

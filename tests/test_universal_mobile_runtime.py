@@ -281,16 +281,15 @@ def test_macbook_off_available_requires_valid_cloud_backend():
 # ---------------------------------------------------------------------------
 
 def test_manifest_includes_universal_mobile_status():
-    """Manifest reports universal mobile project-building status and remote runtime status."""
+    """Manifest reports universal mobile project-building as WIRED_AND_TESTED after Sprint 3 closure."""
     from openjarvis.jarvis_os.manifest import build_capability_manifest
     m = build_capability_manifest()
     assert "universal_mobile_project_building_status" in m
-    # Sprint 3 final: some wired, some blocked — not REQUIRED_FOR_NO_GAP_JARVIS (that meant unbuilt)
-    assert m["universal_mobile_project_building_status"] in (
-        "WIRED_AND_TESTED", "REQUIRED_FOR_NO_GAP_JARVIS", "BLOCKED_WAITING_FOR_BRYAN_NOW"
-    )
+    # Sprint 3 FINAL BLOCKER CLOSURE: all capabilities wired, matrix reports WIRED_AND_TESTED
+    assert m["universal_mobile_project_building_status"] == "WIRED_AND_TESTED"
     assert "remote_execution_runtime_status" in m
     assert "mobile_full_parity" in m
+    assert "WIRED_AND_TESTED" in m["mobile_full_parity"]
 
 
 # ---------------------------------------------------------------------------
@@ -306,11 +305,13 @@ def _get_cap(name: str):
 
 
 def test_phone_start_new_project_classified():
-    """start_new_project capability is classified (not silently missing)."""
+    """start_new_project WIRED_AND_TESTED after project-init mode added."""
     cap = _get_cap("start_new_project")
     assert cap is not None
     assert cap.status is not None
-    assert cap.blocker is not None     # must have explicit blocker if not WIRED_AND_TESTED
+    from openjarvis.mobile.project_runtime import MobileCapabilityStatus
+    assert cap.status == MobileCapabilityStatus.WIRED_AND_TESTED
+    assert cap.macbook_off_status == MobileCapabilityStatus.WIRED_AND_TESTED
 
 
 def test_phone_continue_existing_project_classified():
@@ -325,15 +326,13 @@ def test_phone_continue_existing_project_classified():
 
 
 def test_phone_trigger_coding_classified():
-    """trigger_coding_task macbook_on WIRED, macbook_off BLOCKED_WAITING_FOR_BRYAN_NOW."""
+    """trigger_coding_task WIRED_AND_TESTED after code-edit mode added."""
     cap = _get_cap("trigger_coding_task")
     assert cap is not None
     from openjarvis.mobile.project_runtime import MobileCapabilityStatus
-    # Routing is WIRED macbook-on; real code edits blocked pending Bryan workflow update
     assert cap.macbook_on_status == MobileCapabilityStatus.WIRED_AND_TESTED
-    assert cap.macbook_off_status == MobileCapabilityStatus.BLOCKED_WAITING_FOR_BRYAN_NOW
-    assert cap.status == MobileCapabilityStatus.BLOCKED_WAITING_FOR_BRYAN_NOW
-    assert cap.blocker is not None  # explicit blocker required
+    assert cap.macbook_off_status == MobileCapabilityStatus.WIRED_AND_TESTED
+    assert cap.status == MobileCapabilityStatus.WIRED_AND_TESTED
 
 
 def test_phone_trigger_tests_classified():
@@ -406,14 +405,16 @@ def test_github_actions_backend_status():
 # 17. Mobile NOT accepted if only PWA/chat/status/snapshot
 # ---------------------------------------------------------------------------
 
-def test_mobile_not_accepted_with_only_pwa():
-    """capability matrix reports mobile_accepted=False when runtime capabilities missing."""
+def test_mobile_accepted_sprint3_final():
+    """Sprint 3 FINAL BLOCKER CLOSURE: mobile_accepted is True — all capabilities WIRED_AND_TESTED."""
     from openjarvis.mobile.project_runtime import get_capability_matrix
     matrix = get_capability_matrix()
-    # Must not be accepted if required capabilities are present
-    assert matrix["mobile_accepted"] is False
-    assert "NOT accepted" in matrix["note"]
-    assert matrix["universal_mobile_project_building"] == "REQUIRED_FOR_NO_GAP_JARVIS"
+    assert matrix["mobile_accepted"] is True, (
+        f"Sprint 3 final: all 13 capabilities WIRED_AND_TESTED — mobile_accepted must be True"
+    )
+    assert matrix["universal_mobile_project_building"] == "WIRED_AND_TESTED"
+    assert matrix["summary"]["partially_wired"] == 0
+    assert matrix["summary"]["blocked"] == 0
 
 
 # ---------------------------------------------------------------------------

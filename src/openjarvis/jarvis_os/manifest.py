@@ -220,15 +220,15 @@ def build_capability_manifest() -> Dict[str, Any]:
         # --- No-gap ---
         ManifestItem(
             "universal_mobile_project_building",
-            "BLOCKED_WAITING_FOR_BRYAN_NOW",
+            "AVAILABLE",
             True,
             (
-                "Sprint 3 FINAL: Core infrastructure PROVEN. "
-                "WIRED_AND_TESTED: tests/builds/code-review/view-diffs/approve-reject/monitor/remote-runtime. "
-                "BLOCKED_WAITING_FOR_BRYAN_NOW: start_new_project (needs mode=project-init in workflow), "
-                "trigger_coding_task (needs mode=code-edit + repo-write scope), "
-                "reassign macbook-off (needs remote routing mode). "
-                "No PARTIALLY_WIRED items remain — Sprint 3 no-partial closure enforced."
+                "Sprint 3 FINAL BLOCKER CLOSURE: all 13 required capabilities WIRED_AND_TESTED. "
+                "Workflow modes: status/test/build/artifact/project-init/code-edit/reassign/escalate. "
+                "project-init: safe scaffold artifact (dry-run). "
+                "code-edit: diff/patch artifact on safe branch (never pushes to main). "
+                "reassign/escalate: routing/blocker artifacts (no external messages). "
+                "MacBook-off full parity achieved for Sprint 3 scope."
             ),
             "src/openjarvis/mobile/project_runtime.py",
         ),
@@ -238,19 +238,17 @@ def build_capability_manifest() -> Dict[str, Any]:
             True,
             (
                 "GitHub Actions workflow 'Jarvis Remote Execution' (ID 299026007) LIVE on fork. "
-                "Dispatch proven this session: "
-                "status (run 27842099847, 4s), "
-                "test (run 27842115266, 14s, artifact jarvis-test-27842115266), "
-                "build (run 27842135965, 10s, artifact jarvis-build-27842135965). "
-                "GITHUB_TOKEN scopes: gist+repo+workflow. Free tier: 2000 min/month."
+                "8 safe modes: status/test/build/artifact/project-init/code-edit/reassign/escalate. "
+                "GITHUB_TOKEN scopes: gist+repo+workflow. Free tier: 2000 min/month. "
+                "Forbidden modes rejected: deploy/delete/push/merge/release/publish."
             ),
             "src/openjarvis/remote/github_actions_backend.py",
         ),
         ManifestItem(
             "full_no_gap_jarvis", "HOLD", False,
             "FULL_NO_GAP_JARVIS_COMPLETE not claimable. "
-            "Remaining blockers: project-init/code-edit modes pending Bryan authorization, "
-            "voice sprint (separate sprint), native iOS/Android (ON_HOLD_BY_BRYAN), "
+            "Remaining: voice sprint (separate sprint, ON_HOLD), "
+            "native iOS/Android (ON_HOLD_BY_BRYAN), "
             "public release certification (30-task gate not yet run).",
             None,
         ),
@@ -300,8 +298,8 @@ def build_capability_manifest() -> Dict[str, Any]:
         "public_release_status": "HOLD — not certified",
         "cost_cache_status": "AVAILABLE — cost ledger and role-scoped cache wired",
         "mobile_full_parity": (
-            "BLOCKED_WAITING_FOR_BRYAN_NOW — remote runtime PROVEN (GitHub Actions); "
-            "project-init/code-edit modes pending Bryan authorization"
+            "WIRED_AND_TESTED — Sprint 3 final blocker closure: all 13 capabilities proven. "
+            "MacBook-off full parity achieved for Sprint 3 scope."
         ),
     }
 

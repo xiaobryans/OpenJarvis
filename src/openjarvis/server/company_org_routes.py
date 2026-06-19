@@ -1057,14 +1057,22 @@ def trigger_remote_workflow(
     jarvis_task_id: Optional[str] = None,
     repo_owner: str = "",
     repo_name: str = "",
+    project_id: str = "generic-project",
+    project_type: str = "python",
+    task_description: str = "",
+    worker_id: str = "",
+    blocker_description: str = "",
 ) -> Dict[str, Any]:
     """Trigger a remote workflow on GitHub Actions.
 
-    Requires:
-    - Valid GITHUB_TOKEN with workflow+repo scopes
-    - .github/workflows/jarvis-remote.yml committed to repo
-    - repo_owner and repo_name parameters
+    Supports 8 safe modes:
+    - status, test, build, artifact (original modes)
+    - project-init: generates scaffold artifact (dry-run, no real repo)
+    - code-edit: generates diff/patch artifact on safe branch (never pushes to main)
+    - reassign: emits routing/reassignment artifact
+    - escalate: emits blocker/escalation artifact
 
+    Forbidden modes (deploy/delete/push/merge/release/publish) are rejected before dispatch.
     All deploys remain gated — Bryan authorization required.
     """
     backend = get_github_actions_backend(repo_owner=repo_owner, repo_name=repo_name)
@@ -1073,6 +1081,11 @@ def trigger_remote_workflow(
         branch=branch,
         task_type=task_type,
         jarvis_task_id=jarvis_task_id,
+        project_id=project_id,
+        project_type=project_type,
+        task_description=task_description,
+        worker_id=worker_id,
+        blocker_description=blocker_description,
     )
     return result.to_dict()
 
