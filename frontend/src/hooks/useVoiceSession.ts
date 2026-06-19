@@ -73,6 +73,22 @@ export interface VoiceSessionState {
   wakeWorkerReady: boolean;
   /** Non-null when wake-word failed and session is in hotkey-only mode. */
   wakeFailureReason: string | null;
+  /** True only when wakeMode === 'wake_word' AND wakeWorkerReady is confirmed. */
+  wakePhraseActive: boolean;
+  /** True when an active session exists and trigger() can be called. */
+  manualTriggerAvailable: boolean;
+  /** Non-null when a keyboard shortcut is configured; null if none. */
+  configuredShortcut: string | null;
+  /** Consolidated diagnostics snapshot — all wake/trigger truth-state in one place. */
+  wakeDiagnostics: {
+    wake_mode: WakeMode | null;
+    wake_worker_ready: boolean;
+    wake_trigger_supported: boolean;
+    wake_phrase_active: boolean;
+    manual_trigger_available: boolean;
+    configured_shortcut: string | null;
+    wake_failure_reason: string | null;
+  };
 }
 
 export interface VoiceSessionActions {
@@ -371,6 +387,18 @@ export function useVoiceSession(): VoiceSessionState & VoiceSessionActions {
     wakeMode,
     wakeWorkerReady,
     wakeFailureReason,
+    wakePhraseActive: wakeMode === 'wake_word' && wakeWorkerReady,
+    manualTriggerAvailable: isActive,
+    configuredShortcut: null,
+    wakeDiagnostics: {
+      wake_mode: isActive ? wakeMode : null,
+      wake_worker_ready: wakeWorkerReady,
+      wake_trigger_supported: wakeMode === 'wake_word',
+      wake_phrase_active: wakeMode === 'wake_word' && wakeWorkerReady,
+      manual_trigger_available: isActive,
+      configured_shortcut: null,
+      wake_failure_reason: wakeFailureReason,
+    },
     trigger,
     start,
     stop,

@@ -149,6 +149,9 @@ export function VoiceOverlay() {
     wakeMode,
     wakeWorkerReady,
     wakeFailureReason,
+    wakePhraseActive,
+    manualTriggerAvailable,
+    configuredShortcut,
     trigger,
     start,
     stop,
@@ -210,12 +213,19 @@ export function VoiceOverlay() {
   const isWakeListening = isRunning && (voiceState === 'listening' || voiceState === 'wake_listening');
   const hasConversation = !!finalTranscript || !!jarvisResponse;
 
+  // Truthful wake-listening label — never claim "Hey Jarvis" unless worker
+  // is confirmed ready and in wake_word mode.
+  const wakeListeningLabel = (() => {
+    if (wakePhraseActive) return 'Listening for "Hey Jarvis"…';
+    if (wakeMode === 'hotkey_only') return 'Wake word unavailable — tap mic to speak';
+    return 'Wake word loading — tap mic to speak';
+  })();
+
   // ── Badge label logic — never show "Voice off" when the session is active
   // or still starting. ──────────────────────────────────────────────────────
   const badgeLabel = (() => {
     if (isActive) {
-      // Session is running — always show current state, even during idle
-      // transition between events.
+      if (isWakeListening) return wakeListeningLabel;
       return VOICE_STATE_LABEL[voiceState] ?? voiceState;
     }
     if (voiceState === 'error') return 'Error';
@@ -234,19 +244,16 @@ export function VoiceOverlay() {
   })();
 
   // Mic button:
-  // - If running in wake-word mode while listening → do nothing (wake drives it)
-  //   but expand panel so user can see state.
-  // - If running in hotkey-only mode while listening → trigger a recording turn.
-  // - If speaking/recording/transcribing → stop current session.
+  // - If listening (any wake mode) → always trigger a recording turn. The
+  //   mic button is the primary reliable manual trigger regardless of whether
+  //   the wake-word worker is active, loading, or unavailable.
+  // - If active turn in progress (recording/transcribing/speaking) → stop.
   // - If not running → start session.
   const handleMicClick = async () => {
     if (isRunning) {
-      if (isWakeListening && wakeMode === 'hotkey_only') {
-        // In hotkey-only mode, mic button triggers a recording turn
+      if (isWakeListening) {
+        // Always trigger — works whether wake-word is active or unavailable.
         await trigger();
-        setExpanded(true);
-      } else if (isWakeListening) {
-        // Wake-word is handling it — just expand panel
         setExpanded(true);
       } else {
         // Active turn in progress → stop
@@ -286,7 +293,7 @@ export function VoiceOverlay() {
                 <StateIcon state={voiceState} />
               </div>
               <span className="text-xs font-medium truncate" style={{ color: 'var(--color-text)' }}>
-                {VOICE_STATE_LABEL[voiceState] ?? voiceState}
+                {isWakeListening ? wakeListeningLabel : (VOICE_STATE_LABEL[voiceState] ?? voiceState)}
               </span>
               {/* Provider chip — shown when provider info is available */}
               {providerInfo && isActive && (
@@ -382,17 +389,38 @@ export function VoiceOverlay() {
               </div>
             )}
 
-            {/* Wake listening idle prompt — content varies by wake mode */}
+            {/* Wake listening idle prompt — truthful, mic-button-first */}
             {!hasConversation && !error && !startFailedReason && !interimTranscript && isRunning && isWakeListening && (
               <div className="space-y-1">
-                {wakeMode === 'hotkey_only' ? (
+                {wakePhraseActive ? (
+                  // Wake-word confirmed active
                   <div className="text-xs text-center py-2 space-y-1">
                     <div style={{ color: 'var(--color-text-secondary)' }}>
-                      Press{' '}
-                      <kbd className="px-1 rounded text-[10px]" style={{ background: 'var(--color-bg-tertiary)' }}>
-                        ⌘⇧Space
-                      </kbd>{' '}
-                      or <strong>tap the mic</strong> to speak
+                      Say <strong>"Hey Jarvis"</strong>
+                      {configuredShortcut ? (
+                        <> or press{' '}
+                          <kbd className="px-1 rounded text-[10px]" style={{ background: 'var(--color-bg-tertiary)' }}>
+                            {configuredShortcut}
+                          </kbd>
+                        </>
+                      ) : (
+                        ' or tap the mic'
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  // Wake-word unavailable or loading — mic is the trigger
+                  <div className="text-xs text-center py-2 space-y-1">
+                    <div style={{ color: 'var(--color-text-secondary)' }}>
+                      {configuredShortcut ? (
+                        <>Press{' '}
+                          <kbd className="px-1 rounded text-[10px]" style={{ background: 'var(--color-bg-tertiary)' }}>
+                            {configuredShortcut}
+                          </kbd>{' '}
+                          or{' '}
+                        </>
+                      ) : null}
+                      <strong>Tap the mic</strong> to speak
                     </div>
                     {wakeFailureReason && (
                       <div
@@ -405,28 +433,17 @@ export function VoiceOverlay() {
                         Wake-word unavailable: {wakeFailureReason.split('.')[0]}
                       </div>
                     )}
-                  </div>
-                ) : wakeWorkerReady ? (
-                  <div
-                    className="text-xs text-center py-2"
-                    style={{ color: 'var(--color-text-secondary)' }}
-                  >
-                    Say <strong>"Hey Jarvis"</strong> or press{' '}
-                    <kbd className="px-1 rounded text-[10px]" style={{ background: 'var(--color-bg-tertiary)' }}>
-                      ⌘⇧Space
-                    </kbd>
-                  </div>
-                ) : (
-                  // Worker venv present but not yet ready (still loading model)
-                  <div
-                    className="text-xs text-center py-2"
-                    style={{ color: 'var(--color-text-secondary)' }}
-                  >
-                    Wake-word loading… press{' '}
-                    <kbd className="px-1 rounded text-[10px]" style={{ background: 'var(--color-bg-tertiary)' }}>
-                      ⌘⇧Space
-                    </kbd>{' '}
-                    or tap mic
+                    {!wakeFailureReason && wakeMode === 'wake_word' && !wakeWorkerReady && (
+                      <div
+                        className="text-[10px] px-2 py-1 rounded font-mono"
+                        style={{
+                          color: 'var(--color-text-tertiary)',
+                          background: 'var(--color-bg-tertiary)',
+                        }}
+                      >
+                        Wake-word model loading…
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -547,7 +564,9 @@ export function VoiceOverlay() {
           title={
             isRunning
               ? isWakeListening
-                ? 'Wake listening — say "Hey Jarvis" or ⌘⇧Space (click to stop)'
+                ? wakePhraseActive
+                  ? `Say "Hey Jarvis" or click to trigger manually`
+                  : 'Click to trigger recording (wake word unavailable)'
                 : 'Stop voice session'
               : 'Start voice session manually'
           }

@@ -333,6 +333,54 @@ async def trigger_voice_session() -> Dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# GET /v1/voice/diagnostics
+# ---------------------------------------------------------------------------
+
+
+@router.get("/v1/voice/diagnostics")
+async def get_voice_diagnostics() -> Dict[str, Any]:
+    """Return non-secret wake/manual-trigger diagnostics for UI truth-state.
+
+    Fields:
+      wake_mode              — 'wake_word' | 'hotkey_only'
+      wake_worker_ready      — True only when worker process is connected
+      wake_trigger_supported — True when wake_mode == 'wake_word'
+      wake_phrase_active     — True when wake_mode == 'wake_word' AND worker ready
+      manual_trigger_available — True when a session is active (trigger() works)
+      configured_shortcut    — string | null (null = no shortcut registered)
+      wake_failure_reason    — non-secret error string | null
+    """
+    sess = _get_session()
+    if sess is None:
+        return {
+            "active": False,
+            "wake_mode": None,
+            "wake_worker_ready": False,
+            "wake_trigger_supported": False,
+            "wake_phrase_active": False,
+            "manual_trigger_available": False,
+            "configured_shortcut": None,
+            "wake_failure_reason": None,
+        }
+
+    st = sess.status()
+    wake_mode = st.get("wake_mode", "wake_word")
+    worker_ready = st.get("bridge", {}).get("worker_ready", False)
+    wake_phrase_active = wake_mode == "wake_word" and worker_ready
+
+    return {
+        "active": True,
+        "wake_mode": wake_mode,
+        "wake_worker_ready": worker_ready,
+        "wake_trigger_supported": wake_mode == "wake_word",
+        "wake_phrase_active": wake_phrase_active,
+        "manual_trigger_available": True,
+        "configured_shortcut": None,
+        "wake_failure_reason": st.get("wake_failure_reason"),
+    }
+
+
+# ---------------------------------------------------------------------------
 # GET /v1/voice/session/events  (SSE)
 # ---------------------------------------------------------------------------
 
