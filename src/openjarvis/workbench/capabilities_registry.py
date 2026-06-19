@@ -586,8 +586,76 @@ def _nus1c_safe_autopilot_learning_status() -> CapabilityRecord:
         )
 
 
+def _nus1d_eval_rollback_gates_status() -> CapabilityRecord:
+    """NUS 1D — Eval Gates, Rollback, Approval, Power Autopilot Boundary."""
+    try:
+        from openjarvis.nus.eval_gate import NUS1D_EVAL_GATE_VERSION, EvalGateRunner  # noqa: F401
+        from openjarvis.nus.rollback import NUS1D_ROLLBACK_VERSION, RollbackEnforcer  # noqa: F401
+        from openjarvis.nus.approval_workflow import NUS1D_APPROVAL_VERSION, ApprovalWorkflow  # noqa: F401
+        from openjarvis.nus.power_autopilot import NUS1D_POWER_AUTOPILOT_VERSION, PowerAutopilot  # noqa: F401
+        return CapabilityRecord(
+            capability_id="nus1d_eval_rollback_gates",
+            display_name="NUS 1D — Eval Gates, Rollback, Approval Workflow",
+            status=STATUS_READY,
+            summary=(
+                "NUS 1D: Eval gate framework (fail-closed), structured rollback plans, "
+                "approval workflow with TTL/scope/audit, power_autopilot boundary "
+                "(controlled, not broadly activated). "
+                "file_write/browser/external: needs_approval. "
+                "self_modification/deploy/secret/push/merge: blocked. "
+                "US13 voice HOLD/UNSAFE/PARKED."
+            ),
+            evidence={
+                "eval_gate_version": NUS1D_EVAL_GATE_VERSION,
+                "rollback_version": NUS1D_ROLLBACK_VERSION,
+                "approval_version": NUS1D_APPROVAL_VERSION,
+                "power_autopilot_version": NUS1D_POWER_AUTOPILOT_VERSION,
+                "safety_gates_active": True,
+            },
+        )
+    except Exception as exc:
+        return CapabilityRecord(
+            capability_id="nus1d_eval_rollback_gates",
+            display_name="NUS 1D — Eval Gates, Rollback, Approval Workflow",
+            status=STATUS_NOT_IMPLEMENTED,
+            summary=f"NUS 1D eval rollback gates unavailable: {exc}",
+        )
+
+
+def _nus1e_low_risk_execution_foundation_status() -> CapabilityRecord:
+    """NUS 1E — Low-Risk Execution Foundation."""
+    try:
+        from openjarvis.nus.execution_classifier import NUS1E_CLASSIFIER_VERSION, ExecutionClassifier  # noqa: F401
+        from openjarvis.nus.low_risk_execution import NUS1E_LOW_RISK_VERSION, LowRiskExecutionManager  # noqa: F401
+        return CapabilityRecord(
+            capability_id="nus1e_low_risk_execution_foundation",
+            display_name="NUS 1E — Low-Risk Execution Foundation",
+            status=STATUS_READY,
+            summary=(
+                "NUS 1E: Metadata/contract-driven execution classifier, "
+                "low-risk auto-commit candidate preparation (dry-run scaffold), "
+                "production-safe execution gate (production actions blocked, require NUS 1F). "
+                "No auto-push, no auto-merge, no production deploy. "
+                "US13 voice HOLD/UNSAFE/PARKED. NUS 1F: not_started."
+            ),
+            evidence={
+                "classifier_version": NUS1E_CLASSIFIER_VERSION,
+                "low_risk_version": NUS1E_LOW_RISK_VERSION,
+                "agent_name_agnostic": True,
+                "safety_gates_active": True,
+            },
+        )
+    except Exception as exc:
+        return CapabilityRecord(
+            capability_id="nus1e_low_risk_execution_foundation",
+            display_name="NUS 1E — Low-Risk Execution Foundation",
+            status=STATUS_NOT_IMPLEMENTED,
+            summary=f"NUS 1E low-risk execution foundation unavailable: {exc}",
+        )
+
+
 def get_all_capabilities() -> List[CapabilityRecord]:
-    """Return all capability records with truthful status (US15 + Wave 1–4 + NUS 1A/1B/1C)."""
+    """Return all capability records with truthful status (US15 + Wave 1–4 + NUS 1A/1B/1C/1D/1E)."""
     return [
         _assistant_status(),
         _workbench_status(),
@@ -614,6 +682,10 @@ def get_all_capabilities() -> List[CapabilityRecord]:
         _nus1b_recommendation_workflow_status(),
         # NUS 1C — Safe Autopilot Learning
         _nus1c_safe_autopilot_learning_status(),
+        # NUS 1D — Eval Gates, Rollback, Approval
+        _nus1d_eval_rollback_gates_status(),
+        # NUS 1E — Low-Risk Execution Foundation
+        _nus1e_low_risk_execution_foundation_status(),
     ]
 
 
@@ -639,6 +711,9 @@ def get_capabilities_summary() -> Dict[str, Any]:
         "nus1a_status": "ready",
         "nus1b_status": "ready",
         "nus1c_status": "ready",
+        "nus1d_status": "ready",
+        "nus1e_status": "ready",
+        "nus1f_status": "not_started",
         "nus1d_plus_status": "not_started",
     }
 

@@ -2680,6 +2680,289 @@ def check_nus1c_safe_autopilot(project_id: str = "omnix") -> CheckResult:
         )
 
 
+def check_nus1d_eval_rollback(project_id: str = "omnix") -> CheckResult:
+    """NUS 1D — Eval Gates, Rollback, Approval Workflow, Power Autopilot Boundary doctor check."""
+    import tempfile
+    from pathlib import Path
+    evidence: dict = {
+        "project_id": project_id,
+        "us13_voice_status": "HOLD/UNSAFE/PARKED",
+        "safety_gates_active": True,
+    }
+    try:
+        from openjarvis.nus.eval_gate import (
+            EvalCandidate, EvalGateRunner, run_eval_gate,
+            GATE_PASS, GATE_FAIL_CLOSED, NUS1D_EVAL_GATE_VERSION,
+        )
+        from openjarvis.nus.rollback import RollbackEnforcer, NUS1D_ROLLBACK_VERSION
+        from openjarvis.nus.approval_workflow import ApprovalWorkflow, APPROVAL_BLOCKED, NUS1D_APPROVAL_VERSION
+        from openjarvis.nus.power_autopilot import PowerAutopilot, NUS1D_POWER_AUTOPILOT_VERSION
+
+        evidence["eval_gate_version"] = NUS1D_EVAL_GATE_VERSION
+        evidence["rollback_version"] = NUS1D_ROLLBACK_VERSION
+        evidence["approval_version"] = NUS1D_APPROVAL_VERSION
+        evidence["power_autopilot_version"] = NUS1D_POWER_AUTOPILOT_VERSION
+        evidence["modules_import"] = True
+
+        # 1. Eval gate — fail closed on missing validation plan
+        c_bad = EvalCandidate(
+            action_type="local_analysis",
+            risk_level="low",
+            validation_plan="",  # empty → fail closed
+            safety_gate_result="pass",
+        )
+        report = run_eval_gate(c_bad)
+        assert report.overall_outcome == GATE_FAIL_CLOSED, \
+            f"Expected GATE_FAIL_CLOSED for missing validation plan, got {report.overall_outcome}"
+        evidence["eval_gate_fail_closed"] = True
+
+        # 2. Eval gate — pass with all fields
+        c_good = EvalCandidate(
+            action_type="local_analysis",
+            risk_level="low",
+            validation_plan="Run pytest tests/nus/",
+            rollback_plan="N/A — read-only action",
+            safety_gate_result="pass",
+        )
+        report2 = run_eval_gate(c_good)
+        assert report2.all_passed, f"Expected all gates to pass, failed: {report2.failed_gates}"
+        evidence["eval_gate_pass"] = True
+
+        # 3. Eval gate — blocked action fails fast
+        c_blocked = EvalCandidate(
+            action_type="deploy",
+            risk_level="high",
+            validation_plan="plan",
+            safety_gate_result="pass",
+        )
+        report3 = run_eval_gate(c_blocked)
+        assert not report3.all_passed
+        assert any("blocked" in r.gate_name for r in report3.failed_gates or report3.gate_results
+                   if not r.passed)
+        evidence["blocked_action_fails_gate"] = True
+
+        # 4. Rollback — required for mutations, not required for reads
+        enforcer = RollbackEnforcer()
+        assert enforcer.requires_rollback("file_write") is True
+        assert enforcer.requires_rollback("local_read") is False
+
+        plan = enforcer.create_plan(
+            action_type="file_write",
+            description="Revert status file change",
+            steps=["git checkout -- path/to/file"],
+        )
+        check = enforcer.check_precondition("file_write", plan)
+        assert check["ok"] is True
+
+        check_no_plan = enforcer.check_precondition("file_write", None)
+        assert check_no_plan["ok"] is False
+        assert check_no_plan.get("fail_closed") is True
+        evidence["rollback_required_for_mutation"] = True
+
+        # Real rollback execution is blocked
+        exec_result = enforcer.execute_rollback(plan.plan_id)
+        assert exec_result["ok"] is False
+        assert exec_result.get("blocked") is True
+        evidence["rollback_real_execution_blocked"] = True
+
+        # 5. Approval — blocked action cannot be approved
+        workflow = ApprovalWorkflow()
+        dec = workflow.create(scope_action_type="deploy")
+        assert dec.status == APPROVAL_BLOCKED
+        grant_result = workflow.grant(dec.decision_id, "bryan")
+        assert grant_result["ok"] is False
+        evidence["approval_cannot_override_blocked"] = True
+
+        # 6. Approval TTL/expiry
+        dec2 = workflow.create(scope_action_type="file_write", ttl_seconds=0.001)
+        import time as _time; _time.sleep(0.01)
+        valid = workflow.validate(dec2.decision_id)
+        assert valid["valid"] is False  # expired before grant
+        evidence["approval_ttl_works"] = True
+
+        # 7. Power autopilot — bounded, kill-switch on by default
+        pa = PowerAutopilot(kill_switch=True)
+        dec_pa = pa.evaluate("local_analysis")
+        assert dec_pa.decision == "kill_switch_disabled"
+
+        # With kill-switch off + eval gate pass
+        pa2 = PowerAutopilot(kill_switch=False)
+        dec_pa2 = pa2.evaluate("local_analysis", eval_gate_result="pass")
+        assert dec_pa2.decision == "auto_allowed"
+
+        # Blocked actions stay blocked
+        pa3 = PowerAutopilot(kill_switch=False)
+        for action in ("deploy", "auto_push", "secret_access", "self_modification"):
+            d = pa3.evaluate(action, eval_gate_result="pass")
+            assert d.decision == "blocked", f"{action} should be blocked in power_autopilot"
+        evidence["power_autopilot_bounded"] = True
+
+        evidence["us13_voice_status"] = "HOLD/UNSAFE/PARKED"
+
+        return CheckResult(
+            check_id="nus1d_eval_rollback",
+            category="nus",
+            status=CheckStatus.PASS,
+            summary=(
+                f"NUS 1D v{NUS1D_EVAL_GATE_VERSION}: eval gates fail-closed, rollback enforced, "
+                "approval TTL/scope/block works, power_autopilot bounded. US13 HOLD/UNSAFE/PARKED."
+            ),
+            evidence=evidence,
+            project_id=project_id,
+        )
+    except Exception as exc:
+        evidence["error"] = str(exc)
+        return CheckResult(
+            check_id="nus1d_eval_rollback",
+            category="nus",
+            status=CheckStatus.FAIL,
+            summary=f"NUS 1D eval rollback check failed: {exc}",
+            evidence=evidence,
+            project_id=project_id,
+        )
+
+
+def check_nus1e_low_risk_execution(project_id: str = "omnix") -> CheckResult:
+    """NUS 1E — Low-Risk Execution Foundation doctor check."""
+    import tempfile
+    from pathlib import Path
+    evidence: dict = {
+        "project_id": project_id,
+        "us13_voice_status": "HOLD/UNSAFE/PARKED",
+        "safety_gates_active": True,
+    }
+    try:
+        from openjarvis.nus.execution_classifier import (
+            ExecutionClassifier, NUS1E_CLASSIFIER_VERSION,
+            TIER_SAFE_LOCAL_DRY_RUN, TIER_BLOCKED_DANGEROUS,
+            TIER_MEDIUM_FILE_WRITE, TIER_HIGH_EXTERNAL,
+        )
+        from openjarvis.nus.low_risk_execution import (
+            LowRiskExecutionManager, NUS1E_LOW_RISK_VERSION,
+        )
+
+        evidence["classifier_version"] = NUS1E_CLASSIFIER_VERSION
+        evidence["low_risk_version"] = NUS1E_LOW_RISK_VERSION
+        evidence["modules_import"] = True
+
+        # 1. Classifier — safe local
+        clf = ExecutionClassifier()
+        r = clf.classify("local_analysis", risk_level="low")
+        assert r.tier == TIER_SAFE_LOCAL_DRY_RUN
+        assert r.auto_allowed is True
+
+        # Blocked actions
+        for action in ("self_modification", "deploy", "auto_push", "secret_access"):
+            r2 = clf.classify(action)
+            assert r2.tier == TIER_BLOCKED_DANGEROUS, f"{action} should be TIER_BLOCKED_DANGEROUS"
+
+        # Medium risk
+        r3 = clf.classify("file_write")
+        assert r3.tier == TIER_MEDIUM_FILE_WRITE
+        assert r3.needs_approval is True
+        evidence["classifier_works"] = True
+
+        # 2. Secret file rejection
+        r_secret = clf.classify("docs_write", file_targets=[".env", "docs/readme.md"])
+        assert r_secret.tier == TIER_BLOCKED_DANGEROUS
+        assert r_secret.blocked is True
+        evidence["secret_file_rejection"] = True
+
+        # 3. Deploy artifact rejection
+        r_dmg = clf.classify("file_write", file_targets=["dist/app.dmg", "src/main.py"])
+        assert r_dmg.tier == TIER_BLOCKED_DANGEROUS
+        evidence["deploy_artifact_rejection"] = True
+
+        # 4. Agent-name-agnostic: synthetic future agent
+        future_agent_meta = {
+            "agent_name": "future_worker_v99",
+            "agent_type": "autonomous_worker",
+            "capabilities": ["local_analysis", "telemetry_push"],
+        }
+        r_future = clf.classify(
+            "local_analysis",
+            risk_level="low",
+            agent_metadata=future_agent_meta,
+        )
+        assert r_future.tier == TIER_SAFE_LOCAL_DRY_RUN
+        assert r_future.auto_allowed is True
+        evidence["future_agent_compatible"] = True
+
+        # 5. LowRiskExecutionManager
+        mgr = LowRiskExecutionManager(kill_switch=False)
+
+        # Create candidate
+        candidate = mgr.create_candidate(
+            message="Update NUS status docs",
+            files_to_add=["docs/status.md"],
+        )
+        assert candidate.status not in ("blocked",), f"Unexpected blocked: {candidate.blocked_reason}"
+
+        # Validate preconditions
+        pre = mgr.validate_preconditions(
+            candidate.candidate_id,
+            git_clean=True,
+            diff_classified=True,
+            validation_passed=True,
+            rollback_plan_id="plan_001",
+        )
+        assert pre["ok"] is True
+        evidence["auto_commit_preconditions_work"] = True
+
+        # Dry-run
+        dr = mgr.dry_run(candidate.candidate_id)
+        assert dr["ok"] is True
+        assert dr.get("dry_run") is True
+        evidence["auto_commit_dry_run_works"] = True
+
+        # 6. No auto-push/merge/deploy
+        status = mgr.get_status()
+        assert status["no_auto_push"] is True
+        assert status["no_auto_merge"] is True
+        assert status["no_production_deploy"] is True
+        evidence["no_auto_push_merge_deploy"] = True
+
+        # 7. Production gate blocked
+        pg = mgr.production_gate("auto_push")
+        assert pg["ok"] is False
+        assert pg.get("blocked") is True
+        evidence["production_gate_blocked"] = True
+
+        # 8. Kill-switch blocks auto-commit
+        mgr2 = LowRiskExecutionManager(kill_switch=True)
+        c2 = mgr2.create_candidate("test", ["docs/a.md"])
+        pre2 = mgr2.validate_preconditions(
+            c2.candidate_id, True, True, True, "plan_x"
+        )
+        assert pre2["ok"] is False
+        evidence["kill_switch_blocks_auto_commit"] = True
+
+        evidence["us13_voice_status"] = "HOLD/UNSAFE/PARKED"
+
+        return CheckResult(
+            check_id="nus1e_low_risk_execution",
+            category="nus",
+            status=CheckStatus.PASS,
+            summary=(
+                f"NUS 1E v{NUS1E_CLASSIFIER_VERSION}: classifier works, secret/artifact rejection, "
+                "future agent compatible, auto-commit dry-run ok, no push/merge/deploy, "
+                "production gate blocked. US13 HOLD/UNSAFE/PARKED."
+            ),
+            evidence=evidence,
+            project_id=project_id,
+        )
+    except Exception as exc:
+        evidence["error"] = str(exc)
+        return CheckResult(
+            check_id="nus1e_low_risk_execution",
+            category="nus",
+            status=CheckStatus.FAIL,
+            summary=f"NUS 1E low-risk execution check failed: {exc}",
+            evidence=evidence,
+            project_id=project_id,
+        )
+
+
 # ---------------------------------------------------------------------------
 # Check registry (34+ checks)
 # ---------------------------------------------------------------------------
@@ -2730,6 +3013,10 @@ _ALL_CHECK_FNS: List[Callable[..., CheckResult]] = [
     check_nus1b_recommendation_workflow,
     # NUS 1C checks
     check_nus1c_safe_autopilot,
+    # NUS 1D checks
+    check_nus1d_eval_rollback,
+    # NUS 1E checks
+    check_nus1e_low_risk_execution,
 ]
 
 
@@ -2797,5 +3084,7 @@ __all__ = [
     "check_nus1a_learning_foundation",
     "check_nus1b_recommendation_workflow",
     "check_nus1c_safe_autopilot",
+    "check_nus1d_eval_rollback",
+    "check_nus1e_low_risk_execution",
     "run_all_checks",
 ]

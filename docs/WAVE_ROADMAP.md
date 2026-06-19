@@ -394,11 +394,42 @@ uv run python -m pytest tests/wave tests/workbench/test_us15_foundation.py tests
 - US13 voice: HOLD/UNSAFE/PARKED.
 - Full docs: `docs/NUS1C_SAFE_AUTOPILOT.md`.
 
-### NUS 1D / 1E / 1F — Advanced Autonomy: NOT STARTED / LOCKED
+### NUS 1D — Eval Gates, Rollback, Approval Workflow: READY
 
-- NUS 1D (power_autopilot activation, audited file writes) is locked for a future sprint.
-- NUS 1E (founder_override session activation) requires explicit owner gate.
-- NUS 1F (production-safe execution, deployment recommendation) requires explicit owner gate.
+Implemented in consolidated NUS 1D/1E sprint.
+
+- **Modules:** `eval_gate.py`, `rollback.py`, `approval_workflow.py`, `power_autopilot.py`
+- **Eval gate framework:** fail-closed on missing evidence; validates validation plan, rollback plan, risk classification, capability readiness, safety gate result, blocked action check.
+- **Rollback enforcement:** structured `RollbackPlan`, required for file_write/code_edit/commit-like actions. No destructive rollback execution without explicit approval.
+- **Approval workflow:** `ApprovalDecision` with TTL, scope constraints, explicit denial, audit log. Cannot override blocked categories (secrets/self_modification/deploy/push/merge).
+- **Power autopilot boundary:** `controlled_not_broadly_activated`. Safe local dry-runs allowed with kill-switch off + eval gate pass. Medium-risk requires gate+rollback+approval. Permanently blocked: deploy/push/merge/secret/self_modification/browser/sends.
+- **Capability:** `nus1d_eval_rollback_gates` — `ready`
+- **Routes:** `/v1/nus/eval/status`, `/v1/nus/eval/run-dry-run`, `/v1/nus/rollback/status`, `/v1/nus/approvals/status`
+- **Doctor check:** `check_nus1d_eval_rollback`
+- **Tests:** `tests/nus/test_nus1d_eval_rollback.py`
+- **US13 voice:** HOLD/UNSAFE/PARKED
+
+### NUS 1E — Low-Risk Execution Foundation: READY
+
+Implemented in consolidated NUS 1D/1E sprint.
+
+- **Modules:** `execution_classifier.py`, `low_risk_execution.py`
+- **Execution classifier:** metadata/contract-driven (not fixed agent names). Classifies actions into safe_local_dry_run, safe_docs_metadata, medium_file_write, high_external, blocked_dangerous tiers.
+- **Auto-commit foundation:** dry-run scaffold. Requires clean git, diff classification, validation pass, rollback plan, audit log, kill-switch disabled, no secret files, no deploy artifacts. No auto-push, no auto-merge, no production deploy.
+- **Production gate:** permanently blocked in NUS 1E. Requires NUS 1F explicit gate.
+- **Future-proof:** synthetic future agents classified correctly without hardcoded name logic.
+- **Capability:** `nus1e_low_risk_execution_foundation` — `ready`
+- **Routes:** `/v1/nus/execution/low-risk/status`, `/v1/nus/execution/low-risk/dry-run`, `/v1/nus/governance/future-proof/status`
+- **Doctor check:** `check_nus1e_low_risk_execution`
+- **Tests:** `tests/nus/test_nus1e_low_risk_execution.py`, `tests/nus/test_future_proof_governance.py`
+- **Docs added:** `JARVIS_FUTURE_PROOF_ARCHITECTURE_PRINCIPLES.md`, `JARVIS_AGENT_REGISTRY_AND_CONTRACTS.md`, `JARVIS_ROUTING_MODEL_POLICY.md`, `JARVIS_95_PERCENT_AUTONOMY_TARGET.md`, `JARVIS_TOKEN_COST_GOVERNANCE.md`, `POST_NUS_COMPANY_AGENT_ORCHESTRATOR_PLAN.md`
+- **US13 voice:** HOLD/UNSAFE/PARKED
+
+### NUS 1F — Controlled Production Autonomy: NOT STARTED / LOCKED
+
+- Requires explicit Bryan approval.
+- Handles controlled high-autonomy sessions, production-safe execution gates, and founder_override session activation.
+- Post-NUS company-grade orchestrator plan is LOCKED until NUS 1F is complete.
 - Post-NUS company-grade orchestrator: LOCKED — do not implement until explicitly authorized.
 - No `autonomous_upgrade` module exists.
 

@@ -3,6 +3,8 @@
 NUS 1A: Learning Foundation (local, read-only, no self-modification).
 NUS 1B: Recommendation Workflow, Persistence, Telemetry, Autonomy Policy Scaffold.
 NUS 1C: Persistent Queue, Safe Autopilot, Failure Learning, Learned Routing.
+NUS 1D: Eval Gates, Rollback Enforcement, Approval Workflow, Power Autopilot Boundary.
+NUS 1E: Low-Risk Execution Classifier, Auto-Commit Foundation, Production-Safe Gate.
 """
 from openjarvis.nus.learning_foundation import (
     AgentScorecard,
@@ -31,6 +33,12 @@ from openjarvis.nus.recommendation_queue import QueueItem, RecommendationQueue
 from openjarvis.nus.safe_autopilot import AutopilotDecision, SafeAutopilot, get_safe_autopilot
 from openjarvis.nus.failure_learning import CrossSessionPattern, FailureLearner
 from openjarvis.nus.learned_routing import LearnedRouter, RoutingRecommendation, get_learned_router
+from openjarvis.nus.eval_gate import EvalCandidate, EvalGateReport, EvalGateResult, EvalGateRunner, run_eval_gate
+from openjarvis.nus.rollback import RollbackEnforcer, RollbackPlan
+from openjarvis.nus.approval_workflow import ApprovalDecision, ApprovalWorkflow
+from openjarvis.nus.power_autopilot import PowerAutopilot, PowerAutopilotDecision
+from openjarvis.nus.execution_classifier import ClassificationResult, ExecutionClassifier
+from openjarvis.nus.low_risk_execution import AutoCommitCandidate, LowRiskExecutionManager
 
 __all__ = [
     # NUS 1A
@@ -66,4 +74,21 @@ __all__ = [
     "LearnedRouter",
     "RoutingRecommendation",
     "get_learned_router",
+    # NUS 1D
+    "EvalCandidate",
+    "EvalGateReport",
+    "EvalGateResult",
+    "EvalGateRunner",
+    "run_eval_gate",
+    "RollbackEnforcer",
+    "RollbackPlan",
+    "ApprovalDecision",
+    "ApprovalWorkflow",
+    "PowerAutopilot",
+    "PowerAutopilotDecision",
+    # NUS 1E
+    "ClassificationResult",
+    "ExecutionClassifier",
+    "AutoCommitCandidate",
+    "LowRiskExecutionManager",
 ]

@@ -580,3 +580,148 @@ async def nus_routing_dry_run(req: RoutingDryRunRequest) -> Dict[str, Any]:
     except Exception as exc:
         logger.exception("NUS 1C routing dry-run error")
         raise HTTPException(status_code=500, detail=str(exc))
+
+
+# ---------------------------------------------------------------------------
+# NUS 1D — Eval gate routes
+# ---------------------------------------------------------------------------
+
+
+class EvalRunRequest(BaseModel):
+    action_type: str = "local_analysis"
+    risk_level: str = "low"
+    validation_plan: str = ""
+    rollback_plan: str = ""
+    capability_id: str = ""
+    capability_ready: bool = True
+    safety_gate_result: str = "pass"
+
+
+@router.get("/v1/nus/eval/status")
+async def nus_eval_status() -> Dict[str, Any]:
+    """Return eval gate framework status."""
+    try:
+        from openjarvis.nus.eval_gate import get_eval_gate_status
+        return {"status": "ok", **get_eval_gate_status()}
+    except Exception as exc:
+        logger.exception("NUS 1D eval status error")
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.post("/v1/nus/eval/run-dry-run")
+async def nus_eval_run_dry_run(req: EvalRunRequest) -> Dict[str, Any]:
+    """Run eval gates against a candidate (dry-run — no execution)."""
+    try:
+        from openjarvis.nus.eval_gate import EvalCandidate, run_eval_gate
+        candidate = EvalCandidate(
+            action_type=req.action_type,
+            risk_level=req.risk_level,
+            validation_plan=req.validation_plan,
+            rollback_plan=req.rollback_plan,
+            capability_id=req.capability_id,
+            capability_ready=req.capability_ready,
+            safety_gate_result=req.safety_gate_result,
+        )
+        report = run_eval_gate(candidate)
+        return {"status": "ok", "dry_run": True, **report.to_dict()}
+    except Exception as exc:
+        logger.exception("NUS 1D eval run-dry-run error")
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.get("/v1/nus/rollback/status")
+async def nus_rollback_status() -> Dict[str, Any]:
+    """Return rollback enforcer status."""
+    try:
+        from openjarvis.nus.rollback import RollbackEnforcer
+        enforcer = RollbackEnforcer()
+        return {"status": "ok", **enforcer.get_status()}
+    except Exception as exc:
+        logger.exception("NUS 1D rollback status error")
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.get("/v1/nus/approvals/status")
+async def nus_approvals_status() -> Dict[str, Any]:
+    """Return approval workflow status."""
+    try:
+        from openjarvis.nus.approval_workflow import ApprovalWorkflow
+        wf = ApprovalWorkflow()
+        return {"status": "ok", **wf.get_status()}
+    except Exception as exc:
+        logger.exception("NUS 1D approvals status error")
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+# ---------------------------------------------------------------------------
+# NUS 1E — Low-risk execution routes
+# ---------------------------------------------------------------------------
+
+
+@router.get("/v1/nus/execution/low-risk/status")
+async def nus_low_risk_status() -> Dict[str, Any]:
+    """Return low-risk execution manager status."""
+    try:
+        from openjarvis.nus.low_risk_execution import LowRiskExecutionManager
+        mgr = LowRiskExecutionManager()
+        return {"status": "ok", **mgr.get_status()}
+    except Exception as exc:
+        logger.exception("NUS 1E low-risk status error")
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+class LowRiskDryRunRequest(BaseModel):
+    action_type: str = "local_analysis"
+    risk_level: str = "low"
+    file_targets: list = []
+    tool_requirements: list = []
+    agent_metadata: Dict[str, Any] = {}
+    task_category: str = "unknown"
+
+
+@router.post("/v1/nus/execution/low-risk/dry-run")
+async def nus_low_risk_dry_run(req: LowRiskDryRunRequest) -> Dict[str, Any]:
+    """Classify and dry-run a low-risk execution candidate."""
+    try:
+        from openjarvis.nus.execution_classifier import ExecutionClassifier
+        clf = ExecutionClassifier()
+        result = clf.classify(
+            action_type=req.action_type,
+            risk_level=req.risk_level,
+            file_targets=req.file_targets,
+            tool_requirements=req.tool_requirements,
+            agent_metadata=req.agent_metadata,
+            task_category=req.task_category,
+        )
+        return {"status": "ok", "dry_run": True, **result.to_dict()}
+    except Exception as exc:
+        logger.exception("NUS 1E low-risk dry-run error")
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.get("/v1/nus/governance/future-proof/status")
+async def nus_governance_future_proof_status() -> Dict[str, Any]:
+    """Return future-proof governance status."""
+    try:
+        from openjarvis.nus.execution_classifier import ExecutionClassifier
+        clf = ExecutionClassifier()
+        return {
+            "status": "ok",
+            "future_proof_governance": True,
+            "agent_name_agnostic": True,
+            "metadata_contract_driven": True,
+            "classifier_status": clf.get_status(),
+            "docs": [
+                "docs/JARVIS_FUTURE_PROOF_ARCHITECTURE_PRINCIPLES.md",
+                "docs/JARVIS_AGENT_REGISTRY_AND_CONTRACTS.md",
+                "docs/JARVIS_ROUTING_MODEL_POLICY.md",
+                "docs/JARVIS_95_PERCENT_AUTONOMY_TARGET.md",
+                "docs/JARVIS_TOKEN_COST_GOVERNANCE.md",
+                "docs/POST_NUS_COMPANY_AGENT_ORCHESTRATOR_PLAN.md",
+            ],
+            "us13_voice_status": "HOLD/UNSAFE/PARKED",
+            "safety_gates_active": True,
+        }
+    except Exception as exc:
+        logger.exception("NUS governance future-proof status error")
+        raise HTTPException(status_code=500, detail=str(exc))
