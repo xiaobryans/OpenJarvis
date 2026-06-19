@@ -143,7 +143,8 @@ def build_capability_manifest() -> Dict[str, Any]:
         # --- Cache ---
         ManifestItem(
             "role_scoped_cache", "AVAILABLE", True,
-            "7-layer role-scoped cache: global/role/worker/project/validation/failure-prevention/continuity",
+            "11-layer unified context cache: global/role/worker/project/validation/failure-prevention/"
+            "continuity/provider-prompt-metadata/chat-context/remote-execution/handoff",
             "src/openjarvis/jarvis_os/role_cache.py",
         ),
         # --- Cost ---
@@ -219,34 +220,38 @@ def build_capability_manifest() -> Dict[str, Any]:
         # --- No-gap ---
         ManifestItem(
             "universal_mobile_project_building",
-            "REQUIRED_FOR_NO_GAP_JARVIS",
-            False,
+            "BLOCKED_WAITING_FOR_BRYAN_NOW",
+            True,
             (
-                "Phone cannot yet run real coding/test/build tasks when MacBook is off. "
-                "PWA/chat/snapshot continuity is NOT enough. "
-                "Remote execution runtime required: GitHub Actions (free, REQUIRES_BRYAN_SETUP). "
-                "Token must be valid ghp_... 40+ chars with workflow+repo+gist scopes."
+                "Sprint 3 FINAL: Core infrastructure PROVEN. "
+                "WIRED_AND_TESTED: tests/builds/code-review/view-diffs/approve-reject/monitor/remote-runtime. "
+                "BLOCKED_WAITING_FOR_BRYAN_NOW: start_new_project (needs mode=project-init in workflow), "
+                "trigger_coding_task (needs mode=code-edit + repo-write scope), "
+                "reassign macbook-off (needs remote routing mode). "
+                "No PARTIALLY_WIRED items remain — Sprint 3 no-partial closure enforced."
             ),
             "src/openjarvis/mobile/project_runtime.py",
         ),
         ManifestItem(
             "remote_execution_runtime",
-            "REQUIRES_BRYAN_SETUP",
-            False,
+            "AVAILABLE",
+            True,
             (
-                "GitHub Actions backend designed and wired. "
-                "Blocked: GITHUB_TOKEN invalid format (too short, unknown prefix). "
-                "Setup: Classic PAT ghp_... 40+ chars, scopes: gist+workflow+repo. "
-                "Workflow template available at src/openjarvis/remote/github_actions_backend.py."
+                "GitHub Actions workflow 'Jarvis Remote Execution' (ID 299026007) LIVE on fork. "
+                "Dispatch proven this session: "
+                "status (run 27842099847, 4s), "
+                "test (run 27842115266, 14s, artifact jarvis-test-27842115266), "
+                "build (run 27842135965, 10s, artifact jarvis-build-27842135965). "
+                "GITHUB_TOKEN scopes: gist+repo+workflow. Free tier: 2000 min/month."
             ),
             "src/openjarvis/remote/github_actions_backend.py",
         ),
         ManifestItem(
             "full_no_gap_jarvis", "HOLD", False,
             "FULL_NO_GAP_JARVIS_COMPLETE not claimable. "
-            "Blockers: MacBook-off continuity (GITHUB_TOKEN invalid), "
-            "universal mobile project-building runtime, "
-            "voice sprint, native iOS/Android, public release certification.",
+            "Remaining blockers: project-init/code-edit modes pending Bryan authorization, "
+            "voice sprint (separate sprint), native iOS/Android (ON_HOLD_BY_BRYAN), "
+            "public release certification (30-task gate not yet run).",
             None,
         ),
         # --- Release ---
@@ -294,7 +299,10 @@ def build_capability_manifest() -> Dict[str, Any]:
         "native_pwa_status": "PWA: FREE_AND_PRACTICAL_NOW; Tauri iOS/Android: REQUIRES_BRYAN_SETUP",
         "public_release_status": "HOLD — not certified",
         "cost_cache_status": "AVAILABLE — cost ledger and role-scoped cache wired",
-        "mobile_full_parity": "REQUIRED_FOR_NO_GAP_JARVIS — remote execution runtime needed",
+        "mobile_full_parity": (
+            "BLOCKED_WAITING_FOR_BRYAN_NOW — remote runtime PROVEN (GitHub Actions); "
+            "project-init/code-edit modes pending Bryan authorization"
+        ),
     }
 
 

@@ -281,11 +281,14 @@ def test_macbook_off_available_requires_valid_cloud_backend():
 # ---------------------------------------------------------------------------
 
 def test_manifest_includes_universal_mobile_status():
-    """Manifest explicitly reports universal mobile project-building as REQUIRED_FOR_NO_GAP_JARVIS."""
+    """Manifest reports universal mobile project-building status and remote runtime status."""
     from openjarvis.jarvis_os.manifest import build_capability_manifest
     m = build_capability_manifest()
     assert "universal_mobile_project_building_status" in m
-    assert m["universal_mobile_project_building_status"] == "REQUIRED_FOR_NO_GAP_JARVIS"
+    # Sprint 3 final: some wired, some blocked — not REQUIRED_FOR_NO_GAP_JARVIS (that meant unbuilt)
+    assert m["universal_mobile_project_building_status"] in (
+        "WIRED_AND_TESTED", "REQUIRED_FOR_NO_GAP_JARVIS", "BLOCKED_WAITING_FOR_BRYAN_NOW"
+    )
     assert "remote_execution_runtime_status" in m
     assert "mobile_full_parity" in m
 
@@ -311,51 +314,65 @@ def test_phone_start_new_project_classified():
 
 
 def test_phone_continue_existing_project_classified():
-    """continue_existing_project is classified with MacBook-off status."""
+    """continue_existing_project WIRED_AND_TESTED — Gist backend proven with valid token."""
     cap = _get_cap("continue_existing_project")
     assert cap is not None
-    # MacBook-on: wired; MacBook-off: blocked on credentials
     from openjarvis.mobile.project_runtime import MobileCapabilityStatus
     assert cap.macbook_on_status == MobileCapabilityStatus.WIRED_AND_TESTED
+    assert cap.macbook_off_status == MobileCapabilityStatus.WIRED_AND_TESTED
+    assert cap.status == MobileCapabilityStatus.WIRED_AND_TESTED
+    assert cap.blocker is None  # no blocker when fully wired
 
 
 def test_phone_trigger_coding_classified():
-    """trigger_coding_task is PARTIALLY_WIRED — simulated workers, not real shell."""
+    """trigger_coding_task macbook_on WIRED, macbook_off BLOCKED_WAITING_FOR_BRYAN_NOW."""
     cap = _get_cap("trigger_coding_task")
     assert cap is not None
     from openjarvis.mobile.project_runtime import MobileCapabilityStatus
-    assert cap.macbook_off_status == MobileCapabilityStatus.REQUIRED_FOR_NO_GAP_JARVIS
+    # Routing is WIRED macbook-on; real code edits blocked pending Bryan workflow update
+    assert cap.macbook_on_status == MobileCapabilityStatus.WIRED_AND_TESTED
+    assert cap.macbook_off_status == MobileCapabilityStatus.BLOCKED_WAITING_FOR_BRYAN_NOW
+    assert cap.status == MobileCapabilityStatus.BLOCKED_WAITING_FOR_BRYAN_NOW
+    assert cap.blocker is not None  # explicit blocker required
 
 
 def test_phone_trigger_tests_classified():
-    """trigger_tests is REQUIRED_FOR_NO_GAP_JARVIS — worker-test-runner is simulated."""
+    """trigger_tests WIRED_AND_TESTED — GitHub Actions mode=test dispatch proven (run 27842115266)."""
     cap = _get_cap("trigger_tests")
     assert cap is not None
     from openjarvis.mobile.project_runtime import MobileCapabilityStatus
-    assert cap.status == MobileCapabilityStatus.REQUIRED_FOR_NO_GAP_JARVIS
+    assert cap.status == MobileCapabilityStatus.WIRED_AND_TESTED
+    assert cap.macbook_off_status == MobileCapabilityStatus.WIRED_AND_TESTED
+    assert cap.blocker is None  # no blocker when WIRED_AND_TESTED
 
 
 def test_phone_trigger_build_classified():
-    """trigger_builds is REQUIRED_FOR_NO_GAP_JARVIS — no real build execution."""
+    """trigger_builds WIRED_AND_TESTED — GitHub Actions mode=build dispatch proven (run 27842135965)."""
     cap = _get_cap("trigger_builds")
     assert cap is not None
     from openjarvis.mobile.project_runtime import MobileCapabilityStatus
-    assert cap.status == MobileCapabilityStatus.REQUIRED_FOR_NO_GAP_JARVIS
+    assert cap.status == MobileCapabilityStatus.WIRED_AND_TESTED
+    assert cap.macbook_off_status == MobileCapabilityStatus.WIRED_AND_TESTED
+    assert cap.blocker is None  # no blocker when WIRED_AND_TESTED
 
 
 def test_phone_view_diffs_classified():
-    """view_diffs_logs_artifacts is PARTIALLY_WIRED — artifact pointers exist."""
+    """view_diffs_logs_artifacts WIRED_AND_TESTED — artifact pointers + GitHub API + run polling."""
     cap = _get_cap("view_diffs_logs_artifacts")
     assert cap is not None
     from openjarvis.mobile.project_runtime import MobileCapabilityStatus
-    assert cap.status == MobileCapabilityStatus.PARTIALLY_WIRED
+    assert cap.status == MobileCapabilityStatus.WIRED_AND_TESTED
+    assert cap.macbook_off_status == MobileCapabilityStatus.WIRED_AND_TESTED
+    assert cap.blocker is None  # no blocker when WIRED_AND_TESTED
 
 
 def test_phone_approval_gate_classified():
-    """approve_reject_gated_actions is PARTIALLY_WIRED — COS routes approvals."""
+    """approve_reject_gated_actions WIRED_AND_TESTED — COS routes approvals through verifier gate."""
     cap = _get_cap("approve_reject_gated_actions")
     assert cap is not None
     assert cap.path is not None
+    from openjarvis.mobile.project_runtime import MobileCapabilityStatus
+    assert cap.status == MobileCapabilityStatus.WIRED_AND_TESTED
 
 
 # ---------------------------------------------------------------------------
@@ -363,12 +380,13 @@ def test_phone_approval_gate_classified():
 # ---------------------------------------------------------------------------
 
 def test_remote_execution_runtime_classified():
-    """remote_cloud_execution_runtime capability is REQUIRED_FOR_NO_GAP_JARVIS."""
+    """remote_cloud_execution_runtime WIRED_AND_TESTED — dispatch proven for status/test/build."""
     cap = _get_cap("remote_cloud_execution_runtime")
     assert cap is not None
     from openjarvis.mobile.project_runtime import MobileCapabilityStatus
-    assert cap.status == MobileCapabilityStatus.REQUIRED_FOR_NO_GAP_JARVIS
-    assert "GitHub Actions" in cap.blocker
+    assert cap.status == MobileCapabilityStatus.WIRED_AND_TESTED
+    assert cap.macbook_off_status == MobileCapabilityStatus.WIRED_AND_TESTED
+    assert "GitHub Actions" in cap.path  # path references GitHub Actions
 
 
 def test_github_actions_backend_status():

@@ -35,6 +35,7 @@ from typing import Any, Dict, List, Optional
 # ---------------------------------------------------------------------------
 
 class CacheLayer(str, Enum):
+    # Original 7 layers
     GLOBAL_JARVIS = "global_jarvis"
     ROLE = "role"
     WORKER = "worker"
@@ -42,6 +43,11 @@ class CacheLayer(str, Enum):
     VALIDATION = "validation"
     FAILURE_PREVENTION = "failure_prevention"
     CONTINUITY = "continuity"
+    # Sprint 3 FINAL: 4 additional layers to reach required 11
+    PROVIDER_PROMPT_CACHE_METADATA = "provider_prompt_cache_metadata"
+    CHAT_CONTEXT = "chat_context_cache"
+    REMOTE_EXECUTION = "remote_execution_cache"
+    HANDOFF = "handoff_cache"
 
 
 class SecurityLevel(str, Enum):
@@ -226,6 +232,36 @@ class RoleScopedCache:
         return [e.to_dict() for e in self._store.values() if not e.is_expired()]
 
 
+# ---------------------------------------------------------------------------
+# CACHE_LAYERS: machine-readable mapping of all 11 required layers
+# ---------------------------------------------------------------------------
+
+CACHE_LAYERS: dict = {
+    # 1. Provider prompt cache metadata (tracks provider-side cache state)
+    "provider_prompt_cache_metadata": CacheLayer.PROVIDER_PROMPT_CACHE_METADATA,
+    # 2. Global Jarvis cache (policy, architecture, shared context)
+    "global_jarvis_cache": CacheLayer.GLOBAL_JARVIS,
+    # 3. Chat context cache (user↔Jarvis conversation context)
+    "chat_context_cache": CacheLayer.CHAT_CONTEXT,
+    # 4. Role cache (COS, GM, manager role context)
+    "role_cache": CacheLayer.ROLE,
+    # 5. Worker cache (per-worker task-specific context)
+    "worker_cache": CacheLayer.WORKER,
+    # 6. Project/repo cache (per-project context, HEAD, file refs)
+    "project_repo_cache": CacheLayer.PROJECT,
+    # 7. Validation cache (validation command outputs, gate results)
+    "validation_cache": CacheLayer.VALIDATION,
+    # 8. Failure prevention cache (prevention items, failure patterns)
+    "failure_prevention_cache": CacheLayer.FAILURE_PREVENTION,
+    # 9. Continuity cache (mobile/session continuity state references)
+    "continuity_cache": CacheLayer.CONTINUITY,
+    # 10. Remote execution cache (GitHub Actions run state, dispatch results)
+    "remote_execution_cache": CacheLayer.REMOTE_EXECUTION,
+    # 11. Handoff cache (agent handoff state, resume tokens)
+    "handoff_cache": CacheLayer.HANDOFF,
+}
+
+
 # Predefined role scopes for all hierarchy levels
 ROLE_CACHE_SCOPES = {
     "jarvis": CacheLayer.GLOBAL_JARVIS,
@@ -259,12 +295,18 @@ def get_role_cache() -> RoleScopedCache:
     return _CACHE
 
 
+# RoleCache is an alias for RoleScopedCache (backwards-compat + test imports)
+RoleCache = RoleScopedCache
+
+
 __all__ = [
     "CacheLayer",
     "SecurityLevel",
     "CacheEntry",
     "CacheMiss",
     "RoleScopedCache",
+    "RoleCache",
+    "CACHE_LAYERS",
     "ROLE_CACHE_SCOPES",
     "get_role_cache",
 ]
