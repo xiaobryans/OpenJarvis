@@ -1,8 +1,8 @@
 # Jarvis Completion Gap Register — 4/5 Completion Matrix
 
 **Last updated:** 2026-06-19
-**Sprint:** Universalize Jarvis and close completion gaps
-**Base HEAD:** ed6e7527 | **Sprint HEAD:** c75dce19
+**Sprint:** Core Daily-Driver Runtime Mega Sprint (Prompt 1)
+**Base HEAD:** eabe316c | **Sprint HEAD:** (post-sprint)
 **Branch:** localhost-get-tool
 
 ---
@@ -64,6 +64,8 @@ is classified with current score, target score, blocker, and acceptance criteria
 | Item | Classification | Score | Target | Status | Assigned Prompt | Blocker | Bryan Action | Acceptance Criteria |
 |------|---------------|-------|--------|--------|-----------------|---------|--------------|---------------------|
 | `CosGmOrchestrator` class | EXISTING (new) | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | Receives UniversalTaskRequest, classifies, routes to planner, returns FrontDoorResult |
+| Real worker dispatch after planning | EXISTING (new) | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | COS/GM calls execute_worker() for each selected worker; status="executed" when workers run |
+| Runtime trace events emitted | EXISTING (new) | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | COS_GM, MANAGER_ACTIVATION, WORKER_EXECUTION, VALIDATION, NUS_FEEDBACK, FINAL_RESPONSE events all emitted |
 | Intent/risk/complexity classification | EXISTING | 3 | 4 | `PLANNED_IN_EXISTING_PROMPT` | COS/GM Hardening | — | — | Keyword-based; 4/5 requires domain-model scoring, not just keyword scan |
 | Structured decision record emitted | EXISTING | 4 | 5 | `PLANNED_IN_EXISTING_PROMPT` | Public Hardening | — | — | Every activation emits NUS 1F decision record; 5/5 requires record store query proof |
 | Dangerous actions permanently blocked | EXISTING | 5 | 5 | `PUBLIC_READY_ACCEPT` | — | — | — | auto_push, auto_merge, production_deploy, external_send, us13_voice all blocked |
@@ -92,12 +94,14 @@ is classified with current score, target score, blocker, and acceptance criteria
 | Item | Classification | Score | Target | Status | Assigned Prompt | Blocker | Bryan Action | Acceptance Criteria |
 |------|---------------|-------|--------|--------|-----------------|---------|--------------|---------------------|
 | `WorkerAdapter` base class | EXISTING (new) | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | Gate checks: always-blocked, registry check, NUS gate, delegate to _execute_safe() |
-| `DoctorValidationWorkerAdapter` | EXISTING (new) | 3 | 4 | `PLANNED_IN_EXISTING_PROMPT` | Worker Hardening | — | — | Runs doctor checks via local_validation; 4/5 requires full check suite dispatch |
+| `DoctorValidationWorkerAdapter` | EXISTING (upgraded) | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | Full check suite dispatch via run_all_checks(); proven in tests; 44 checks dispatched |
 | `NUSLearningWorkerAdapter` | EXISTING (new) | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | Reads LearningStore.summarize(); dry-run safe |
 | `CostAnalysisWorkerAdapter` | EXISTING (new) | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | Reads LearnedRouter.get_status(); dry-run safe |
-| Blocked actions refused by all adapters | EXISTING (new) | 5 | 5 | `PUBLIC_READY_ACCEPT` | — | — | — | auto_push, production_deploy, external_send refused at adapter level |
-| NUS gate checked before execution | EXISTING (new) | 3 | 4 | `PLANNED_IN_EXISTING_PROMPT` | Worker Hardening | — | — | Safe local actions pass; non-dry-run requires LowRiskExecutionManager; 4/5 needs integration test |
-| Real coding/refactor worker execution | MISSING | 0 | 4 | `PLANNED_IN_EXISTING_PROMPT` | Worker Execution Sprint | `BLOCKED_IMPLEMENTATION` | — | Workbench coding manager connected to workers; safe local execution through NUS gates |
+| `FileInspectionWorkerAdapter` | EXISTING (new) | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | Reads targeted files (read-only), returns line-range snippets and metadata |
+| `CodingSafeWorkerAdapter` | EXISTING (new) | 3 | 4 | `PLANNED_IN_EXISTING_PROMPT` | Provider Sprint | `BLOCKED_PROVIDER` (patch_propose, repair_loop) | Set OPENAI_API_KEY or ANTHROPIC_API_KEY | Coding proof path: classify, inspect, test_run, diff_report, rollback_plan all 4/5. patch_propose/repair_loop require LLM → BLOCKED_PROVIDER → 3/5 → 4/5 when key configured |
+| Blocked actions refused by all adapters | EXISTING (new) | 5 | 5 | `PUBLIC_READY_ACCEPT` | — | — | — | auto_push, production_deploy, external_send, us13_voice refused at adapter level; proven in adversarial injection tests |
+| NUS gate checked before execution | EXISTING (new) | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | Safe local actions pass; non-dry-run gates via LowRiskExecutionManager; proven in orchestrator tests |
+| Coding proof path: classify + inspect + test + diff + rollback | EXISTING (new) | 3 | 4 | `PLANNED_IN_EXISTING_PROMPT` | Provider Sprint | `BLOCKED_PROVIDER` (LLM code generation) | See §8 provider actions | Sub-paths available: classify (4/5), inspect (4/5), test_run (4/5), diff_report (4/5), rollback_plan (4/5). Full path (patch_propose + repair_loop) needs LLM |
 
 ---
 
@@ -206,7 +210,7 @@ US13 is explicitly not activated in this sprint. Voice is assigned to the Voice/
 | `check_inactive_manager_classification` | EXISTING (new) | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | connector_auth_manager and release_packaging_manager classified with exact blockers |
 | `check_post_nus_orchestrator` | EXISTING | 4 | 5 | `PLANNED_IN_EXISTING_PROMPT` | Public Hardening | — | — | 4/5 now; 5/5 requires adversarial input proof |
 | Doctor route (HTTP) | EXISTING | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | `/api/doctor/check` endpoint returns structured results |
-| Full doctor run covers all 42+ checks | EXISTING | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | `run_all_checks()` includes universal front door + worker adapter checks |
+| Full doctor run covers all 44+ checks | EXISTING (updated) | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | `run_all_checks()` includes universal front door + worker adapter checks (44 checks confirmed) |
 
 ---
 
@@ -221,6 +225,75 @@ US13 is explicitly not activated in this sprint. Voice is assigned to the Voice/
 | `WAVE_ROADMAP.md` | EXISTING (updated) | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | Universal Jarvis scope stated |
 | `JARVIS_CONSTITUTION.md` | EXISTING | 4 | 5 | `PLANNED_IN_EXISTING_PROMPT` | Governance Hardening | — | — | 5/5 requires adversarial/hostile input coverage of all hard gates |
 | User-facing docs / README | PARTIAL | 2 | 4 | `PLANNED_IN_EXISTING_PROMPT` | Public Docs Sprint | `BLOCKED_IMPLEMENTATION` | — | docs/index.md and README accurately describe universal Jarvis OS scope |
+
+---
+
+### 14. Execution Capability Registry (NEW — Prompt 1)
+
+| Item | Classification | Score | Target | Status | Assigned Prompt | Blocker | Bryan Action | Acceptance Criteria |
+|------|---------------|-------|--------|--------|-----------------|---------|--------------|---------------------|
+| `ExecutionCapabilityRegistry` class | EXISTING (new) | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | Classifies all actions by risk/approval/rollback/provider/status; singleton available |
+| All hard-gate actions classified blocked | EXISTING (new) | 5 | 5 | `PUBLIC_READY_ACCEPT` | — | — | — | auto_push, auto_merge, production_deploy, external_send, secret_access, us13_voice all BLOCKED_SAFETY in registry |
+| Safe local actions classified available | EXISTING (new) | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | local_analysis, doctor_run, nus_dry_run, routing_dry_run, local_validation all STATUS_AVAILABLE |
+| Coding proof path actions registered | EXISTING (new) | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | coding_task_classify, coding_file_inspect, coding_test_run, coding_diff_report, coding_rollback: AVAILABLE; coding_patch_propose, coding_repair_loop: DEGRADED/BLOCKED_PROVIDER |
+| Provider-gated actions disclose blockers | EXISTING (new) | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | OPENAI, ANTHROPIC, OPENROUTER keys: BLOCKED_PROVIDER with exact env var and fallback_behavior |
+| Unknown action returns blocked (not silent) | EXISTING (new) | 5 | 5 | `PUBLIC_READY_ACCEPT` | — | — | — | `get_or_blocked()` returns BLOCKED_IMPLEMENTATION for any unregistered action |
+| Provider status check | EXISTING (new) | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | `check_provider_status()` checks env and cloud-keys.env for each key |
+| Proven in tests | EXISTING (new) | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | 25+ tests in test_capability_registry.py pass |
+
+---
+
+### 15. Runtime Trace / Observability (NEW — Prompt 1)
+
+| Item | Classification | Score | Target | Status | Assigned Prompt | Blocker | Bryan Action | Acceptance Criteria |
+|------|---------------|-------|--------|--------|-----------------|---------|--------------|---------------------|
+| `RuntimeTraceStore` / `OrchestratorTrace` | EXISTING (new) | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | In-memory trace store; up to 200 traces retained; singleton |
+| Task trace ID assigned at front-door | EXISTING (new) | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | trace_id set at JarvisFrontDoor entry; propagated through COS/GM; present in FrontDoorResult.metadata |
+| FRONT_DOOR event | EXISTING (new) | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | Emitted at front-door entry with request_id, intent, project_id |
+| ROUTING event | EXISTING (new) | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | Emitted when request routed to COS/GM with adapter info |
+| COS_GM event | EXISTING (new) | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | Emitted at COS/GM entry with risk/complexity classification |
+| MANAGER_ACTIVATION event | EXISTING (new) | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | Emitted for each activated manager |
+| WORKER_EXECUTION event | EXISTING (new) | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | Emitted for each dispatched worker with status and nus_gate_passed |
+| VALIDATION event | EXISTING (new) | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | Emitted when validation_required=True with worker success ratio |
+| NUS_FEEDBACK event | EXISTING (new) | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | Emitted after activation plan with nus_feedback_available flag |
+| BLOCKER event | EXISTING (new) | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | Emitted when blocked action detected at front-door or COS/GM |
+| FINAL_RESPONSE event | EXISTING (new) | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | Emitted at end with final status and elapsed_ms |
+| Replay log | EXISTING (new) | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | `replay_log(trace_id)` returns structured pipeline steps with elapsed_from_start |
+| No raw CoT in trace events | EXISTING (new) | 5 | 5 | `PUBLIC_READY_ACCEPT` | — | — | — | `no_raw_chain_of_thought=True` on every RuntimeTraceEvent |
+| Trace persistence to disk | MISSING | 0 | 4 | `PLANNED_IN_EXISTING_PROMPT` | Persistence Sprint | `BLOCKED_IMPLEMENTATION` | — | Traces persisted to ~/.jarvis/traces/; survives restart |
+| Proven in tests | EXISTING (new) | 4 | 4 | `DAILY_DRIVER_ACCEPT` | — | — | — | 30+ tests in test_runtime_trace.py pass |
+
+---
+
+### 16. Adversarial / Injection Test Suite (NEW — Prompt 1)
+
+| Item | Classification | Score | Target | Status | Assigned Prompt | Blocker | Bryan Action | Acceptance Criteria |
+|------|---------------|-------|--------|--------|-----------------|---------|--------------|---------------------|
+| Blocked actions blocked via requested_actions injection | EXISTING (new) | 5 | 5 | `PUBLIC_READY_ACCEPT` | — | — | — | auto_push/merge/deploy/send/voice/secret all blocked when in requested_actions; proven in test_adversarial_injection.py |
+| Prompt injection in user_input text | EXISTING (new) | 3 | 5 | `PLANNED_IN_EXISTING_PROMPT` | Hardening Sprint | — | — | Jailbreak phrasing routes safely; 5/5 requires LLM-based injection detection |
+| Worker adapter refuses blocked action_types | EXISTING (new) | 5 | 5 | `PUBLIC_READY_ACCEPT` | — | — | — | All adapters refuse auto_push, external_send, production_deploy, us13_voice, secret_access, browser_purchase at execute() level |
+| Malicious metadata injection | EXISTING (new) | 3 | 5 | `PLANNED_IN_EXISTING_PROMPT` | Hardening Sprint | — | — | Top-level requested_actions checked; nested injection and fake key injection tested; 5/5 requires full metadata sanitization |
+| Capability registry unknown action blocked | EXISTING (new) | 5 | 5 | `PUBLIC_READY_ACCEPT` | — | — | — | get_or_blocked() returns BLOCKED for any unknown action; no silent capability grant |
+
+---
+
+### 17. Previously Missing Register Items — Classification Map
+
+The sprint prompt listed 11 items to check. Status:
+
+| Item | Coverage | Register Section |
+|------|----------|-----------------|
+| execution capability registry | **ADDED** §14 | capability_registry.py |
+| router trace object | **ADDED** §15 (runtime_trace.py) | DAILY_DRIVER_ACCEPT |
+| memory quality test matrix | `PLANNED_IN_EXISTING_PROMPT` — core memory baseline not required for this sprint runtime | See §12 NUS / memory persistence |
+| voice state-machine acceptance matrix | `BLOCKED_SAFETY` — US13 HOLD/PARKED; not to be opened | See §9 US13 Voice |
+| connector dry-run simulator | **ADDED** in capability_registry.py as `connector_dry_run` action (STATUS_AVAILABLE) | §14 |
+| adversarial code/task injection test suite | **ADDED** §16 | test_adversarial_injection.py |
+| orchestrator replay log | **ADDED** §15 (`replay_log()` method on RuntimeTraceStore) | DAILY_DRIVER_ACCEPT |
+| manager/worker capability coverage matrix | **ADDED** §14 (ExecutionCapabilityRegistry classifies all worker action types) | DAILY_DRIVER_ACCEPT |
+| human correction ingestion schema | `PLANNED_IN_EXISTING_PROMPT` — advanced NUS work; not required for core runtime path | Future NUS Sprint |
+| stale memory conflict detector | `PLANNED_IN_EXISTING_PROMPT` — memory persistence sprint; not required for core runtime path | Future Persistence Sprint |
+| provider/key/blocker dashboard | **PARTIALLY ADDED** — capability_registry.check_provider_status() + get_status_summary() provide structured provider/blocker data; HTTP dashboard route is `PLANNED_IN_EXISTING_PROMPT` | §14 + Future UI Sprint |
 
 ---
 
@@ -253,20 +326,23 @@ US13 is explicitly not activated in this sprint. Voice is assigned to the Voice/
 | Category | Items | ACCEPT | PLANNED | BLOCKED_IMPL | BLOCKED_CREDS | BLOCKED_PROVIDER | BLOCKED_SAFETY | BLOCKED_AUTH | OPTIONAL |
 |----------|-------|--------|---------|--------------|--------------|-----------------|----------------|--------------|---------|
 | Universal Front Door | 7 | 7 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| COS/GM Runtime | 6 | 5 | 1 | 0 | 0 | 0 | 0 | 0 | 0 |
+| COS/GM Runtime | 8 | 7 | 1 | 0 | 0 | 0 | 0 | 0 | 0 |
 | Activation Planner + NUS | 8 | 7 | 1 | 0 | 0 | 0 | 0 | 0 | 0 |
-| Worker Adapters | 7 | 5 | 1 | 1 | 0 | 0 | 0 | 0 | 0 |
+| Worker Adapters | 9 | 7 | 1 | 0 | 0 | 1 | 0 | 0 | 0 |
 | OMNIX Universalization | 8 | 8 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | ProjectRegistry/Multi-Project | 3 | 1 | 2 | 2 | 0 | 0 | 0 | 0 | 0 |
 | connector_auth_manager | 4 | 1 | 1 | 2 | 1 | 0 | 1 | 0 | 0 |
 | release_packaging_manager | 4 | 1 | 0 | 0 | 1 | 0 | 0 | 2 | 0 |
 | Provider/Model Sufficiency | 7 | 2 | 2 | 2 | 0 | 3 | 0 | 0 | 0 |
 | US13 Voice | 11 | 1 | 0 | 8 | 0 | 2 | 1 | 0 | 0 |
-| Doctor/Readiness | 7 | 6 | 1 | 0 | 0 | 0 | 0 | 0 | 0 |
+| Doctor/Readiness | 7 | 7 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | Documentation | 7 | 5 | 2 | 1 | 0 | 0 | 0 | 0 | 0 |
 | NUS Full Stack | 5 | 5 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | Governance & Safety | 5 | 5 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| **TOTAL** | **89** | **59** | **11** | **8** | **2** | **5** | **2** | **2** | **0** |
+| Execution Capability Registry (NEW) | 8 | 7 | 0 | 0 | 0 | 1 | 0 | 0 | 0 |
+| Runtime Trace / Observability (NEW) | 15 | 13 | 1 | 1 | 0 | 0 | 0 | 0 | 0 |
+| Adversarial / Injection Suite (NEW) | 5 | 4 | 1 | 0 | 0 | 0 | 0 | 0 | 0 |
+| **TOTAL** | **121** | **88** | **12** | **8** | **2** | **7** | **2** | **2** | **0** |
 
 ---
 

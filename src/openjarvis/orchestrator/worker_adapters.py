@@ -241,10 +241,17 @@ class WorkerAdapter:
 # ---------------------------------------------------------------------------
 
 class DoctorValidationWorkerAdapter(WorkerAdapter):
-    """Adapter for doctor/validation workers. Runs doctor checks locally."""
+    """Adapter for doctor/validation workers.
+
+    Dispatches to the full doctor check suite (run_all_checks) when action_type
+    is doctor_run, or to a targeted check_id for local_validation requests.
+    """
 
     def __init__(self) -> None:
         super().__init__("unit_test_worker")
+
+    # Supported action types
+    _SUPPORTED = frozenset({"local_validation", "doctor_run", "local_analysis"})
 
     def _execute_safe(
         self,
@@ -253,16 +260,64 @@ class DoctorValidationWorkerAdapter(WorkerAdapter):
         dry_run: bool = True,
         session_id: Optional[str] = None,
     ) -> WorkerAdapterResult:
-        if action_type not in ("local_validation", "doctor_run", "local_analysis"):
+        if action_type not in self._SUPPORTED:
             return WorkerAdapterResult(
                 worker_id=self.worker_id,
                 action_type=action_type,
                 status="skipped",
-                summary=f"DoctorValidationWorker only handles local_validation/doctor_run/local_analysis.",
+                summary=(
+                    f"DoctorValidationWorker only handles "
+                    f"{sorted(self._SUPPORTED)}. Got '{action_type}'."
+                ),
                 dry_run=dry_run,
             )
-        check_id = inputs.get("check_id", "project_registry_health")
+
         project_id = inputs.get("project_id", None)
+
+        # doctor_run → dispatch full check suite
+        if action_type == "doctor_run":
+            try:
+                from openjarvis.doctor.checks import run_all_checks
+                results = run_all_checks(project_id=project_id)
+                passed = sum(1 for r in results if r.status == "pass")
+                failed = sum(1 for r in results if r.status == "fail")
+                warned = sum(1 for r in results if r.status == "warn")
+                not_configured = sum(1 for r in results if r.status == "not_configured")
+                fail_summaries = [
+                    {"check_id": r.check_id, "summary": r.summary}
+                    for r in results if r.status == "fail"
+                ]
+                return WorkerAdapterResult(
+                    worker_id=self.worker_id,
+                    action_type=action_type,
+                    status="ok",
+                    summary=(
+                        f"Doctor full suite: {passed} pass, {failed} fail, "
+                        f"{warned} warn, {not_configured} not_configured "
+                        f"({len(results)} checks total)."
+                    ),
+                    evidence={
+                        "total_checks": len(results),
+                        "passed": passed,
+                        "failed": failed,
+                        "warned": warned,
+                        "not_configured": not_configured,
+                        "fail_summaries": fail_summaries,
+                    },
+                    dry_run=dry_run,
+                )
+            except Exception as exc:
+                return WorkerAdapterResult(
+                    worker_id=self.worker_id,
+                    action_type=action_type,
+                    status="error",
+                    summary=f"Doctor full suite failed: {exc}",
+                    evidence={"error": str(exc)},
+                    dry_run=dry_run,
+                )
+
+        # local_validation / local_analysis → targeted check
+        check_id = inputs.get("check_id", "project_registry_health")
         try:
             from openjarvis.doctor.checks import check_project_registry_health
             result = check_project_registry_health(project_id=project_id or "omnix")
@@ -271,7 +326,9 @@ class DoctorValidationWorkerAdapter(WorkerAdapter):
                 action_type=action_type,
                 status="ok",
                 summary=f"Doctor check '{check_id}' completed: {result.status} — {result.summary}",
-                evidence={"check_result": result.to_dict() if hasattr(result, "to_dict") else str(result)},
+                evidence={
+                    "check_result": result.to_dict() if hasattr(result, "to_dict") else str(result)
+                },
                 dry_run=dry_run,
             )
         except Exception as exc:
@@ -365,14 +422,430 @@ class CostAnalysisWorkerAdapter(WorkerAdapter):
             )
 
 
+class FileInspectionWorkerAdapter(WorkerAdapter):
+    """Adapter for targeted file inspection (read-only, no LLM required).
+
+    Used in the coding proof path: inspect targeted files before proposing changes.
+    Never writes or executes code. Always dry-run safe.
+    """
+
+    def __init__(self) -> None:
+        super().__init__("file_inspection_worker")
+
+    _SUPPORTED = frozenset({"local_read", "local_analysis", "coding_file_inspect"})
+
+    def _execute_safe(
+        self,
+        action_type: str,
+        inputs: Dict[str, Any],
+        dry_run: bool = True,
+        session_id: Optional[str] = None,
+    ) -> WorkerAdapterResult:
+        if action_type not in self._SUPPORTED:
+            return WorkerAdapterResult(
+                worker_id=self.worker_id,
+                action_type=action_type,
+                status="skipped",
+                summary=f"FileInspectionWorker only handles {sorted(self._SUPPORTED)}.",
+                dry_run=dry_run,
+            )
+
+        file_path = inputs.get("file_path")
+        line_start = inputs.get("line_start", 1)
+        line_end = inputs.get("line_end", 80)
+
+        if not file_path:
+            return WorkerAdapterResult(
+                worker_id=self.worker_id,
+                action_type=action_type,
+                status="dry_run_ok",
+                summary="FileInspectionWorker: no file_path provided, dry-run plan only.",
+                evidence={"file_path": None, "note": "Provide file_path for targeted inspection."},
+                dry_run=True,
+            )
+
+        from pathlib import Path
+        p = Path(file_path)
+        if not p.exists():
+            return WorkerAdapterResult(
+                worker_id=self.worker_id,
+                action_type=action_type,
+                status="error",
+                summary=f"File not found: {file_path}",
+                evidence={"file_path": str(file_path), "error": "file_not_found"},
+                dry_run=dry_run,
+            )
+
+        try:
+            lines = p.read_text(encoding="utf-8", errors="replace").splitlines()
+            snippet = lines[max(0, line_start - 1) : line_end]
+            return WorkerAdapterResult(
+                worker_id=self.worker_id,
+                action_type=action_type,
+                status="ok",
+                summary=(
+                    f"Inspected {file_path} lines {line_start}-{line_end}: "
+                    f"{len(snippet)} lines read, {len(lines)} total."
+                ),
+                evidence={
+                    "file_path": str(file_path),
+                    "total_lines": len(lines),
+                    "snippet_lines": len(snippet),
+                    "line_start": line_start,
+                    "line_end": line_end,
+                },
+                dry_run=dry_run,
+            )
+        except Exception as exc:
+            return WorkerAdapterResult(
+                worker_id=self.worker_id,
+                action_type=action_type,
+                status="error",
+                summary=f"File inspection failed: {exc}",
+                evidence={"error": str(exc)},
+                dry_run=dry_run,
+            )
+
+
+class CodingSafeWorkerAdapter(WorkerAdapter):
+    """Coding proof path worker adapter.
+
+    Implements the minimum Jarvis coding proof ladder for daily-driver use:
+      1. classify_coding_task — classify as safe vs unsafe, complexity, scope
+      2. local_analysis — inspect targeted files (delegates to FileInspectionWorker)
+      3. coding_patch_propose — structured patch proposal (dry-run plan without LLM;
+         BLOCKED_PROVIDER for real code generation without OPENAI/ANTHROPIC key)
+      4. coding_test_run — run targeted tests/checks
+      5. coding_diff_report — report diff/evidence
+      6. coding_repair_loop — bounded retry support (uses BoundedRepairLoop)
+      7. coding_rollback — rollback plan via git restore
+
+    SAFE RULES (non-negotiable):
+      - Never writes files without Bryan approval.
+      - Never commits or pushes.
+      - Auto-push, auto-merge remain permanently blocked.
+      - Real code generation requires LLM provider key (BLOCKED_PROVIDER without it).
+      - Dry-run planning always available regardless of provider.
+    """
+
+    def __init__(self) -> None:
+        super().__init__("coding_safe_worker")
+
+    _SUPPORTED = frozenset({
+        "local_analysis",
+        "coding_task_classify",
+        "coding_file_inspect",
+        "coding_patch_propose",
+        "coding_test_run",
+        "coding_diff_report",
+        "coding_repair_loop",
+        "coding_rollback",
+    })
+
+    # These action types require LLM to be useful beyond dry-run planning
+    _PROVIDER_GATED = frozenset({"coding_patch_propose", "coding_repair_loop"})
+
+    def _has_llm_provider(self) -> bool:
+        """Check if any LLM provider key is configured."""
+        import os
+        from pathlib import Path
+        keys = ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "OPENROUTER_API_KEY"]
+        for key in keys:
+            if os.environ.get(key):
+                return True
+        cloud_env = Path.home() / ".jarvis" / "cloud-keys.env"
+        if cloud_env.exists():
+            content = cloud_env.read_text(errors="replace")
+            for key in keys:
+                for line in content.splitlines():
+                    if line.strip().startswith(f"{key}=") and line.strip()[len(key) + 1:]:
+                        return True
+        return False
+
+    def _execute_safe(
+        self,
+        action_type: str,
+        inputs: Dict[str, Any],
+        dry_run: bool = True,
+        session_id: Optional[str] = None,
+    ) -> WorkerAdapterResult:
+        if action_type not in self._SUPPORTED:
+            return WorkerAdapterResult(
+                worker_id=self.worker_id,
+                action_type=action_type,
+                status="skipped",
+                summary=f"CodingSafeWorker only handles {sorted(self._SUPPORTED)}.",
+                dry_run=dry_run,
+            )
+
+        # Provider-gated actions: return structured dry-run plan if no LLM
+        if action_type in self._PROVIDER_GATED and not self._has_llm_provider():
+            return WorkerAdapterResult(
+                worker_id=self.worker_id,
+                action_type=action_type,
+                status="dry_run_ok",
+                summary=(
+                    f"CodingSafeWorker: {action_type} requires LLM provider "
+                    f"(OPENAI_API_KEY or ANTHROPIC_API_KEY). "
+                    f"Dry-run plan returned. "
+                    f"Set key in ~/.jarvis/cloud-keys.env to enable real generation."
+                ),
+                evidence={
+                    "action_type": action_type,
+                    "provider_required": ["OPENAI_API_KEY", "ANTHROPIC_API_KEY"],
+                    "blocker_type": "BLOCKED_PROVIDER",
+                    "fallback": "dry_run_plan_only",
+                    "inputs_received": list(inputs.keys()),
+                },
+                blocked_reason="BLOCKED_PROVIDER: no LLM key configured",
+                dry_run=True,
+            )
+
+        intent = inputs.get("intent", "")
+        user_input = inputs.get("user_input", "")
+
+        # Task classification (no LLM needed)
+        if action_type in ("coding_task_classify", "local_analysis"):
+            return self._classify_task(intent, user_input, inputs, dry_run)
+
+        # File inspection (delegates to FileInspectionWorkerAdapter)
+        if action_type == "coding_file_inspect":
+            adapter = FileInspectionWorkerAdapter()
+            return adapter._execute_safe("local_read", inputs, dry_run=dry_run)
+
+        # Test run (local, no LLM)
+        if action_type == "coding_test_run":
+            return self._run_tests(inputs, dry_run)
+
+        # Diff report (local git diff)
+        if action_type == "coding_diff_report":
+            return self._diff_report(inputs, dry_run)
+
+        # Rollback (git restore — requires Bryan approval via approval gate)
+        if action_type == "coding_rollback":
+            return self._rollback_plan(inputs, dry_run)
+
+        # Repair loop (dry-run only without LLM)
+        if action_type == "coding_repair_loop":
+            return self._repair_loop_dry_run(inputs, dry_run)
+
+        # Default: dry-run plan
+        return WorkerAdapterResult(
+            worker_id=self.worker_id,
+            action_type=action_type,
+            status="dry_run_ok",
+            summary=f"CodingSafeWorker dry-run: {action_type}",
+            evidence={"inputs_keys": list(inputs.keys())},
+            dry_run=True,
+        )
+
+    def _classify_task(
+        self,
+        intent: str,
+        user_input: str,
+        inputs: Dict[str, Any],
+        dry_run: bool,
+    ) -> WorkerAdapterResult:
+        """Classify coding task scope, risk, and safety (keyword-based, no LLM)."""
+        text = (intent + " " + user_input).lower()
+
+        # Unsafe patterns (always blocked)
+        _UNSAFE_PATTERNS = [
+            "push", "merge", "deploy", "delete production",
+            "drop table", "rm -rf", "override safety",
+        ]
+        unsafe = [p for p in _UNSAFE_PATTERNS if p in text]
+
+        # Complexity
+        _COMPLEX_KEYWORDS = ["refactor", "migration", "multi-file", "architecture", "schema"]
+        _SIMPLE_KEYWORDS = ["fix", "typo", "comment", "rename", "add import"]
+        complexity = "complex" if any(k in text for k in _COMPLEX_KEYWORDS) else (
+            "simple" if any(k in text for k in _SIMPLE_KEYWORDS) else "moderate"
+        )
+
+        # File scope
+        file_scope = inputs.get("file_path") or inputs.get("files_affected", [])
+
+        safe = len(unsafe) == 0
+        return WorkerAdapterResult(
+            worker_id=self.worker_id,
+            action_type="coding_task_classify",
+            status="ok",
+            summary=(
+                f"Coding task classified: complexity={complexity}, "
+                f"safe={safe}, unsafe_patterns={unsafe}."
+            ),
+            evidence={
+                "intent": intent,
+                "complexity": complexity,
+                "safe": safe,
+                "unsafe_patterns": unsafe,
+                "file_scope": file_scope,
+                "classification_method": "keyword_based",
+                "note": "4/5 requires domain-model classifier; currently keyword-based (3/5).",
+            },
+            dry_run=dry_run,
+        )
+
+    def _run_tests(self, inputs: Dict[str, Any], dry_run: bool) -> WorkerAdapterResult:
+        """Run targeted tests (pytest) for a coding task. Returns test result evidence."""
+        import subprocess
+        test_path = inputs.get("test_path", "tests/orchestrator/")
+        cmd = [
+            "python3", "-m", "pytest", str(test_path),
+            "-x", "-q", "--tb=short", "--no-header",
+        ]
+        # Use venv python if available
+        import os
+        from pathlib import Path
+        venv_python = Path(".venv/bin/python")
+        if venv_python.exists():
+            cmd[0] = str(venv_python)
+
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=60,
+                cwd=str(Path.cwd()),
+            )
+            passed = "passed" in result.stdout
+            failed = "failed" in result.stdout or result.returncode != 0
+            return WorkerAdapterResult(
+                worker_id=self.worker_id,
+                action_type="coding_test_run",
+                status="ok" if not failed else "error",
+                summary=(
+                    f"Test run for '{test_path}': "
+                    f"{'PASSED' if passed and not failed else 'FAILED'}. "
+                    f"returncode={result.returncode}."
+                ),
+                evidence={
+                    "test_path": str(test_path),
+                    "returncode": result.returncode,
+                    "stdout_tail": result.stdout[-500:] if result.stdout else "",
+                    "stderr_tail": result.stderr[-200:] if result.stderr else "",
+                    "passed": passed,
+                    "failed": failed,
+                },
+                dry_run=dry_run,
+            )
+        except subprocess.TimeoutExpired:
+            return WorkerAdapterResult(
+                worker_id=self.worker_id,
+                action_type="coding_test_run",
+                status="error",
+                summary=f"Test run timed out for '{test_path}'.",
+                evidence={"test_path": str(test_path), "error": "timeout"},
+                dry_run=dry_run,
+            )
+        except Exception as exc:
+            return WorkerAdapterResult(
+                worker_id=self.worker_id,
+                action_type="coding_test_run",
+                status="error",
+                summary=f"Test run failed: {exc}",
+                evidence={"error": str(exc)},
+                dry_run=dry_run,
+            )
+
+    def _diff_report(self, inputs: Dict[str, Any], dry_run: bool) -> WorkerAdapterResult:
+        """Report git diff as structured evidence."""
+        import subprocess
+        from pathlib import Path
+        try:
+            result = subprocess.run(
+                ["git", "diff", "--stat"],
+                capture_output=True, text=True, timeout=10, cwd=str(Path.cwd()),
+            )
+            diff_result = subprocess.run(
+                ["git", "diff", "--check"],
+                capture_output=True, text=True, timeout=10, cwd=str(Path.cwd()),
+            )
+            return WorkerAdapterResult(
+                worker_id=self.worker_id,
+                action_type="coding_diff_report",
+                status="ok",
+                summary=f"Git diff report: {result.stdout.strip() or 'no changes'}.",
+                evidence={
+                    "diff_stat": result.stdout.strip(),
+                    "diff_check_returncode": diff_result.returncode,
+                    "diff_check_issues": diff_result.stdout.strip(),
+                    "clean": diff_result.returncode == 0,
+                },
+                dry_run=dry_run,
+            )
+        except Exception as exc:
+            return WorkerAdapterResult(
+                worker_id=self.worker_id,
+                action_type="coding_diff_report",
+                status="error",
+                summary=f"Diff report failed: {exc}",
+                evidence={"error": str(exc)},
+                dry_run=dry_run,
+            )
+
+    def _rollback_plan(self, inputs: Dict[str, Any], dry_run: bool) -> WorkerAdapterResult:
+        """Generate rollback plan for a coding change. Never auto-executes rollback."""
+        file_path = inputs.get("file_path")
+        plan_summary = (
+            f"Rollback plan for '{file_path}': git restore {file_path}. "
+            f"Requires Bryan approval before execution. Never auto-rollback."
+            if file_path else
+            "Rollback plan: git checkout HEAD -- <files>. Requires Bryan approval."
+        )
+        return WorkerAdapterResult(
+            worker_id=self.worker_id,
+            action_type="coding_rollback",
+            status="dry_run_ok",
+            summary=plan_summary,
+            evidence={
+                "file_path": file_path,
+                "rollback_command": f"git restore {file_path}" if file_path else "git checkout HEAD",
+                "approval_required": True,
+                "auto_rollback": False,
+                "rollback_support": "plan_only",
+            },
+            dry_run=True,
+        )
+
+    def _repair_loop_dry_run(self, inputs: Dict[str, Any], dry_run: bool) -> WorkerAdapterResult:
+        """Dry-run repair loop plan. Real repair requires LLM provider."""
+        attempt = inputs.get("attempt", 1)
+        max_attempts = inputs.get("max_attempts", 3)
+        return WorkerAdapterResult(
+            worker_id=self.worker_id,
+            action_type="coding_repair_loop",
+            status="dry_run_ok",
+            summary=(
+                f"Repair loop plan: attempt {attempt}/{max_attempts}. "
+                f"Real re-generation requires LLM provider (BLOCKED_PROVIDER). "
+                f"Dry-run: re-run tests only."
+            ),
+            evidence={
+                "attempt": attempt,
+                "max_attempts": max_attempts,
+                "provider_required": ["OPENAI_API_KEY", "ANTHROPIC_API_KEY"],
+                "blocker_type": "BLOCKED_PROVIDER",
+                "dry_run_action": "re_run_tests_only",
+            },
+            dry_run=True,
+        )
+
+
 # ---------------------------------------------------------------------------
 # Worker adapter registry
 # ---------------------------------------------------------------------------
 
 _ADAPTER_REGISTRY: Dict[str, WorkerAdapter] = {
     "unit_test_worker": DoctorValidationWorkerAdapter(),
+    "doctor_check_worker": DoctorValidationWorkerAdapter(),
     "nus_learning_worker": NUSLearningWorkerAdapter(),
     "cost_analysis_worker": CostAnalysisWorkerAdapter(),
+    "file_inspection_worker": FileInspectionWorkerAdapter(),
+    "coding_safe_worker": CodingSafeWorkerAdapter(),
+    "local_research_worker": CodingSafeWorkerAdapter(),  # reuse for local analysis
 }
 
 
@@ -402,6 +875,8 @@ __all__ = [
     "DoctorValidationWorkerAdapter",
     "NUSLearningWorkerAdapter",
     "CostAnalysisWorkerAdapter",
+    "FileInspectionWorkerAdapter",
+    "CodingSafeWorkerAdapter",
     "get_worker_adapter",
     "execute_worker",
 ]

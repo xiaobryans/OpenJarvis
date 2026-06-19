@@ -301,18 +301,70 @@ class JarvisFrontDoor:
         """Process any Bryan request through the universal front door.
 
         Flow:
-          1. Check always-blocked actions
-          2. Find matching adapter (if any) and enrich request
-          3. Convert to TaskRoutingRequest
-          4. Route through CosGmOrchestrator
-          5. Return structured FrontDoorResult
+          1. Start orchestrator trace (trace_id assigned here)
+          2. Emit FRONT_DOOR trace event
+          3. Check always-blocked actions
+          4. Find matching adapter (if any) and enrich request
+          5. Route through CosGmOrchestrator (with trace_id propagated)
+          6. Emit ROUTING trace event
+          7. Return structured FrontDoorResult
         """
         start = time.time()
 
-        # 1. Check always-blocked
+        # 1. Start runtime trace for this request
+        trace_id: Optional[str] = None
+        try:
+            from openjarvis.orchestrator.runtime_trace import (
+                start_trace, EVENT_FRONT_DOOR, EVENT_ROUTING, EVENT_BLOCKER,
+            )
+            trace = start_trace(request.request_id)
+            trace_id = trace.trace_id
+            trace.add_event(
+                EVENT_FRONT_DOOR,
+                component="jarvis_front_door",
+                summary=f"Front door received request intent='{request.intent}'",
+                payload={
+                    "request_id": request.request_id,
+                    "intent": request.intent,
+                    "has_project_context": request.project_context is not None,
+                    "project_id": (
+                        request.project_context.project_id
+                        if request.project_context else None
+                    ),
+                    "adapters_registered": len(self._adapters),
+                },
+            )
+        except Exception:
+            trace_id = None
+
+        # Propagate trace_id into request metadata
+        if trace_id:
+            request.metadata["trace_id"] = trace_id
+
+        # 2. Check always-blocked
         blocked = [a for a in request.metadata.get("requested_actions", [])
                    if a in self._ALWAYS_BLOCKED]
         if blocked:
+            try:
+                from openjarvis.orchestrator.runtime_trace import (
+                    get_trace, EVENT_BLOCKER, EVENT_FINAL_RESPONSE,
+                )
+                t = get_trace(trace_id) if trace_id else None
+                if t:
+                    t.add_event(
+                        EVENT_BLOCKER,
+                        component="jarvis_front_door",
+                        summary=f"Front door blocked: {blocked}",
+                        payload={"blocked_actions": blocked},
+                    )
+                    t.add_event(
+                        EVENT_FINAL_RESPONSE,
+                        component="jarvis_front_door",
+                        summary="Response: blocked",
+                        payload={"status": "blocked"},
+                    )
+            except Exception:
+                pass
             return FrontDoorResult.create(
                 request_id=request.request_id,
                 status="blocked",
@@ -320,9 +372,10 @@ class JarvisFrontDoor:
                 blocked_actions=blocked,
                 project_context=request.project_context,
                 elapsed_ms=(time.time() - start) * 1000,
+                metadata={"trace_id": trace_id},
             )
 
-        # 2. Adapter enrichment (optional — request works without adapters)
+        # 3. Adapter enrichment (optional — request works without adapters)
         enriched = request
         matching_adapter: Optional[FrontDoorAdapter] = None
         for adapter in self._adapters:
@@ -331,16 +384,32 @@ class JarvisFrontDoor:
                 matching_adapter = adapter
                 break
 
-        # 3. Route through CosGmOrchestrator
+        # 4. Emit routing event
+        try:
+            from openjarvis.orchestrator.runtime_trace import get_trace, EVENT_ROUTING
+            t = get_trace(trace_id) if trace_id else None
+            if t:
+                t.add_event(
+                    EVENT_ROUTING,
+                    component="jarvis_front_door",
+                    summary=f"Routing to COS/GM (adapter={matching_adapter.adapter_id if matching_adapter else 'none'})",
+                    payload={"adapter": matching_adapter.adapter_id if matching_adapter else None},
+                )
+        except Exception:
+            pass
+
+        # 5. Route through CosGmOrchestrator
         from openjarvis.orchestrator.cos_gm import CosGmOrchestrator, get_cos_gm_orchestrator
         orchestrator = get_cos_gm_orchestrator()
         result = orchestrator.handle(enriched)
 
-        # 4. Post-process via adapter (optional)
+        # 6. Post-process via adapter (optional)
         if matching_adapter is not None:
             result = matching_adapter.post_process(enriched, result)
 
         result.elapsed_ms = (time.time() - start) * 1000
+        if trace_id and "trace_id" not in result.metadata:
+            result.metadata["trace_id"] = trace_id
         return result
 
 

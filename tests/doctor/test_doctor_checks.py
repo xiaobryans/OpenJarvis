@@ -1,9 +1,9 @@
-"""Tests for Jarvis Doctor checks — 33 independent diagnostic checks.
+"""Tests for Jarvis Doctor checks — registered diagnostic checks in _ALL_CHECK_FNS.
 
 Covers:
   - Each check returns a CheckResult with check_id, category, status, evidence
   - Status is one of: pass, warn, fail, not_configured
-  - run_all_checks() returns exactly 33 results
+  - run_all_checks() returns one result per registered check function
   - backend_health passes (core modules importable)
   - project_registry_health passes (OMNIX registered)
   - tool_registry_counts passes or warns (never zero available after init)
@@ -114,14 +114,25 @@ class TestCheckResultContract:
 
 
 # ---------------------------------------------------------------------------
-# run_all_checks — 33 total
+# run_all_checks — one result per _ALL_CHECK_FNS entry
 # ---------------------------------------------------------------------------
+
+_REQUIRED_CHECK_IDS = frozenset({
+    "backend_health",
+    "project_registry_health",
+    "universal_front_door",
+    "worker_execution_adapters",
+    "nus_scorecard_feedback_loop",
+    "inactive_manager_classification",
+})
 
 
 class TestRunAllChecks:
-    def test_returns_exactly_33_results(self):
+    def test_returns_one_result_per_registered_check(self):
         results = run_all_checks(project_id="omnix")
-        assert len(results) == 33
+        assert len(results) == len(_ALL_CHECK_FNS)
+        registered_ids = {r.check_id for r in results}
+        assert _REQUIRED_CHECK_IDS.issubset(registered_ids)
 
     def test_all_results_are_check_result(self):
         results = run_all_checks(project_id="omnix")
@@ -155,11 +166,13 @@ class TestRunAllChecks:
             assert r.project_id == "omnix"
 
     def test_all_check_fns_count(self):
-        assert len(_ALL_CHECK_FNS) == 33
+        assert len(_ALL_CHECK_FNS) >= 33
+        fn_names = {fn.__name__ for fn in _ALL_CHECK_FNS}
+        assert len(fn_names) == len(_ALL_CHECK_FNS)
 
     def test_no_exception_on_unknown_project(self):
         results = run_all_checks(project_id="nonexistent_xyz_proj")
-        assert len(results) == 33
+        assert len(results) == len(_ALL_CHECK_FNS)
 
 
 # ---------------------------------------------------------------------------

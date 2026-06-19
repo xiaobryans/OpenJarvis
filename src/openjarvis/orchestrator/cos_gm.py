@@ -2,8 +2,9 @@
 
 Sits between the Jarvis front door and the domain managers/workers.
 Receives a UniversalTaskRequest, classifies intent/risk/complexity,
-calls the DynamicActivationPlanner, creates a structured decision record,
-attaches governance/validation plan, and returns a FrontDoorResult.
+calls the DynamicActivationPlanner, dispatches selected workers through
+worker execution adapters, collects structured results, and returns
+a FrontDoorResult with full execution evidence.
 
 Design rules (non-negotiable):
   - Receives universal Jarvis front-door request; never OMNIX-specific input.
@@ -13,6 +14,9 @@ Design rules (non-negotiable):
   - NUS applies: all hierarchy levels emit decision records.
   - Dangerous actions remain permanently blocked.
   - US13 voice remains HOLD/UNSAFE/PARKED — not activated here.
+  - Emits runtime trace events for every stage of the pipeline.
+  - Workers are dispatched after planning for dry-run execution (safe local only).
+  - Real (non-dry-run) execution requires Bryan authorization per action.
 """
 
 from __future__ import annotations
@@ -31,6 +35,17 @@ from openjarvis.orchestrator.contracts import (
     COMPLEXITY_COMPLEX,
 )
 from openjarvis.orchestrator.activation import get_activation_planner
+from openjarvis.orchestrator.runtime_trace import (
+    start_trace,
+    get_trace_store,
+    EVENT_COS_GM,
+    EVENT_MANAGER_ACTIVATION,
+    EVENT_WORKER_EXECUTION,
+    EVENT_VALIDATION,
+    EVENT_NUS_FEEDBACK,
+    EVENT_BLOCKER,
+    EVENT_FINAL_RESPONSE,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -79,16 +94,72 @@ class CosGmOrchestrator:
     """
 
     def handle(self, request: "UniversalTaskRequest") -> "FrontDoorResult":  # type: ignore[name-defined]
-        """Route any request through COS/GM to the activation planner."""
-        # Import here to avoid circular imports
+        """Route any request through COS/GM, activate managers, dispatch workers.
+
+        Pipeline:
+          1. Emit COS/GM entry trace event
+          2. Check always-blocked actions
+          3. Classify intent/risk/complexity
+          4. Build TaskRoutingRequest
+          5. Call DynamicActivationPlanner → ActivationPlan
+          6. Emit manager activation trace events
+          7. Dispatch selected workers through WorkerAdapter (dry-run by default)
+          8. Collect WorkerAdapterResults
+          9. Emit NUS feedback trace event
+          10. Emit final response trace event
+          11. Return FrontDoorResult with full execution evidence
+        """
         from openjarvis.frontdoor.frontdoor import FrontDoorResult, UniversalTaskRequest
 
         start = time.time()
+        trace_id = request.metadata.get("trace_id")
+
+        # Start or attach trace
+        try:
+            if trace_id:
+                trace = get_trace_store().get(trace_id)
+            else:
+                trace = None
+            if trace is None:
+                trace = start_trace(request.request_id, trace_id=trace_id)
+                trace_id = trace.trace_id
+            trace.add_event(
+                EVENT_COS_GM,
+                component="cos_gm",
+                summary=f"COS/GM received request intent='{request.intent}'",
+                payload={
+                    "request_id": request.request_id,
+                    "intent": request.intent,
+                    "risk_level": request.risk_level,
+                    "complexity_level": request.complexity_level,
+                    "project": (
+                        request.project_context.project_id
+                        if request.project_context else None
+                    ),
+                },
+            )
+        except Exception as _te:
+            logger.debug("Trace event failed (non-fatal): %s", _te)
 
         # 1. Check always-blocked actions
         requested = request.metadata.get("requested_actions", [])
         blocked = [a for a in requested if a in _ALWAYS_BLOCKED_ACTIONS]
         if blocked:
+            try:
+                trace.add_event(
+                    EVENT_BLOCKER,
+                    component="cos_gm",
+                    summary=f"COS/GM blocked: {blocked}",
+                    payload={"blocked_actions": blocked},
+                )
+                trace.add_event(
+                    EVENT_FINAL_RESPONSE,
+                    component="cos_gm",
+                    summary="Response: blocked",
+                    payload={"status": "blocked"},
+                )
+            except Exception:
+                pass
             return FrontDoorResult.create(
                 request_id=request.request_id,
                 status="blocked",
@@ -101,6 +172,7 @@ class CosGmOrchestrator:
                 project_context=request.project_context,
                 nus_learning_tags=["cos_gm:blocked_action"],
                 elapsed_ms=(time.time() - start) * 1000,
+                metadata={"trace_id": trace_id},
             )
 
         # 2. Classify intent/risk/complexity from request
@@ -129,30 +201,153 @@ class CosGmOrchestrator:
         planner = get_activation_planner()
         plan = planner.plan(routing_req)
 
-        # 5. Build governance and validation commentary
+        # 5. Emit manager activation events
+        try:
+            for mgr_id in plan.selected_managers:
+                trace.add_event(
+                    EVENT_MANAGER_ACTIVATION,
+                    component="cos_gm",
+                    summary=f"Manager activated: {mgr_id}",
+                    payload={"manager_id": mgr_id, "plan_id": plan.plan_id},
+                )
+        except Exception:
+            pass
+
+        # 6. Dispatch workers through adapters (dry-run by default)
+        worker_results: list = []
+        worker_result_dicts: list = []
+        workers_dispatched = 0
+        workers_succeeded = 0
+
+        for worker_id in plan.selected_workers:
+            try:
+                from openjarvis.orchestrator.worker_adapters import execute_worker
+                # Determine safe action type for this worker
+                action_type = self._safe_action_for_worker(worker_id, request)
+                w_result = execute_worker(
+                    worker_id=worker_id,
+                    action_type=action_type,
+                    inputs={
+                        "request_id": request.request_id,
+                        "intent": request.intent,
+                        "user_input": request.user_input,
+                        "project_id": (
+                            request.project_context.project_id
+                            if request.project_context else None
+                        ),
+                    },
+                    dry_run=True,
+                    session_id=request.session_id,
+                )
+                workers_dispatched += 1
+                if w_result.status in ("ok", "dry_run_ok"):
+                    workers_succeeded += 1
+                worker_results.append(w_result)
+                worker_result_dicts.append(w_result.to_dict())
+                try:
+                    trace.add_event(
+                        EVENT_WORKER_EXECUTION,
+                        component=f"worker:{worker_id}",
+                        summary=f"Worker {worker_id} → {w_result.status}",
+                        payload={
+                            "worker_id": worker_id,
+                            "action_type": action_type,
+                            "status": w_result.status,
+                            "nus_gate_passed": w_result.nus_gate_passed,
+                        },
+                    )
+                except Exception:
+                    pass
+            except Exception as exc:
+                logger.warning("Worker %s dispatch failed: %s", worker_id, exc)
+                try:
+                    trace.add_event(
+                        EVENT_WORKER_EXECUTION,
+                        component=f"worker:{worker_id}",
+                        summary=f"Worker {worker_id} dispatch error: {exc}",
+                        payload={"worker_id": worker_id, "error": str(exc)},
+                    )
+                except Exception:
+                    pass
+
+        # 7. Validation event (if validation_required)
+        validation_summary = "validation_not_required"
+        if request.validation_required and workers_dispatched > 0:
+            validation_summary = (
+                f"{workers_succeeded}/{workers_dispatched} workers succeeded (dry-run)"
+            )
+            try:
+                trace.add_event(
+                    EVENT_VALIDATION,
+                    component="cos_gm",
+                    summary=validation_summary,
+                    payload={
+                        "workers_dispatched": workers_dispatched,
+                        "workers_succeeded": workers_succeeded,
+                    },
+                )
+            except Exception:
+                pass
+
+        # 8. NUS feedback trace event
+        nus_available = any("nus_feedback:loaded" in t for t in plan.nus_learning_tags)
+        try:
+            trace.add_event(
+                EVENT_NUS_FEEDBACK,
+                component="activation_planner",
+                summary=f"NUS feedback: {'loaded' if nus_available else 'not_available'}",
+                payload={"nus_feedback_available": nus_available},
+            )
+        except Exception:
+            pass
+
+        # 9. Build result
         project_label = (
             request.project_context.display_name
             if request.project_context
             else "no_project_context"
         )
         model_gap_dicts = [g.to_dict() for g in plan.model_provider_gaps]
-
-        # 6. Build NUS tags including project context
         nus_tags = list(plan.nus_learning_tags) + [
-            f"cos_gm:routed",
+            "cos_gm:routed",
             f"project:{request.project_context.project_id if request.project_context and request.project_context.project_id else 'none'}",
         ]
+        if workers_dispatched > 0:
+            nus_tags.append(f"cos_gm:workers_dispatched:{workers_dispatched}")
+            status = "executed"
+        else:
+            status = "planned"
 
         summary = (
-            f"COS/GM activated {len(plan.selected_managers)} manager(s) and "
-            f"{len(plan.selected_workers)} worker(s) for request '{request.intent}' "
+            f"COS/GM activated {len(plan.selected_managers)} manager(s), "
+            f"dispatched {workers_dispatched} worker(s) "
+            f"({workers_succeeded} succeeded, dry-run) "
+            f"for request '{request.intent}' "
             f"[project={project_label}, risk={effective_risk}, complexity={effective_complexity}]. "
             f"decision_record={plan.structured_decision_record_id}."
         )
 
+        result_metadata = {
+            "trace_id": trace_id,
+            "workers_dispatched": workers_dispatched,
+            "workers_succeeded": workers_succeeded,
+            "worker_results": worker_result_dicts,
+            "validation_summary": validation_summary,
+        }
+
+        try:
+            trace.add_event(
+                EVENT_FINAL_RESPONSE,
+                component="cos_gm",
+                summary=f"Response: status={status}",
+                payload={"status": status, "elapsed_ms": (time.time() - start) * 1000},
+            )
+        except Exception:
+            pass
+
         return FrontDoorResult.create(
             request_id=request.request_id,
-            status="planned",
+            status=status,
             summary=summary,
             activation_plan_id=plan.plan_id,
             selected_managers=plan.selected_managers,
@@ -163,7 +358,31 @@ class CosGmOrchestrator:
             blocked_actions=list(_ALWAYS_BLOCKED_ACTIONS),
             nus_learning_tags=nus_tags,
             elapsed_ms=(time.time() - start) * 1000,
+            metadata=result_metadata,
         )
+
+    def _safe_action_for_worker(
+        self,
+        worker_id: str,
+        request: "UniversalTaskRequest",  # type: ignore[name-defined]
+    ) -> str:
+        """Determine the safe dry-run action type for a given worker.
+
+        Maps worker IDs to appropriate safe local action types.
+        Default: routing_dry_run (always safe).
+        """
+        _WORKER_SAFE_ACTIONS: Dict[str, str] = {
+            "unit_test_worker": "local_validation",
+            "doctor_check_worker": "doctor_run",
+            "nus_learning_worker": "nus_dry_run",
+            "cost_analysis_worker": "routing_dry_run",
+            "coding_safe_worker": "local_analysis",
+            "file_inspection_worker": "local_read",
+            "local_research_worker": "local_analysis",
+            "risk_classification_worker": "risk_assessment",
+            "policy_gate_worker": "policy_check",
+        }
+        return _WORKER_SAFE_ACTIONS.get(worker_id, "routing_dry_run")
 
     def _classify(
         self, request: "UniversalTaskRequest"  # type: ignore[name-defined]

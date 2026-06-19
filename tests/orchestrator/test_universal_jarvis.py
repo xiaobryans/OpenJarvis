@@ -219,7 +219,7 @@ class TestCosGmOrchestrator:
         orch = CosGmOrchestrator()
         req = UniversalTaskRequest.create(user_input="personal task", intent="personal")
         result = orch.handle(req)
-        assert result.status in ("planned", "blocked")
+        assert result.status in ("planned", "executed", "blocked")
         assert result.no_raw_chain_of_thought is True
 
     def test_accepts_non_omnix_project(self):
@@ -234,7 +234,7 @@ class TestCosGmOrchestrator:
             project_context=ctx,
         )
         result = orch.handle(req)
-        assert result.status in ("planned", "blocked")
+        assert result.status in ("planned", "executed", "blocked")
         assert result.project_context.project_id == "synthetic_test_project"
 
     def test_accepts_openjarvis_project(self):
@@ -249,7 +249,7 @@ class TestCosGmOrchestrator:
             project_context=ctx,
         )
         result = orch.handle(req)
-        assert result.status in ("planned", "blocked")
+        assert result.status in ("planned", "executed", "blocked")
 
     def test_omnix_not_required(self):
         """Orchestrator must not require OMNIX project context."""
@@ -259,7 +259,7 @@ class TestCosGmOrchestrator:
         req = UniversalTaskRequest.create(user_input="research AI", intent="research")
         assert req.project_context is None
         result = orch.handle(req)
-        assert result.status in ("planned", "blocked")
+        assert result.status in ("planned", "executed", "blocked")
 
     def test_blocks_auto_push(self):
         from openjarvis.orchestrator.cos_gm import CosGmOrchestrator
@@ -327,7 +327,7 @@ class TestJarvisFrontDoor:
         fd = JarvisFrontDoor()
         req = UniversalTaskRequest.create(user_input="remind me dentist", intent="personal")
         result = fd.handle(req)
-        assert result.status in ("planned", "blocked")
+        assert result.status in ("planned", "executed", "blocked")
         assert result.no_raw_chain_of_thought is True
 
     def test_handle_non_omnix_project(self):
@@ -341,7 +341,7 @@ class TestJarvisFrontDoor:
             project_context=ctx,
         )
         result = fd.handle(req)
-        assert result.status in ("planned", "blocked")
+        assert result.status in ("planned", "executed", "blocked")
 
     def test_blocks_auto_push(self):
         from openjarvis.frontdoor.frontdoor import JarvisFrontDoor, UniversalTaskRequest
