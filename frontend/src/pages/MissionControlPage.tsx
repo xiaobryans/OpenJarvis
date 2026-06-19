@@ -17,6 +17,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { apiFetch } from '../lib/api';
+import { healthChipColor, NO_GAP_REMAINING_ITEMS, VOICE_GATE_LABEL } from '../lib/no_gap_status';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -279,6 +280,7 @@ export function MissionControlPage() {
 
   // System health
   const [sysHealth, setSysHealth] = useState<Record<string, any> | null>(null);
+  const [sysHealthAttempted, setSysHealthAttempted] = useState(false);
 
   // Run mission pass
   const [running, setRunning] = useState(false);
@@ -382,6 +384,8 @@ export function MissionControlPage() {
       if (resp.ok) setSysHealth(await resp.json());
     } catch {
       // silent
+    } finally {
+      setSysHealthAttempted(true);
     }
   }, []);
 
@@ -713,49 +717,49 @@ export function MissionControlPage() {
         </div>
 
         {/* ── System Health Panel ── */}
-        {sysHealth && (
-          <div
-            className="rounded-xl p-3"
-            style={{ background: 'var(--color-bg-secondary)', border: '1px solid var(--color-border)' }}
-          >
-            <div className="flex items-center gap-2 mb-2">
-              <CheckCircle2 size={13} style={{ color: 'var(--color-accent)' }} />
-              <span className="text-xs font-semibold" style={{ color: 'var(--color-text-secondary)' }}>System Health</span>
-              {sysHealth.certification?.verdict === 'certified' && (
-                <span className="ml-auto text-xs px-2 py-0.5 rounded-full" style={{ background: '#22c55e22', color: '#22c55e', border: '1px solid #22c55e44' }}>V1 daily-driver certified</span>
+        <div
+          className="rounded-xl p-3"
+          style={{ background: 'var(--color-bg-secondary)', border: '1px solid var(--color-border)' }}
+        >
+          <div className="flex items-center gap-2 mb-2 flex-wrap">
+            <CheckCircle2 size={13} style={{ color: 'var(--color-accent)' }} />
+            <span className="text-xs font-semibold" style={{ color: 'var(--color-text-secondary)' }}>System Health</span>
+            <div className="ml-auto flex items-center gap-1.5 flex-wrap">
+              {sysHealth?.certification?.verdict === 'certified' && (
+                <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: '#22c55e22', color: '#22c55e', border: '1px solid #22c55e44' }}>Text/AI cert: accepted</span>
               )}
-              {sysHealth.certification?.verdict === 'hold' && (
-                <span className="ml-auto text-xs px-2 py-0.5 rounded-full" style={{ background: '#f9731622', color: '#f97316', border: '1px solid #f9731644' }}>HOLD</span>
-              )}
+              <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: '#f9731622', color: '#f97316', border: '1px solid #f9731644' }}>Full no-gap: HOLD</span>
             </div>
+          </div>
+          {!sysHealthAttempted ? (
+            <div className="flex justify-center py-3">
+              <Loader2 size={14} className="animate-spin" style={{ color: 'var(--color-text-tertiary)' }} />
+            </div>
+          ) : !sysHealth ? (
+            <p className="text-xs py-2" style={{ color: 'var(--color-text-tertiary)' }}>
+              Insufficient data to verify — start <code>jarvis serve</code> to fetch runtime status.
+            </p>
+          ) : (
             <div className="flex flex-wrap gap-2">
               {([
-                { key: 'runtime',    label: 'Runtime',    val: sysHealth.runtime?.status },
-                { key: 'voice',      label: 'Voice',      val: sysHealth.voice?.readiness ?? sysHealth.voice?.status },
-                { key: 'connectors', label: 'Slack',      val: sysHealth.connectors?.slack },
-                { key: 'connectors', label: 'Telegram',   val: sysHealth.connectors?.telegram },
-                { key: 'connectors', label: 'Web Search', val: sysHealth.connectors?.web_search },
-                { key: 'queue',      label: 'Queue',      val: sysHealth.queue?.status },
-                { key: 'memory',     label: 'Memory',     val: sysHealth.memory?.status },
-                { key: 'trust',      label: 'Trust',      val: sysHealth.trust?.status },
-                { key: 'alert',      label: 'Alerts',     val: sysHealth.alert?.status },
-                { key: 'degraded',   label: 'Hardening',  val: sysHealth.degraded?.status },
-              ] as { key: string; label: string; val?: string }[]).map(({ label, val }, i) => {
-                const v = (val ?? 'unknown').toLowerCase();
-                const color =
-                  v === 'pass' || v === 'ready' || v === 'configured' || v === 'ready_pending_test_approval' || v === 'configured_not_started'
-                    ? '#22c55e'
-                    : v === 'warn' || v === 'partial' || v === 'degraded'
-                    ? '#f59e0b'
-                    : v === 'fail' || v === 'hold' || v === 'not_configured' || v === 'error'
-                    ? '#ef4444'
-                    : 'var(--color-text-tertiary)';
+                { key: 'runtime',    label: 'Runtime',    val: sysHealth.runtime?.status,                                          title: undefined },
+                { key: 'voice',      label: 'Voice',      val: sysHealth.voice?.readiness ?? sysHealth.voice?.status,              title: VOICE_GATE_LABEL },
+                { key: 'connectors', label: 'Slack',      val: sysHealth.connectors?.slack,                                        title: undefined },
+                { key: 'connectors', label: 'Telegram',   val: sysHealth.connectors?.telegram,                                     title: undefined },
+                { key: 'connectors', label: 'Web Search', val: sysHealth.connectors?.web_search,                                   title: undefined },
+                { key: 'queue',      label: 'Queue',      val: sysHealth.queue?.status,                                            title: undefined },
+                { key: 'memory',     label: 'Memory',     val: sysHealth.memory?.status,                                           title: undefined },
+                { key: 'trust',      label: 'Trust',      val: sysHealth.trust?.status,                                            title: undefined },
+                { key: 'alert',      label: 'Alerts',     val: sysHealth.alert?.status,                                            title: undefined },
+                { key: 'degraded',   label: 'Hardening',  val: sysHealth.degraded?.status,                                         title: undefined },
+              ] as { key: string; label: string; val?: string; title?: string }[]).map(({ label, val, title }, i) => {
+                const color = healthChipColor(val);
                 return (
                   <span
                     key={`${label}-${i}`}
                     className="flex items-center gap-1 px-2 py-1 rounded-full text-xs"
                     style={{ background: `${color}18`, color, border: `1px solid ${color}44` }}
-                    title={val ?? 'unknown'}
+                    title={title ?? (val ?? 'unknown')}
                   >
                     <span
                       style={{ width: 6, height: 6, borderRadius: '50%', background: color, display: 'inline-block', flexShrink: 0 }}
@@ -765,8 +769,42 @@ export function MissionControlPage() {
                 );
               })}
             </div>
+          )}
+        </div>
+
+        {/* ── No-Gap Readiness Panel ── */}
+        <div
+          className="rounded-xl p-3"
+          style={{ background: 'var(--color-bg-secondary)', border: '1px solid color-mix(in srgb, #f97316 30%, var(--color-border))' }}
+        >
+          <div className="flex items-center gap-2 mb-2 flex-wrap">
+            <AlertCircle size={13} style={{ color: '#f97316' }} />
+            <span className="text-xs font-semibold" style={{ color: 'var(--color-text-secondary)' }}>Full No-Gap Readiness</span>
+            <span className="ml-auto text-xs px-2 py-0.5 rounded-full" style={{ background: '#f9731622', color: '#f97316', border: '1px solid #f9731644' }}>HOLD — 4 sprints required</span>
           </div>
-        )}
+          <div className="flex flex-wrap gap-1.5 mb-2">
+            {NO_GAP_REMAINING_ITEMS.map(item => {
+              const isInProgress = item.status === 'in_progress';
+              const color = isInProgress ? '#3b82f6' : 'var(--color-text-tertiary)';
+              return (
+                <span
+                  key={item.id}
+                  className="text-[11px] px-2 py-0.5 rounded"
+                  style={{
+                    color,
+                    background: `color-mix(in srgb, ${color} 10%, transparent)`,
+                    border: `1px solid color-mix(in srgb, ${color} 25%, transparent)`,
+                  }}
+                >
+                  {item.label}{isInProgress ? ' ▶' : ''}
+                </span>
+              );
+            })}
+          </div>
+          <p className="text-[10px]" style={{ color: 'var(--color-text-tertiary)' }}>
+            Full no-gap certification requires all four sprints to pass. Text/AI platform replacement is accepted separately — it does not satisfy full no-gap. Voice requires a dedicated safety sprint.
+          </p>
+        </div>
 
         {/* ── Top row: Mission list + Detail ── */}
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
@@ -1321,7 +1359,7 @@ export function MissionControlPage() {
           </Panel>
 
           {/* US15 Capabilities */}
-          <Panel title="Jarvis Capabilities (US15)">
+          <Panel title="Jarvis Capabilities">
             {capabilitiesLoading ? (
               <div className="flex justify-center py-4">
                 <Loader2 size={16} className="animate-spin" style={{ color: 'var(--color-text-tertiary)' }} />

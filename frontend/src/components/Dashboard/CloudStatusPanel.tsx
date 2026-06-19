@@ -73,7 +73,7 @@ export function CloudStatusPanel() {
               </span>
               {isOnline && (
                 <span className="text-xs font-medium" style={{ color: 'var(--color-text-tertiary)' }}>
-                  OMNIX Cloud Node
+                  Jarvis Cloud Node
                 </span>
               )}
             </div>
@@ -157,10 +157,19 @@ export function CloudStatusPanel() {
               </span>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-              <ReadinessItem label="Cloud Runtime" status="pass" />
-              <ReadinessItem label="Storage System" status="pass" />
-              <ReadinessItem label="Tailscale Network" status="pass" />
-              <ReadinessItem label="Action Gate Security" status="pass" />
+              <ReadinessItem label="Cloud Runtime" status={bundle?.runtime ? 'pass' : 'unknown'} />
+              <ReadinessItem label="Storage System" status={bundle?.storage ? 'pass' : 'unknown'} />
+              <ReadinessItem
+                label="Tailscale Network"
+                status={
+                  bundle?.tailscale === 'connected'
+                    ? 'pass'
+                    : bundle?.tailscale
+                    ? 'attention'
+                    : 'unknown'
+                }
+              />
+              <ReadinessItem label="Action Gate Security" status={bundle?.action_gate ? 'pass' : 'unknown'} />
             </div>
           </div>
 
