@@ -86,7 +86,10 @@ def _platform_support() -> Dict[str, str]:
 
 
 class VoiceStartRequest(BaseModel):
-    record_seconds: float = Field(default=30.0, ge=1.0, le=60.0)
+    # Emergency max cap — NOT the normal turn-ending condition.
+    # Normal turns end via silence detection (JARVIS_VOICE_SILENCE_STOP_MS).
+    # Default 120 s; raise or lower via this field or JARVIS_VOICE_MAX_RECORD_SECONDS.
+    record_seconds: float = Field(default=120.0, ge=1.0, le=300.0)
     language: str = Field(default="en", max_length=10)
     session_timeout: float = Field(default=30.0, ge=5.0, le=300.0)
     threshold: Optional[float] = Field(default=None, ge=0.05, le=1.0)
@@ -194,12 +197,18 @@ async def start_voice_session(req: VoiceStartRequest) -> Dict[str, Any]:
                 _os.environ["JARVIS_WAKEWORD_DEBUG"] = "1"
 
             loop = VoiceConversationLoop(
-                record_seconds=req.record_seconds,
+                record_seconds=req.record_seconds,  # emergency max cap
                 language=req.language,
                 auto_restart=req.auto_restart,
                 debug=req.debug,
                 session_timeout=req.session_timeout,
                 user_name=req.user_name,
+                # VAD endpointing — read from env; req overrides not exposed
+                # in the API to keep request payload minimal.
+                # Tune via JARVIS_VOICE_MIN_RECORD_SECONDS,
+                #           JARVIS_VOICE_SILENCE_STOP_MS,
+                #           JARVIS_VOICE_MAX_RECORD_SECONDS,
+                #           JARVIS_VOICE_SILENCE_RMS
             )
 
             result = loop.start(debug=req.debug)

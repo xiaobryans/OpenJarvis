@@ -377,13 +377,21 @@ export function VoiceOverlay() {
               </div>
             )}
 
-            {/* Recording state — no cap reminder */}
-            {isRunning && (voiceState === 'recording' || voiceState === 'waiting_for_silence') && !interimTranscript && (
+            {/* Recording state — silence-based ending, 120s emergency cap */}
+            {isRunning && voiceState === 'recording' && !interimTranscript && (
               <div
                 className="text-xs text-center py-1"
                 style={{ color: 'var(--color-text-secondary)' }}
               >
-                Speak freely — ends automatically on silence
+                Speak freely — ends on silence (max 120 s)
+              </div>
+            )}
+            {isRunning && voiceState === 'waiting_for_silence' && (
+              <div
+                className="text-xs text-center py-1 animate-pulse"
+                style={{ color: 'var(--color-text-tertiary)' }}
+              >
+                Waiting for silence…
               </div>
             )}
           </div>

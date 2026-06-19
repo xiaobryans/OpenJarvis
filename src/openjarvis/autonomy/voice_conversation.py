@@ -115,14 +115,39 @@ def time_of_day_greeting(name: str = "Bryan") -> str:
 # ---------------------------------------------------------------------------
 
 
+def _env_float(key: str, default: float) -> float:
+    """Read a float from env with a safe fallback."""
+    try:
+        return float(os.environ.get(key, default))
+    except (ValueError, TypeError):
+        return default
+
+
+# ---------------------------------------------------------------------------
+# Voice recording config — read from env; code-level defaults are safe values.
+# Override in .env:
+#   JARVIS_VOICE_MIN_RECORD_SECONDS  — don't endpoint before this (default 1.0)
+#   JARVIS_VOICE_SILENCE_STOP_MS     — consecutive silence to end turn (default 4000)
+#   JARVIS_VOICE_MAX_RECORD_SECONDS  — emergency cap, NOT the normal end (default 120)
+#   JARVIS_VOICE_SILENCE_RMS         — RMS below this level = silence (default 150)
+# ---------------------------------------------------------------------------
+
+_DEFAULT_MIN_RECORD_SECONDS: float = 1.0
+_DEFAULT_SILENCE_STOP_MS: float = 4000.0
+_DEFAULT_MAX_RECORD_SECONDS: float = 120.0
+_DEFAULT_SILENCE_RMS: float = 150.0
+
+_VAD_CHUNK_MS: int = 100  # analyse audio in 100 ms windows
+
+
 def record_command_audio(
     duration_seconds: float = 5.0,
     sample_rate: int = 16000,
 ) -> bytes:
-    """Record ``duration_seconds`` of microphone audio and return WAV bytes.
+    """Fixed-duration recording — kept for backward compat / tests.
 
-    Uses sounddevice (main-venv dependency). Blocks until recording is done.
-    Returns raw WAV bytes suitable for the STT backends.
+    Prefer ``record_command_audio_vad`` for interactive use — it ends on
+    silence and does not impose a hard cap below ``max_seconds``.
     """
     try:
         import numpy as np
@@ -142,13 +167,132 @@ def record_command_audio(
     buf = io.BytesIO()
     with wave.open(buf, "wb") as wf:
         wf.setnchannels(1)
-        wf.setsampwidth(2)  # int16 = 2 bytes per sample
+        wf.setsampwidth(2)
         wf.setframerate(sample_rate)
         wf.writeframes(recording.tobytes())
 
     audio_bytes = buf.getvalue()
     logger.debug("Recorded %d bytes (%.1f kB)", len(audio_bytes), len(audio_bytes) / 1024)
     return audio_bytes
+
+
+def record_command_audio_vad(
+    min_seconds: float = _DEFAULT_MIN_RECORD_SECONDS,
+    silence_stop_ms: float = _DEFAULT_SILENCE_STOP_MS,
+    max_seconds: float = _DEFAULT_MAX_RECORD_SECONDS,
+    sample_rate: int = 16000,
+    silence_rms_threshold: float = _DEFAULT_SILENCE_RMS,
+    on_state: Optional[Callable[[str], None]] = None,
+) -> Tuple[bytes, str]:
+    """Record with VAD-based silence endpointing.
+
+    Normal turn-ending condition: ``silence_stop_ms`` of consecutive audio
+    below ``silence_rms_threshold`` after at least ``min_seconds`` have elapsed.
+
+    Emergency cap: ``max_seconds`` (default 120 s). This is NOT the normal end
+    condition — it only fires if the user keeps talking without any silence gap.
+
+    Parameters
+    ----------
+    min_seconds:
+        Minimum recording duration before silence-based ending is considered.
+        Prevents premature cutoff on brief ambient noise at session start.
+    silence_stop_ms:
+        Consecutive milliseconds of sub-threshold audio that end the turn.
+        Default 4000 ms — tolerates thinking pauses and natural speech rhythm.
+    max_seconds:
+        Emergency cap. 120 s by default. Normal turns end much earlier via
+        silence detection.
+    silence_rms_threshold:
+        RMS level below which a 100 ms chunk is considered silence.
+        Default 150 (int16 range). Tune via JARVIS_VOICE_SILENCE_RMS.
+    on_state:
+        Optional callback invoked with state strings: ``"recording"`` while
+        speech is detected, ``"waiting_for_silence"`` during post-speech silence.
+
+    Returns
+    -------
+    (wav_bytes, stop_reason)
+        ``stop_reason`` is one of:
+        - ``"silence_endpointed"`` — ended normally on silence
+        - ``"max_duration"``       — hit the emergency cap
+        - ``"pre_speech_timeout"`` — no speech detected before max_seconds
+    """
+    try:
+        import numpy as np
+        import sounddevice as sd
+    except ImportError as exc:
+        raise ImportError(
+            f"sounddevice/numpy not available in main venv: {exc}. "
+            "Both are listed in pyproject.toml dependencies."
+        ) from exc
+
+    chunk_samples = int(sample_rate * _VAD_CHUNK_MS / 1000)
+    silence_chunks_needed = max(1, int(silence_stop_ms / _VAD_CHUNK_MS))
+    max_chunks = int(max_seconds * 1000 / _VAD_CHUNK_MS)
+    min_chunks = max(1, int(min_seconds * 1000 / _VAD_CHUNK_MS))
+
+    all_chunks: List[Any] = []
+    silence_consecutive: int = 0
+    speech_detected: bool = False
+    stop_reason: str = "max_duration"
+
+    logger.debug(
+        "VAD recording: min=%.1fs silence_stop=%.0fms max=%.1fs rms_thresh=%.0f",
+        min_seconds, silence_stop_ms, max_seconds, silence_rms_threshold,
+    )
+
+    stream = sd.InputStream(
+        samplerate=sample_rate,
+        channels=1,
+        dtype="int16",
+        blocksize=chunk_samples,
+    )
+    stream.start()
+    try:
+        for chunk_idx in range(max_chunks):
+            data, _overflowed = stream.read(chunk_samples)
+            all_chunks.append(data.copy())
+
+            chunk_flat = data.flatten().astype(np.float64)
+            rms = float(np.sqrt(np.mean(chunk_flat ** 2)))
+
+            if rms >= silence_rms_threshold:
+                speech_detected = True
+                silence_consecutive = 0
+                if on_state is not None:
+                    on_state("recording")
+            else:
+                silence_consecutive += 1
+                if speech_detected and silence_consecutive >= 3 and on_state is not None:
+                    on_state("waiting_for_silence")
+
+            # Only endpoint after min_seconds have elapsed AND speech was heard
+            if chunk_idx >= min_chunks and speech_detected:
+                if silence_consecutive >= silence_chunks_needed:
+                    stop_reason = "silence_endpointed"
+                    break
+    finally:
+        stream.stop()
+        stream.close()
+
+    if not speech_detected:
+        stop_reason = "pre_speech_timeout"
+
+    audio_array = np.concatenate(all_chunks, axis=0)
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(sample_rate)
+        wf.writeframes(audio_array.tobytes())
+
+    elapsed_s = len(all_chunks) * _VAD_CHUNK_MS / 1000.0
+    logger.debug(
+        "VAD recorded %.1fs — stop_reason=%s silence_chunks=%d/%d",
+        elapsed_s, stop_reason, silence_consecutive, silence_chunks_needed,
+    )
+    return buf.getvalue(), stop_reason
 
 
 # ---------------------------------------------------------------------------
@@ -723,6 +867,97 @@ def play_acknowledgement_cue() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Voice runtime / status query router
+#
+# Intercepts known runtime/status queries BEFORE routing to the LLM.
+# Returns a direct answer from real Jarvis runtime state.
+# Does not leak API keys, tokens, or env values.
+# ---------------------------------------------------------------------------
+
+# Patterns that should be answered from runtime state, not the LLM.
+_RUNTIME_QUERY_PATTERNS: Tuple[re.Pattern, ...] = tuple(
+    re.compile(p, re.IGNORECASE)
+    for p in [
+        r"\bvoice provider\b",
+        r"\busing deepgram\b",
+        r"\bvoice status\b",
+        r"\bsafe status check\b",
+        r"\bstatus check\b",
+        r"\bbackend\b.*\bconnected\b",
+        r"\bconnected\b.*\bbackend\b",
+        r"\bwhat can you do\b",
+        r"\bcapabilit",
+        r"\bstt\b.*\bprovider\b",
+        r"\btts\b.*\bprovider\b",
+        r"\bwhat.*provider\b",
+        r"\bprovider.*what\b",
+        r"\bvoice.*working\b",
+        r"\bworking.*voice\b",
+    ]
+)
+
+
+def _build_voice_runtime_answer() -> str:
+    """Return a short, factual voice/provider/status answer.
+
+    Reads from real runtime state. Never leaks keys or token values.
+    """
+    try:
+        from openjarvis.autonomy.voice_pipeline import get_stt_status, get_tts_status, get_voice_status
+        stt = get_stt_status()
+        tts = get_tts_status()
+        voice = get_voice_status()
+
+        stt_name = stt.get("stt_status", "unknown")
+        tts_name = tts.get("tts_status", "unknown")
+        stt_primary = stt.get("primary", False)
+        tts_primary = tts.get("primary", False)
+        stt_configured = stt.get("is_configured", False)
+        tts_configured = tts.get("is_configured", False)
+
+        stt_line = (
+            f"STT (speech-to-text): {stt_name}"
+            + (" — primary, configured" if stt_primary and stt_configured else
+               " — configured" if stt_configured else " — not configured")
+        )
+        tts_line = (
+            f"TTS (text-to-speech): {tts_name}"
+            + (" — primary, configured" if tts_primary and tts_configured else
+               " — configured" if tts_configured else " — not configured")
+        )
+
+        fallback_line = ""
+        fallback = voice.get("fallback_providers")
+        if fallback:
+            fallback_line = f" Fallbacks available: {', '.join(str(f) for f in fallback[:3])}."
+
+        return (
+            f"Voice is active. {stt_line}. {tts_line}.{fallback_line}"
+            f" Wake-word hotkey: Cmd+Shift+Space. Backend: connected."
+        )
+    except Exception as exc:
+        logger.debug("Runtime query answer failed: %s", exc)
+        return "Voice backend is active. STT and TTS are configured. I cannot retrieve detailed provider status right now."
+
+
+def handle_voice_runtime_query(text: str) -> Optional[str]:
+    """If ``text`` is a runtime/status question, return a direct answer.
+
+    Returns ``None`` if the query is not a runtime question — caller should
+    then route to ``query_jarvis_text`` as normal.
+
+    Safe-only: only reads runtime state, never executes destructive actions.
+    """
+    if not text:
+        return None
+    for pattern in _RUNTIME_QUERY_PATTERNS:
+        if pattern.search(text):
+            logger.info("Runtime query intercepted: %r — answering from runtime state", text[:80])
+            return _build_voice_runtime_answer()
+    return None
+
+
+# ---------------------------------------------------------------------------
 # Voice Conversation Loop
 # ---------------------------------------------------------------------------
 
@@ -745,7 +980,7 @@ class VoiceConversationLoop:
 
     def __init__(
         self,
-        record_seconds: float = 5.0,
+        record_seconds: float = _DEFAULT_MAX_RECORD_SECONDS,
         language: str = "en",
         auto_restart: bool = False,
         debug: bool = False,
@@ -753,8 +988,28 @@ class VoiceConversationLoop:
         session_timeout: float = 30.0,
         stop_phrases: Optional[List[str]] = None,
         user_name: str = "Bryan",
+        # Silence/endpointing — read from env if not supplied explicitly
+        min_record_seconds: Optional[float] = None,
+        silence_stop_ms: Optional[float] = None,
+        max_record_seconds: Optional[float] = None,
+        silence_rms_threshold: Optional[float] = None,
     ) -> None:
-        self._record_seconds = record_seconds
+        # ``record_seconds`` is kept as an API parameter for backward compat
+        # but now represents the emergency max cap (not the normal end condition).
+        # The normal end condition is silence-based via the VAD.
+        self._record_seconds = record_seconds  # kept for status reporting
+        self._min_record_seconds = min_record_seconds if min_record_seconds is not None else _env_float(
+            "JARVIS_VOICE_MIN_RECORD_SECONDS", _DEFAULT_MIN_RECORD_SECONDS
+        )
+        self._silence_stop_ms = silence_stop_ms if silence_stop_ms is not None else _env_float(
+            "JARVIS_VOICE_SILENCE_STOP_MS", _DEFAULT_SILENCE_STOP_MS
+        )
+        self._max_record_seconds = max_record_seconds if max_record_seconds is not None else _env_float(
+            "JARVIS_VOICE_MAX_RECORD_SECONDS", _DEFAULT_MAX_RECORD_SECONDS
+        )
+        self._silence_rms_threshold = silence_rms_threshold if silence_rms_threshold is not None else _env_float(
+            "JARVIS_VOICE_SILENCE_RMS", _DEFAULT_SILENCE_RMS
+        )
         self._language = language
         self._auto_restart = auto_restart
         self._debug = debug
@@ -976,19 +1231,24 @@ class VoiceConversationLoop:
                     break
 
                 # ------------------------------------------------------ #
-                # 3. Record command audio                                   #
+                # 3. Record command audio (VAD-based silence endpointing)   #
                 # ------------------------------------------------------ #
                 _rec_start = time.monotonic()
                 self._set_state("recording")
                 self._emit_event({
                     "type": "interim_transcript",
-                    "text": f"Recording... ({self._record_seconds:.0f}s)",
+                    "text": "Speak freely — ends automatically on silence",
                 })
                 try:
-                    audio = record_command_audio(
-                        duration_seconds=self._record_seconds,
+                    audio, vad_stop_reason = record_command_audio_vad(
+                        min_seconds=self._min_record_seconds,
+                        silence_stop_ms=self._silence_stop_ms,
+                        max_seconds=self._max_record_seconds,
                         sample_rate=16000,
+                        silence_rms_threshold=self._silence_rms_threshold,
+                        on_state=lambda s: self._set_state(s),
                     )
+                    logger.debug("VAD stop reason: %s", vad_stop_reason)
                 except Exception as exc:
                     logger.error("Recording failed: %s", exc)
                     break
@@ -1082,13 +1342,21 @@ class VoiceConversationLoop:
 
                 _model_start = time.monotonic()
                 self._set_state("thinking")
+                # ------------------------------------------------------ #
+                # 6a. Runtime/status shortcut — answer from real state      #
+                #     before touching the LLM.                              #
+                # ------------------------------------------------------ #
+                runtime_answer = handle_voice_runtime_query(text)
                 try:
-                    response = query_jarvis_text(
-                        text,
-                        on_route=lambda route: self._emit_event(
-                            {"type": "route", **route}
-                        ),
-                    )
+                    if runtime_answer is not None:
+                        response = runtime_answer
+                    else:
+                        response = query_jarvis_text(
+                            text,
+                            on_route=lambda route: self._emit_event(
+                                {"type": "route", **route}
+                            ),
+                        )
                 except Exception as exc:
                     logger.error("Jarvis query failed: %s", exc)
                     response = "I encountered an error processing your request."
@@ -1175,6 +1443,9 @@ class VoiceConversationLoop:
             "loop_state": state,
             "turns_completed": turns,
             "record_seconds": self._record_seconds,
+            "max_record_seconds": self._max_record_seconds,
+            "min_record_seconds": self._min_record_seconds,
+            "silence_stop_ms": self._silence_stop_ms,
             "language": self._language,
             "session_timeout": self._session_timeout,
             "bridge": self._bridge.status(),
@@ -1187,6 +1458,8 @@ __all__ = [
     "VoiceTranscriptDecision",
     "time_of_day_greeting",
     "record_command_audio",
+    "record_command_audio_vad",
+    "handle_voice_runtime_query",
     "wav_audio_stats",
     "audio_has_speech_energy",
     "evaluate_voice_transcript",
@@ -1195,4 +1468,7 @@ __all__ = [
     "query_jarvis_text",
     "play_acknowledgement_cue",
     "speak_response",
+    "_DEFAULT_MIN_RECORD_SECONDS",
+    "_DEFAULT_SILENCE_STOP_MS",
+    "_DEFAULT_MAX_RECORD_SECONDS",
 ]

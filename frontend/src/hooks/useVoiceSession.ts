@@ -70,9 +70,9 @@ export interface VoiceSessionState {
 export interface VoiceSessionActions {
   start: (opts?: {
     /**
-     * Max recording duration per turn in seconds.
-     * Default 30 s — silence detection ends the turn early.
-     * Do NOT use 5 s (old default) — that created a misleading speech cap.
+     * Emergency max-recording cap per turn in seconds.
+     * Default 120 s. Normal turns end on silence — this is only the safety
+     * fallback to prevent runaway recording.
      */
     recordSeconds?: number;
     language?: string;
@@ -235,9 +235,9 @@ export function useVoiceSession(): VoiceSessionState & VoiceSessionActions {
     }
 
     const body = {
-      // 30 s max-recording buffer per turn. Silence detection ends turns early —
-      // this is NOT a 5-second cap on how long the user can speak.
-      record_seconds: opts?.recordSeconds ?? 30.0,
+      // Emergency max cap — 120 s. Silence detection ends turns long before this.
+      // This is NOT a fixed speech cap; normal turns end on silence automatically.
+      record_seconds: opts?.recordSeconds ?? 120.0,
       language: opts?.language ?? 'en',
       session_timeout: opts?.sessionTimeout ?? 30.0,
     };
