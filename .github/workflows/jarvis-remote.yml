@@ -1,0 +1,201 @@
+# .github/workflows/jarvis-remote.yml
+#
+# Jarvis Remote Execution Workflow
+# =================================
+# PURPOSE: Provides a sandboxed remote execution backend so Jarvis can run
+#          coding/test/build/artifact tasks from any device (including mobile)
+#          even when the local MacBook is off.
+#
+# SAFETY GATES:
+#   - workflow_dispatch only — never auto-triggered on push or PR
+#   - All deploys are BLOCKED in this workflow — deploy mode does not exist
+#   - Only explicit Jarvis-approved modes are accepted: status | test | build | artifact
+#   - Default mode is 'status' (no-op) — safe if triggered accidentally
+#   - No secrets are hardcoded or logged (GitHub masks repository secrets)
+#   - Bryan authorization is required for any destructive action (none allowed here)
+#   - All outputs are stored as artifacts (7-day retention) — not sent externally
+#
+# MODES:
+#   status  — no-op health check, reports environment and branch (default/safe)
+#   test    — runs pytest test suite on specified branch
+#   build   — runs available build command (npm build, cargo build, etc.)
+#   artifact — lists and summarizes existing artifacts
+#
+# FORBIDDEN MODES (rejected explicitly):
+#   deploy  — BLOCKED — Bryan must authorize via separate hard-gated mechanism
+#   delete  — BLOCKED
+#   push    — BLOCKED
+#   merge   — BLOCKED
+#
+# USAGE (via Jarvis API):
+#   POST /v1/remote/trigger-workflow?task_type=status&branch=main
+#   POST /v1/remote/trigger-workflow?task_type=test&branch=localhost-get-tool
+#
+# COST: Free GitHub Actions tier (2000 min/month for private repos)
+# RUNNER: ubuntu-latest (GitHub-hosted, sandboxed, no MacBook required)
+
+name: Jarvis Remote Execution
+
+on:
+  # Only manual dispatch — never auto-triggered
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: >
+          Execution mode: status (no-op/default) | test | build | artifact.
+          Deploy/delete/push/merge are BLOCKED — do not attempt.
+        required: true
+        default: 'status'
+        type: choice
+        options:
+          - status
+          - test
+          - build
+          - artifact
+      branch:
+        description: 'Target branch (defaults to current branch)'
+        required: false
+        default: 'localhost-get-tool'
+      project_path:
+        description: 'Project subdirectory to operate in (default: repo root)'
+        required: false
+        default: '.'
+      jarvis_task_id:
+        description: 'Jarvis task ID for result routing (optional)'
+        required: false
+        default: ''
+
+# Minimal permissions — read-only except for writing artifacts
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  jarvis-remote:
+    name: Jarvis Remote — ${{ github.event.inputs.mode }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      # ------------------------------------------------------------------
+      # SAFETY CHECK: Reject any attempt to run forbidden modes
+      # (belt-and-suspenders — input is choice-restricted above, but
+      #  an API caller could still send an unexpected value)
+      # ------------------------------------------------------------------
+      - name: Safety gate — reject forbidden modes
+        shell: bash
+        run: |
+          MODE="${{ github.event.inputs.mode }}"
+          FORBIDDEN="deploy delete push merge release publish"
+          for f in $FORBIDDEN; do
+            if [ "$MODE" = "$f" ]; then
+              echo "::error::JARVIS_SAFETY_GATE: Mode '$MODE' is BLOCKED."
+              echo "::error::Deploy/delete/push/merge require Bryan authorization via a separate hard-gated mechanism."
+              exit 1
+            fi
+          done
+          echo "SAFETY_GATE: Mode '$MODE' is permitted."
+
+      # ------------------------------------------------------------------
+      # STATUS / NO-OP (default, safe)
+      # ------------------------------------------------------------------
+      - name: Status check (no-op — safe default)
+        if: ${{ github.event.inputs.mode == 'status' }}
+        run: |
+          echo "JARVIS_REMOTE_STATUS=ok" | tee jarvis-status.txt
+          echo "MODE=status (no-op)" >> jarvis-status.txt
+          echo "BRANCH=${{ github.event.inputs.branch }}" >> jarvis-status.txt
+          echo "TASK_ID=${{ github.event.inputs.jarvis_task_id }}" >> jarvis-status.txt
+          echo "RUNNER=$(uname -a)" >> jarvis-status.txt
+          echo "TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> jarvis-status.txt
+          echo "Remote execution runtime: AVAILABLE" >> jarvis-status.txt
+          cat jarvis-status.txt
+
+      # ------------------------------------------------------------------
+      # TEST — only when mode=test
+      # ------------------------------------------------------------------
+      - name: Checkout repo
+        if: ${{ github.event.inputs.mode != 'status' }}
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.branch }}
+
+      - name: Set up Python
+        if: ${{ github.event.inputs.mode == 'test' || github.event.inputs.mode == 'build' }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Python dependencies
+        if: ${{ github.event.inputs.mode == 'test' || github.event.inputs.mode == 'build' }}
+        working-directory: ${{ github.event.inputs.project_path }}
+        run: |
+          pip install -r requirements.txt 2>&1 | tee jarvis-install.txt || true
+
+      - name: Run tests
+        if: ${{ github.event.inputs.mode == 'test' }}
+        working-directory: ${{ github.event.inputs.project_path }}
+        run: |
+          python -m pytest tests/ -q --tb=short --no-header \
+            2>&1 | tee jarvis-test-output.txt || true
+          echo "TEST_RUN_COMPLETE=true" >> jarvis-test-output.txt
+
+      # ------------------------------------------------------------------
+      # BUILD — only when mode=build
+      # ------------------------------------------------------------------
+      - name: Run build
+        if: ${{ github.event.inputs.mode == 'build' }}
+        working-directory: ${{ github.event.inputs.project_path }}
+        run: |
+          # Detect and run available build command (no deploy)
+          if [ -f "package.json" ]; then
+            npm ci 2>&1 | tee jarvis-build-output.txt || true
+            npm run build 2>&1 | tee -a jarvis-build-output.txt || true
+          elif [ -f "Cargo.toml" ]; then
+            cargo build 2>&1 | tee jarvis-build-output.txt || true
+          else
+            echo "No recognized build system (package.json/Cargo.toml) found." | tee jarvis-build-output.txt
+          fi
+          echo "BUILD_RUN_COMPLETE=true" >> jarvis-build-output.txt
+
+      # ------------------------------------------------------------------
+      # ARTIFACT — list available artifacts (no download of raw secrets)
+      # ------------------------------------------------------------------
+      - name: List artifacts
+        if: ${{ github.event.inputs.mode == 'artifact' }}
+        run: |
+          echo "ARTIFACT_MODE=list" | tee jarvis-artifact.txt
+          echo "Run ID: ${{ github.run_id }}" >> jarvis-artifact.txt
+          echo "Artifacts from this run will be listed after upload." >> jarvis-artifact.txt
+
+      # ------------------------------------------------------------------
+      # UPLOAD ALL OUTPUTS — always, even on partial failure
+      # ------------------------------------------------------------------
+      - name: Upload Jarvis task outputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-${{ github.event.inputs.mode }}-${{ github.event.inputs.jarvis_task_id || github.run_id }}
+          path: |
+            jarvis-*.txt
+          retention-days: 7
+          if-no-files-found: warn
+
+      # ------------------------------------------------------------------
+      # SUMMARY — written to GitHub Actions job summary
+      # ------------------------------------------------------------------
+      - name: Write job summary
+        if: always()
+        run: |
+          echo "## Jarvis Remote Execution Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
+          echo "| Mode | ${{ github.event.inputs.mode }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Branch | ${{ github.event.inputs.branch }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Task ID | ${{ github.event.inputs.jarvis_task_id || 'none' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Run ID | ${{ github.run_id }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Status | See artifacts for output |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "> **Deploy/delete/push/merge are BLOCKED in this workflow.** Bryan authorization required via separate hard-gated mechanism." >> $GITHUB_STEP_SUMMARY
