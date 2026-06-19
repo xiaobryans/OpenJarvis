@@ -765,6 +765,186 @@ def _nus1f_production_policy_gate_status() -> CapabilityRecord:
         )
 
 
+def _post_nus_hierarchical_orchestrator_status() -> CapabilityRecord:
+    """Post-NUS Hierarchical Orchestrator foundation capability."""
+    try:
+        from openjarvis.orchestrator import POST_NUS_ORCHESTRATOR_VERSION
+        from openjarvis.orchestrator import get_manager_registry, get_worker_registry
+        mgr_count = get_manager_registry().count()
+        wrk_count = get_worker_registry().count()
+        return CapabilityRecord(
+            capability_id="post_nus_hierarchical_orchestrator",
+            display_name="Post-NUS Hierarchical Orchestrator",
+            status=STATUS_READY,
+            summary=(
+                f"Hierarchical orchestration foundation: "
+                f"{mgr_count} managers, {wrk_count} workers registered. "
+                "Bryan → Jarvis PA → COS/GM → Managers → Workers → Validation/Governance/NUS. "
+                "Dry-run/read-only framework. No real production execution. "
+                "NUS applies to all hierarchy levels. No raw chain-of-thought. "
+                "US13 voice HOLD/UNSAFE/PARKED."
+            ),
+            evidence={
+                "orchestrator_version": POST_NUS_ORCHESTRATOR_VERSION,
+                "manager_count": mgr_count,
+                "worker_count": wrk_count,
+                "dry_run_only": True,
+                "no_raw_chain_of_thought": True,
+                "us13_voice_parked": True,
+                "production_execution_blocked": True,
+            },
+        )
+    except Exception as exc:
+        return CapabilityRecord(
+            capability_id="post_nus_hierarchical_orchestrator",
+            display_name="Post-NUS Hierarchical Orchestrator",
+            status=STATUS_NOT_IMPLEMENTED,
+            summary=f"Post-NUS orchestrator unavailable: {exc}",
+        )
+
+
+def _post_nus_manager_registry_status() -> CapabilityRecord:
+    """Post-NUS Manager Registry capability."""
+    try:
+        from openjarvis.orchestrator import get_manager_registry
+        reg = get_manager_registry()
+        errors = {mid: errs for mid, errs in reg.validate_all().items() if errs}
+        return CapabilityRecord(
+            capability_id="post_nus_manager_registry",
+            display_name="Post-NUS Manager Registry",
+            status=STATUS_READY if not errors else STATUS_REQUIRES_SETUP,
+            summary=(
+                f"{reg.count()} managers registered, {len(reg.list_active())} active. "
+                "Metadata/contract-driven. No duplicate IDs. Future managers via register()."
+            ),
+            evidence={
+                "manager_count": reg.count(),
+                "active_count": len(reg.list_active()),
+                "duplicate_ids": reg.has_duplicate_ids(),
+                "contract_errors": errors,
+                "future_proof": True,
+            },
+        )
+    except Exception as exc:
+        return CapabilityRecord(
+            capability_id="post_nus_manager_registry",
+            display_name="Post-NUS Manager Registry",
+            status=STATUS_NOT_IMPLEMENTED,
+            summary=f"Manager registry unavailable: {exc}",
+        )
+
+
+def _post_nus_worker_registry_status() -> CapabilityRecord:
+    """Post-NUS Worker Registry capability."""
+    try:
+        from openjarvis.orchestrator import get_manager_registry, get_worker_registry
+        wrk_reg = get_worker_registry()
+        mgr_reg = get_manager_registry()
+        mgr_ref_errors = wrk_reg.validate_manager_references(mgr_reg.ids())
+        return CapabilityRecord(
+            capability_id="post_nus_worker_registry",
+            display_name="Post-NUS Worker Registry",
+            status=STATUS_READY if not mgr_ref_errors else STATUS_REQUIRES_SETUP,
+            summary=(
+                f"{wrk_reg.count()} workers registered, {len(wrk_reg.list_active())} active. "
+                "Registered workers are NOT active workers. "
+                "All manager references valid. Future workers via register()."
+            ),
+            evidence={
+                "worker_count": wrk_reg.count(),
+                "active_count": len(wrk_reg.list_active()),
+                "duplicate_ids": wrk_reg.has_duplicate_ids(),
+                "manager_reference_errors": mgr_ref_errors,
+                "registered_not_active_by_default": True,
+                "future_proof": True,
+            },
+        )
+    except Exception as exc:
+        return CapabilityRecord(
+            capability_id="post_nus_worker_registry",
+            display_name="Post-NUS Worker Registry",
+            status=STATUS_NOT_IMPLEMENTED,
+            summary=f"Worker registry unavailable: {exc}",
+        )
+
+
+def _post_nus_dynamic_activation_status() -> CapabilityRecord:
+    """Post-NUS Dynamic Activation capability."""
+    try:
+        from openjarvis.orchestrator import get_activation_planner
+        from openjarvis.orchestrator.contracts import TaskRoutingRequest
+        planner = get_activation_planner()
+        req = TaskRoutingRequest.create(
+            user_request_summary="capability_check",
+            intent="test",
+            domains_required=["backend"],
+            required_skills=["python"],
+        )
+        plan = planner.plan(req)
+        return CapabilityRecord(
+            capability_id="post_nus_dynamic_activation",
+            display_name="Post-NUS Dynamic Activation",
+            status=STATUS_READY,
+            summary=(
+                "Dynamic activation planner operational. "
+                "No fixed worker-count formulas. "
+                "Minimum sufficient team with activation/skip rationale. "
+                "Model routing integrated. NUS decision records emitted."
+            ),
+            evidence={
+                "planner_functional": True,
+                "test_plan_managers": len(plan.selected_managers),
+                "test_plan_workers": len(plan.selected_workers),
+                "no_raw_chain_of_thought": plan.no_raw_chain_of_thought,
+                "decision_record_id": bool(plan.structured_decision_record_id),
+                "skip_reasons_present": bool(plan.skip_reasons),
+                "activation_reasons_present": bool(plan.activation_reasons),
+            },
+        )
+    except Exception as exc:
+        return CapabilityRecord(
+            capability_id="post_nus_dynamic_activation",
+            display_name="Post-NUS Dynamic Activation",
+            status=STATUS_NOT_IMPLEMENTED,
+            summary=f"Dynamic activation unavailable: {exc}",
+        )
+
+
+def _post_nus_company_learning_status() -> CapabilityRecord:
+    """Post-NUS Company-Level NUS Learning integration capability."""
+    try:
+        from openjarvis.nus.decision_record import get_decision_record_status
+        dr = get_decision_record_status()
+        levels = dr.get("nus_hierarchy_coverage", [])
+        required = {"jarvis_pa", "cos_gm", "manager", "worker", "validator", "governance"}
+        covered = set(levels) >= required
+        return CapabilityRecord(
+            capability_id="post_nus_nus_company_learning",
+            display_name="Post-NUS Company NUS Learning",
+            status=STATUS_READY if covered else STATUS_REQUIRES_SETUP,
+            summary=(
+                "NUS learning/telemetry applies to all hierarchy levels: "
+                "jarvis_pa, cos_gm, manager, worker, validator, governance. "
+                "Structured decision records. No raw chain-of-thought. "
+                "NUS tags emitted at all layers."
+            ),
+            evidence={
+                "all_levels_covered": covered,
+                "hierarchy_levels": levels,
+                "no_raw_chain_of_thought": dr.get("no_raw_chain_of_thought"),
+                "schema_version": dr.get("schema_version"),
+                "generic_for_all_levels": dr.get("generic_for_all_levels"),
+            },
+        )
+    except Exception as exc:
+        return CapabilityRecord(
+            capability_id="post_nus_nus_company_learning",
+            display_name="Post-NUS Company NUS Learning",
+            status=STATUS_NOT_IMPLEMENTED,
+            summary=f"Post-NUS company learning unavailable: {exc}",
+        )
+
+
 def get_all_capabilities() -> List[CapabilityRecord]:
     """Return all capability records with truthful status (US15 + Wave 1–4 + NUS 1A–1F)."""
     return [
@@ -801,6 +981,12 @@ def get_all_capabilities() -> List[CapabilityRecord]:
         _nus1f_controlled_high_autonomy_status(),
         _nus1f_founder_override_sessions_status(),
         _nus1f_production_policy_gate_status(),
+        # Post-NUS Hierarchical Orchestrator
+        _post_nus_hierarchical_orchestrator_status(),
+        _post_nus_manager_registry_status(),
+        _post_nus_worker_registry_status(),
+        _post_nus_dynamic_activation_status(),
+        _post_nus_company_learning_status(),
     ]
 
 
@@ -830,6 +1016,7 @@ def get_capabilities_summary() -> Dict[str, Any]:
         "nus1e_status": "ready",
         "nus1f_status": "ready",
         "nus1d_plus_status": "not_started",
+        "post_nus_orchestrator_status": "ready",
     }
 
 

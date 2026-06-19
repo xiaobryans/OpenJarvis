@@ -3194,6 +3194,241 @@ def check_nus1f_high_autonomy(project_id: str = "omnix") -> CheckResult:
         )
 
 
+def check_post_nus_orchestrator(project_id: str = "omnix") -> CheckResult:
+    """Post-NUS Hierarchical Orchestrator — readiness check.
+
+    Verifies:
+      - Manager registry loads with no duplicate IDs
+      - Worker registry loads with no duplicate IDs
+      - Workers reference valid managers
+      - Manager/worker contracts contain required fields
+      - Dynamic activation works (produces plan with reasons)
+      - Activation includes reasons / skipped roles include reasons
+      - No fixed worker-count formula (planner is evidence-based)
+      - Future synthetic manager/worker works through metadata
+      - NUS decision records support all hierarchy levels
+      - Model/provider sufficiency disclosure exists
+      - Capability statuses registered
+      - Routes are dry-run/read-only
+      - Dangerous actions remain blocked
+      - US13 remains HOLD/UNSAFE/PARKED
+    """
+    evidence: Dict[str, Any] = {"project_id": project_id}
+    try:
+        from openjarvis.orchestrator import (
+            POST_NUS_ORCHESTRATOR_VERSION,
+            get_manager_registry,
+            get_worker_registry,
+            get_activation_planner,
+        )
+        from openjarvis.orchestrator.contracts import (
+            TaskRoutingRequest,
+            WorkerContract,
+            ManagerContract,
+            STATUS_ACTIVE,
+            RISK_LOW,
+            RISK_HIGH,
+        )
+        from openjarvis.nus.decision_record import get_decision_record_status
+
+        evidence["orchestrator_version"] = POST_NUS_ORCHESTRATOR_VERSION
+
+        # 1. Manager registry loads
+        mgr_reg = get_manager_registry()
+        assert mgr_reg.count() > 0, "Manager registry must have at least 1 manager"
+        evidence["manager_count"] = mgr_reg.count()
+
+        # 2. No duplicate manager IDs
+        assert not mgr_reg.has_duplicate_ids(), "Duplicate manager IDs detected"
+        evidence["no_duplicate_manager_ids"] = True
+
+        # 3. Worker registry loads
+        wrk_reg = get_worker_registry()
+        assert wrk_reg.count() > 0, "Worker registry must have at least 1 worker"
+        evidence["worker_count"] = wrk_reg.count()
+
+        # 4. No duplicate worker IDs
+        assert not wrk_reg.has_duplicate_ids(), "Duplicate worker IDs detected"
+        evidence["no_duplicate_worker_ids"] = True
+
+        # 5. Workers reference valid managers
+        mgr_ref_errors = wrk_reg.validate_manager_references(mgr_reg.ids())
+        assert not mgr_ref_errors, f"Workers with invalid manager_id: {mgr_ref_errors}"
+        evidence["worker_manager_refs_valid"] = True
+
+        # 6. Manager contracts contain required fields
+        mgr_errors = {mid: errs for mid, errs in mgr_reg.validate_all().items() if errs}
+        assert not mgr_errors, f"Manager contract errors: {mgr_errors}"
+        evidence["manager_contracts_valid"] = True
+
+        # 7. Worker contracts contain required fields
+        wrk_errors = {wid: errs for wid, errs in wrk_reg.validate_all().items() if errs}
+        assert not wrk_errors, f"Worker contract errors: {wrk_errors}"
+        evidence["worker_contracts_valid"] = True
+
+        # 8. Dynamic activation works — simple task
+        planner = get_activation_planner()
+        req_simple = TaskRoutingRequest.create(
+            user_request_summary="fix bug in backend",
+            intent="debug",
+            domains_required=["debugging"],
+            required_skills=["debugging"],
+        )
+        plan_simple = planner.plan(req_simple)
+        assert plan_simple.selected_managers, "Activation must select at least 1 manager"
+        assert plan_simple.activation_reasons, "Activation must include activation_reasons"
+        assert plan_simple.skip_reasons, "Activation must include skip_reasons for skipped roles"
+        assert plan_simple.no_raw_chain_of_thought, "no_raw_chain_of_thought must be True"
+        evidence["activation_simple_ok"] = True
+        evidence["simple_plan_managers"] = plan_simple.selected_managers
+
+        # 9. Dynamic activation can select multiple managers/workers when justified
+        req_complex = TaskRoutingRequest.create(
+            user_request_summary="large cross-system refactor with tests",
+            intent="refactor",
+            risk_level=RISK_HIGH,
+            complexity_level="complex",
+            domains_required=["backend", "system_design", "unit_testing", "governance"],
+            required_skills=["python", "system_design", "unit_testing"],
+            validation_required=True,
+        )
+        plan_complex = planner.plan(req_complex)
+        assert len(plan_complex.selected_managers) >= 2, (
+            "Complex multi-domain task should select >= 2 managers"
+        )
+        evidence["activation_multi_manager_ok"] = True
+        evidence["complex_plan_managers"] = plan_complex.selected_managers
+
+        # 10. Activation does not use fixed formulas — simple and complex plans differ
+        assert set(plan_simple.selected_managers) != set(plan_complex.selected_managers), (
+            "Different tasks must produce different teams (no fixed formula)"
+        )
+        evidence["no_fixed_formula_ok"] = True
+
+        # 11. Skip reasons recorded for all non-selected roles
+        all_mgr_ids = set(mgr_reg.ids())
+        selected_in_plan = set(plan_simple.selected_managers)
+        skipped_in_plan = set(plan_simple.skipped_managers)
+        assert all_mgr_ids == selected_in_plan | skipped_in_plan, (
+            "All managers must be either selected or skipped (with reasons)"
+        )
+        evidence["all_managers_accounted"] = True
+
+        # 12. Structured decision record emitted (NUS integration)
+        assert plan_simple.structured_decision_record_id, "Decision record ID must be set"
+        evidence["decision_record_emitted"] = True
+
+        # 13. NUS decision record supports all hierarchy levels
+        dr_status = get_decision_record_status()
+        required_levels = {"jarvis_pa", "cos_gm", "manager", "worker", "validator", "governance"}
+        covered_levels = set(dr_status.get("nus_hierarchy_coverage", []))
+        assert covered_levels >= required_levels, (
+            f"Decision record missing levels: {required_levels - covered_levels}"
+        )
+        evidence["nus_all_hierarchy_levels_ok"] = True
+        evidence["nus_hierarchy_levels"] = sorted(covered_levels)
+
+        # 14. Model/provider sufficiency disclosure exists
+        routing_plan = plan_simple.model_routing_plan
+        assert "provider_sufficiency" in routing_plan, "Model routing must include provider_sufficiency"
+        assert routing_plan["provider_sufficiency"].get("sufficient_for_sprint") is True, (
+            "Provider sufficiency disclosure must be present"
+        )
+        evidence["model_provider_disclosure_ok"] = True
+
+        # 15. Cheap model cannot approve critical actions
+        critical_check = routing_plan.get("critical_approval_check", {})
+        assert critical_check.get("cheap_model_blocked_for_approval") is True, (
+            "Cheap model must be blocked for critical action approval"
+        )
+        evidence["cheap_model_blocked_for_critical_ok"] = True
+
+        # 16. Future synthetic manager works through metadata (no code changes needed)
+        synthetic_manager = ManagerContract(
+            manager_id="synthetic_test_manager_doctor",
+            name="Synthetic Test Manager",
+            department="Test",
+            responsibility="Doctor check synthetic manager",
+            input_contract={"format": "TaskRoutingRequest"},
+            output_contract={"format": "ActivationPlan_partial"},
+            skill_domains=["synthetic_test"],
+            worker_pool=[],
+            allowed_action_types=["local_read"],
+            blocked_action_types=["production_deploy", "auto_push"],
+            model_pool=["mid"],
+            risk_ceiling=RISK_LOW,
+            tool_policy={"allowed_by_default": False},
+            validation_policy={"require_structured_output": True},
+            escalation_policy={"escalate_to": "cos_gm"},
+            telemetry_policy={"emit_events": True},
+            nus_learning_hooks={"learning_enabled": True},
+        )
+        errors = synthetic_manager.validate()
+        assert not errors, f"Synthetic manager validation failed: {errors}"
+        evidence["future_synthetic_manager_ok"] = True
+
+        # 17. Future synthetic worker works through metadata
+        synthetic_worker = WorkerContract(
+            worker_id="synthetic_test_worker_doctor",
+            name="Synthetic Test Worker",
+            manager_id="coding_manager",
+            department="Test",
+            responsibility="Doctor check synthetic worker",
+            skills=["synthetic_skill"],
+            input_contract={"format": "subtask"},
+            output_contract={"format": "worker_result"},
+            allowed_tools=["file_read"],
+            blocked_tools=["production_deploy_tool"],
+            allowed_action_types=["local_read"],
+            blocked_action_types=["production_deploy"],
+            model_pool=["mid"],
+            risk_ceiling=RISK_LOW,
+            validation_requirements={"require_structured_output": True},
+            escalation_path={"escalate_to": "manager"},
+            telemetry_policy={"emit_events": True},
+            nus_learning_hooks={"learning_enabled": True},
+        )
+        errors = synthetic_worker.validate()
+        assert not errors, f"Synthetic worker validation failed: {errors}"
+        evidence["future_synthetic_worker_ok"] = True
+
+        # 18. Routes are dry-run/read-only (governance plan proof)
+        governance_plan = plan_simple.governance_plan
+        assert governance_plan.get("hard_gates_active") is True, "Hard gates must be active"
+        assert "production_deploy" in governance_plan.get("blocked_actions", []), (
+            "production_deploy must be blocked"
+        )
+        assert governance_plan.get("us13_voice_parked") is True, "US13 must be HOLD/UNSAFE/PARKED"
+        evidence["routes_dry_run_ok"] = True
+        evidence["dangerous_actions_blocked"] = True
+        evidence["us13_voice_parked"] = True
+
+        return CheckResult(
+            check_id="post_nus_orchestrator",
+            category="orchestrator",
+            status=CheckStatus.PASS,
+            summary=(
+                f"Post-NUS hierarchical orchestrator ready: "
+                f"{mgr_reg.count()} managers, {wrk_reg.count()} workers. "
+                "Dynamic activation works. No fixed formulas. NUS all-level coverage. "
+                "Decision records emitted. Model routing integrated. "
+                "Dangerous actions blocked. US13 HOLD/UNSAFE/PARKED."
+            ),
+            evidence=evidence,
+            project_id=project_id,
+        )
+    except Exception as exc:
+        evidence["error"] = str(exc)
+        return CheckResult(
+            check_id="post_nus_orchestrator",
+            category="orchestrator",
+            status=CheckStatus.FAIL,
+            summary=f"Post-NUS orchestrator check failed: {exc}",
+            evidence=evidence,
+            project_id=project_id,
+        )
+
+
 # ---------------------------------------------------------------------------
 # Check registry (34+ checks)
 # ---------------------------------------------------------------------------
@@ -3250,6 +3485,8 @@ _ALL_CHECK_FNS: List[Callable[..., CheckResult]] = [
     check_nus1e_low_risk_execution,
     # NUS 1F checks
     check_nus1f_high_autonomy,
+    # Post-NUS Hierarchical Orchestrator checks
+    check_post_nus_orchestrator,
 ]
 
 
@@ -3320,5 +3557,6 @@ __all__ = [
     "check_nus1d_eval_rollback",
     "check_nus1e_low_risk_execution",
     "check_nus1f_high_autonomy",
+    "check_post_nus_orchestrator",
     "run_all_checks",
 ]

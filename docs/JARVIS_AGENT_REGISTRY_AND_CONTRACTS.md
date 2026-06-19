@@ -123,3 +123,53 @@ All agent decisions must emit `StructuredDecisionRecord` objects with:
 - `no_raw_chain_of_thought: True` always
 
 See `docs/NUS1F_CONTROLLED_HIGH_AUTONOMY.md` for full session framework specification.
+
+---
+
+## Post-NUS Hierarchical Orchestrator Contracts (Sprint: post_nus_hierarchical_orchestrator)
+
+The company-grade orchestrator adds two concrete contract types:
+
+### ManagerContract (`src/openjarvis/orchestrator/contracts.py`)
+
+| Field | Type | Required |
+|-------|------|----------|
+| `manager_id` | str | Yes — unique |
+| `name` | str | Yes |
+| `department` | str | Yes |
+| `responsibility` | str | Yes — single clear statement |
+| `input_contract` | dict | Yes |
+| `output_contract` | dict | Yes — `no_raw_chain_of_thought: True` |
+| `skill_domains` | list[str] | Yes |
+| `worker_pool` | list[str] | Yes — registered worker IDs |
+| `allowed_action_types` | list[str] | Yes |
+| `blocked_action_types` | list[str] | Yes — always includes production_deploy/auto_push/auto_merge |
+| `model_pool` | list[str] | Yes |
+| `risk_ceiling` | str | Yes — low/medium/high/blocked |
+| `tool_policy` | dict | Yes |
+| `validation_policy` | dict | Yes |
+| `escalation_policy` | dict | Yes |
+| `telemetry_policy` | dict | Yes |
+| `nus_learning_hooks` | dict | Yes |
+| `status` | str | Yes — active/inactive/degraded/blocked |
+
+### WorkerContract (`src/openjarvis/orchestrator/contracts.py`)
+
+Same as ManagerContract with additions:
+| `worker_id` | str | Yes — unique |
+| `manager_id` | str | Yes — must reference valid manager |
+| `skills` | list[str] | Yes |
+| `allowed_tools` | list[str] | Yes |
+| `blocked_tools` | list[str] | Yes — always includes production_deploy_tool |
+| `validation_requirements` | dict | Yes |
+| `escalation_path` | dict | Yes |
+
+### Duplicate Prevention
+- `ManagerRegistry.register()` raises `ValueError` on duplicate `manager_id`
+- `WorkerRegistry.register()` raises `ValueError` on duplicate `worker_id`
+- `WorkerRegistry.validate_manager_references()` validates all manager references
+- Future managers/workers: add a new `ManagerContract`/`WorkerContract` via `register()` — no activation logic changes
+
+### Registered ≠ Active
+Registered workers are NOT active workers. The `DynamicActivationPlanner` activates
+only workers justified by the `TaskRoutingRequest`. Activation always has rationale.

@@ -1,7 +1,8 @@
 # Post-NUS Company-Grade Agent Orchestrator Plan
 
-**Status:** LOCKED — do not implement in NUS 1D/1E sprint  
-**Implementation gate:** Requires NUS 1F completion + explicit Bryan approval
+**Status:** IMPLEMENTED — Sprint `post_nus_hierarchical_orchestrator` at `7ff06caa`+
+**Previous status:** LOCKED (NUS 1A–1F gate) → ACCEPTED NUS 1F → NOW IMPLEMENTED
+**Implementation module:** `src/openjarvis/orchestrator/`
 
 ---
 
@@ -138,7 +139,38 @@ The policy principles are documented and tested in NUS 1F. The orchestrator must
 - Prefer minimum sufficient team
 - Every activation needs rationale
 
-### Hard lock
-The company-grade hierarchical orchestrator (100+ workers, COS/GM, domain managers) remains **LOCKED** until explicitly authorized by Bryan. NUS 1F does not implement it — only provides scaffolding readiness.
+### Implementation Status (Post-NUS Sprint)
+
+The hierarchical orchestrator foundation is now implemented at:
+- `src/openjarvis/orchestrator/contracts.py` — ManagerContract, WorkerContract, TaskRoutingRequest, ActivationPlan
+- `src/openjarvis/orchestrator/manager_registry.py` — 17 domain managers
+- `src/openjarvis/orchestrator/worker_registry.py` — 30 specialist workers
+- `src/openjarvis/orchestrator/activation.py` — Dynamic activation planner (no fixed formulas)
+- `src/openjarvis/server/orchestrator_routes.py` — Dry-run/read-only API routes
+- `tests/orchestrator/` — Focused orchestrator tests
+
+**Scope: dry-run/read-only framework.** Real production execution remains blocked.
+**Production autonomy requires future explicit Bryan approval via a new policy gate.**
 
 See `docs/NUS1F_CONTROLLED_HIGH_AUTONOMY.md` for NUS 1F details.
+
+### Duplicate Prevention
+- `update-existing-not-duplicate` rule applied:
+  - NUS 1F `decision_record.py` reused (not duplicated) — hierarchy levels already covered
+  - `model_router.py` ModelTier reused — no duplicate routing system created
+  - `capabilities_registry.py` extended — orchestrator capabilities added, not separate file
+  - `event_log.py` extended — orchestrator events added, not separate file
+  - `doctor/checks.py` extended — orchestrator check added, not separate doctor
+  - `docs/` updated in-place — no duplicate plan/registry docs created
+
+### Dynamic Activation Policy
+- No fixed formulas ("simple = 1 manager + 1 worker" is forbidden)
+- Registered workers are NOT active workers (activation is always planner-driven)
+- Every activation has rationale; every skip has rationale
+- NUS applies to all hierarchy levels: jarvis_pa, cos_gm, manager, worker, validator, governance
+
+### Model/Provider Sufficiency
+- Current sprint (dry-run/read-only): existing OpenRouter tiers (local/cheap/mid/premium) sufficient
+- Real autonomous execution (future): requires verified provider keys + production model access
+- Gap disclosed in ActivationPlan.model_provider_gaps and routing_plan.provider_sufficiency
+- Cheap models cannot approve critical/high-risk actions (enforced in model routing plan)

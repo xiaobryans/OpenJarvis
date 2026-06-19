@@ -114,3 +114,38 @@ All model routing within a `HighAutonomySession` must respect:
 Routing recommendations use metadata/contract fields, not hardcoded agent names. Future workers/managers pass capability metadata; the router evaluates transparently.
 
 See `docs/NUS1F_CONTROLLED_HIGH_AUTONOMY.md` for session framework and `src/openjarvis/nus/autonomy_action_policy.py` for model tier implementation.
+
+---
+
+## Post-NUS Orchestrator Routing (Sprint: post_nus_hierarchical_orchestrator)
+
+The `DynamicActivationPlanner` integrates with the existing ModelRouter tiers:
+
+### Orchestrator routing rules
+
+| Task Profile | Tier |
+|---|---|
+| simple + low risk | cheap |
+| fast latency required | cheap |
+| moderate complexity | mid (default) |
+| high/blocked risk | premium |
+| critical action approval | premium (cheap blocked) |
+
+### Critical action rule
+**Cheap models cannot approve critical or high-risk actions.**
+Enforced via `critical_approval_check.cheap_model_blocked_for_approval = True` in every ActivationPlan.
+
+### Provider sufficiency disclosure
+- Sprint scope (dry-run/read-only): existing OpenRouter tiers sufficient
+- Future real autonomous execution: requires verified provider keys + production model access
+- Gap disclosed in `ActivationPlan.model_provider_gaps` and `model_routing_plan.provider_sufficiency`
+- If provider unavailable: fallback tier disclosed + quality/safety tradeoff documented
+
+### Per-worker routing
+Each selected worker receives a routing recommendation based on:
+- worker's `model_pool` capabilities
+- task `risk_level`
+- global tier recommendation
+
+### No hardcoded names
+Routing decisions consume `task_metadata` (risk, complexity, intent) — never hardcoded agent or worker names.
