@@ -8,6 +8,8 @@ import {
   Radio,
   ChevronUp,
   ChevronDown,
+  MessageSquare,
+  AlertTriangle,
 } from 'lucide-react';
 import { useVoiceSession, VOICE_STATE_LABEL, type VoiceState } from '../hooks/useVoiceSession';
 
@@ -19,6 +21,7 @@ function StateIcon({ state }: { state: VoiceState }) {
   const cls = 'w-4 h-4';
   switch (state) {
     case 'recording':
+    case 'waiting_for_silence':
       return <Mic className={cls} style={{ color: 'var(--color-error, #ef4444)' }} />;
     case 'transcribing':
     case 'thinking':
@@ -35,7 +38,7 @@ function StateIcon({ state }: { state: VoiceState }) {
     case 'wake_listening':
       return <Mic className={cls} style={{ color: 'var(--color-text-secondary)' }} />;
     case 'error':
-      return <MicOff className={cls} style={{ color: 'var(--color-error, #ef4444)' }} />;
+      return <AlertTriangle className={cls} style={{ color: 'var(--color-error, #ef4444)' }} />;
     default:
       return <MicOff className={cls} style={{ color: 'var(--color-text-tertiary)' }} />;
   }
@@ -44,6 +47,7 @@ function StateIcon({ state }: { state: VoiceState }) {
 function statePulse(state: VoiceState): string {
   switch (state) {
     case 'recording':
+    case 'waiting_for_silence':
       return 'animate-pulse';
     case 'transcribing':
     case 'thinking':
@@ -58,6 +62,7 @@ function statePulse(state: VoiceState): string {
 function stateRing(state: VoiceState): string {
   switch (state) {
     case 'recording':
+    case 'waiting_for_silence':
       return 'ring-2 ring-red-500/60';
     case 'thinking':
     case 'transcribing':
@@ -89,6 +94,27 @@ function LatencyRow({ label, ms }: { label: string; ms?: number }) {
 }
 
 // ---------------------------------------------------------------------------
+// Provider chip
+// ---------------------------------------------------------------------------
+
+function ProviderChip({ stt, tts }: { stt: string; tts: string }) {
+  const same = stt === tts;
+  return (
+    <span
+      className="text-[9px] px-1.5 py-0.5 rounded font-mono uppercase tracking-wide"
+      style={{
+        background: 'color-mix(in srgb, var(--color-accent) 12%, transparent)',
+        color: 'var(--color-accent)',
+        border: '1px solid color-mix(in srgb, var(--color-accent) 25%, transparent)',
+      }}
+      title={same ? `STT + TTS: ${stt}` : `STT: ${stt} · TTS: ${tts}`}
+    >
+      {same ? stt : `${stt}/${tts}`}
+    </span>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // States that mean Jarvis is actively processing (not just background-listening)
 // ---------------------------------------------------------------------------
 
@@ -97,6 +123,7 @@ const ACTIVE_CONV_STATES: VoiceState[] = [
   'acknowledging',
   'active_conversation',
   'recording',
+  'waiting_for_silence',
   'transcribing',
   'thinking',
   'speaking',
@@ -117,20 +144,19 @@ export function VoiceOverlay() {
     error,
     turnsCompleted,
     isActive,
+    startFailedReason,
+    providerInfo,
     start,
     stop,
   } = useVoiceSession();
 
   const [expanded, setExpanded] = useState(false);
   const [showLatency, setShowLatency] = useState(false);
-  const [autoStartFailed, setAutoStartFailed] = useState(false);
+  // Whether the auto-start attempt has completed (regardless of outcome)
+  const [autoStartDone, setAutoStartDone] = useState(false);
   const autoStarted = useRef(false);
 
   // ── 1. AUTO-START: begin wake-word listening when the app loads ──────────
-  // This is the primary user path. The user does NOT need to click the mic
-  // button. Saying "Hey Jarvis" wakes the assistant automatically.
-  // Uses silent=true so a missing wake-worker venv does not flash a full error,
-  // but we still track failure to show a small indicator.
   useEffect(() => {
     if (autoStarted.current) return;
     autoStarted.current = true;
@@ -139,13 +165,8 @@ export function VoiceOverlay() {
 
     const tryAutoStart = async () => {
       if (!mounted) return;
-      const ok = await start({ silent: true });
-      // If start() fails (e.g., wake-worker venv not set up), show a visible indicator
-      // so Bryan knows why wake mode isn't working. We don't show a full error toast
-      // because this is expected on first setup.
-      if (!ok) {
-        setAutoStartFailed(true);
-      }
+      await start({ silent: true });
+      if (mounted) setAutoStartDone(true);
     };
 
     // First attempt after 1.5 s — gives backend time to be ready after Tauri launch
@@ -153,8 +174,8 @@ export function VoiceOverlay() {
     // Retry at 5 s in case the server was still starting
     const t2 = setTimeout(async () => {
       if (!mounted || isActive) return;
-      const ok = await start({ silent: true });
-      if (!ok) setAutoStartFailed(true);
+      await start({ silent: true });
+      if (mounted) setAutoStartDone(true);
     }, 5000);
 
     return () => {
@@ -171,15 +192,42 @@ export function VoiceOverlay() {
     }
     // Auto-collapse after session returns to background wake-listening
     if (voiceState === 'listening' || voiceState === 'wake_listening') {
-      // Keep expanded briefly after session so Bryan can read the last response
       const t = setTimeout(() => setExpanded(false), 8000);
       return () => clearTimeout(t);
     }
   }, [voiceState]);
 
-  const isRunning = isActive && voiceState !== 'idle' && voiceState !== 'stopped';
+  // Expand on failure so Bryan can read the exact reason
+  useEffect(() => {
+    if (startFailedReason && autoStartDone) setExpanded(true);
+  }, [startFailedReason, autoStartDone]);
+
+  const isRunning = isActive && voiceState !== 'idle' && voiceState !== 'stopped' && voiceState !== 'session_ended';
   const isWakeListening = isRunning && (voiceState === 'listening' || voiceState === 'wake_listening');
   const hasConversation = !!finalTranscript || !!jarvisResponse;
+
+  // ── Badge label logic — never show "Voice off" when the session is active
+  // or still starting. ──────────────────────────────────────────────────────
+  const badgeLabel = (() => {
+    if (isActive) {
+      // Session is running — always show current state, even during idle
+      // transition between events.
+      return VOICE_STATE_LABEL[voiceState] ?? voiceState;
+    }
+    if (voiceState === 'error') return 'Error';
+    if (voiceState === 'stopped' || voiceState === 'session_ended') return 'Stopped';
+    if (startFailedReason) return 'Voice unavailable';
+    if (!autoStartDone) return 'Connecting…';
+    return 'Voice off';
+  })();
+
+  const badgeDotColor = (() => {
+    if (startFailedReason && !isActive) return 'var(--color-error, #ef4444)';
+    if (voiceState === 'error') return 'var(--color-error, #ef4444)';
+    if (isWakeListening) return 'var(--color-success, #22c55e)';
+    if (isRunning) return 'var(--color-accent)';
+    return 'var(--color-text-tertiary)';
+  })();
 
   // Mic button: stop session (if running) or manually force-start (fallback)
   const handleMicClick = async () => {
@@ -187,7 +235,6 @@ export function VoiceOverlay() {
       await stop();
       setExpanded(false);
     } else {
-      // Manual / fallback start — show UI feedback
       await start();
       setExpanded(true);
     }
@@ -215,17 +262,21 @@ export function VoiceOverlay() {
             className="flex items-center justify-between px-3 py-2"
             style={{ borderBottom: '1px solid var(--color-border)' }}
           >
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 min-w-0">
               <div className={statePulse(voiceState)}>
                 <StateIcon state={voiceState} />
               </div>
-              <span className="text-xs font-medium" style={{ color: 'var(--color-text)' }}>
+              <span className="text-xs font-medium truncate" style={{ color: 'var(--color-text)' }}>
                 {VOICE_STATE_LABEL[voiceState] ?? voiceState}
               </span>
+              {/* Provider chip — shown when provider info is available */}
+              {providerInfo && isActive && (
+                <ProviderChip stt={providerInfo.stt} tts={providerInfo.tts} />
+              )}
             </div>
             <button
               onClick={() => setExpanded(false)}
-              className="p-1 rounded transition-colors"
+              className="p-1 rounded transition-colors shrink-0"
               style={{ color: 'var(--color-text-tertiary)' }}
               onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--color-bg-tertiary)')}
               onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
@@ -237,16 +288,23 @@ export function VoiceOverlay() {
 
           {/* Conversation body */}
           <div className="px-3 py-2 space-y-2 max-h-64 overflow-y-auto">
-            {/* Error */}
-            {error && (
+            {/* Error / start failure */}
+            {(error || (startFailedReason && !isActive)) && (
               <div
-                className="text-xs px-2 py-1.5 rounded"
+                className="text-xs px-2 py-2 rounded space-y-1"
                 style={{
                   background: 'color-mix(in srgb, var(--color-error, #ef4444) 10%, transparent)',
                   color: 'var(--color-error, #ef4444)',
+                  border: '1px solid color-mix(in srgb, var(--color-error, #ef4444) 25%, transparent)',
                 }}
               >
-                {error}
+                <div className="font-medium flex items-center gap-1">
+                  <AlertTriangle size={11} />
+                  Voice session failed
+                </div>
+                <div className="font-mono text-[10px] break-all">
+                  {error ?? startFailedReason}
+                </div>
               </div>
             )}
 
@@ -305,13 +363,27 @@ export function VoiceOverlay() {
               </div>
             )}
 
-            {/* Idle prompt */}
-            {!hasConversation && !error && !interimTranscript && isRunning && (
+            {/* Wake listening idle prompt */}
+            {!hasConversation && !error && !startFailedReason && !interimTranscript && isRunning && isWakeListening && (
               <div
                 className="text-xs text-center py-2"
                 style={{ color: 'var(--color-text-secondary)' }}
               >
-                Say <strong>"Hey Jarvis"</strong> to start
+                Say <strong>"Hey Jarvis"</strong> or press{' '}
+                <kbd className="px-1 rounded text-[10px]" style={{ background: 'var(--color-bg-tertiary)' }}>
+                  ⌘⇧Space
+                </kbd>{' '}
+                to start
+              </div>
+            )}
+
+            {/* Recording state — no cap reminder */}
+            {isRunning && (voiceState === 'recording' || voiceState === 'waiting_for_silence') && !interimTranscript && (
+              <div
+                className="text-xs text-center py-1"
+                style={{ color: 'var(--color-text-secondary)' }}
+              >
+                Speak freely — ends automatically on silence
               </div>
             )}
           </div>
@@ -348,21 +420,36 @@ export function VoiceOverlay() {
             </div>
           )}
 
-          {/* Stop phrase hint */}
-          {isRunning && (
-            <div
-              className="px-3 pb-2 text-[10px]"
-              style={{ color: 'var(--color-text-tertiary)' }}
+          {/* Text fallback — always available */}
+          <div
+            className="px-3 pb-2 pt-1 flex items-center justify-between"
+            style={{ borderTop: '1px solid var(--color-border)' }}
+          >
+            <span className="text-[10px]" style={{ color: 'var(--color-text-tertiary)' }}>
+              {isRunning ? (
+                <>Say <em>"stop"</em>, <em>"cancel"</em>, or <em>"never mind"</em> to end</>
+              ) : (
+                'Voice session inactive'
+              )}
+            </span>
+            <a
+              href="/"
+              className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded transition-colors"
+              style={{ color: 'var(--color-accent)' }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--color-bg-tertiary)')}
+              onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+              title="Use text chat instead of voice"
             >
-              Say <em>"stop listening"</em>, <em>"cancel"</em>, or <em>"that's all"</em> to end session.
-            </div>
-          )}
+              <MessageSquare size={10} />
+              Text mode
+            </a>
+          </div>
         </div>
       )}
 
       {/* Mic button row — always visible */}
       <div className="flex items-center gap-2">
-        {/* State badge — always visible so Bryan can see wake-listening status */}
+        {/* State badge — always visible */}
         {!expanded && (
           <button
             onClick={() => setExpanded(true)}
@@ -373,28 +460,11 @@ export function VoiceOverlay() {
               color: 'var(--color-text-secondary)',
             }}
           >
-            {/* Status dot — color indicates state */}
             <span
-              className={`inline-block w-1.5 h-1.5 rounded-full ${
-                isWakeListening ? 'animate-pulse' : ''
-              }`}
-              style={{
-                background: autoStartFailed
-                  ? 'var(--color-error, #ef4444)'
-                  : isWakeListening
-                    ? 'var(--color-success, #22c55e)'
-                    : isRunning
-                      ? 'var(--color-accent)'
-                      : 'var(--color-text-tertiary)',
-              }}
+              className={`inline-block w-1.5 h-1.5 rounded-full ${isWakeListening ? 'animate-pulse' : ''}`}
+              style={{ background: badgeDotColor }}
             />
-            {autoStartFailed
-              ? 'Voice unavailable'
-              : error
-                ? `Error: ${error.split(':')[0]}` // Show error_code prefix
-                : isRunning
-                  ? VOICE_STATE_LABEL[voiceState] ?? voiceState
-                  : 'Voice off'}
+            {badgeLabel}
             <ChevronUp size={10} />
           </button>
         )}
@@ -404,7 +474,7 @@ export function VoiceOverlay() {
           className={`w-12 h-12 rounded-full flex items-center justify-center shadow-lg transition-all ${stateRing(voiceState)}`}
           style={{
             background: isRunning
-              ? voiceState === 'recording'
+              ? voiceState === 'recording' || voiceState === 'waiting_for_silence'
                 ? 'var(--color-error, #ef4444)'
                 : 'var(--color-accent)'
               : 'var(--color-bg-secondary)',
@@ -414,9 +484,9 @@ export function VoiceOverlay() {
           title={
             isRunning
               ? isWakeListening
-                ? 'Wake listening active — say "Hey Jarvis" (click to stop)'
+                ? 'Wake listening — say "Hey Jarvis" or ⌘⇧Space (click to stop)'
                 : 'Stop voice session'
-              : 'Manually start voice session (auto-starts on app launch)'
+              : 'Start voice session manually'
           }
           aria-label={isRunning ? 'Stop Jarvis voice session' : 'Start Jarvis voice session'}
         >

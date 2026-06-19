@@ -13,6 +13,7 @@ export type VoiceState =
   | 'acknowledging'
   | 'active_conversation'
   | 'recording'
+  | 'waiting_for_silence'
   | 'transcribing'
   | 'thinking'
   | 'speaking'
@@ -44,6 +45,13 @@ export interface LatencyMap {
   total_turn_ms?: number;
 }
 
+export interface VoiceProviderInfo {
+  stt: string;
+  tts: string;
+  stt_primary?: boolean;
+  tts_primary?: boolean;
+}
+
 export interface VoiceSessionState {
   voiceState: VoiceState;
   interimTranscript: string;
@@ -53,10 +61,19 @@ export interface VoiceSessionState {
   error: string | null;
   turnsCompleted: number;
   isActive: boolean;
+  /** Set when auto-start or manual start fails — contains the actionable reason. */
+  startFailedReason: string | null;
+  /** Provider info returned from the backend on session start. */
+  providerInfo: VoiceProviderInfo | null;
 }
 
 export interface VoiceSessionActions {
   start: (opts?: {
+    /**
+     * Max recording duration per turn in seconds.
+     * Default 30 s — silence detection ends the turn early.
+     * Do NOT use 5 s (old default) — that created a misleading speech cap.
+     */
     recordSeconds?: number;
     language?: string;
     sessionTimeout?: number;
@@ -71,19 +88,20 @@ export interface VoiceSessionActions {
 // ---------------------------------------------------------------------------
 
 export const VOICE_STATE_LABEL: Record<VoiceState, string> = {
-  idle: 'Voice Off',
-  listening: 'Listening for "Hey Jarvis"…',
+  idle: 'Voice off',
+  listening: 'Listening…',
   wake_listening: 'Listening for "Hey Jarvis"…',
-  wake_detected: 'Wake word detected!',
-  acknowledging: 'Jarvis is greeting you…',
+  wake_detected: 'Wake word detected',
+  acknowledging: 'Acknowledged',
   active_conversation: 'Conversation active',
-  recording: 'Recording your command…',
-  transcribing: 'Transcribing…',
-  thinking: 'Jarvis is thinking…',
-  speaking: 'Jarvis is speaking…',
-  follow_up_listening: 'Listening for follow-up…',
+  recording: 'Recording',
+  waiting_for_silence: 'Waiting for silence…',
+  transcribing: 'Transcribing',
+  thinking: 'Thinking…',
+  speaking: 'Speaking',
+  follow_up_listening: 'Follow-up listening…',
   session_ended: 'Session ended',
-  stopped: 'Voice Off',
+  stopped: 'Stopped',
   error: 'Error',
 };
 
@@ -100,6 +118,8 @@ export function useVoiceSession(): VoiceSessionState & VoiceSessionActions {
   const [error, setError] = useState<string | null>(null);
   const [turnsCompleted, setTurnsCompleted] = useState(0);
   const [isActive, setIsActive] = useState(false);
+  const [startFailedReason, setStartFailedReason] = useState<string | null>(null);
+  const [providerInfo, setProviderInfo] = useState<VoiceProviderInfo | null>(null);
 
   const esRef = useRef<EventSource | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -205,6 +225,7 @@ export function useVoiceSession(): VoiceSessionState & VoiceSessionActions {
     const silent = opts?.silent ?? false;
     if (!silent) {
       setError(null);
+      setStartFailedReason(null);
       setVoiceState('listening');
       setFinalTranscript('');
       setJarvisResponse('');
@@ -214,7 +235,9 @@ export function useVoiceSession(): VoiceSessionState & VoiceSessionActions {
     }
 
     const body = {
-      record_seconds: opts?.recordSeconds ?? 5.0,
+      // 30 s max-recording buffer per turn. Silence detection ends turns early —
+      // this is NOT a 5-second cap on how long the user can speak.
+      record_seconds: opts?.recordSeconds ?? 30.0,
       language: opts?.language ?? 'en',
       session_timeout: opts?.sessionTimeout ?? 30.0,
     };
@@ -227,21 +250,29 @@ export function useVoiceSession(): VoiceSessionState & VoiceSessionActions {
       });
       const data = await res.json();
       if (!data.ok) {
+        const errorCode = data.error_code || 'unknown';
+        const errorMsg = data.error || 'Failed to start voice session';
+        const recovery = data.recovery ? ` Fix: ${data.recovery}` : '';
+        const reason = `${errorCode}: ${errorMsg}${recovery}`;
+        // Always store the failure reason (used by autoStartFailed indicator)
+        setStartFailedReason(reason);
         if (!silent) {
-          const errorCode = data.error_code || 'unknown';
-          const errorMsg = data.error || 'Failed to start voice session';
-          const detail = data.detail ? ` (${JSON.stringify(data.detail)})` : '';
-          const recovery = data.recovery ? `\n\nRecovery: ${data.recovery}` : '';
-          setError(`${errorCode}: ${errorMsg}${detail}${recovery}`);
+          setError(reason);
           setVoiceState('error');
         }
         return false;
       }
+      setStartFailedReason(null);
+      if (data.provider_info) {
+        setProviderInfo(data.provider_info as VoiceProviderInfo);
+      }
       setIsActive(true);
       return true;
     } catch (e) {
+      const reason = `network_error: Cannot reach backend. Check the server is running on the expected port.`;
+      setStartFailedReason(reason);
       if (!silent) {
-        setError(`network_error: ${String(e)}\n\nRecovery: Check that the backend server is running and reachable.`);
+        setError(reason);
         setVoiceState('error');
       }
       return false;
@@ -267,6 +298,8 @@ export function useVoiceSession(): VoiceSessionState & VoiceSessionActions {
     error,
     turnsCompleted,
     isActive,
+    startFailedReason,
+    providerInfo,
     start,
     stop,
   };

@@ -86,7 +86,7 @@ def _platform_support() -> Dict[str, str]:
 
 
 class VoiceStartRequest(BaseModel):
-    record_seconds: float = Field(default=5.0, ge=1.0, le=30.0)
+    record_seconds: float = Field(default=30.0, ge=1.0, le=60.0)
     language: str = Field(default="en", max_length=10)
     session_timeout: float = Field(default=30.0, ge=5.0, le=300.0)
     threshold: Optional[float] = Field(default=None, ge=0.05, le=1.0)
@@ -214,12 +214,28 @@ async def start_voice_session(req: VoiceStartRequest) -> Dict[str, Any]:
 
             _global_session = loop
 
+        # Include provider info so the UI can display which STT/TTS is active
+        # without a separate round-trip.
+        try:
+            from openjarvis.autonomy.voice_pipeline import get_stt_status, get_tts_status
+            _stt = get_stt_status()
+            _tts = get_tts_status()
+            provider_info = {
+                "stt": _stt.get("stt_status", "unknown"),
+                "tts": _tts.get("tts_status", "unknown"),
+                "stt_primary": _stt.get("primary", False),
+                "tts_primary": _tts.get("primary", False),
+            }
+        except Exception:
+            provider_info = {"stt": "unknown", "tts": "unknown"}
+
         return {
             "ok": True,
             "worker_pid": result.get("worker_pid"),
             "socket": result.get("socket"),
             "loop_state": loop.status()["loop_state"],
             "platform_support": plat,
+            "provider_info": provider_info,
         }
 
     except Exception as exc:
