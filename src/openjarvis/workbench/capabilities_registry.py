@@ -515,8 +515,42 @@ def _nus1a_learning_foundation_status() -> CapabilityRecord:
         )
 
 
+def _nus1b_recommendation_workflow_status() -> CapabilityRecord:
+    """NUS 1B — Recommendation Workflow capability."""
+    try:
+        from openjarvis.nus.recommendation_registry import NUS1B_REC_VERSION, RecommendationRegistry  # noqa: F401
+        from openjarvis.nus.learning_store import NUS1B_STORE_VERSION  # noqa: F401
+        from openjarvis.nus.autonomy_policy import NUS1B_POLICY_VERSION, PROFILE_MANUAL  # noqa: F401
+        from openjarvis.nus.telemetry import NUS1B_TELEMETRY_VERSION  # noqa: F401
+        return CapabilityRecord(
+            capability_id="nus1b_recommendation_workflow",
+            display_name="NUS 1B — Recommendation Workflow",
+            status=STATUS_READY,
+            summary=(
+                "NUS 1B: Persistent learning, recommendation lifecycle, approval workflow "
+                "scaffolding, telemetry normalization, and autonomy policy scaffold. "
+                "Dry-run only. No self-modification, no auto-commit, no deploy, no external sends. "
+                "US13 voice HOLD/UNSAFE/PARKED. NUS 1C+ not started."
+            ),
+            evidence={
+                "rec_version": NUS1B_REC_VERSION,
+                "store_version": NUS1B_STORE_VERSION,
+                "policy_version": NUS1B_POLICY_VERSION,
+                "telemetry_version": NUS1B_TELEMETRY_VERSION,
+                "safety_gates_active": True,
+            },
+        )
+    except Exception as exc:
+        return CapabilityRecord(
+            capability_id="nus1b_recommendation_workflow",
+            display_name="NUS 1B — Recommendation Workflow",
+            status=STATUS_NOT_IMPLEMENTED,
+            summary=f"NUS 1B recommendation workflow unavailable: {exc}",
+        )
+
+
 def get_all_capabilities() -> List[CapabilityRecord]:
-    """Return all capability records with truthful status (US15 + Wave 1–4 + NUS 1A)."""
+    """Return all capability records with truthful status (US15 + Wave 1–4 + NUS 1A/1B)."""
     return [
         _assistant_status(),
         _workbench_status(),
@@ -539,6 +573,8 @@ def get_all_capabilities() -> List[CapabilityRecord]:
         _wave4_autonomous_expansion_status(),
         # NUS 1A — Learning Foundation
         _nus1a_learning_foundation_status(),
+        # NUS 1B — Recommendation Workflow
+        _nus1b_recommendation_workflow_status(),
     ]
 
 
@@ -560,7 +596,7 @@ def get_capabilities_summary() -> Dict[str, Any]:
         "wave4_not_implemented": False,
         "wave3_4_not_implemented": False,
         "wave2_3_4_not_implemented": False,
-        "nus1_status": "1a_learning_foundation_ready",
+        "nus1_status": "1b_recommendation_workflow_ready",
     }
 
 

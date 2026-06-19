@@ -586,7 +586,8 @@ class TestCapabilityStatus:
     def test_capabilities_summary_nus1_status(self):
         from openjarvis.workbench.capabilities_registry import get_capabilities_summary
         summary = get_capabilities_summary()
-        assert summary["nus1_status"] == "1a_learning_foundation_ready"
+        # NUS 1B is now ready; status reflects latest implemented sprint
+        assert summary["nus1_status"] == "1b_recommendation_workflow_ready"
 
 
 # ---------------------------------------------------------------------------

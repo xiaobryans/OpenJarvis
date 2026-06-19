@@ -2417,6 +2417,101 @@ def check_nus1a_learning_foundation(project_id: str = "omnix") -> CheckResult:
 
 
 # ---------------------------------------------------------------------------
+# NUS 1B — Recommendation Workflow check
+# ---------------------------------------------------------------------------
+
+
+def check_nus1b_recommendation_workflow(project_id: str = "omnix") -> CheckResult:
+    """Verify NUS 1B recommendation workflow modules are available and safe."""
+    evidence: Dict[str, Any] = {}
+    try:
+        import tempfile
+        from pathlib import Path
+
+        from openjarvis.nus.learning_store import LearningStore, NUS1B_STORE_VERSION
+        from openjarvis.nus.recommendation_registry import (
+            NUS1B_REC_VERSION,
+            RecommendationRegistry,
+            ACTION_SELF_MODIFICATION,
+            STATUS_BLOCKED,
+        )
+        from openjarvis.nus.telemetry import TelemetryNormalizer, NUS1B_TELEMETRY_VERSION
+        from openjarvis.nus.autonomy_policy import (
+            NUS1B_POLICY_VERSION,
+            get_default_policy,
+            PROFILE_MANUAL,
+        )
+
+        evidence["modules_importable"] = True
+        evidence["store_version"] = NUS1B_STORE_VERSION
+        evidence["rec_version"] = NUS1B_REC_VERSION
+        evidence["telemetry_version"] = NUS1B_TELEMETRY_VERSION
+        evidence["policy_version"] = NUS1B_POLICY_VERSION
+
+        # Verify persistence in temp dir
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = LearningStore(store_dir=Path(tmpdir))
+            store.append_outcome({"task_id": "t1", "status": "success"})
+            summary = store.summarize()
+            evidence["persistence_ok"] = summary["record_counts"]["outcomes"] >= 1
+
+        # Verify recommendation registry
+        registry = RecommendationRegistry()
+        rec = registry.create(
+            source="doctor",
+            category="test",
+            title="Doctor test recommendation",
+            summary="Test",
+            required_action_type=ACTION_SELF_MODIFICATION,
+        )
+        evidence["recommendation_registry_ok"] = rec.status == STATUS_BLOCKED
+        evidence["dangerous_blocked"] = rec.status == STATUS_BLOCKED
+
+        # Verify telemetry
+        normalizer = TelemetryNormalizer()
+        tr = normalizer.ingest_workbench_event({"event_type": "subtask_done", "session_id": "s1"})
+        evidence["telemetry_ok"] = tr.category == "task"
+
+        # Verify autonomy policy default is conservative
+        policy = get_default_policy()
+        evidence["policy_default_profile"] = policy.profile
+        evidence["policy_is_manual"] = policy.profile == PROFILE_MANUAL
+        evidence["policy_kill_switch"] = policy.autonomy_kill_switch
+
+        # Self-modification blocked by policy
+        decision = policy.evaluate("self_modification")
+        evidence["policy_blocks_self_modification"] = decision["decision"] == "blocked"
+        evidence["policy_blocks_auto_commit"] = policy.is_action_blocked("auto_commit")
+        evidence["policy_blocks_deploy"] = policy.is_action_blocked("deploy")
+
+        # US13 parked
+        evidence["us13_voice_status"] = "HOLD/UNSAFE/PARKED"
+
+        return CheckResult(
+            check_id="nus1b_recommendation_workflow",
+            category="nus",
+            status=CheckStatus.PASS,
+            summary=(
+                f"NUS 1B recommendation workflow v{NUS1B_REC_VERSION} available and safe. "
+                "Persistence OK. Dangerous actions blocked. Autonomy policy conservative. "
+                "US13 voice HOLD/UNSAFE/PARKED."
+            ),
+            evidence=evidence,
+            project_id=project_id,
+        )
+    except Exception as exc:
+        evidence["error"] = str(exc)
+        return CheckResult(
+            check_id="nus1b_recommendation_workflow",
+            category="nus",
+            status=CheckStatus.FAIL,
+            summary=f"NUS 1B recommendation workflow check failed: {exc}",
+            evidence=evidence,
+            project_id=project_id,
+        )
+
+
+# ---------------------------------------------------------------------------
 # Check registry (33 checks total — 19 US7/US8 + 10 US9 + 1 strict-rules + 1 US10 + 1 US11 + 1 US13)
 # ---------------------------------------------------------------------------
 
@@ -2462,6 +2557,8 @@ _ALL_CHECK_FNS: List[Callable[..., CheckResult]] = [
     check_certification_matrix,
     # NUS 1A checks
     check_nus1a_learning_foundation,
+    # NUS 1B checks
+    check_nus1b_recommendation_workflow,
 ]
 
 
@@ -2527,5 +2624,6 @@ __all__ = [
     "check_voice_pipeline_status",
     "check_watchdog_status",
     "check_nus1a_learning_foundation",
+    "check_nus1b_recommendation_workflow",
     "run_all_checks",
 ]

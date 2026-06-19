@@ -361,10 +361,27 @@ uv run python -m pytest tests/wave tests/workbench/test_us15_foundation.py tests
 - US13 voice remains HOLD/UNSAFE/PARKED.
 - Full docs: `docs/NUS1A_LEARNING_FOUNDATION.md`.
 
-### NUS 1B / 1C — Full Self-Improvement Autonomy: NOT STARTED / LOCKED
+### NUS 1B — Recommendation Workflow: READY (local founder V1)
 
-- NUS 1B (recommendation execution, approval workflow) is locked for a future sprint.
-- NUS 1C (supervised self-improvement, A/B routing) is locked for a future sprint.
+- Modules: `src/openjarvis/nus/learning_store.py`, `src/openjarvis/nus/recommendation_registry.py`,
+  `src/openjarvis/nus/telemetry.py`, `src/openjarvis/nus/autonomy_policy.py`
+- Cross-session learning persistence (JSONL, safe paths, secret redaction).
+- Recommendation registry and lifecycle (draft → ready/needs_approval/blocked → executed_dry_run).
+- Approval workflow scaffold (14 approval policy categories).
+- Telemetry ingestion/normalization from all sources.
+- Autonomy policy scaffold (5 profiles defined; only `manual` activated).
+- Routes: `/v1/nus/recommendations/*`, `/v1/nus/telemetry/*`, `/v1/nus/autonomy-policy/status`.
+- Capability: `nus1b_recommendation_workflow` → `ready`.
+- Doctor check: `check_nus1b_recommendation_workflow`.
+- No self-modification. No auto-commit. No deploy. No external sends. Safety gates active.
+- US13 voice remains HOLD/UNSAFE/PARKED.
+- Full docs: `docs/NUS1B_RECOMMENDATION_WORKFLOW.md`.
+
+### NUS 1C / 1D / 1E / 1F — Full Self-Improvement Autonomy: NOT STARTED / LOCKED
+
+- NUS 1C (safe_autopilot activation, A/B routing, operator telemetry) is locked for a future sprint.
+- NUS 1D (power_autopilot, founder_override activation) is locked for a future sprint.
+- NUS 1E/1F (production-safe execution, deployment recommendation) require explicit owner gate.
 - No `autonomous_upgrade` module exists.
 
 ---
