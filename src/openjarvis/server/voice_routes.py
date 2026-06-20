@@ -498,6 +498,40 @@ async def voice_turn_start(request: Request) -> Dict[str, Any]:
         body = {}
 
     language = str(body.get("language", "en"))
+
+    # Preflight: verify the configured STT provider is ready before allowing
+    # recording to start. Fail fast with a visible non-secret reason so the UI
+    # shows an actionable error instead of a long "Transcribing…" hang.
+    try:
+        from openjarvis.autonomy.voice_pipeline import get_stt_status
+        stt = get_stt_status()
+        if stt.get("stt_status") == "not_configured":
+            _dg_blocker = stt.get("deepgram_blocker") or ""
+            _blockers = stt.get("blockers", [])
+            return {
+                "ok": False,
+                "error_code": "stt_not_ready",
+                "error": "STT provider not ready — cannot start recording.",
+                "deepgram_blocker": _dg_blocker,
+                "blockers": _blockers,
+                "recovery": "Run `uv sync` to install deepgram-sdk, or set OPENAI_API_KEY / install faster-whisper.",
+            }
+        # Deepgram selected but SDK import check
+        if stt.get("stt_status") == "deepgram":
+            try:
+                from openjarvis.speech.deepgram import _DEEPGRAM_AVAILABLE
+                if not _DEEPGRAM_AVAILABLE:
+                    return {
+                        "ok": False,
+                        "error_code": "stt_not_ready",
+                        "error": "deepgram-sdk not installed — run: uv sync",
+                        "recovery": "Run `uv sync` to install deepgram-sdk (now a core dependency).",
+                    }
+            except ImportError:
+                pass
+    except Exception as _preflight_exc:
+        logger.warning("STT preflight check failed (non-fatal): %s", _preflight_exc)
+
     engine = _get_turn_engine()
     return engine.start_turn(language=language)
 

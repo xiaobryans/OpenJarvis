@@ -588,9 +588,23 @@ def transcribe_command_result(
         return backend.transcribe(audio_bytes, format="wav", language=language)
 
     if engine == STTEngine.DEEPGRAM:
-        from openjarvis.speech.deepgram import DeepgramSpeechBackend
+        from openjarvis.speech.deepgram import DeepgramSpeechBackend, _DEEPGRAM_AVAILABLE
 
+        if not _DEEPGRAM_AVAILABLE:
+            raise RuntimeError(
+                "deepgram-sdk not installed — run: uv sync (or pip install deepgram-sdk)"
+            )
         backend = DeepgramSpeechBackend()
+        if not backend.health():
+            api_key_set = bool(__import__("os").environ.get("DEEPGRAM_API_KEY", ""))
+            if not api_key_set:
+                raise RuntimeError(
+                    "Deepgram STT not ready: DEEPGRAM_API_KEY not set — add to .env and restart"
+                )
+            raise RuntimeError(
+                "Deepgram STT not ready: client initialization failed — "
+                "check DEEPGRAM_API_KEY is valid and deepgram-sdk is installed"
+            )
         return backend.transcribe(audio_bytes, format="wav", language=language)
 
     raise RuntimeError(

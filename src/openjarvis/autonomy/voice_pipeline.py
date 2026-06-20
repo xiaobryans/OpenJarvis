@@ -200,15 +200,28 @@ def get_stt_status() -> Dict[str, Any]:
     if stt_override in ("", "deepgram"):
         deepgram_key = os.environ.get("DEEPGRAM_API_KEY", "")
         if deepgram_key:
-            return {
-                "stt_status": STTEngine.DEEPGRAM,
-                "engine": STTEngine.DEEPGRAM,
-                "is_configured": True,
-                "requires_api_key": True,
-                "key_env_var": "DEEPGRAM_API_KEY",
-                "primary": True,
-                "blocker": None,
-            }
+            try:
+                from deepgram import DeepgramClient  # noqa: F401
+                _deepgram_sdk_ok = True
+            except ImportError:
+                _deepgram_sdk_ok = False
+
+            if _deepgram_sdk_ok:
+                return {
+                    "stt_status": STTEngine.DEEPGRAM,
+                    "engine": STTEngine.DEEPGRAM,
+                    "is_configured": True,
+                    "requires_api_key": True,
+                    "key_env_var": "DEEPGRAM_API_KEY",
+                    "primary": True,
+                    "blocker": None,
+                }
+            # Key set but SDK missing — fall through to fallbacks with exact reason
+            _deepgram_blocker = "deepgram-sdk not installed — run: uv sync (or pip install deepgram-sdk)"
+        else:
+            _deepgram_blocker = "DEEPGRAM_API_KEY not set — add to .env and restart"
+    else:
+        _deepgram_blocker = None
 
     # Explicit override to faster-whisper or openai
     if stt_override == "faster-whisper" or stt_override == "faster_whisper":
@@ -238,7 +251,9 @@ def get_stt_status() -> Dict[str, Any]:
                 "blocker": None,
             }
 
-    # Fallback chain: faster-whisper → openai (deepgram key missing)
+    # Fallback chain: faster-whisper → openai (deepgram unavailable)
+    # _deepgram_blocker is set above when stt_override in ("", "deepgram")
+    _dg_reason = locals().get("_deepgram_blocker") or "DEEPGRAM_API_KEY not set"
     try:
         from faster_whisper import WhisperModel  # noqa: F401
         return {
@@ -247,7 +262,7 @@ def get_stt_status() -> Dict[str, Any]:
             "is_configured": True,
             "requires_api_key": False,
             "primary": False,
-            "fallback_reason": "DEEPGRAM_API_KEY not set",
+            "fallback_reason": _dg_reason,
             "blocker": None,
         }
     except ImportError:
@@ -262,7 +277,7 @@ def get_stt_status() -> Dict[str, Any]:
             "requires_api_key": True,
             "key_env_var": "OPENAI_API_KEY",
             "primary": False,
-            "fallback_reason": "DEEPGRAM_API_KEY not set",
+            "fallback_reason": _dg_reason,
             "blocker": None,
         }
 
@@ -270,17 +285,18 @@ def get_stt_status() -> Dict[str, Any]:
         "stt_status": STTEngine.NOT_CONFIGURED,
         "engine": STTEngine.NOT_CONFIGURED,
         "is_configured": False,
+        "deepgram_blocker": _dg_reason,
         "blockers": [
-            "DEEPGRAM_API_KEY not set — set in .env (primary provider)",
-            "faster-whisper not installed — run: pip install faster-whisper (fallback)",
+            _dg_reason,
+            "faster-whisper not installed — run: uv sync --extra speech (fallback)",
             "OPENAI_API_KEY not set (fallback)",
         ],
         "install_options": [
-            "Set DEEPGRAM_API_KEY in .env for Deepgram cloud STT (primary)",
-            "pip install faster-whisper  # local fallback, no API key",
+            "uv sync  # installs deepgram-sdk (now a core dependency)",
+            "uv sync --extra speech  # local faster-whisper fallback",
             "Set OPENAI_API_KEY for OpenAI Whisper cloud STT (fallback)",
         ],
-        "setup": "BLOCKED_WAITING_FOR_BRYAN_NOW — add DEEPGRAM_API_KEY to .env",
+        "setup": f"BLOCKED — {_dg_reason}",
     }
 
 
