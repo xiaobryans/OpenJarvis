@@ -11,13 +11,13 @@ import { LogsPage } from './pages/LogsPage';
 import { MissionControlPage } from './pages/MissionControlPage';
 import { WorkbenchPage } from './pages/WorkbenchPage';
 import { CommandPalette } from './components/CommandPalette';
+import { UniversalComposer } from './components/UniversalComposer';
 import { SetupScreen } from './components/SetupScreen';
 import { Toaster } from './components/ui/sonner';
 import { useAppStore } from './lib/store';
 import { fetchModels, fetchServerInfo, fetchSavings, submitSavings, isTauri } from './lib/api';
 import { OptInModal } from './components/OptInModal';
 import { UpdateChecker } from './components/Desktop/UpdateChecker';
-import { VoiceOverlay } from './components/VoiceOverlay';
 import { track, hashId } from './lib/analytics';
 
 export default function App() {
@@ -41,6 +41,8 @@ export default function App() {
   const settings = useAppStore((s) => s.settings);
   const commandPaletteOpen = useAppStore((s) => s.commandPaletteOpen);
   const setCommandPaletteOpen = useAppStore((s) => s.setCommandPaletteOpen);
+  const composerOpen = useAppStore((s) => s.composerOpen);
+  const setComposerOpen = useAppStore((s) => s.setComposerOpen);
   const optInEnabled = useAppStore((s) => s.optInEnabled);
   const optInDisplayName = useAppStore((s) => s.optInDisplayName);
   const optInEmail = useAppStore((s) => s.optInEmail);
@@ -165,10 +167,22 @@ export default function App() {
   // Global keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Cmd+K — open Universal Composer (primary interaction)
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         e.preventDefault();
-        setCommandPaletteOpen(!commandPaletteOpen);
+        // If model palette is open, close it; else toggle composer
+        if (commandPaletteOpen) {
+          setCommandPaletteOpen(false);
+        } else {
+          setComposerOpen(!composerOpen);
+        }
       }
+      // Esc — close composer or model palette
+      if (e.key === 'Escape') {
+        if (composerOpen) { setComposerOpen(false); return; }
+        if (commandPaletteOpen) { setCommandPaletteOpen(false); return; }
+      }
+      // Cmd+I — toggle diagnostics panel
       if ((e.metaKey || e.ctrlKey) && e.key === 'i') {
         e.preventDefault();
         toggleSystemPanel();
@@ -176,7 +190,7 @@ export default function App() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [commandPaletteOpen, setCommandPaletteOpen, toggleSystemPanel]);
+  }, [commandPaletteOpen, composerOpen, setCommandPaletteOpen, setComposerOpen, toggleSystemPanel]);
 
 
   if (!setupDone) {
@@ -200,11 +214,13 @@ export default function App() {
         </Route>
       </Routes>
       <Toaster position="bottom-right" />
+      {/* Plan 2: Universal Composer is the primary Cmd+K front door */}
+      <UniversalComposer />
+      {/* Model selector palette — opened from within composer or directly */}
       {commandPaletteOpen && <CommandPalette />}
       {optInModalOpen && (
         <OptInModal onClose={() => setOptInModalOpen(false)} />
       )}
-      <VoiceOverlay />
     </>
   );
 }

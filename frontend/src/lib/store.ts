@@ -134,13 +134,16 @@ interface AppState {
   // Settings
   settings: Settings;
 
-  // Command palette
+  // Command palette (model selector)
   commandPaletteOpen: boolean;
 
-  // Sidebar
+  // Universal Composer (Plan 2 Cmd+K front door)
+  composerOpen: boolean;
+
+  // Sidebar (legacy — slim rail in Plan 2)
   sidebarOpen: boolean;
 
-  // System panel
+  // System panel / diagnostics drawer
   systemPanelOpen: boolean;
 
   // Opt-in sharing
@@ -195,6 +198,8 @@ interface AppState {
 
   // Actions: UI
   setCommandPaletteOpen: (open: boolean) => void;
+  setComposerOpen: (open: boolean) => void;
+  toggleComposer: () => void;
   toggleSidebar: () => void;
   setSidebarOpen: (open: boolean) => void;
   toggleSystemPanel: () => void;
@@ -258,8 +263,9 @@ export const useAppStore = create<AppState>((set, get) => {
     settings: loadSettings(),
 
     commandPaletteOpen: false,
-    sidebarOpen: true,
-    systemPanelOpen: true,
+    composerOpen: false,
+    sidebarOpen: false,
+    systemPanelOpen: false,
 
     optInEnabled: localStorage.getItem(OPTIN_KEY) === 'true',
     optInDisplayName: localStorage.getItem(OPTIN_NAME_KEY) || '',
@@ -488,6 +494,8 @@ export const useAppStore = create<AppState>((set, get) => {
     // ── UI ──────────────────────────────────────────────────────────
 
     setCommandPaletteOpen: (open: boolean) => set({ commandPaletteOpen: open }),
+    setComposerOpen: (open: boolean) => set({ composerOpen: open }),
+    toggleComposer: () => set((s) => ({ composerOpen: !s.composerOpen })),
     toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
     setSidebarOpen: (open: boolean) => set({ sidebarOpen: open }),
     toggleSystemPanel: () => set((s) => ({ systemPanelOpen: !s.systemPanelOpen })),

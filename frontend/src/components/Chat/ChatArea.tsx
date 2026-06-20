@@ -1,10 +1,9 @@
-import { useRef, useEffect, useState, useCallback } from 'react';
+import { useRef, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { MessageBubble } from './MessageBubble';
-import { InputArea } from './InputArea';
 import { StreamingDots } from './StreamingDots';
 import { useAppStore } from '../../lib/store';
-import { Sparkles, PanelRightOpen, PanelRightClose, Database, MessageSquare, X } from 'lucide-react';
+import { Sparkles, Database, MessageSquare, Command, X } from 'lucide-react';
 import { listConnectors } from '../../lib/connectors-api';
 
 function getGreeting(): string {
@@ -17,8 +16,7 @@ function getGreeting(): string {
 export function ChatArea() {
   const messages = useAppStore((s) => s.messages);
   const streamState = useAppStore((s) => s.streamState);
-  const systemPanelOpen = useAppStore((s) => s.systemPanelOpen);
-  const toggleSystemPanel = useAppStore((s) => s.toggleSystemPanel);
+  const setComposerOpen = useAppStore((s) => s.setComposerOpen);
   const navigate = useNavigate();
   const listRef = useRef<HTMLDivElement>(null);
   const shouldAutoScroll = useRef(true);
@@ -47,21 +45,8 @@ export function ChatArea() {
 
   const isEmpty = messages.length === 0 && !streamState.isStreaming;
 
-  const PanelIcon = systemPanelOpen ? PanelRightClose : PanelRightOpen;
-
   return (
     <div className="flex flex-col h-full">
-      {/* Toggle bar */}
-      <div className="flex items-center justify-end px-3 py-1.5 shrink-0">
-        <button
-          onClick={toggleSystemPanel}
-          className="p-1.5 rounded-md transition-colors cursor-pointer"
-          style={{ color: 'var(--color-text-tertiary)' }}
-          title={`${systemPanelOpen ? 'Hide' : 'Show'} system panel (${navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'}+I)`}
-        >
-          <PanelIcon size={16} />
-        </button>
-      </div>
 
       {/* Data sources banner */}
       {hasConnectedSources === false && !bannerDismissed && (
@@ -98,49 +83,66 @@ export function ChatArea() {
         className="flex-1 overflow-y-auto"
       >
         {isEmpty ? (
-          <div className="flex flex-col items-center justify-center h-full px-4">
+          <div className="flex flex-col items-center justify-center h-full px-4 select-none">
+            {/* Clean idle state — calm, not cluttered */}
             <div
-              className="w-12 h-12 rounded-2xl flex items-center justify-center mb-4"
+              className="w-14 h-14 rounded-2xl flex items-center justify-center mb-5"
               style={{ background: 'var(--color-accent-subtle)', color: 'var(--color-accent)' }}
             >
-              <Sparkles size={24} />
+              <Sparkles size={28} />
             </div>
-            <h2 className="text-xl font-semibold mb-2" style={{ color: 'var(--color-text)' }}>
+            <h2 className="text-2xl font-semibold mb-2" style={{ color: 'var(--color-text)', fontFamily: 'var(--font-display)' }}>
               {getGreeting()}
             </h2>
-            <p className="text-sm text-center max-w-sm mb-6" style={{ color: 'var(--color-text-secondary)' }}>
-              Ask anything. Your AI runs locally — private, fast, and always available.
+            <p className="text-sm text-center max-w-xs mb-8" style={{ color: 'var(--color-text-secondary)' }}>
+              Your AI command center. Private, fast, always available.
             </p>
 
-            {/* Quick action hints */}
-            <div className="flex gap-3">
+            {/* Primary CTA: open composer */}
+            <button
+              onClick={() => setComposerOpen(true)}
+              className="flex items-center gap-2.5 px-5 py-3 rounded-2xl text-sm font-medium cursor-pointer transition-all mb-6"
+              style={{
+                background: 'var(--color-accent)',
+                color: '#fff',
+                boxShadow: '0 4px 24px var(--color-accent-glow)',
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.transform = 'translateY(-1px)')}
+              onMouseLeave={(e) => (e.currentTarget.style.transform = 'none')}
+            >
+              <Command size={16} />
+              Press ⌘K to start
+            </button>
+
+            {/* Secondary shortcuts */}
+            <div className="flex flex-wrap gap-2 justify-center">
               <button
                 onClick={() => navigate('/data-sources')}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs cursor-pointer transition-colors"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs cursor-pointer transition-colors"
                 style={{
                   background: 'var(--color-bg-secondary)',
                   border: '1px solid var(--color-border)',
-                  color: 'var(--color-text-secondary)',
+                  color: 'var(--color-text-tertiary)',
                 }}
                 onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'var(--color-accent)')}
                 onMouseLeave={(e) => (e.currentTarget.style.borderColor = 'var(--color-border)')}
               >
-                <Database size={14} style={{ color: 'var(--color-accent)' }} />
-                Connect Data Sources
+                <Database size={12} style={{ color: 'var(--color-accent)' }} />
+                Data Sources
               </button>
               <button
                 onClick={() => { navigate('/data-sources'); setTimeout(() => window.dispatchEvent(new CustomEvent('switch-tab', { detail: 'messaging' })), 100); }}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs cursor-pointer transition-colors"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs cursor-pointer transition-colors"
                 style={{
                   background: 'var(--color-bg-secondary)',
                   border: '1px solid var(--color-border)',
-                  color: 'var(--color-text-secondary)',
+                  color: 'var(--color-text-tertiary)',
                 }}
                 onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'var(--color-accent)')}
                 onMouseLeave={(e) => (e.currentTarget.style.borderColor = 'var(--color-border)')}
               >
-                <MessageSquare size={14} style={{ color: 'var(--color-accent)' }} />
-                Set Up Messaging Channels
+                <MessageSquare size={12} style={{ color: 'var(--color-accent)' }} />
+                Channels
               </button>
             </div>
           </div>
@@ -172,7 +174,35 @@ export function ChatArea() {
           </div>
         )}
       </div>
-      <InputArea />
+
+      {/* Floating composer hint — shows when there are messages */}
+      {!isEmpty && (
+        <div
+          className="shrink-0 flex items-center justify-center py-3"
+          style={{ borderTop: '1px solid var(--color-border-subtle)' }}
+        >
+          <button
+            onClick={() => setComposerOpen(true)}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm cursor-pointer transition-all"
+            style={{
+              background: 'var(--color-bg-secondary)',
+              border: '1px solid var(--color-border)',
+              color: 'var(--color-text-tertiary)',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.borderColor = 'var(--color-accent)';
+              e.currentTarget.style.color = 'var(--color-accent)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.borderColor = 'var(--color-border)';
+              e.currentTarget.style.color = 'var(--color-text-tertiary)';
+            }}
+          >
+            <Command size={14} />
+            Reply or command… <kbd className="ml-1 text-[10px] opacity-60">⌘K</kbd>
+          </button>
+        </div>
+      )}
     </div>
   );
 }
