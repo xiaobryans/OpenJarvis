@@ -2,19 +2,25 @@
 
 Architecture:
   TaskWorker (abstract interface)
-  ├── LocalPatternWorker  — deterministic code analysis, no API calls (default)
-  └── OpenRouterWorker    — real model API, gated by JARVIS_OPENROUTER_KEY (production)
+  ├── LocalPatternWorker  — deterministic code analysis, no API calls (fallback)
+  ├── OllamaWorker        — local LLM via Ollama (zero cloud cost, no API key)
+  └── OpenRouterWorker    — cloud model API, gated by JARVIS_OPENROUTER_KEY
+
+Worker priority (create_worker()):
+  1. OpenRouterWorker  if JARVIS_OPENROUTER_KEY is set
+  2. OllamaWorker      if Ollama is running at OLLAMA_HOST (default localhost:11434)
+  3. LocalPatternWorker deterministic fallback — not a real model, not 4/5 proof alone
 
 Usage in production:
-  worker = create_worker()          # picks OpenRouter if key set, else Local
+  worker = create_worker()          # picks best available backend
   decision = worker.generate_patch(prompt, file_path, content)
-  if decision:
+  if decision and decision.changed:
       # apply decision.patch_content, diff, validate, review
 
 The LocalPatternWorker analyzes real code via regex/structural patterns and
 generates patches without an LLM. It satisfies the same interface that the
-production OpenRouterWorker uses — swapping the backend requires no pipeline
-changes.
+production OllamaWorker and OpenRouterWorker use — swapping the backend
+requires no pipeline changes.
 
 Machine-readable: openjarvis.workbench.task_worker
 """
@@ -28,7 +34,7 @@ import textwrap
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 
 # ---------------------------------------------------------------------------
@@ -670,32 +676,434 @@ class OpenRouterWorker(TaskWorker):
 
 
 # ---------------------------------------------------------------------------
+# OllamaWorker — local LLM, OpenAI-compatible API, zero cloud cost
+# ---------------------------------------------------------------------------
+
+
+class OllamaWorker(TaskWorker):
+    """Local Ollama-backed worker using the OpenAI-compatible chat API.
+
+    Real LLM backend — not deterministic pattern matching. Requires Ollama
+    running at OLLAMA_HOST (default: http://localhost:11434). No API key,
+    no cloud cost.
+
+    Strategy (generate_patch):
+      1. Extract relevant class section via AST (<= _MAX_SECTION_LINES)
+      2. Find AST-guided injection point (after last method in target class)
+      3. Extract method signature from prompt
+      4. Use PREFILL technique: seed the assistant response with the method
+         header to force direct code output, bypassing thinking preamble.
+         Sends {"role": "assistant", "content": seed} in the messages.
+      5. Model continues from the seed (dict body, method body, etc.)
+      6. Full code = seed + continuation
+      7. Post-process: fix undefined calls → Python idioms
+      8. Inject into full file, validate syntax
+
+    Cost controls:
+      - DEFAULT_MODEL = qwen3.5:0.8b (smallest/fastest for simple additions)
+      - max_tokens=400 per call
+      - temperature=0.05 (near-deterministic)
+      - think=False (disables extended thinking mode)
+      - section input capped at _MAX_SECTION_CHARS
+      - timeout=60s
+    """
+
+    OLLAMA_HOST: str = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
+    DEFAULT_MODEL: str = "qwen3.5:0.8b"  # fastest local model; 2b/4b if needed
+    _TIMEOUT: int = 60
+    _MAX_SECTION_LINES: int = 60
+    _MAX_SECTION_CHARS: int = 2000
+    _MAX_PROMPT_CHARS: int = 350
+
+    def __init__(self, model: Optional[str] = None) -> None:
+        self._model = model or self.DEFAULT_MODEL
+        self._host = self.OLLAMA_HOST
+        self._verify_connection()
+
+    def _verify_connection(self) -> None:
+        import urllib.request as _ur
+        try:
+            with _ur.urlopen(f"{self._host}/api/tags", timeout=5):
+                pass
+        except Exception as exc:
+            raise ConfigurationError(
+                f"Ollama not reachable at {self._host}: {exc}"
+            )
+
+    # ── TaskWorker interface ──────────────────────────────────────────────
+
+    def identify_files(self, prompt: str, repo_path: str) -> List[str]:
+        """Reuse LocalPatternWorker's heuristic file identification.
+
+        File identification is deterministic (grep-based) — the model call
+        is reserved for generate_patch() where LLM reasoning has real value.
+        """
+        return LocalPatternWorker().identify_files(prompt, repo_path)
+
+    def generate_patch(
+        self,
+        prompt: str,
+        file_path: str,
+        content: str,
+    ) -> Optional[WorkerDecision]:
+        """Call Ollama to generate a patch for the given file.
+
+        Uses the PREFILL technique: the assistant turn is seeded with the
+        method header so the model immediately outputs code, bypassing
+        thinking preamble and prose introductions.
+
+        think=False disables extended reasoning (qwen3.5 thinking mode).
+
+        The caller supplies NO pre-baked patch content — the model
+        decides the implementation based only on prompt + code context.
+        """
+        import json as _json
+        import urllib.request as _ur
+
+        try:
+            # Step 1: Extract focused class section via AST
+            section_text = self._extract_relevant_section(content, prompt)
+            injection_line = self._find_injection_line(content, prompt)
+
+            # Step 2: Extract method signature from prompt
+            method_sig = self._extract_method_sig(prompt)
+            if not method_sig:
+                return WorkerDecision(
+                    file_path=file_path,
+                    original_content=content,
+                    patch_content=content,
+                    rationale=(
+                        "OllamaWorker: cannot extract method signature from prompt. "
+                        "Prompt should include e.g. `to_dict(self) -> dict` or "
+                        "'add a METHOD_NAME method'."
+                    ),
+                    files_inspected=[file_path],
+                    pattern_used="ollama_model",
+                    confidence=0.0,
+                )
+
+            # Step 3: Build prefill seed — forces model to continue with code
+            # The seed IS the first line of the method + open-brace if dict return.
+            return_type = "dict" if "->" in method_sig and "dict" in method_sig else ""
+            seed = (
+                f"    def {method_sig}:\n"
+                f"        return {{{chr(10)}" if return_type == "dict"
+                else f"    def {method_sig}:\n        "
+            )
+
+            system_msg = (
+                "You are a Python code completion assistant. "
+                "Continue the code exactly from where it stops. "
+                "Output ONLY the continuation — no def line, no explanation. "
+                "Use Python slice notation (var[:200]) for truncation, not helper functions."
+            )
+            user_msg = (
+                f"/no_think {prompt[:self._MAX_PROMPT_CHARS]}\n\n"
+                f"Class context:\n{section_text[:self._MAX_SECTION_CHARS]}\n\n"
+                f"Complete this method:\n{seed}"
+            )
+
+            # Step 4: Call Ollama with prefill (think=False disables thinking mode)
+            payload = _json.dumps({
+                "model": self._model,
+                "messages": [
+                    {"role": "system", "content": system_msg},
+                    {"role": "user", "content": user_msg},
+                    {"role": "assistant", "content": seed},  # PREFILL
+                ],
+                "max_tokens": 400,
+                "temperature": 0.05,
+                "stream": False,
+                "think": False,
+            }).encode()
+
+            req = _ur.Request(
+                f"{self._host}/v1/chat/completions",
+                data=payload,
+                headers={"Content-Type": "application/json"},
+            )
+            with _ur.urlopen(req, timeout=self._TIMEOUT) as resp:
+                data = _json.loads(resp.read())
+
+            continuation = data["choices"][0]["message"]["content"]
+
+            if not continuation.strip():
+                return WorkerDecision(
+                    file_path=file_path,
+                    original_content=content,
+                    patch_content=content,
+                    rationale="OllamaWorker: model returned empty continuation",
+                    files_inspected=[file_path],
+                    pattern_used="ollama_model",
+                    confidence=0.0,
+                )
+
+            # Step 5: Full method = seed + model continuation
+            full_code = seed + continuation
+
+            # Step 6: Fix common undefined function calls → Python idioms
+            full_code = self._fix_undefined_calls(full_code)
+
+            # Step 7: Inject into full file
+            patched = self._inject_code(content, full_code, injection_line)
+
+            # Step 8: Validate syntax
+            try:
+                compile(patched, file_path, "exec")
+            except SyntaxError as exc:
+                # Try trimming the last incomplete line
+                patched = self._trim_to_valid(patched, file_path)
+                if patched is None:
+                    return WorkerDecision(
+                        file_path=file_path,
+                        original_content=content,
+                        patch_content=content,
+                        rationale=(
+                            f"OllamaWorker: syntax error in generated patch: {exc!s:.80}"
+                        ),
+                        files_inspected=[file_path],
+                        pattern_used="ollama_model",
+                        confidence=0.0,
+                    )
+
+            return WorkerDecision(
+                file_path=file_path,
+                original_content=content,
+                patch_content=patched,
+                rationale=f"OllamaWorker/{self._model}: {prompt[:80]}",
+                files_inspected=[file_path],
+                pattern_used="ollama_model",
+                confidence=0.9,
+            )
+
+        except Exception as exc:
+            return WorkerDecision(
+                file_path=file_path,
+                original_content=content,
+                patch_content=content,
+                rationale=f"OllamaWorker error: {exc!s:.120}",
+                files_inspected=[file_path],
+                pattern_used="ollama_model",
+                confidence=0.0,
+            )
+
+    def explain(self) -> str:
+        return (
+            f"OllamaWorker: model={self._model}, host={self._host} "
+            "(local LLM, zero cloud cost, no API key required)"
+        )
+
+    # ── Helpers ──────────────────────────────────────────────────────────
+
+    def _extract_relevant_section(self, content: str, prompt: str) -> str:
+        """Extract a focused section (<=_MAX_SECTION_LINES) via AST class matching."""
+        lines = content.splitlines()
+
+        try:
+            tree = ast.parse(content)
+            prompt_lower = prompt.lower().replace("_", "")
+            for node in ast.walk(tree):
+                if isinstance(node, ast.ClassDef):
+                    cls_clean = node.name.lower().replace("_", "")
+                    if cls_clean in prompt_lower:
+                        start = max(0, node.lineno - 2)
+                        end = getattr(node, "end_lineno", node.lineno + 40)
+                        end = min(len(lines) - 1, end)
+                        section = lines[start : end + 1]
+                        if len(section) > self._MAX_SECTION_LINES:
+                            section = section[-self._MAX_SECTION_LINES :]
+                        return "\n".join(section)
+        except SyntaxError:
+            pass
+
+        keywords = set(re.findall(r"\b\w+\b", prompt.lower()))
+        scores = [
+            (sum(1 for kw in keywords if kw in ln.lower()), i)
+            for i, ln in enumerate(lines)
+        ]
+        best_i = max(scores, key=lambda x: x[0])[1] if scores else 0
+        start = max(0, best_i - 10)
+        end = min(len(lines) - 1, best_i + self._MAX_SECTION_LINES - 10)
+        return "\n".join(lines[start : end + 1])
+
+    def _find_injection_line(self, content: str, prompt: str) -> Optional[int]:
+        """AST-guided: 1-indexed line after the last method in the target class."""
+        try:
+            tree = ast.parse(content)
+            prompt_lower = prompt.lower().replace("_", "")
+            for node in ast.walk(tree):
+                if isinstance(node, ast.ClassDef):
+                    cls_clean = node.name.lower().replace("_", "")
+                    if cls_clean in prompt_lower:
+                        last_end = node.lineno
+                        for item in node.body:
+                            if isinstance(
+                                item, (ast.FunctionDef, ast.AsyncFunctionDef)
+                            ):
+                                item_end = getattr(item, "end_lineno", None)
+                                if item_end is not None:
+                                    last_end = max(last_end, item_end)
+                        return last_end
+        except SyntaxError:
+            pass
+        return None
+
+    def _extract_method_sig(self, prompt: str) -> str:
+        """Extract a Python method signature from the prompt.
+
+        Examples:
+          "add a `to_dict(self) -> dict` method" → "to_dict(self) -> dict"
+          "add to_dict(self) -> dict: method"    → "to_dict(self) -> dict"
+          "add a to_dict method"                 → "to_dict(self)"
+        """
+        # Backtick-quoted signature
+        m = re.search(r"`([\w]+\([^)]*\)\s*(?:->\s*[\w\[\], .]+)?)`", prompt)
+        if m:
+            return m.group(1).strip().rstrip(":")
+
+        # Plain signature with -> return type
+        m = re.search(
+            r"\b([\w]+\([^)]*\)\s*->\s*[\w\[\], .]+)\s+method", prompt
+        )
+        if m:
+            return m.group(1).strip().rstrip(":")
+
+        # Method name only (e.g. "add a to_dict method")
+        m = re.search(r"\badd\s+(?:a\s+)?`?([\w]+)\b", prompt)
+        if m:
+            name = m.group(1)
+            if name not in {"a", "an", "the", "new"}:
+                return f"{name}(self)"
+
+        return ""
+
+    def _fix_undefined_calls(self, code: str) -> str:
+        """Replace undefined helper calls with equivalent Python idioms.
+
+        Models sometimes invent helper functions (truncate_text, str_limit).
+        Replace those with inline slice notation.
+        """
+        code = re.sub(r"truncate_text\(([^)]+)\)", r"\1[:200]", code)
+        code = re.sub(r"\btruncate\(([^,)]+)\)", r"\1[:200]", code)
+        code = re.sub(r"str_limit\(([^,]+),\s*(\d+)\)", r"\1[:\2]", code)
+        return code
+
+    def _inject_code(
+        self,
+        content: str,
+        code: str,
+        injection_line: Optional[int],
+    ) -> str:
+        """Inject model-generated code after injection_line (1-indexed).
+
+        Normalizes: strip minimum shared indentation, then add 4-space base.
+        If injection_line is None, appends to end of file.
+        """
+        lines = content.splitlines()
+        class_indent = "    "
+
+        code_lines = code.splitlines()
+        non_empty = [ln for ln in code_lines if ln.strip()]
+        if not non_empty:
+            return content
+
+        min_indent = min(len(ln) - len(ln.lstrip()) for ln in non_empty)
+        normalized: List[str] = []
+        for ln in code_lines:
+            if not ln.strip():
+                normalized.append("")
+            else:
+                normalized.append(class_indent + ln[min_indent:])
+
+        if injection_line is not None and 1 <= injection_line <= len(lines):
+            insert_at = injection_line
+            new_lines = (
+                lines[:insert_at] + [""] + normalized + [""] + lines[insert_at:]
+            )
+        else:
+            new_lines = lines + [""] + normalized + [""]
+
+        return "\n".join(new_lines)
+
+    def _trim_to_valid(self, content: str, file_path: str) -> Optional[str]:
+        """Walk backwards removing lines until content compiles, or return None."""
+        lines = content.splitlines()
+        for i in range(len(lines) - 1, max(len(lines) - 20, 0), -1):
+            candidate = "\n".join(lines[:i])
+            try:
+                compile(candidate, file_path, "exec")
+                return candidate
+            except SyntaxError:
+                continue
+        return None
+
+    def _parse_code(self, raw: str) -> str:
+        """Strip <think> blocks and markdown fences (legacy helper)."""
+        cleaned = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL).strip()
+        m = re.search(r"```(?:python)?\n(.*?)```", cleaned, re.DOTALL)
+        if m:
+            return m.group(1).strip()
+        m = re.search(r"(def \w+.*)", cleaned, re.DOTALL)
+        if m:
+            return m.group(1).strip()
+        return cleaned.strip()
+
+
+# ---------------------------------------------------------------------------
 # Factory
 # ---------------------------------------------------------------------------
 
 
-def create_worker(prefer_local: bool = False) -> TaskWorker:
-    """Create the appropriate worker based on environment.
+def is_real_model_worker(worker: TaskWorker) -> bool:
+    """Return True if the worker uses a real LLM backend.
 
-    - If JARVIS_OPENROUTER_KEY is set AND prefer_local=False → OpenRouterWorker
-    - Otherwise → LocalPatternWorker (deterministic, no API, no cost)
+    False for LocalPatternWorker (deterministic patterns, no model call).
+    True for OllamaWorker and OpenRouterWorker (real model inference).
+
+    Used by tests and pipeline to confirm 4/5 real-model-path requirement.
+    """
+    return isinstance(worker, (OllamaWorker, OpenRouterWorker))
+
+
+def create_worker(prefer_local: bool = False) -> TaskWorker:
+    """Create the best available worker backend.
+
+    Priority:
+      1. OpenRouterWorker  — if JARVIS_OPENROUTER_KEY is set (cloud, key-gated)
+      2. OllamaWorker      — if Ollama is running locally (real LLM, zero cost)
+      3. LocalPatternWorker — deterministic fallback (no model, no cost)
 
     This is the same factory both tests and production use.
-    Only the environment determines which backend is active.
+    Only environment determines the active backend.
+
+    Note: LocalPatternWorker alone does not satisfy the 4/5 daily-driver proof.
+    Use is_real_model_worker(create_worker()) to confirm a real model is active.
     """
-    if not prefer_local and os.environ.get("JARVIS_OPENROUTER_KEY", "").strip():
+    if not prefer_local:
+        # 1. OpenRouter (cloud model, cost-controlled by JARVIS_OPENROUTER_KEY)
+        if os.environ.get("JARVIS_OPENROUTER_KEY", "").strip():
+            try:
+                return OpenRouterWorker()
+            except ConfigurationError:
+                pass
+
+        # 2. Ollama (local LLM, zero cloud cost, no API key)
         try:
-            return OpenRouterWorker()
+            return OllamaWorker()
         except ConfigurationError:
             pass
+
+    # 3. Deterministic fallback — not a real model path
     return LocalPatternWorker()
 
 
 __all__ = [
     "TaskWorker",
     "LocalPatternWorker",
+    "OllamaWorker",
     "OpenRouterWorker",
     "WorkerDecision",
     "ConfigurationError",
     "create_worker",
+    "is_real_model_worker",
 ]

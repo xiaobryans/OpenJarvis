@@ -278,11 +278,18 @@ class TestOpenRouterWorker:
         assert issubclass(OpenRouterWorker, TaskWorker)
 
     def test_create_worker_returns_local_when_key_absent(self):
-        """create_worker() returns LocalPatternWorker when JARVIS_OPENROUTER_KEY not set."""
+        """create_worker(prefer_local=True) returns LocalPatternWorker (forced local).
+
+        Updated: create_worker() without prefer_local may return OllamaWorker if
+        Ollama is running (priority: OpenRouter > Ollama > LocalPattern).
+        prefer_local=True bypasses all model backends → always LocalPatternWorker.
+        """
         original = os.environ.pop("JARVIS_OPENROUTER_KEY", None)
         try:
-            w = create_worker()
-            assert isinstance(w, LocalPatternWorker)
+            w = create_worker(prefer_local=True)
+            assert isinstance(w, LocalPatternWorker), (
+                "create_worker(prefer_local=True) must always return LocalPatternWorker"
+            )
         finally:
             if original is not None:
                 os.environ["JARVIS_OPENROUTER_KEY"] = original
@@ -325,11 +332,15 @@ class TestRunTaskAutonomous:
         )
         pipeline = CodingPipeline(config=cfg)
         try:
+            # Explicitly use LocalPatternWorker — this test proves the deterministic
+            # early_return_guard pattern, not a real model call.
+            # Real model (OllamaWorker) proof is in test_plan3_dogfood_real_model.py.
             result = pipeline.run_task(
                 prompt=_REAL_TASK,
                 validation_post=_REAL_VALIDATION_POST,
                 session_id="autonomous-e2e-sess",
                 task_id="autonomous-e2e-task",
+                worker=LocalPatternWorker(),
             )
 
             # 1. Worker identified real OpenJarvis file
@@ -554,9 +565,12 @@ class TestRunTaskAutonomous:
         )
         pipeline = CodingPipeline(config=cfg)
         try:
+            # Explicit LocalPatternWorker — proves commit readiness for the
+            # deterministic early_return_guard pattern.
             result = pipeline.run_task(
                 prompt=_REAL_TASK,
                 validation_post=_REAL_VALIDATION_POST,
+                worker=LocalPatternWorker(),
             )
             commit_events = [e for e in result.events if "commit_ready" in e]
             assert commit_events
