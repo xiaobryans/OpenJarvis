@@ -118,6 +118,11 @@ class VoiceTurnEngine:
         self._cancel_event = threading.Event()
         self._recording_abort = threading.Event()
 
+        # TTS playback handle — allows cancel_turn() to kill the afplay subprocess
+        # while it is still speaking.  Imported lazily to avoid circular import.
+        from openjarvis.autonomy.voice_conversation import _TTSPlayback
+        self._tts_playback = _TTSPlayback()
+
         # SSE subscriber queues — one per connected client
         self._subscribers: List[queue.Queue] = []
         self._subs_lock = threading.Lock()
@@ -185,6 +190,8 @@ class VoiceTurnEngine:
 
         self._cancel_event.set()
         self._recording_abort.set()
+        # Kill any active TTS subprocess (afplay/say) so speaking stops immediately.
+        self._tts_playback.cancel()
         logger.info("VoiceTurnEngine: cancel requested (turn=%s phase=%s)", turn_id, phase.value)
         return {"ok": True, "cancelled_turn": turn_id, "phase": phase.value}
 
@@ -351,6 +358,7 @@ class VoiceTurnEngine:
         )
 
         calib_data: Dict = {}
+        last_chunk_diag: Dict = {}   # latest on_vad_chunk data for final vad event
 
         def _on_state(s: str) -> None:
             if not self._is_turn_live(turn_id):
@@ -369,7 +377,9 @@ class VoiceTurnEngine:
 
             Throttled: only emitted when silence is accumulating (silence_consecutive >= 1)
             or on every 5th chunk during speech, to avoid flooding the SSE stream.
+            Always updates last_chunk_diag for the final vad SSE event.
             """
+            last_chunk_diag.update(chunk)
             if not self._is_turn_live(turn_id):
                 return
             sc = chunk.get("silence_consecutive", 0)
@@ -380,11 +390,16 @@ class VoiceTurnEngine:
                     "type": "vad_progress",
                     "rms": chunk.get("rms"),
                     "threshold": chunk.get("threshold"),
+                    "foreground_threshold": chunk.get("foreground_threshold"),
                     "noise_floor": chunk.get("noise_floor"),
+                    "ambient_ema": chunk.get("ambient_ema"),
+                    "speech_ema": chunk.get("speech_ema"),
                     "silence_elapsed_ms": chunk.get("silence_elapsed_ms"),
+                    "relative_silence_ms": chunk.get("relative_silence_ms"),
                     "silence_consecutive": sc,
                     "silence_chunks_needed": chunk.get("silence_chunks_needed"),
                     "speech_detected": chunk.get("speech_detected"),
+                    "background_noise_detected": chunk.get("background_noise_detected"),
                 })
 
         rec_start = time.monotonic()
@@ -411,8 +426,13 @@ class VoiceTurnEngine:
 
         vad_diag = {
             "stop_reason": stop_reason,
+            "endpoint_mode": last_chunk_diag.get("endpoint_mode", "absolute"),
             "duration_s": round(time.monotonic() - rec_start, 2),
             "silence_stop_ms": self._silence_stop_ms,
+            "background_noise_detected": last_chunk_diag.get("background_noise_detected", False),
+            "speech_detected": last_chunk_diag.get("speech_detected", False),
+            "speech_ema": last_chunk_diag.get("speech_ema"),
+            "ambient_ema": last_chunk_diag.get("ambient_ema"),
             **calib_data,
         }
         self._last_vad = vad_diag
@@ -577,7 +597,11 @@ class VoiceTurnEngine:
         cancel = self._cancel_event
 
         def _do_tts():
-            return speak_response(text, cancel_check=lambda: cancel.is_set())
+            return speak_response(
+                text,
+                playback=self._tts_playback,
+                cancel_check=lambda: cancel.is_set(),
+            )
 
         try:
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:

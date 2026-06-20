@@ -152,6 +152,36 @@ _NOISE_CALIB_MULTIPLIER: float = 1.8  # effective_threshold ≥ noise_floor × t
 # Value 2 = transient resistance: a lone keyboard click / breath doesn't reset.
 _VAD_TRANSIENT_LOUD_CHUNKS: int = 2
 
+# ---------------------------------------------------------------------------
+# Foreground-speech relative endpointing
+#
+# Problem: a fixed/calibrated RMS threshold fails when background music or
+# continuous noise has similar amplitude to the ambient baseline at start.
+# Example: calibration is done in a quiet room, then music plays — the
+# effective threshold is low (300) but music is 1500 RMS, so silence_consecutive
+# never accumulates.
+#
+# Solution: track two exponential moving averages:
+#   ambient_ema — slow tracker of ALL audio (background level, even during speech)
+#   speech_ema  — fast tracker of chunks clearly above ambient (foreground speech)
+#
+# When the foreground speech level drops to < _SPEECH_DROPOUT_RATIO × speech_ema
+# for _SPEECH_DROPOUT_CHUNKS consecutive chunks, endpoint — even if the
+# background noise/music keeps absolute RMS above the static threshold.
+# ---------------------------------------------------------------------------
+
+# Alpha for ambient EMA: small = slow update = tracks long-term background
+_AMBIENT_EMA_ALPHA: float = 0.03
+# A chunk is "foreground speech" if rms > ambient_ema × this multiplier
+_FOREGROUND_SPEECH_MULTIPLIER: float = 2.0
+# Speech EMA update weight (fast track — follows speech peaks quickly)
+_SPEECH_EMA_ALPHA: float = 0.3
+# Endpoint when rms < speech_ema × this ratio (speech has dropped out)
+_SPEECH_DROPOUT_RATIO: float = 0.55
+# Consecutive chunks at/below dropout threshold required to endpoint
+# ~2.5 s at 100 ms chunks — tolerates natural thinking pauses
+_SPEECH_DROPOUT_CHUNKS: int = 25
+
 
 def record_command_audio(
     duration_seconds: float = 5.0,
@@ -270,11 +300,17 @@ def record_command_audio_vad(
     silence_consecutive: int = 0
     speech_detected: bool = False
     stop_reason: str = "max_duration"
+    stop_endpoint_mode: str = "absolute"   # "absolute" | "relative"
     noise_floor_rms: float = 0.0
     effective_threshold: float = silence_rms_threshold
     # Consecutive chunks above threshold — only reset silence counter after
     # _VAD_TRANSIENT_LOUD_CHUNKS in a row (transient resistance).
     _loud_streak: int = 0
+    # Foreground-speech relative endpointing state
+    _ambient_ema: float = silence_rms_threshold  # initialized, updated per chunk
+    _speech_ema: float = 0.0                      # tracks foreground-speech level
+    _relative_silence_count: int = 0              # consecutive chunks below dropout threshold
+    _background_noise_detected: bool = False      # True when ambient > static threshold
 
     stream = sd.InputStream(
         samplerate=sample_rate,
@@ -337,8 +373,12 @@ def record_command_audio_vad(
             )
             if on_calibrated is not None:
                 on_calibrated(noise_floor_rms, effective_threshold)
+            # Seed ambient EMA from calibration result so Phase 2 starts with a
+            # realistic background estimate rather than the static default.
+            _ambient_ema = max(noise_floor_rms, silence_rms_threshold * 0.3)
+            _background_noise_detected = noise_floor_rms > silence_rms_threshold
 
-        # ── Phase 2: Main recording loop (adaptive threshold) ─────────────
+        # ── Phase 2: Main recording loop (adaptive + relative threshold) ──
         for chunk_idx in range(calib_n, max_chunks):
             if abort_event is not None and abort_event.is_set():
                 stop_reason = "manually_ended"
@@ -350,21 +390,37 @@ def record_command_audio_vad(
             chunk_flat = data.flatten().astype(np.float64)
             rms = float(np.sqrt(np.mean(chunk_flat ** 2)))
 
-            if rms >= effective_threshold:
+            # ── Continuous ambient EMA (slow, tracks background even during speech)
+            _ambient_ema = _ambient_ema * (1.0 - _AMBIENT_EMA_ALPHA) + rms * _AMBIENT_EMA_ALPHA
+
+            # ── Foreground speech check: is this chunk clearly above ambient?
+            _foreground_threshold = _ambient_ema * _FOREGROUND_SPEECH_MULTIPLIER
+            _is_foreground = rms > _foreground_threshold
+
+            # Track background noise: ambient significantly above static floor
+            if _ambient_ema > silence_rms_threshold * 1.5:
+                _background_noise_detected = True
+
+            if rms >= effective_threshold or _is_foreground:
                 speech_detected = True
                 _loud_streak += 1
-                # Only reset silence counter after sustained speech (>= N consecutive
-                # loud chunks). Single 100ms transients (keyboard click, breath) do
-                # NOT reset the counter, preventing spurious silence-gate resets.
+                # Only reset absolute silence counter after sustained speech.
                 if _loud_streak >= _VAD_TRANSIENT_LOUD_CHUNKS:
                     silence_consecutive = 0
+
+                # Update speech EMA only when foreground speech is confirmed
+                if _is_foreground:
+                    _speech_ema = _speech_ema * (1.0 - _SPEECH_EMA_ALPHA) + rms * _SPEECH_EMA_ALPHA
+                    _relative_silence_count = 0
+
                 if _loud_streak == 1 and on_state is not None:
-                    on_state("recording")  # emit state on first loud chunk (immediate feedback)
+                    on_state("recording")
                 elif _loud_streak >= _VAD_TRANSIENT_LOUD_CHUNKS and on_state is not None:
                     on_state("recording")
                 logger.debug(
-                    "VAD chunk %d: rms=%.0f >= thresh=%.0f → loud_streak=%d",
-                    chunk_idx, rms, effective_threshold, _loud_streak,
+                    "VAD chunk %d: rms=%.0f thresh=%.0f fg=%.0f speech_ema=%.0f loud=%d",
+                    chunk_idx, rms, effective_threshold, _foreground_threshold,
+                    _speech_ema, _loud_streak,
                 )
             else:
                 _loud_streak = 0
@@ -376,26 +432,52 @@ def record_command_audio_vad(
                 if speech_detected and silence_consecutive >= 3 and on_state is not None:
                     on_state("waiting_for_silence")
 
+            # ── Relative silence count (foreground-speech dropout)
+            # If speech EMA was established AND current rms is clearly below it,
+            # increment the relative counter.  This fires even when absolute
+            # background RMS is high (background music continues after speech).
+            if _speech_ema > 0 and rms < _speech_ema * _SPEECH_DROPOUT_RATIO:
+                _relative_silence_count += 1
+            elif _speech_ema > 0:
+                _relative_silence_count = 0
+
             # Emit live VAD diagnostics for UI/SSE consumers
             if on_vad_chunk is not None:
                 try:
                     on_vad_chunk({
                         "rms": round(rms, 1),
                         "threshold": round(effective_threshold, 1),
+                        "foreground_threshold": round(_foreground_threshold, 1),
                         "noise_floor": round(noise_floor_rms, 1),
+                        "ambient_ema": round(_ambient_ema, 1),
+                        "speech_ema": round(_speech_ema, 1),
                         "silence_consecutive": silence_consecutive,
                         "silence_chunks_needed": silence_chunks_needed,
                         "silence_elapsed_ms": silence_consecutive * _VAD_CHUNK_MS,
+                        "relative_silence_ms": _relative_silence_count * _VAD_CHUNK_MS,
                         "loud_streak": _loud_streak,
                         "speech_detected": speech_detected,
+                        "background_noise_detected": _background_noise_detected,
                     })
                 except Exception:
                     pass  # diagnostic callback must never abort the recording loop
 
-            # Only endpoint after min_seconds elapsed AND speech was heard
+            # ── Endpoint checks (both absolute and relative) ──────────────
             if chunk_idx >= min_chunks and speech_detected:
                 if silence_consecutive >= silence_chunks_needed:
                     stop_reason = "silence_endpointed"
+                    stop_endpoint_mode = "absolute"
+                    break
+                # Relative endpoint: foreground speech dropped out even though
+                # background noise/music continues above the absolute threshold.
+                if _speech_ema > 0 and _relative_silence_count >= _SPEECH_DROPOUT_CHUNKS:
+                    stop_reason = "silence_endpointed"
+                    stop_endpoint_mode = "relative"
+                    logger.info(
+                        "VAD relative endpoint: speech_ema=%.0f rms=%.0f "
+                        "ambient=%.0f dropout=%d chunks",
+                        _speech_ema, rms, _ambient_ema, _relative_silence_count,
+                    )
                     break
 
     finally:
@@ -420,11 +502,13 @@ def record_command_audio_vad(
 
     elapsed_s = len(all_chunks) * _VAD_CHUNK_MS / 1000.0
     logger.info(
-        "VAD finished: %.1fs — stop=%s  speech=%s  silence=%d/%d  "
-        "noise_floor=%.1f  effective_thresh=%.1f",
-        elapsed_s, stop_reason, speech_detected,
+        "VAD finished: %.1fs — stop=%s  mode=%s  speech=%s  "
+        "silence=%d/%d  bg_noise=%s  noise_floor=%.1f  ambient=%.1f  "
+        "speech_ema=%.1f  effective_thresh=%.1f",
+        elapsed_s, stop_reason, stop_endpoint_mode, speech_detected,
         silence_consecutive, silence_chunks_needed,
-        noise_floor_rms, effective_threshold,
+        _background_noise_detected, noise_floor_rms, _ambient_ema,
+        _speech_ema, effective_threshold,
     )
     return buf.getvalue(), stop_reason
 
