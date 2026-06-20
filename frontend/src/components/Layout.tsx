@@ -33,6 +33,7 @@ import {
 import { ApprovalBell } from './ApprovalBell';
 import { SystemPulse } from './SystemPulse';
 import { AmbientCore } from './AmbientCore';
+import { JarvisOrb } from './JarvisOrb';
 import { CloudStatusChip } from './Cloud/CloudStatusStrip';
 import { useAppStore } from '../lib/store';
 import { checkHealth } from '../lib/api';
@@ -399,6 +400,9 @@ export function Layout() {
 
       {/* Plan 2 ambient identity layer — behind everything */}
       <AmbientCore mood={ambientMood} intensity={ambientIntensity} />
+
+      {/* Jarvis central orb — living 3D identity core */}
+      <JarvisOrb mood={ambientMood} uiMode={uiMode} />
 
       {/* Mode indicator strip — thin top-edge accent that shifts on A→B */}
       <div

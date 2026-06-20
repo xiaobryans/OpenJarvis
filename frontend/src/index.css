@@ -937,6 +937,36 @@
   animation: p2-status-pulse 1600ms var(--p2-ease-smooth) infinite;
 }
 
+/* ── Jarvis Orb breathing keyframes ────────────────────────────────────── */
+/* Idle: slow, gentle inhale/exhale */
+@keyframes orb-breathe-idle {
+  0%, 100% {
+    transform: translate(-50%, -50%) scale(1.000);
+    filter: brightness(1.00);
+  }
+  50% {
+    transform: translate(-50%, -50%) scale(1.055);
+    filter: brightness(1.12);
+  }
+}
+
+/* Listening: quicker pulse, amber mood */
+@keyframes orb-breathe-listen {
+  0%   { transform: translate(-50%, -50%) scale(0.94); filter: brightness(0.90); }
+  40%  { transform: translate(-50%, -50%) scale(1.07); filter: brightness(1.20); }
+  100% { transform: translate(-50%, -50%) scale(0.94); filter: brightness(0.90); }
+}
+
+/* Processing / speaking: rapid throb */
+@keyframes orb-breathe-process {
+  0%, 100% { transform: translate(-50%, -50%) scale(1.00); filter: brightness(1.00); }
+  50%       { transform: translate(-50%, -50%) scale(1.09); filter: brightness(1.28); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .jarvis-orb { animation: none !important; }
+}
+
 /* Deep Research inline citation pills — small rounded chips that flow
    with the surrounding text and link out to the cited email. */
 .research-citation {

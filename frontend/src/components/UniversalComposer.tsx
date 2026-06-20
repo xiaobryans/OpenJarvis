@@ -83,6 +83,89 @@ const SLASH_COMMANDS: SlashCommand[] = [
 ];
 
 // ---------------------------------------------------------------------------
+// Runtime / status query interceptor
+// Answers questions about Jarvis's own runtime state from real backend data.
+// Returns a string answer, or null if this is NOT a runtime query.
+// ---------------------------------------------------------------------------
+
+const RUNTIME_PATTERNS: RegExp[] = [
+  /voice\s*provider/i,
+  /deepgram/i,
+  /voice\s*status/i,
+  /voice\s*(fallback|backup)/i,
+  /stt\s*(provider|engine|backend)/i,
+  /tts\s*(provider|engine|backend)/i,
+  /speech[-\s]to[-\s]text/i,
+  /text[-\s]to[-\s]speech/i,
+  /are\s+you\s+(using|connected|online)/i,
+  /voice\s*(pipeline|system|config)/i,
+  /what\s+(voice|stt|tts|audio)/i,
+  /(backend|server)\s+(connected|status|online|running)/i,
+  /are\s+you\s+connected\s+to/i,
+  /jarvis\s+(voice|audio|stt|tts|status)/i,
+];
+
+async function resolveRuntimeQuery(content: string, base: string): Promise<string | null> {
+  if (!RUNTIME_PATTERNS.some((p) => p.test(content))) return null;
+
+  const [voiceData, backendOk] = await Promise.all([
+    fetch(`${base}/v1/voice/status`, { signal: AbortSignal.timeout(4000) })
+      .then((r) => (r.ok ? r.json() : null))
+      .catch(() => null),
+    fetch(`${base}/health`, { signal: AbortSignal.timeout(2000) })
+      .then((r) => r.ok)
+      .catch(() => false),
+  ]);
+
+  const stt = voiceData?.stt_status ?? 'unknown';
+  const tts = voiceData?.tts_status ?? 'unknown';
+  const readiness = voiceData?.voice_readiness ?? 'HOLD';
+  const summary = voiceData?.summary ?? '';
+  const fallbackReason = voiceData?.readiness_reason ?? '';
+
+  // Map provider codes → human-readable labels
+  const sttLabel = stt === 'deepgram' ? 'Deepgram (cloud STT)'
+    : stt === 'faster_whisper' ? 'Faster Whisper (local)'
+    : stt === 'openai_whisper' ? 'OpenAI Whisper'
+    : stt === 'not_configured' ? 'not configured'
+    : stt;
+
+  const ttsLabel = tts === 'deepgram' ? 'Deepgram Aura (cloud TTS)'
+    : tts === 'elevenlabs' ? 'ElevenLabs'
+    : tts === 'not_configured' ? 'not configured'
+    : tts;
+
+  const lines: string[] = [];
+  lines.push(`**Jarvis Runtime Status**`);
+  lines.push('');
+  lines.push(`**Backend:** ${backendOk ? 'Connected ✓' : 'Not reachable ✗'}`);
+  lines.push(`**Voice readiness:** ${readiness}`);
+  lines.push(`**STT provider:** ${sttLabel}`);
+  lines.push(`**TTS provider:** ${ttsLabel}`);
+
+  if (stt === 'deepgram' || tts === 'deepgram') {
+    lines.push(`**Primary voice pipeline:** Deepgram (streaming STT + Aura TTS)`);
+  }
+
+  if (fallbackReason) {
+    lines.push(`**Readiness note:** ${fallbackReason}`);
+  } else if (summary) {
+    lines.push(`**Summary:** ${summary}`);
+  }
+
+  if (voiceData?.microphone_status) {
+    lines.push(`**Microphone:** ${voiceData.microphone_status}`);
+  }
+
+  if (readiness === 'HOLD' || !backendOk) {
+    lines.push('');
+    lines.push('Voice is not fully ready. Check Settings → Backend / Voice to configure.');
+  }
+
+  return lines.join('\n');
+}
+
+// ---------------------------------------------------------------------------
 // Voice state label
 // ---------------------------------------------------------------------------
 
@@ -286,6 +369,19 @@ export function UniversalComposer() {
       timestamp: Date.now(),
     };
     addMessage(convId, userMsg);
+
+    // Runtime query intercept — answer from real Jarvis state, skip LLM
+    const runtimeAnswer = await resolveRuntimeQuery(content, getBase());
+    if (runtimeAnswer !== null) {
+      const runtimeMsg: ChatMessage = {
+        id: generateId(),
+        role: 'assistant',
+        content: runtimeAnswer,
+        timestamp: Date.now(),
+      };
+      addMessage(convId, runtimeMsg);
+      return;
+    }
 
     const currentMessages = useAppStore.getState().messages;
     const apiMessages = currentMessages.map((m) => ({
