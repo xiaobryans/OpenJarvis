@@ -18,10 +18,20 @@ from openjarvis.skills.sources.ecc.eval_context_skill import (
     get_eval_context_manifest,
     register_eval_context_candidate,
 )
+from openjarvis.skills.sources.ecc.adapted_skills import (
+    ADAPTED_SKILLS,
+    get_adapted_skill,
+    list_adapted_skill_ids,
+)
 
 __all__ = [
+    # Phase 1E pilot
     "ECC_EVAL_CONTEXT_CANDIDATE",
     "EvalContextSkill",
     "get_eval_context_manifest",
     "register_eval_context_candidate",
+    # Phase 2 batch (23 guidance skills)
+    "ADAPTED_SKILLS",
+    "get_adapted_skill",
+    "list_adapted_skill_ids",
 ]

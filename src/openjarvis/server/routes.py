@@ -1326,4 +1326,81 @@ async def pipeline_classify(prompt: str):
     return classify_task(prompt)
 
 
+@router.get("/v1/intake/status")
+async def intake_status():
+    """Return ECC candidate intake status — catalog summary and activation counts.
+
+    Read-only endpoint. No ECC code is executed by this route.
+    Returns the full ECC catalog state summary for admin/monitoring use.
+    """
+    from openjarvis.skills.ecc_catalog import get_catalog
+    from openjarvis.skills.wrappers import get_wrapper_registry
+
+    catalog = get_catalog()
+    summary = catalog.get_status_summary()
+    wrapper_reg = get_wrapper_registry()
+    wrapper_summary = wrapper_reg.summary()
+
+    return {
+        "plan": "Plan 1 — ECC Skills Intake",
+        "source": summary["source"],
+        "license": summary["license"],
+        "license_verified": summary["license_verified"],
+        "no_ecc_code_executed": True,
+        "total_registered": summary["total_registered"],
+        "state_counts": summary["state_counts"],
+        "category_counts": summary["category_counts"],
+        "active_count": summary["active_count"],
+        "active_items": summary["active_items"],
+        "risky_wrappers": wrapper_summary,
+        "hold_by_category": summary["hold_by_category"],
+        "activation_policy": summary["activation_policy"],
+    }
+
+
+@router.get("/v1/intake/active")
+async def intake_active():
+    """Return all currently active ECC-derived Jarvis skills."""
+    from openjarvis.skills.ecc_catalog import get_catalog
+
+    catalog = get_catalog()
+    active = catalog.list_active()
+    return {
+        "active_count": len(active),
+        "active_items": active,
+        "note": "Active items are read-only guidance skills (MIT, no execution required).",
+    }
+
+
+@router.get("/v1/intake/skill/{skill_id}")
+async def intake_skill(skill_id: str):
+    """Return catalog entry and skill content for a specific ECC skill.
+
+    Args:
+        skill_id: Jarvis skill ID (e.g., 'ecc_benchmark_methodology')
+    """
+    from openjarvis.skills.ecc_catalog import get_catalog
+    from openjarvis.skills.sources.ecc.adapted_skills import get_adapted_skill
+
+    catalog = get_catalog()
+    entry = catalog.find_by_jarvis_skill_id(skill_id)
+    if entry is None:
+        raise HTTPException(status_code=404, detail=f"Skill '{skill_id}' not found in ECC catalog")
+
+    manifest = get_adapted_skill(skill_id)
+    return {
+        "catalog_entry": entry,
+        "manifest": {
+            "name": manifest.name,
+            "version": manifest.version,
+            "description": manifest.description,
+            "tags": manifest.tags,
+            "required_capabilities": manifest.required_capabilities,
+            "content_preview": manifest.markdown_content[:300] + "..."
+            if manifest and len(manifest.markdown_content) > 300
+            else (manifest.markdown_content if manifest else None),
+        } if manifest else None,
+    }
+
+
 __all__ = ["router"]
