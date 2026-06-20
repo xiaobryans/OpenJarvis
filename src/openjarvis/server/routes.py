@@ -1159,4 +1159,88 @@ async def security_scan():
     }
 
 
+# ---------------------------------------------------------------------------
+# Plan 3 — Coding Pipeline routes
+# ---------------------------------------------------------------------------
+
+@router.post("/v1/workbench/pipeline/run")
+async def pipeline_run(request: Request):
+    """Run the integrated Plan 3 coding pipeline.
+
+    Body (JSON):
+      prompt          str   — task description (required)
+      session_id      str   — optional, auto-generated if omitted
+      task_id         str   — optional, auto-generated if omitted
+      files_to_inspect list — optional list of relative file paths to inspect
+      validation_cmds  list — optional shell commands to validate changes
+      approval_granted bool  — required True for risky tasks (default False)
+      patch_diff       str  — optional unified diff for the proposed change
+      files_changed    list — optional list of files changed by worker
+      dry_run          bool — default True; set False to allow writes
+    """
+    from openjarvis.workbench.pipeline import CodingPipeline, PipelineConfig
+
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON body")
+
+    prompt = body.get("prompt", "").strip()
+    if not prompt:
+        raise HTTPException(status_code=400, detail="'prompt' is required")
+
+    cfg = PipelineConfig(
+        dry_run=bool(body.get("dry_run", True)),
+        repo_path=body.get("repo_path", "."),
+    )
+    pipeline = CodingPipeline(config=cfg)
+    try:
+        result = pipeline.run(
+            prompt=prompt,
+            session_id=body.get("session_id") or None,
+            task_id=body.get("task_id") or None,
+            files_to_inspect=body.get("files_to_inspect") or None,
+            validation_commands=body.get("validation_cmds") or None,
+            approval_granted=bool(body.get("approval_granted", False)),
+            patch_diff=body.get("patch_diff", ""),
+            files_changed=body.get("files_changed") or None,
+        )
+    finally:
+        pipeline.close()
+
+    return result.to_dict()
+
+
+@router.get("/v1/workbench/pipeline/status/{session_id}")
+async def pipeline_status(session_id: str):
+    """Return event log and latest checkpoint for a pipeline session."""
+    from openjarvis.workbench.pipeline import CodingPipeline
+
+    pipeline = CodingPipeline()
+    try:
+        events = pipeline.get_events(session_id=session_id)
+        checkpoint = pipeline.get_checkpoint(session_id=session_id)
+        cost = pipeline.cost_summary(session_id=session_id)
+    finally:
+        pipeline.close()
+
+    return {
+        "session_id": session_id,
+        "events": events,
+        "checkpoint": checkpoint,
+        "cost_summary": cost,
+    }
+
+
+@router.get("/v1/workbench/pipeline/classify")
+async def pipeline_classify(prompt: str):
+    """Classify a task prompt without running the pipeline."""
+    from openjarvis.workbench.pipeline import classify_task
+
+    if not prompt.strip():
+        raise HTTPException(status_code=400, detail="'prompt' query param is required")
+
+    return classify_task(prompt)
+
+
 __all__ = ["router"]
