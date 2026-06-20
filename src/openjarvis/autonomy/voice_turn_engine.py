@@ -402,6 +402,33 @@ class VoiceTurnEngine:
                     "background_noise_detected": chunk.get("background_noise_detected"),
                 })
 
+        # ── Deepgram live streaming for partial transcripts ──────────────
+        # Try to open a Deepgram WebSocket before recording so audio chunks
+        # stream to Deepgram in real-time → interim results → partial_transcript SSE.
+        import os as _os
+        _dg_api_key = _os.environ.get("DEEPGRAM_API_KEY", "")
+        _live_session = None
+        _live_final: Optional[str] = None
+        if _dg_api_key:
+            try:
+                from openjarvis.speech.deepgram_live import DeepgramLiveSession
+                _live_session = DeepgramLiveSession(
+                    _dg_api_key,
+                    language=self._language,
+                    on_partial=lambda t: self._emit({"type": "partial_transcript", "text": t}) if self._is_turn_live(turn_id) else None,
+                    on_final=lambda t: None,   # collected via finish()
+                )
+                _live_session.start()
+                if not _live_session.ok:
+                    _live_session = None
+            except Exception as _exc:
+                logger.debug("deepgram_live unavailable for turn %d: %s", turn_id, _exc)
+                _live_session = None
+
+        def _on_chunk_live(chunk_bytes: bytes) -> None:
+            if _live_session is not None:
+                _live_session.send_chunk(chunk_bytes)
+
         rec_start = time.monotonic()
         try:
             audio, stop_reason = record_command_audio_vad(
@@ -414,6 +441,7 @@ class VoiceTurnEngine:
                 abort_event=self._recording_abort,
                 on_calibrated=_on_calibrated,
                 on_vad_chunk=_on_vad_chunk,
+                on_chunk=_on_chunk_live if _live_session else None,
             )
         except Exception as exc:
             logger.error("Recording exception in turn %d: %s", turn_id, exc)
@@ -438,6 +466,16 @@ class VoiceTurnEngine:
         self._last_vad = vad_diag
         self._emit({"type": "vad", **vad_diag})
 
+        # Finalize live Deepgram session and collect streaming transcript
+        if _live_session is not None:
+            self._emit({"type": "partial_transcript", "text": "Finalizing…"})
+            _live_final = _live_session.finish(timeout=4.0)
+            logger.debug("deepgram_live final transcript: %r", _live_final)
+        else:
+            _live_final = None
+        # Store for _stage_stt to use as primary transcript
+        self._last_live_transcript = _live_final  # type: ignore[attr-defined]
+
         # Check if cancelled during recording
         if self._cancel_event.is_set() or not self._is_turn_live(turn_id):
             self._set_phase(TurnPhase.CANCELLED)
@@ -449,6 +487,15 @@ class VoiceTurnEngine:
     def _stage_stt(self, turn_id: int, audio: bytes, language: str) -> Optional[str]:
         """Run STT with timeout. Returns transcript text or None on error/cancel."""
         self._set_phase(TurnPhase.TRANSCRIBING)
+
+        # If live Deepgram streaming already produced a transcript, use it directly.
+        live_text: Optional[str] = getattr(self, "_last_live_transcript", None)
+        self._last_live_transcript = None  # type: ignore[attr-defined]
+        if live_text:
+            logger.info("Using live Deepgram transcript: %r…", live_text[:60])
+            # Emit transcript event so UI updates immediately
+            self._emit({"type": "partial_transcript", "text": ""})  # clear partial
+            return live_text
 
         from openjarvis.autonomy.voice_conversation import (
             evaluate_voice_transcript,
@@ -602,6 +649,50 @@ class VoiceTurnEngine:
                 playback=self._tts_playback,
                 cancel_check=lambda: cancel.is_set(),
             )
+
+        # ── Energy-based barge-in monitor ────────────────────────────────
+        # Listens for loud mic activity during TTS and cancels playback.
+        # Limitation: speaker audio causes false positives — threshold set high.
+        # Works reliably with headphones. Reports are best-effort only (non-fatal).
+        def _barge_in_monitor() -> None:
+            try:
+                import numpy as np
+                import sounddevice as sd
+
+                _BARGE_IN_RMS: float = float(
+                    __import__("os").environ.get("JARVIS_BARGE_IN_RMS", "1500")
+                )
+                _SAMPLE_RATE = 16000
+                _CHUNK_MS = 80
+                _CHUNK_SAMPLES = int(_SAMPLE_RATE * _CHUNK_MS / 1000)
+                # Wait 600 ms before enabling to let the TTS audio ramp up
+                # and avoid the initial speaker transient triggering barge-in.
+                import time as _t
+                _t.sleep(0.6)
+                with sd.InputStream(
+                    samplerate=_SAMPLE_RATE,
+                    channels=1,
+                    dtype="int16",
+                    blocksize=_CHUNK_SAMPLES,
+                ) as _mic:
+                    while not cancel.is_set():
+                        chunk_data, _ = _mic.read(_CHUNK_SAMPLES)
+                        rms = float(
+                            np.sqrt(np.mean(chunk_data.flatten().astype(np.float64) ** 2))
+                        )
+                        if rms > _BARGE_IN_RMS:
+                            logger.info(
+                                "Barge-in detected (rms=%.0f > %.0f) — cancelling TTS", rms, _BARGE_IN_RMS
+                            )
+                            cancel.set()
+                            self._tts_playback.cancel()
+                            self._emit({"type": "barge_in", "rms": round(rms, 1)})
+                            break
+            except Exception as _exc:
+                logger.debug("barge-in monitor error (non-fatal): %s", _exc)
+
+        _barge_thread = threading.Thread(target=_barge_in_monitor, daemon=True, name="barge-in")
+        _barge_thread.start()
 
         try:
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:

@@ -241,6 +241,7 @@ export function UniversalComposer() {
     disableVoice,
     phase: voicePhase,
     transcript: voiceTranscript,
+    partialTranscript: voicePartialTranscript,
     response: voiceResponse,
     lastError: voiceError,
     startTurn,
@@ -290,38 +291,22 @@ export function UniversalComposer() {
     if (isActiveTurn && !showVoicePanel) setShowVoicePanel(true);
   }, [isActiveTurn, showVoicePanel]);
 
-  // Sync live voice state to global store → VoiceCaptionOverlay in ChatArea reads it
+  // Sync live voice state to global store → VoiceCaptionOverlay in ChatArea reads it.
+  // During recording: show partial transcript as live caption.
+  // On final: show committed transcript.
   const setVoiceCaptionState = useAppStore((s) => s.setVoiceCaptionState);
   useEffect(() => {
-    setVoiceCaptionState({ transcript: voiceTranscript, response: voiceResponse, phase: voicePhase });
-  }, [voicePhase, voiceTranscript, voiceResponse, setVoiceCaptionState]);
+    const isRecordingPhase = voicePhase === 'recording' || voicePhase === 'waiting_for_silence' || voicePhase === 'transcribing';
+    const liveCaption = isRecordingPhase && voicePartialTranscript
+      ? voicePartialTranscript
+      : voiceTranscript;
+    setVoiceCaptionState({ transcript: liveCaption, response: voiceResponse, phase: voicePhase });
+  }, [voicePhase, voiceTranscript, voicePartialTranscript, voiceResponse, setVoiceCaptionState]);
 
-  // Barge-in: during Jarvis speaking, browser SpeechRecognition listens for stop keywords
-  // and calls cancelTurn() so user doesn't need Cmd+K or mouse to interrupt.
-  // Limitation: acoustic feedback may cause false positives on speakers (works best with headphones).
-  useEffect(() => {
-    if (voicePhase !== 'speaking') return;
-    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SR) return; // Browser doesn't support Web Speech API
-    let recognition: any;
-    try {
-      recognition = new SR();
-      recognition.continuous = true;
-      recognition.interimResults = true;
-      recognition.onresult = (event: any) => {
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          const text = event.results[i][0].transcript.toLowerCase().trim();
-          if (/\b(stop|cancel|wait|never mind|nevermind|pause|enough|quiet)\b/.test(text)) {
-            cancelTurn();
-            try { recognition.stop(); } catch {}
-            break;
-          }
-        }
-      };
-      recognition.start();
-    } catch {}
-    return () => { try { recognition?.stop(); } catch {} };
-  }, [voicePhase, cancelTurn]);
+  // Note: browser-side SpeechRecognition barge-in removed — unreliable in Tauri/macOS packaged app.
+  // Barge-in is now handled in the backend voice_turn_engine.py via energy-based mic monitor
+  // during TTS playback. Works reliably with headphones; speaker echo may cause false positives
+  // at low threshold settings (configurable via JARVIS_BARGE_IN_RMS env var, default 1500).
 
   // Dictation speech (for text field)
   const { state: speechState, error: speechError, available: speechAvailable, startRecording, stopRecording } = useSpeech();

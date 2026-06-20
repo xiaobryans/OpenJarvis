@@ -10,9 +10,10 @@
  * No chat list by default — messages are accessed via Cmd+K panel.
  */
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { Mic, MicOff, Square, Command } from 'lucide-react';
 import { useAppStore } from '../../lib/store';
+import { getBase, authHeaders } from '../../lib/api';
 
 // ---------------------------------------------------------------------------
 // Live caption overlay — shows transcript + Jarvis reply at the bottom
@@ -125,15 +126,49 @@ function VoiceHint({ onOpenComposer }: { onOpenComposer: () => void }) {
 function VoiceControlStrip() {
   const { phase } = useAppStore((s) => s.voiceCaptionState);
   const setComposerOpen = useAppStore((s) => s.setComposerOpen);
+  const [wakeActive, setWakeActive] = useState(false);
+  const [tapBusy, setTapBusy] = useState(false);
   const isActive = phase !== 'idle' && phase !== 'error' && phase !== 'cancelled';
   const isSpeaking = phase === 'speaking';
+
+  // Check wake-word diagnostics once on mount
+  useEffect(() => {
+    fetch(`${getBase()}/v1/voice/diagnostics`, { headers: authHeaders() })
+      .then((r) => r.json())
+      .then((d) => setWakeActive(Boolean(d?.wake_phrase_active)))
+      .catch(() => {});
+  }, []);
+
+  // Cancel voice turn via backend API (no Cmd+K needed)
+  const handleCancel = useCallback(async () => {
+    try {
+      await fetch(`${getBase()}/v1/voice/turn/cancel`, {
+        method: 'POST',
+        headers: authHeaders(),
+      });
+    } catch {}
+  }, []);
+
+  // Tap to speak: start a voice turn without Cmd+K
+  const handleTapSpeak = useCallback(async () => {
+    if (tapBusy || isActive) return;
+    setTapBusy(true);
+    try {
+      await fetch(`${getBase()}/v1/voice/turn/start`, {
+        method: 'POST',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ language: 'en' }),
+      });
+    } catch {}
+    setTapBusy(false);
+  }, [tapBusy, isActive]);
 
   return (
     <div
       className="fixed bottom-6 right-6 flex flex-col items-end gap-2"
       style={{ zIndex: 60, pointerEvents: 'none' }}
     >
-      {/* Stop button during speaking — large, accessible */}
+      {/* Stop button during speaking — calls backend cancel, no Cmd+K needed */}
       {isSpeaking && (
         <button
           className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium cursor-pointer transition-all"
@@ -144,37 +179,59 @@ function VoiceControlStrip() {
             backdropFilter: 'blur(12px)',
             pointerEvents: 'auto',
           }}
-          onClick={() => setComposerOpen(true)}
-          title="Open ⌘K to cancel voice reply"
+          onClick={handleCancel}
+          title="Stop Jarvis speaking"
         >
           <Square size={13} />
           Stop speaking
         </button>
       )}
 
-      {/* Mic status indicator */}
-      <button
-        className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs cursor-pointer transition-all"
-        style={{
-          background: isActive ? 'rgba(34,211,238,0.12)' : 'rgba(255,255,255,0.05)',
-          border: isActive ? '1px solid rgba(34,211,238,0.3)' : '1px solid rgba(255,255,255,0.08)',
-          color: isActive ? 'var(--p2-teal)' : 'rgba(255,255,255,0.3)',
-          backdropFilter: 'blur(12px)',
-          pointerEvents: 'auto',
-        }}
-        onClick={() => setComposerOpen(true)}
-        title="Open ⌘K voice controls"
-      >
-        {isActive ? <Mic size={12} /> : <MicOff size={12} />}
-        <span style={{ fontFamily: 'var(--font-hud)', letterSpacing: '0.04em' }}>
-          {phase === 'idle' ? 'voice off' :
-           phase === 'recording' ? 'listening' :
-           phase === 'waiting_for_silence' ? 'endpointing' :
-           phase === 'transcribing' ? 'transcribing' :
-           phase === 'thinking' ? 'thinking' :
-           phase === 'speaking' ? 'speaking' : phase}
-        </span>
-      </button>
+      {/* Tap to speak — visible when idle and no wake word */}
+      {!isActive && !wakeActive && (
+        <button
+          className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium cursor-pointer transition-all"
+          style={{
+            background: tapBusy ? 'rgba(34,211,238,0.2)' : 'rgba(34,211,238,0.1)',
+            border: '1px solid rgba(34,211,238,0.3)',
+            color: 'rgba(34,211,238,0.85)',
+            backdropFilter: 'blur(12px)',
+            pointerEvents: 'auto',
+            opacity: tapBusy ? 0.6 : 1,
+          }}
+          onClick={handleTapSpeak}
+          title="Tap to speak — start voice turn"
+          disabled={tapBusy}
+        >
+          <Mic size={13} />
+          {tapBusy ? 'Starting…' : 'Tap to speak'}
+        </button>
+      )}
+
+      {/* Active mic status indicator */}
+      {isActive && (
+        <button
+          className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs cursor-pointer transition-all"
+          style={{
+            background: 'rgba(34,211,238,0.12)',
+            border: '1px solid rgba(34,211,238,0.3)',
+            color: 'var(--p2-teal)',
+            backdropFilter: 'blur(12px)',
+            pointerEvents: 'auto',
+          }}
+          onClick={() => setComposerOpen(true)}
+          title="Open ⌘K voice controls"
+        >
+          <Mic size={12} />
+          <span style={{ fontFamily: 'var(--font-hud)', letterSpacing: '0.04em' }}>
+            {phase === 'recording' ? 'listening' :
+             phase === 'waiting_for_silence' ? 'endpointing' :
+             phase === 'transcribing' ? 'transcribing' :
+             phase === 'thinking' ? 'thinking' :
+             phase === 'speaking' ? 'speaking' : phase}
+          </span>
+        </button>
+      )}
     </div>
   );
 }

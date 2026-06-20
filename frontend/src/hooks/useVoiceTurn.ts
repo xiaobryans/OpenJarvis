@@ -45,10 +45,12 @@ export interface TurnEvent {
   type:
     | 'state'
     | 'transcript'
+    | 'partial_transcript'
     | 'transcript_rejected'
     | 'response'
     | 'route'
     | 'vad'
+    | 'barge_in'
     | 'error'
     | 'turn_done'
     | 'keepalive';
@@ -75,6 +77,7 @@ export interface VoiceTurnState {
   phase: TurnPhase;
   turnId: number | null;
   transcript: string;
+  partialTranscript: string;
   response: string;
   lastError: string | null;
   lastVad: VadDiag | null;
@@ -103,6 +106,7 @@ export function useVoiceTurn(): UseVoiceTurnReturn {
   const [phase, setPhase] = useState<TurnPhase>('idle');
   const [turnId, setTurnId] = useState<number | null>(null);
   const [transcript, setTranscript] = useState('');
+  const [partialTranscript, setPartialTranscript] = useState('');
   const [response, setResponse] = useState('');
   const [lastError, setLastError] = useState<string | null>(null);
   const [lastVad, setLastVad] = useState<VadDiag | null>(null);
@@ -143,16 +147,27 @@ export function useVoiceTurn(): UseVoiceTurnReturn {
         }
       }
 
+      if (data.type === 'partial_transcript' && data.text != null) {
+        setPartialTranscript(data.text);
+      }
+
       if (data.type === 'transcript' && data.text != null) {
         setTranscript(data.text);
+        setPartialTranscript(''); // clear partial on final
       }
 
       if (data.type === 'transcript_rejected') {
         setLastError(`transcript rejected: ${data.reason ?? 'unknown'}`);
+        setPartialTranscript('');
       }
 
       if (data.type === 'response' && data.text != null) {
         setResponse(data.text);
+      }
+
+      if (data.type === 'barge_in') {
+        // Backend confirmed barge-in — phase will update via state event
+        setPartialTranscript('');
       }
 
       if (data.type === 'route') {
@@ -306,6 +321,7 @@ export function useVoiceTurn(): UseVoiceTurnReturn {
     phase,
     turnId,
     transcript,
+    partialTranscript,
     response,
     lastError,
     lastVad,
