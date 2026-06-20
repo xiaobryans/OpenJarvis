@@ -107,9 +107,10 @@ class VoiceTurnEngine:
         self._turn_counter = 0
         self._active_turn_id: Optional[int] = None
 
-        # Tunable defaults — read from env via existing helpers
+        # Tunable defaults — read from env via existing helpers.
+        # Default 1000ms for voice-first fast endpointing (matches voice_conversation.py).
         self._silence_stop_ms: float = silence_stop_ms or _env_float(
-            "JARVIS_VOICE_SILENCE_STOP_MS", 4000.0
+            "JARVIS_VOICE_SILENCE_STOP_MS", 1000.0
         )
         self._silence_rms_threshold: float = silence_rms_threshold or _env_float(
             "JARVIS_VOICE_SILENCE_RMS", 300.0
