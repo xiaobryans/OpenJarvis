@@ -186,7 +186,9 @@ async def chat_completions(request_body: ChatCompletionRequest, request: Request
                             _coding_prompt = _coding_prompt[len(_pfx):].strip()
                             break
                 try:
-                    from openjarvis.workbench.pipeline import CodingPipeline, PipelineConfig
+                    from openjarvis.workbench.pipeline import (
+                        CodingPipeline, PipelineConfig
+                    )
                     _pcfg = PipelineConfig(
                         dry_run=True,
                         repo_path=getattr(request.app.state, "repo_path", "."),
@@ -194,6 +196,8 @@ async def chat_completions(request_body: ChatCompletionRequest, request: Request
                     )
                     _pipeline = CodingPipeline(config=_pcfg)
                     try:
+                        # run() → classify + inspect + plan (via CodingManager) + validate + review
+                        # Multi-file patches use run_multi_file_patch() from the same pipeline.
                         _pr = _pipeline.run(prompt=_coding_prompt)
                     finally:
                         _pipeline.close()
@@ -201,6 +205,7 @@ async def chat_completions(request_body: ChatCompletionRequest, request: Request
                     _files_read = len([c for c in _pr.file_contents.values()
                                        if c and not c.startswith("[FILE_NOT_FOUND")])
                     _intent_tag = "(prefix)" if _prefix_match else "(natural intent)"
+                    _plan_note = _pr.plan_summary[:160] if _pr.plan_summary else "—"
                     _reply = (
                         f"**Jarvis CodingPipeline** {_intent_tag} — verdict: **{_verdict}**\n\n"
                         f"- Category: {_pr.classification.get('category', '?')}\n"
@@ -210,11 +215,16 @@ async def chat_completions(request_body: ChatCompletionRequest, request: Request
                         f"- Validation: {len(_pr.validation_outputs)} command(s)\n"
                         f"- Rollback: `{_pr.rollback_instruction[:80]}`\n"
                         f"- Events: {len(_pr.events)} logged\n\n"
-                        f"Plan: {_pr.plan_summary[:200]}\n\n"
+                        f"Plan: {_plan_note}\n\n"
                         + (
                             f"Reviewer: {_pr.reviewer_verdict.get('verdict', '?')} — "
                             f"{'; '.join(_pr.reviewer_verdict.get('reasons', [])[:3])}"
                             if _pr.reviewer_verdict else "Reviewer: not run (blocked)"
+                        )
+                        + (
+                            "\n\n_Multi-file patch (2+ files): use "
+                            "`pipeline.run_multi_file_patch(prompt, patches=[...])`_"
+                            if len(_pr.files_inspected) >= 2 else ""
                         )
                     )
                 except Exception as _pe:
