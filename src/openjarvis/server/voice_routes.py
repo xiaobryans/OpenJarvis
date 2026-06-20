@@ -398,6 +398,15 @@ async def get_voice_diagnostics() -> Dict[str, Any]:
     worker_ready = st.get("bridge", {}).get("worker_ready", False)
     wake_phrase_active = wake_mode == "wake_word" and worker_ready
 
+    # Also check turn engine wake status (used by Plan 2 tap-to-speak UI)
+    try:
+        te = _get_turn_engine()
+        te_status = te.status()
+        if te_status.get("wake_active"):
+            wake_phrase_active = True
+    except Exception:
+        pass
+
     return {
         "active": True,
         "wake_mode": wake_mode,
