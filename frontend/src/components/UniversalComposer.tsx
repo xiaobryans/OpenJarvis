@@ -172,10 +172,20 @@ export function UniversalComposer() {
     if (speechError) toast.error(speechError);
   }, [speechError]);
 
-  // Focus textarea when composer opens
+  // Focus textarea when composer opens; read prefill from sessionStorage
   useEffect(() => {
     if (composerOpen) {
-      setTimeout(() => textareaRef.current?.focus(), 50);
+      const prefill = sessionStorage.getItem('composer-prefill');
+      if (prefill) {
+        setInput(prefill);
+        sessionStorage.removeItem('composer-prefill');
+      }
+      setTimeout(() => {
+        textareaRef.current?.focus();
+        // Place cursor at end
+        const el = textareaRef.current;
+        if (el) el.selectionStart = el.selectionEnd = el.value.length;
+      }, 50);
     } else {
       setInput('');
       setAttachments([]);
@@ -505,7 +515,12 @@ export function UniversalComposer() {
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center"
-      style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}
+      style={{
+        background: 'rgba(0,0,0,0.55)',
+        backdropFilter: 'blur(6px)',
+        WebkitBackdropFilter: 'blur(6px)',
+        animation: 'p2-mode-b-in var(--p2-dur-base) var(--p2-ease-smooth)',
+      }}
       onClick={() => setComposerOpen(false)}
     >
       <div
@@ -514,52 +529,59 @@ export function UniversalComposer() {
           maxWidth: '680px',
           background: 'var(--color-surface)',
           border: '1px solid var(--color-border)',
-          boxShadow: '0 24px 64px rgba(0,0,0,0.4)',
+          boxShadow: 'var(--p2-elev-4), var(--p2-glow-teal)',
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* ── Top bar: model + mode indicators ── */}
+        {/* ── Top bar: wordmark + model pill + mode badges ── */}
         <div
-          className="flex items-center justify-between px-4 py-2.5"
+          className="flex items-center justify-between px-4 py-2.5 gap-3"
           style={{ borderBottom: '1px solid var(--color-border)', background: 'var(--color-bg-secondary)' }}
         >
-          <div className="flex items-center gap-3">
-            <span className="text-xs font-medium" style={{ color: 'var(--color-text-secondary)', fontFamily: 'var(--font-hud)' }}>
+          <div className="flex items-center gap-2.5 flex-1 min-w-0">
+            {/* Teal dot wordmark */}
+            <span
+              className="w-2 h-2 rounded-full shrink-0"
+              style={{ background: 'var(--p2-teal)', boxShadow: 'var(--p2-glow-teal)' }}
+            />
+            <span className="text-[11px] font-semibold tracking-[0.18em]" style={{ color: 'var(--color-text-secondary)', fontFamily: 'var(--font-hud)' }}>
               JARVIS
             </span>
             {selectedModel && (
               <button
                 onClick={() => { setComposerOpen(false); setCommandPaletteOpen(true); }}
-                className="text-[11px] px-2 py-0.5 rounded-full transition-colors cursor-pointer"
+                className="text-[10px] px-2 py-0.5 rounded-full transition-all cursor-pointer truncate max-w-[160px]"
                 style={{
                   background: 'var(--color-bg-tertiary)',
                   color: 'var(--color-text-tertiary)',
                   border: '1px solid var(--color-border)',
                 }}
                 title="Switch model"
+                onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--p2-teal)'; e.currentTarget.style.color = 'var(--p2-teal)'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--color-border)'; e.currentTarget.style.color = 'var(--color-text-tertiary)'; }}
               >
-                {selectedModel.length > 24 ? selectedModel.slice(0, 24) + '…' : selectedModel}
+                {selectedModel.length > 26 ? selectedModel.slice(0, 26) + '…' : selectedModel}
               </button>
             )}
             {deepResearch && (
               <span
-                className="text-[10px] px-2 py-0.5 rounded-full"
-                style={{ background: 'var(--color-accent-subtle)', color: 'var(--color-accent)', border: '1px solid var(--color-accent)' }}
+                className="text-[10px] px-2 py-0.5 rounded-full shrink-0"
+                style={{ background: 'var(--p2-teal-dim)', color: 'var(--p2-teal)', border: '1px solid var(--p2-teal)' }}
               >
-                Deep Research
+                Research
               </span>
             )}
           </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setComposerOpen(false)}
-              className="p-1 rounded-lg cursor-pointer"
-              style={{ color: 'var(--color-text-tertiary)' }}
-              title="Close (Esc)"
-            >
-              <X size={14} />
-            </button>
-          </div>
+          <button
+            onClick={() => setComposerOpen(false)}
+            className="p-1 rounded-lg cursor-pointer shrink-0"
+            style={{ color: 'var(--color-text-tertiary)' }}
+            title="Close (Esc)"
+            onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--color-bg-tertiary)'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+          >
+            <X size={14} />
+          </button>
         </div>
 
         {/* ── Slash command suggestions ── */}
@@ -830,10 +852,11 @@ export function UniversalComposer() {
               <button
                 onClick={sendMessage}
                 disabled={!hasInput || modelLoading || !selectedModel}
-                className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium cursor-pointer disabled:opacity-30"
+                className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium cursor-pointer disabled:opacity-30 transition-all"
                 style={{
-                  background: hasInput && selectedModel ? 'var(--color-accent)' : 'var(--color-bg-tertiary)',
+                  background: hasInput && selectedModel ? 'var(--p2-teal)' : 'var(--color-bg-tertiary)',
                   color: hasInput && selectedModel ? '#fff' : 'var(--color-text-tertiary)',
+                  boxShadow: hasInput && selectedModel ? 'var(--p2-glow-teal)' : 'none',
                 }}
                 title={selectedModel ? 'Send (Enter)' : 'Pick a model first'}
               >
@@ -846,19 +869,28 @@ export function UniversalComposer() {
 
         {/* ── Footer: hints ── */}
         <div
-          className="flex items-center justify-between px-4 py-1.5"
+          className="flex items-center justify-between px-4 py-1.5 gap-4"
           style={{ borderTop: '1px solid var(--color-border)', background: 'var(--color-bg-secondary)' }}
         >
-          <span className="text-[10px]" style={{ color: 'var(--color-text-tertiary)', fontFamily: 'var(--font-hud)' }}>
-            <kbd>Enter</kbd> send · <kbd>Shift+Enter</kbd> newline · <kbd>/</kbd> commands · <kbd>Esc</kbd> close
+          <span className="text-[10px] truncate" style={{ color: 'var(--color-text-tertiary)', fontFamily: 'var(--font-hud)' }}>
+            <kbd className="font-mono">↵</kbd> send ·{' '}
+            <kbd className="font-mono">⇧↵</kbd> newline ·{' '}
+            <kbd className="font-mono">/</kbd> commands ·{' '}
+            <kbd className="font-mono">Esc</kbd> close
           </span>
-          <button
-            onClick={() => { setComposerOpen(false); setCommandPaletteOpen(true); }}
-            className="text-[10px] cursor-pointer"
-            style={{ color: 'var(--color-text-tertiary)' }}
-          >
-            Switch model ⌘K
-          </button>
+          {!selectedModel && (
+            <button
+              onClick={() => { setComposerOpen(false); setCommandPaletteOpen(true); }}
+              className="text-[10px] cursor-pointer shrink-0 px-2 py-0.5 rounded-full transition-all"
+              style={{
+                color: 'var(--p2-amber)',
+                background: 'var(--p2-amber-dim)',
+                border: '1px solid var(--p2-amber)',
+              }}
+            >
+              Pick a model →
+            </button>
+          )}
         </div>
       </div>
     </div>

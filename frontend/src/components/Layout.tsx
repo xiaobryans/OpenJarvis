@@ -33,6 +33,7 @@ import {
 import { ApprovalBell } from './ApprovalBell';
 import { SystemPulse } from './SystemPulse';
 import { AmbientCore } from './AmbientCore';
+import { CloudStatusChip } from './Cloud/CloudStatusStrip';
 import { useAppStore } from '../lib/store';
 import { checkHealth } from '../lib/api';
 import { usePlan2ModeSync } from '../hooks/usePlan2Adapter';
@@ -82,107 +83,130 @@ function NavRail({ apiReachable }: { apiReachable: boolean | null }) {
         WebkitBackdropFilter: 'blur(20px)',
         borderRight: '1px solid var(--color-border)',
       }}
+      aria-label="Main navigation"
     >
-      {/* Wordmark / logo dot */}
+      {/* Composer button — top logo */}
       <button
         onClick={() => setComposerOpen(true)}
-        className="w-8 h-8 rounded-xl flex items-center justify-center mb-4 cursor-pointer transition-all"
+        className="w-8 h-8 rounded-xl flex items-center justify-center mb-3 cursor-pointer transition-all"
         style={{
-          background: 'var(--color-accent)',
+          background: 'var(--p2-teal)',
           color: '#fff',
+          boxShadow: 'var(--p2-glow-teal)',
         }}
         title="Open composer (⌘K)"
+        aria-label="Open Jarvis composer"
       >
         <Command size={15} />
       </button>
 
-      {/* System pulse indicator */}
-      <div className="mb-2">
+      {/* System pulse */}
+      <div className="mb-3">
         <SystemPulse apiReachable={apiReachable} />
       </div>
 
-      {/* Main nav */}
-      <div className="flex flex-col gap-1 flex-1 w-full px-1.5">
+      {/* Main nav group */}
+      <div className="flex flex-col gap-0.5 flex-1 w-full">
         {NAV_ITEMS.map((item) => {
           const active = isActive(item.path);
           return (
-            <button
+            <RailButton
               key={item.path}
+              icon={item.icon}
+              label={item.label}
+              active={active}
               onClick={() => navigate(item.path)}
-              title={item.label}
-              className="w-full flex items-center justify-center rounded-lg transition-colors cursor-pointer"
-              style={{
-                padding: '9px 0',
-                background: active ? 'var(--color-accent-subtle)' : 'transparent',
-                color: active ? 'var(--color-accent)' : 'var(--color-text-tertiary)',
-              }}
-              onMouseEnter={(e) => {
-                if (!active) e.currentTarget.style.background = 'var(--color-bg-secondary)';
-                e.currentTarget.style.color = active ? 'var(--color-accent)' : 'var(--color-text-secondary)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = active ? 'var(--color-accent-subtle)' : 'transparent';
-                e.currentTarget.style.color = active ? 'var(--color-accent)' : 'var(--color-text-tertiary)';
-              }}
-            >
-              {item.icon}
-            </button>
+            />
           );
         })}
       </div>
 
-      {/* Bottom nav */}
-      <div className="flex flex-col gap-1 w-full px-1.5 mb-2">
-        {/* Diagnostics toggle */}
-        <button
-          onClick={toggleSystemPanel}
-          title="Diagnostics"
-          className="w-full flex items-center justify-center rounded-lg transition-colors cursor-pointer"
-          style={{
-            padding: '9px 0',
-            background: systemPanelOpen ? 'var(--color-accent-subtle)' : 'transparent',
-            color: systemPanelOpen ? 'var(--color-accent)' : 'var(--color-text-tertiary)',
-          }}
-          onMouseEnter={(e) => {
-            if (!systemPanelOpen) e.currentTarget.style.background = 'var(--color-bg-secondary)';
-            e.currentTarget.style.color = systemPanelOpen ? 'var(--color-accent)' : 'var(--color-text-secondary)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = systemPanelOpen ? 'var(--color-accent-subtle)' : 'transparent';
-            e.currentTarget.style.color = systemPanelOpen ? 'var(--color-accent)' : 'var(--color-text-tertiary)';
-          }}
-        >
-          <Activity size={18} />
-        </button>
+      {/* Separator */}
+      <div
+        className="w-6 my-2 shrink-0"
+        style={{ height: '1px', background: 'var(--color-border)' }}
+      />
 
+      {/* Bottom nav group */}
+      <div className="flex flex-col gap-0.5 w-full mb-1">
+        {/* Diagnostics toggle */}
+        <RailButton
+          icon={<Activity size={18} />}
+          label="Diagnostics (⌘I)"
+          active={systemPanelOpen}
+          onClick={toggleSystemPanel}
+        />
         {NAV_BOTTOM.map((item) => {
           const active = isActive(item.path);
           return (
-            <button
+            <RailButton
               key={item.path}
+              icon={item.icon}
+              label={item.label}
+              active={active}
               onClick={() => navigate(item.path)}
-              title={item.label}
-              className="w-full flex items-center justify-center rounded-lg transition-colors cursor-pointer"
-              style={{
-                padding: '9px 0',
-                background: active ? 'var(--color-accent-subtle)' : 'transparent',
-                color: active ? 'var(--color-accent)' : 'var(--color-text-tertiary)',
-              }}
-              onMouseEnter={(e) => {
-                if (!active) e.currentTarget.style.background = 'var(--color-bg-secondary)';
-                e.currentTarget.style.color = active ? 'var(--color-accent)' : 'var(--color-text-secondary)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = active ? 'var(--color-accent-subtle)' : 'transparent';
-                e.currentTarget.style.color = active ? 'var(--color-accent)' : 'var(--color-text-tertiary)';
-              }}
-            >
-              {item.icon}
-            </button>
+            />
           );
         })}
       </div>
     </nav>
+  );
+}
+
+/**
+ * RailButton — a single nav rail item with left accent bar when active.
+ */
+function RailButton({
+  icon,
+  label,
+  active,
+  onClick,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      title={label}
+      aria-label={label}
+      aria-current={active ? 'page' : undefined}
+      className="relative w-full flex items-center justify-center cursor-pointer transition-all"
+      style={{
+        padding: '9px 0',
+        background: active ? 'var(--p2-teal-dim)' : 'transparent',
+        color: active ? 'var(--p2-teal)' : 'var(--color-text-tertiary)',
+        borderRadius: '6px',
+        transition: 'background var(--p2-dur-fast) var(--p2-ease-smooth), color var(--p2-dur-fast) var(--p2-ease-smooth)',
+      }}
+      onMouseEnter={(e) => {
+        if (!active) {
+          e.currentTarget.style.background = 'var(--color-bg-secondary)';
+          e.currentTarget.style.color = 'var(--color-text-secondary)';
+        }
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.background = active ? 'var(--p2-teal-dim)' : 'transparent';
+        e.currentTarget.style.color = active ? 'var(--p2-teal)' : 'var(--color-text-tertiary)';
+      }}
+    >
+      {/* Active accent bar — left edge */}
+      {active && (
+        <span
+          className="absolute left-0 top-1/2 rounded-r"
+          style={{
+            width: '2px',
+            height: '18px',
+            transform: 'translateY(-50%)',
+            background: 'var(--p2-teal)',
+            boxShadow: '0 0 6px var(--p2-teal)',
+          }}
+        />
+      )}
+      {icon}
+    </button>
   );
 }
 
@@ -230,31 +254,33 @@ function TopBar({ apiReachable }: { apiReachable: boolean | null }) {
         {pageLabel().toUpperCase()}
       </span>
 
-      {/* Status: streaming indicator */}
+      {/* Streaming badge — Mode B indicator */}
       {streamState.isStreaming && (
-        <span
-          className="text-[11px] px-2 py-0.5 rounded-full animate-pulse"
+        <div
+          className="flex items-center gap-1.5 text-[10px] px-2 py-0.5 rounded-full"
           style={{
-            background: 'var(--color-accent-subtle)',
-            color: 'var(--color-accent)',
-            border: '1px solid var(--color-accent)',
+            background: 'var(--p2-indigo-dim)',
+            border: '1px solid var(--p2-indigo)',
+            color: 'var(--p2-indigo)',
             fontFamily: 'var(--font-hud)',
           }}
         >
-          {streamState.phase || 'Generating…'}
-        </span>
+          <span className="w-1.5 h-1.5 rounded-full p2-status-pulse" style={{ background: 'var(--p2-indigo)', flexShrink: 0 }} />
+          {(streamState.phase || 'Generating').replace(/\.\.\.$/, '…').slice(0, 28)}
+        </div>
       )}
 
       {/* API unreachable badge */}
       {apiReachable === false && (
         <button
           onClick={() => navigate('/settings')}
-          className="text-[11px] px-2 py-0.5 rounded-full cursor-pointer"
+          className="text-[10px] px-2 py-0.5 rounded-full cursor-pointer"
           style={{
-            background: 'color-mix(in srgb, var(--color-error) 10%, transparent)',
-            color: 'var(--color-error)',
-            border: '1px solid color-mix(in srgb, var(--color-error) 25%, transparent)',
+            background: 'var(--p2-coral-dim)',
+            color: 'var(--p2-coral)',
+            border: '1px solid var(--p2-coral)',
           }}
+          title="Local backend unreachable — click to check settings"
         >
           Backend offline
         </button>
@@ -264,17 +290,22 @@ function TopBar({ apiReachable }: { apiReachable: boolean | null }) {
       {selectedModel && (
         <button
           onClick={() => setComposerOpen(true)}
-          className="text-[11px] px-2.5 py-1 rounded-full cursor-pointer transition-colors hidden sm:block"
+          className="text-[10px] px-2 py-0.5 rounded-full cursor-pointer transition-all hidden sm:block"
           style={{
             background: 'var(--color-bg-tertiary)',
             color: 'var(--color-text-tertiary)',
             border: '1px solid var(--color-border)',
           }}
-          title="Open composer (⌘K)"
+          title="Switch model (⌘K)"
+          onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--p2-teal)'; e.currentTarget.style.color = 'var(--p2-teal)'; }}
+          onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--color-border)'; e.currentTarget.style.color = 'var(--color-text-tertiary)'; }}
         >
-          {selectedModel.length > 20 ? selectedModel.slice(0, 20) + '…' : selectedModel}
+          {selectedModel.length > 22 ? selectedModel.slice(0, 22) + '…' : selectedModel}
         </button>
       )}
+
+      {/* Cloud status chip */}
+      <CloudStatusChip />
 
       {/* Approval bell */}
       <ApprovalBell />
@@ -308,6 +339,11 @@ export function Layout() {
 
   // Plan 2 mode A/B auto-transition (must be called once in tree)
   usePlan2ModeSync();
+
+  // Sync mode attr to <body> for global CSS targeting
+  useEffect(() => {
+    document.body.setAttribute('data-ui-mode', uiMode);
+  }, [uiMode]);
 
   useEffect(() => {
     const check = () => checkHealth().then(setApiReachable);
