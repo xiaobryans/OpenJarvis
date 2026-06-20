@@ -50,6 +50,112 @@ async def chat_completions(request_body: ChatCompletionRequest, request: Request
     agent = getattr(request.app.state, "agent", None)
     model = request_body.model
 
+    # Resolve "local" sentinel (and empty/None) to the server's configured
+    # model so callers don't need to know the exact Ollama model name.
+    if not model or model == "local":
+        server_model = getattr(request.app.state, "model", "") or ""
+        if server_model:
+            model = server_model
+        elif agent is not None:
+            model = getattr(agent, "_model", model)
+
+    # Front-door utility shortcut: time/date queries answered from system
+    # clock without LLM round-trip. LLMs cannot access the current time, so
+    # routing these through the model produces generic guidance, not facts.
+    if request_body.messages and not request_body.stream and not request_body.tools:
+        _last_user = ""
+        for _m in reversed(request_body.messages):
+            if _m.role == "user" and _m.content:
+                _last_user = _m.content.strip().lower()
+                break
+        if _last_user:
+            import re as _re
+            _time_pat = _re.compile(
+                r"\b(what('?s| is) (the )?(current |local )?time|"
+                r"what time is it|"
+                r"tell me the time|"
+                r"current time)\b"
+            )
+            _date_pat = _re.compile(
+                r"\b(what('?s| is) (the )?(current |today'?s? )?date|"
+                r"what is today'?s? date|"
+                r"what day is (it|today)|"
+                r"today'?s? date)\b"
+            )
+            _status_pat = _re.compile(
+                r"\b(what('?s| is) (jarvis|app|system|your) status|"
+                r"(jarvis|app|system) status|"
+                r"how is jarvis (doing|running)|"
+                r"is jarvis (running|up|ok|healthy))\b"
+            )
+            _voice_status_pat = _re.compile(
+                r"\b(what('?s| is) (the )?voice status|"
+                r"voice (pipeline )?status|"
+                r"voice (pipeline )?(running|ok|ready|configured))\b"
+            )
+            _now = None
+            _reply = None
+            if _time_pat.search(_last_user):
+                from datetime import datetime as _dt
+                _now = _dt.now()
+                _reply = f"The current local time is {_now.strftime('%I:%M %p')} on {_now.strftime('%A, %B %d, %Y')}."
+            elif _date_pat.search(_last_user):
+                from datetime import datetime as _dt
+                _now = _dt.now()
+                _reply = f"Today is {_now.strftime('%A, %B %d, %Y')}."
+            elif _status_pat.search(_last_user):
+                import time as _time
+                try:
+                    from openjarvis.autonomy.modes import AutonomyPolicy
+                    _astat = AutonomyPolicy.get_status("omnix")
+                    _amode = _astat.get("mode", "unknown")
+                    _hard_gates = _astat.get("hard_gates_always_blocked", True)
+                except Exception:
+                    _amode = "unknown"
+                    _hard_gates = True
+                _eng = getattr(request.app.state, "engine_name", "unknown")
+                _mdl = getattr(request.app.state, "model", "unknown")
+                _started = getattr(request.app.state, "session_start", None)
+                _uptime = f"{round(_time.time() - _started)}s" if _started else "unknown"
+                _agent_obj = getattr(request.app.state, "agent", None)
+                _agent_id = getattr(_agent_obj, "agent_id", "none") if _agent_obj else "none"
+                _reply = (
+                    f"Jarvis is running. "
+                    f"Mode: {_amode}. "
+                    f"Engine: {_eng}. "
+                    f"Model: {_mdl}. "
+                    f"Agent: {_agent_id}. "
+                    f"Hard gates: {'blocked' if _hard_gates else 'open'}. "
+                    f"Uptime: {_uptime}."
+                )
+            elif _voice_status_pat.search(_last_user):
+                try:
+                    from openjarvis.autonomy.voice_pipeline import get_voice_status
+                    _vs = get_voice_status()
+                    _vr = _vs.get("voice_readiness", "unknown")
+                    _stt = _vs.get("stt_status", "unknown")
+                    _tts = _vs.get("tts_status", "unknown")
+                    _wake = _vs.get("true_wakeword_status", "unknown")
+                    _mic = _vs.get("microphone_status", "unknown")
+                    _reply = (
+                        f"Voice pipeline status: {_vr}. "
+                        f"STT: {_stt}. "
+                        f"TTS: {_tts}. "
+                        f"Wake word: {_wake}. "
+                        f"Microphone: {_mic}."
+                    )
+                except Exception as _ve:
+                    _reply = f"Voice status unavailable: {_ve}"
+            if _reply:
+                return ChatCompletionResponse(
+                    model=model,
+                    choices=[Choice(
+                        message=ChoiceMessage(role="assistant", content=_reply),
+                        finish_reason="stop",
+                    )],
+                    usage=UsageInfo(prompt_tokens=0, completion_tokens=0, total_tokens=0),
+                )
+
     # Inject memory context into messages before dispatching
     config = getattr(request.app.state, "config", None)
     memory_backend = getattr(request.app.state, "memory_backend", None)
