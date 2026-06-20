@@ -617,9 +617,9 @@ export function SettingsPage() {
             </SettingRow>
 
             {/* Hotkeys */}
-            <SettingRow label="Quick chat overlay" description="Cmd+Shift+Space — opens native overlay chat window (NOT voice listening)">
+            <SettingRow label="Text & transcript fallback" description="Cmd+K — opens command palette for text input, transcript history, and commands">
               <span className="font-mono text-xs px-2 py-1 rounded" style={{ background: 'var(--color-bg-tertiary)', color: 'var(--color-text-secondary)' }}>
-                Cmd+Shift+Space
+                ⌘K
               </span>
             </SettingRow>
             <SettingRow label="CLI voice hotkey (daemon mode)" description="Voice push-to-talk when running jarvis as CLI daemon — not active in packaged app">

@@ -33,6 +33,8 @@ export type TurnPhase =
   | 'error'
   | 'cancelled';
 
+export type { TurnPhase as VoiceTurnPhase };
+
 export interface VadDiag {
   stop_reason?: string;
   duration_s?: number;
@@ -45,6 +47,7 @@ export interface TurnEvent {
   type:
     | 'state'
     | 'transcript'
+    | 'partial_transcript'
     | 'transcript_rejected'
     | 'response'
     | 'route'
@@ -75,6 +78,7 @@ export interface VoiceTurnState {
   phase: TurnPhase;
   turnId: number | null;
   transcript: string;
+  partialTranscript: string;
   response: string;
   lastError: string | null;
   lastVad: VadDiag | null;
@@ -103,6 +107,7 @@ export function useVoiceTurn(): UseVoiceTurnReturn {
   const [phase, setPhase] = useState<TurnPhase>('idle');
   const [turnId, setTurnId] = useState<number | null>(null);
   const [transcript, setTranscript] = useState('');
+  const [partialTranscript, setPartialTranscript] = useState('');
   const [response, setResponse] = useState('');
   const [lastError, setLastError] = useState<string | null>(null);
   const [lastVad, setLastVad] = useState<VadDiag | null>(null);
@@ -143,8 +148,13 @@ export function useVoiceTurn(): UseVoiceTurnReturn {
         }
       }
 
+      if (data.type === 'partial_transcript' && data.text != null) {
+        setPartialTranscript(data.text);
+      }
+
       if (data.type === 'transcript' && data.text != null) {
         setTranscript(data.text);
+        setPartialTranscript(''); // final transcript replaces partial
       }
 
       if (data.type === 'transcript_rejected') {
@@ -206,6 +216,7 @@ export function useVoiceTurn(): UseVoiceTurnReturn {
     setVoiceEnabled(true);
     setPhase('idle');
     setTranscript('');
+    setPartialTranscript('');
     setResponse('');
     setLastError(null);
     connectSSE();
@@ -257,6 +268,7 @@ export function useVoiceTurn(): UseVoiceTurnReturn {
         } else {
           // Clear per-turn artifacts when a new turn begins
           setTranscript('');
+          setPartialTranscript('');
           setResponse('');
           setLastError(null);
           setLastVad(null);
@@ -306,6 +318,7 @@ export function useVoiceTurn(): UseVoiceTurnReturn {
     phase,
     turnId,
     transcript,
+    partialTranscript,
     response,
     lastError,
     lastVad,

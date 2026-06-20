@@ -30,6 +30,7 @@ export function JarvisHomePage() {
     voiceEnabled,
     phase,
     transcript,
+    partialTranscript,
     response,
     lastError,
     enableVoice,
@@ -74,6 +75,7 @@ export function JarvisHomePage() {
           phase={phase}
           voiceEnabled={voiceEnabled}
           transcript={transcript}
+          partialTranscript={partialTranscript}
           response={response}
           lastError={lastError}
         />

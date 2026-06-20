@@ -85,6 +85,127 @@ _STARTABLE_PHASES = {TurnPhase.IDLE, TurnPhase.ERROR, TurnPhase.CANCELLED}
 
 
 # ---------------------------------------------------------------------------
+# Deepgram streaming partial transcript helper
+# ---------------------------------------------------------------------------
+
+
+class _DGStreamPartial:
+    """Minimal display-only Deepgram streaming client for live partials.
+
+    Runs TWO daemon threads (sender + receiver).  Any failure degrades
+    gracefully to no-partials — does NOT affect the canonical VAD + batch
+    STT pipeline.  Uses websockets.sync (available via deepgram-sdk dep).
+    """
+
+    _DG_WSS = (
+        "wss://api.deepgram.com/v1/listen"
+        "?model=nova-2&interim_results=true&encoding=linear16"
+        "&sample_rate={sample_rate}&channels=1&utterance_end_ms=800"
+    )
+
+    def __init__(
+        self,
+        api_key: str,
+        sample_rate: int,
+        on_partial: "Callable[[str], None]",
+    ) -> None:
+        self._api_key = api_key
+        self._sample_rate = sample_rate
+        self._on_partial = on_partial
+        self._audio_q: "queue.Queue[Optional[bytes]]" = queue.Queue(maxsize=500)
+        self._stop = threading.Event()
+        self._ws = None
+        self._ok = False
+
+    def start(self) -> bool:
+        try:
+            import websockets.sync.client as _ws_sync  # type: ignore[import]
+            url = self._DG_WSS.format(sample_rate=self._sample_rate)
+            self._ws = _ws_sync.connect(
+                url,
+                additional_headers={"Authorization": f"Token {self._api_key}"},
+                open_timeout=5,
+            )
+            self._ok = True
+        except Exception as exc:
+            logger.debug("DGStreamPartial: WebSocket connect failed: %s", exc)
+            return False
+
+        threading.Thread(
+            target=self._run_sender, daemon=True, name="dg-partial-sender"
+        ).start()
+        threading.Thread(
+            target=self._run_receiver, daemon=True, name="dg-partial-receiver"
+        ).start()
+        return True
+
+    def send_chunk(self, pcm_bytes: bytes) -> None:
+        if not self._ok or self._stop.is_set():
+            return
+        try:
+            self._audio_q.put_nowait(pcm_bytes)
+        except queue.Full:
+            pass  # drop — display-only, non-blocking
+
+    def stop(self) -> None:
+        self._stop.set()
+        try:
+            self._audio_q.put_nowait(None)
+        except Exception:
+            pass
+        if self._ws:
+            try:
+                import json as _json
+                self._ws.send(_json.dumps({"type": "CloseStream"}))
+            except Exception:
+                pass
+            try:
+                self._ws.close()
+            except Exception:
+                pass
+
+    def _run_sender(self) -> None:
+        try:
+            while not self._stop.is_set():
+                try:
+                    chunk = self._audio_q.get(timeout=0.2)
+                except queue.Empty:
+                    continue
+                if chunk is None:
+                    break
+                try:
+                    self._ws.send(chunk)
+                except Exception:
+                    break
+        except Exception as exc:
+            logger.debug("DGStreamPartial sender: %s", exc)
+
+    def _run_receiver(self) -> None:
+        import json as _json
+        try:
+            while not self._stop.is_set():
+                try:
+                    msg = self._ws.recv(timeout=2.0)
+                except TimeoutError:
+                    continue
+                except Exception:
+                    break
+                try:
+                    data = _json.loads(msg)
+                    alts = (
+                        data.get("channel", {}).get("alternatives", [])
+                    )
+                    if alts:
+                        text = alts[0].get("transcript", "").strip()
+                        if text:
+                            self._on_partial(text)
+                except Exception:
+                    pass
+        except Exception as exc:
+            logger.debug("DGStreamPartial receiver: %s", exc)
+
+
+# ---------------------------------------------------------------------------
 # VoiceTurnEngine
 # ---------------------------------------------------------------------------
 
@@ -106,9 +227,12 @@ class VoiceTurnEngine:
         self._turn_counter = 0
         self._active_turn_id: Optional[int] = None
 
-        # Tunable defaults — read from env via existing helpers
+        # Tunable defaults — read from env via existing helpers.
+        # Default 900ms: finalizes naturally after ~0.9s of quiet after speech.
+        # Override via JARVIS_VOICE_SILENCE_STOP_MS env var (e.g. 1500 for
+        # noisier environments or 600 for snappier response).
         self._silence_stop_ms: float = silence_stop_ms or _env_float(
-            "JARVIS_VOICE_SILENCE_STOP_MS", 4000.0
+            "JARVIS_VOICE_SILENCE_STOP_MS", 900.0
         )
         self._silence_rms_threshold: float = silence_rms_threshold or _env_float(
             "JARVIS_VOICE_SILENCE_RMS", 300.0
@@ -402,6 +526,36 @@ class VoiceTurnEngine:
                     "background_noise_detected": chunk.get("background_noise_detected"),
                 })
 
+        # Deepgram streaming partial transcripts (display-only).
+        # Runs in daemon threads; degrades gracefully on any failure.
+        _dg_partial: Optional[_DGStreamPartial] = None
+        import os as _os
+        _dg_key = _os.environ.get("DEEPGRAM_API_KEY", "")
+        if _dg_key:
+            _last_partial: Dict[str, str] = {}
+
+            def _on_partial(text: str) -> None:
+                if not self._is_turn_live(turn_id):
+                    return
+                if text != _last_partial.get("text"):
+                    _last_partial["text"] = text
+                    self._emit({"type": "partial_transcript", "text": text})
+                    logger.debug("DG partial: %r", text)
+
+            _dg_partial = _DGStreamPartial(
+                api_key=_dg_key,
+                sample_rate=16000,
+                on_partial=_on_partial,
+            )
+            if not _dg_partial.start():
+                _dg_partial = None  # failed to connect — no partials this turn
+        else:
+            logger.debug("DGStreamPartial skipped: DEEPGRAM_API_KEY not set")
+
+        def _on_audio_chunk(pcm_bytes: bytes) -> None:
+            if _dg_partial is not None:
+                _dg_partial.send_chunk(pcm_bytes)
+
         rec_start = time.monotonic()
         try:
             audio, stop_reason = record_command_audio_vad(
@@ -414,6 +568,7 @@ class VoiceTurnEngine:
                 abort_event=self._recording_abort,
                 on_calibrated=_on_calibrated,
                 on_vad_chunk=_on_vad_chunk,
+                on_audio_chunk=_on_audio_chunk,
             )
         except Exception as exc:
             logger.error("Recording exception in turn %d: %s", turn_id, exc)
@@ -423,6 +578,10 @@ class VoiceTurnEngine:
                 self._set_phase(TurnPhase.ERROR, reason=self._last_error)
                 self._finalize(turn_id)
             return None, False
+
+        # Stop streaming partial transcripts (recording is done)
+        if _dg_partial is not None:
+            _dg_partial.stop()
 
         vad_diag = {
             "stop_reason": stop_reason,

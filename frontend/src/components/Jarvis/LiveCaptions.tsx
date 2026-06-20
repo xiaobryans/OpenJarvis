@@ -17,18 +17,28 @@ interface Props {
   phase: TurnPhase;
   voiceEnabled: boolean;
   transcript: string;
+  partialTranscript: string;
   response: string;
   lastError: string | null;
 }
+
+const RECORDING_PHASES: TurnPhase[] = ['recording', 'waiting_for_silence'];
 
 export function LiveCaptions({
   phase,
   voiceEnabled,
   transcript,
+  partialTranscript,
   response,
   lastError,
 }: Props) {
   const showError = phase === 'error' && lastError;
+  const isRecording = RECORDING_PHASES.includes(phase);
+
+  // Determine what text to show in the user caption area.
+  // Priority: final transcript > partial (while recording) > nothing
+  const userText = transcript || (isRecording ? partialTranscript : '');
+  const isPartial = !transcript && !!partialTranscript && isRecording;
 
   return (
     <div
@@ -49,7 +59,7 @@ export function LiveCaptions({
         </div>
       )}
 
-      {transcript && (
+      {userText && (
         <div
           aria-live="polite"
           className="text-center"
@@ -57,12 +67,18 @@ export function LiveCaptions({
             fontSize: 19,
             fontWeight: 500,
             lineHeight: 1.4,
-            color: 'rgba(220, 235, 255, 0.92)',
-            textShadow: '0 0 12px rgba(80, 140, 230, 0.35)',
+            color: isPartial
+              ? 'rgba(200, 220, 255, 0.75)'
+              : 'rgba(220, 235, 255, 0.92)',
+            textShadow: isPartial
+              ? '0 0 8px rgba(80, 140, 230, 0.20)'
+              : '0 0 12px rgba(80, 140, 230, 0.35)',
             maxWidth: '100%',
+            transition: 'color 200ms ease, opacity 150ms ease',
+            fontStyle: isPartial ? 'italic' : 'normal',
           }}
         >
-          {transcript}
+          {userText}
         </div>
       )}
 
@@ -83,7 +99,7 @@ export function LiveCaptions({
         </div>
       )}
 
-      {!transcript && !response && !showError && (
+      {!userText && !response && !showError && (
         <div
           className="text-center"
           style={{
@@ -96,7 +112,9 @@ export function LiveCaptions({
             ? 'Voice off — tap the mic below to enable Jarvis'
             : phase === 'idle'
               ? 'Tap mic to speak · ⌘K for transcript & text'
-              : ''}
+              : phase === 'recording' || phase === 'waiting_for_silence'
+                ? 'Listening...'
+                : ''}
         </div>
       )}
     </div>

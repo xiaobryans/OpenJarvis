@@ -2513,29 +2513,13 @@ pub fn run() {
                 })
                 .build(app)?;
 
-            // Create native macOS overlay panel
-            #[cfg(target_os = "macos")]
-            unsafe {
-                native_overlay::create(include_str!("overlay.html"), JARVIS_PORT);
-            }
-
-            // Register Cmd+Shift+Space to toggle the overlay
-            {
-                use tauri_plugin_global_shortcut::{
-                    Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState,
-                };
-                let sc = Shortcut::new(Some(Modifiers::META | Modifiers::SHIFT), Code::Space);
-                if let Err(e) = app.global_shortcut().on_shortcut(sc, |_app, _sc, ev| {
-                    if ev.state == ShortcutState::Pressed {
-                        #[cfg(target_os = "macos")]
-                        unsafe {
-                            native_overlay::toggle();
-                        }
-                    }
-                }) {
-                    eprintln!("Warning: could not register Cmd+Shift+Space: {e}");
-                }
-            }
+            // Native overlay disabled — Cmd+Shift+Space quick-chat overlay removed.
+            // The voice-first Jarvis OS home (JarvisHomePage) is the primary UX.
+            // Cmd+K opens the CommandPalette for text/transcript fallback.
+            //
+            // Kept: native_overlay module code compiles, toggle_overlay/hide_overlay/
+            // get_overlay_conversation invoke handlers remain as no-ops so existing
+            // store.ts importOverlayConversation calls don't fail.
 
             // Auto-start backend services on launch
             tauri::async_runtime::spawn(boot_backend(boot_backend_ref, boot_status_ref));

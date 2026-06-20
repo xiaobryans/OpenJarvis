@@ -229,6 +229,7 @@ def record_command_audio_vad(
     abort_event: Optional[threading.Event] = None,
     on_calibrated: Optional[Callable[[float, float], None]] = None,
     on_vad_chunk: Optional[Callable[[dict], None]] = None,
+    on_audio_chunk: Optional[Callable[[bytes], None]] = None,
 ) -> Tuple[bytes, str]:
     """Record with adaptive VAD-based silence endpointing.
 
@@ -335,6 +336,11 @@ def record_command_audio_vad(
                 break
             data, _overflowed = stream.read(chunk_samples)
             all_chunks.append(data.copy())
+            if on_audio_chunk is not None:
+                try:
+                    on_audio_chunk(data.tobytes())
+                except Exception:
+                    pass
             chunk_flat = data.flatten().astype(np.float64)
             rms = float(np.sqrt(np.mean(chunk_flat ** 2)))
 
@@ -386,6 +392,11 @@ def record_command_audio_vad(
 
             data, _overflowed = stream.read(chunk_samples)
             all_chunks.append(data.copy())
+            if on_audio_chunk is not None:
+                try:
+                    on_audio_chunk(data.tobytes())
+                except Exception:
+                    pass
 
             chunk_flat = data.flatten().astype(np.float64)
             rms = float(np.sqrt(np.mean(chunk_flat ** 2)))
