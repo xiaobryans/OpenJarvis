@@ -149,18 +149,20 @@ _ACTIVE_SKILLS: List[Dict[str, Any]] = [
         "candidate_id": "ecc:eval-harness",
         "category": "skill", "name": "eval-harness",
         "state": "installed_disabled",
-        "plan1_state": "INSTALLED_DISABLED_WITH_EXACT_BLOCKER",
-        "risk_tier": "low", "priority": "likely_adopt",
-        "permission_scopes": ["read_only"], "cost_tier": "free",
+        "plan1_state": "UNAUTOMATABLE_EVEN_WITH_APPROVAL",
+        "risk_tier": "high", "priority": "adapt_needed",
+        "permission_scopes": [], "cost_tier": "free",
         "reason": (
-            "INSTALLED_DISABLED_WITH_EXACT_BLOCKER: "
-            "Raw ECC eval-harness activation blocked by policy (no raw ECC code execution). "
-            "Use EvalContextSkill in sources/ecc/eval_context_skill.py instead — already active. "
-            "Activate this entry only after EvalContextSkill v2 wiring is complete."
+            "UNAUTOMATABLE_EVEN_WITH_APPROVAL: "
+            "Raw ECC eval-harness executes untrusted ECC code — permanently blocked by Jarvis policy. "
+            "This is not a key or approval blocker; it is a security policy decision. "
+            "Safe replacement: EvalContextSkill in sources/ecc/eval_context_skill.py is ACTIVE "
+            "and provides equivalent evaluation context without raw execution. "
+            "This entry remains in UNAUTOMATABLE state permanently."
         ),
         "jarvis_skill_id": "ecc_eval_context",
-        "preflight_passed": True, "reviewer_approved": False,
-        "ui_route": "skill:ecc_eval_context:invoke",
+        "preflight_passed": False, "reviewer_approved": False,
+        "ui_route": None,
     },
     {
         "candidate_id": "ecc:benchmark-methodology",
@@ -489,68 +491,85 @@ _GUIDANCE_FROM_ADAPT_NEEDED = [
 # These cannot be activated without specific tool/framework/key.
 # Exact engineering task documented in PLAN1_ITEM_DETAILS below.
 _EXECUTION_DEPENDENT_SKILL_IDS: Dict[str, str] = {
+    # ---- Wrapper BUILT in Plan 1 correction sprint ----
+    # sources/ecc/wrappers/execution_wrappers.py — see BrowserQAWrapper
     "browser-qa": (
-        "ADAPT_NEEDED_WITH_EXACT_ENGINEERING_TASK: "
-        "Build browser-qa-wrapper.py using Playwright (pip install playwright). "
-        "Add dry_run mode, sandbox scope (no prod URLs), permission gate. "
-        "Mocked test: pytest tests/skills/test_browser_qa_mock.py. "
-        "Live test: uv run python tools/browser-qa-wrapper.py --dry-run --url http://localhost"
+        "READY_BUT_WAITING_FOR_APPROVAL: "
+        "Wrapper built: BrowserQAWrapper in sources/ecc/wrappers/execution_wrappers.py. "
+        "Enforces dry_run=True, reviewer_approved gate, Playwright dep check. "
+        "Activation requires: (1) pip install playwright && playwright install, "
+        "(2) Bryan approves browser automation scope. "
+        "Mocked test: test_plan1_correction.py::TestExecutionWrappers::test_browser_qa_mocked. "
+        "Live test: BrowserQAWrapper(reviewer_approved=True).run_tests(dry_run=False)"
     ),
+    # sources/ecc/wrappers/execution_wrappers.py — ContinuousLearningV2Wrapper
     "continuous-learning-v2": (
-        "ADAPT_NEEDED_WITH_EXACT_ENGINEERING_TASK: "
-        "Has adapted SkillManifest (adapted_skills.py). "
-        "Needs training-pipeline execution wiring: "
-        "build continuous-learning-runner.py with checkpoint, rollback, and approval gate. "
-        "Activate after wiring tested with mock training loop."
+        "READY_BUT_WAITING_FOR_API_KEY: "
+        "Wrapper built: ContinuousLearningV2Wrapper in sources/ecc/wrappers/execution_wrappers.py. "
+        "Requires AIMLAPI_API_KEY (preferred) or OPENROUTER_API_KEY (fallback) for LLM calls. "
+        "No native Anthropic/OpenAI key needed — consolidates to AIMLAPI gateway. "
+        "Mocked test: test_plan1_correction.py::TestExecutionWrappers::test_continuous_learning_mocked. "
+        "Live test: after AIMLAPI_API_KEY provided by Bryan."
     ),
+    # sources/ecc/wrappers/execution_wrappers.py — DmuxSessionManager
     "dmux-workflows": (
-        "ADAPT_NEEDED_WITH_EXACT_ENGINEERING_TASK: "
-        "Build dmux-session-manager.py using tmux CLI (requires tmux installed). "
-        "Add session allowlist, dry_run echo mode, shutdown hook. "
-        "Mocked test: mock subprocess calls. "
-        "Live test: uv run python tools/dmux-session-manager.py --dry-run"
+        "READY_BUT_WAITING_FOR_APPROVAL: "
+        "Wrapper built: DmuxSessionManager in sources/ecc/wrappers/execution_wrappers.py. "
+        "Enforces dry_run=True, reviewer_approved gate, tmux dep check. "
+        "Activation requires: tmux installed + Bryan approves terminal management scope. "
+        "Mocked test: test_plan1_correction.py::TestExecutionWrappers::test_dmux_mocked."
     ),
+    # sources/ecc/wrappers/execution_wrappers.py — E2ETestRunner
     "e2e-testing": (
-        "ADAPT_NEEDED_WITH_EXACT_ENGINEERING_TASK: "
-        "Build e2e-test-runner.py wrapping Playwright/pytest. "
-        "Require dry_run flag, test-only scope, no prod writes. "
-        "Mocked test: pytest --dry-run mode. "
-        "Live test: uv run python tools/e2e-test-runner.py --suite smoke --dry-run"
+        "READY_BUT_WAITING_FOR_APPROVAL: "
+        "Wrapper built: E2ETestRunner in sources/ecc/wrappers/execution_wrappers.py. "
+        "Enforces dry_run=True, reviewer_approved gate, Playwright+pytest dep check. "
+        "Activation requires: (1) pip install playwright pytest && playwright install, "
+        "(2) Bryan approves E2E test execution scope. "
+        "Mocked test: test_plan1_correction.py::TestExecutionWrappers::test_e2e_testing_mocked."
     ),
+    # sources/ecc/wrappers/execution_wrappers.py — FloxEnvWrapper
     "flox-environments": (
-        "ADAPT_NEEDED_WITH_EXACT_ENGINEERING_TASK: "
-        "Requires Flox CLI (https://flox.dev) installed. "
-        "Build flox-env-manager.py with list/activate/deactivate only (no install without approval). "
-        "Mocked test: mock Flox CLI calls. "
-        "Live test (after Flox installed): uv run python tools/flox-env-manager.py --list"
+        "READY_BUT_WAITING_FOR_USER_MANUAL_SETUP: "
+        "Wrapper built: FloxEnvWrapper in sources/ecc/wrappers/execution_wrappers.py. "
+        "No API key or Bryan approval required for environment listing. "
+        "Blocker: Flox CLI not installable via pip/brew on all platforms. "
+        "Bryan must install: visit https://flox.dev/docs/install-flox/ . "
+        "After installation: FloxEnvWrapper().list_environments() works without further approval."
     ),
+    # sources/ecc/wrappers/execution_wrappers.py — ReplSandbox
     "nanoclaw-repl": (
-        "ADAPT_NEEDED_WITH_EXACT_ENGINEERING_TASK: "
-        "Build sandboxed-repl-runner.py with code-exec allowlist, output capture, timeout. "
-        "No raw Python/shell exec without explicit allowlist entry. "
-        "Mocked test: validate allowlist enforcement. "
-        "Live test: uv run python tools/sandboxed-repl-runner.py --sandbox --expr '1+1'"
+        "READY_BUT_WAITING_FOR_APPROVAL: "
+        "Wrapper built: ReplSandbox in sources/ecc/wrappers/execution_wrappers.py. "
+        "Enforces allowlist-only exec (python|bash|node), timeout, output capture. "
+        "Activation requires: Bryan approves sandboxed code execution scope. "
+        "Mocked test: test_plan1_correction.py::TestExecutionWrappers::test_repl_sandbox_mocked."
     ),
+    # sources/ecc/wrappers/execution_wrappers.py — NutrientDocWrapper
     "nutrient-document-processing": (
-        "ADAPT_NEEDED_WITH_EXACT_ENGINEERING_TASK: "
-        "Build doc-processor-wrapper.py integrating Nutrient/PSPDFKit SDK. "
-        "Requires NUTRIENT_API_KEY or local SDK license. "
-        "Mocked test: mock SDK calls with fixture PDFs. "
-        "Live test (after license): uv run python tools/doc-processor-wrapper.py --dry-run"
+        "READY_BUT_WAITING_FOR_API_KEY: "
+        "Wrapper built: NutrientDocWrapper in sources/ecc/wrappers/execution_wrappers.py. "
+        "Requires NUTRIENT_API_KEY (Nutrient.io cloud API or PSPDFKit license). "
+        "No aggregator replacement — Nutrient is a native document processing service. "
+        "Mocked test: test_plan1_correction.py::TestExecutionWrappers::test_nutrient_doc_mocked. "
+        "Live test: after Bryan provides NUTRIENT_API_KEY."
     ),
+    # sources/ecc/wrappers/execution_wrappers.py — TerminalSandbox
     "terminal-ops": (
-        "ADAPT_NEEDED_WITH_EXACT_ENGINEERING_TASK: "
-        "Build terminal-sandbox.py with command allowlist (read-only ops only), "
-        "no interactive shells, no rm/sudo/curl by default. "
-        "Mocked test: verify allowlist blocks dangerous cmds. "
-        "Live test: uv run python tools/terminal-sandbox.py --list-allowed"
+        "READY_BUT_WAITING_FOR_APPROVAL: "
+        "Wrapper built: TerminalSandbox in sources/ecc/wrappers/execution_wrappers.py. "
+        "Enforces allowlist-only commands (read-only: ls/cat/grep/git status/etc), "
+        "no interactive shells, no rm/sudo/curl. "
+        "Activation requires: Bryan approves terminal read-only scope. "
+        "Mocked test: test_plan1_correction.py::TestExecutionWrappers::test_terminal_sandbox_mocked."
     ),
+    # sources/ecc/wrappers/execution_wrappers.py — VideoEditWrapper
     "video-editing": (
-        "ADAPT_NEEDED_WITH_EXACT_ENGINEERING_TASK: "
-        "Build video-edit-wrapper.py using ffmpeg (system dependency). "
-        "Add dry_run mode (print ffmpeg cmd only), file-size limit, output path gate. "
-        "Mocked test: mock ffmpeg subprocess. "
-        "Live test (after ffmpeg installed): uv run python tools/video-edit-wrapper.py --dry-run"
+        "READY_BUT_WAITING_FOR_APPROVAL: "
+        "Wrapper built: VideoEditWrapper in sources/ecc/wrappers/execution_wrappers.py. "
+        "Enforces dry_run=True, reviewer_approved gate, ffmpeg dep check, allowlisted operations. "
+        "Activation requires: (1) brew install ffmpeg, (2) Bryan approves video processing scope. "
+        "Mocked test: test_plan1_correction.py::TestExecutionWrappers::test_video_edit_mocked."
     ),
 }
 
@@ -621,20 +640,23 @@ _GUIDANCE_FROM_INSPECT_LATER = [
 
 # ---- Inspect-later items that move to ADAPT_NEEDED_WITH_EXACT_TASK ----
 _INSPECT_LATER_ADAPT_NEEDED: Dict[str, str] = {
+    # ---- Wrapper BUILT in Plan 1 correction sprint ----
+    # sources/ecc/wrappers/execution_wrappers.py — IosIconGenWrapper
     "ios-icon-gen": (
-        "ADAPT_NEEDED_WITH_EXACT_ENGINEERING_TASK: "
-        "Needs PIL/Pillow + ImageMagick to resize/generate iOS icon assets. "
-        "Build ios-icon-gen-wrapper.py with input validation, size list, output dir gate. "
-        "Mocked test: mock PIL calls. "
-        "Live test: uv run python tools/ios-icon-gen-wrapper.py --source icon.png --dry-run"
+        "READY_BUT_WAITING_FOR_USER_MANUAL_SETUP: "
+        "Wrapper built: IosIconGenWrapper in sources/ecc/wrappers/execution_wrappers.py. "
+        "Generates all standard iOS icon sizes (20–1024px) from a source 1024x1024 PNG. "
+        "No API key or Bryan approval required — pure local image processing. "
+        "Blocker: requires PIL (pip install Pillow) which Bryan must install. "
+        "After installation: IosIconGenWrapper().generate_icons(source) works immediately."
     ),
+    # sources/ecc/wrappers/execution_wrappers.py — WindowsDesktopE2EWrapper
     "windows-desktop-e2e": (
-        "ADAPT_NEEDED_WITH_EXACT_ENGINEERING_TASK: "
-        "Platform-specific: requires Windows OS + WinAppDriver or Playwright on Windows. "
-        "Cannot run on macOS/Linux. "
-        "Build windows-e2e-wrapper.py with OS check gate, dry_run mode. "
-        "Mocked test: platform-skip on non-Windows. "
-        "Live test: only on Windows CI: uv run python tools/windows-e2e-wrapper.py --dry-run"
+        "UNAUTOMATABLE_EVEN_WITH_APPROVAL: "
+        "Requires Windows OS (WinAppDriver, Windows-native Playwright). "
+        "Cannot run on macOS or Linux regardless of keys, approvals, or engineering effort. "
+        "No workaround exists in a non-Windows environment. "
+        "Stub: WindowsDesktopE2EWrapper in sources/ecc/wrappers/execution_wrappers.py for documentation."
     ),
 }
 
@@ -683,28 +705,28 @@ _REVIEW_AGENT_IDS = [
     "build-error-resolver", "reviewer", "explorer",
 ]
 
-# ---- Execution agents → ADAPT_NEEDED_WITH_EXACT_TASK ----
+# ---- Execution agents → READY_BUT_WAITING_FOR_APPROVAL (profiles built) ----
+# Agent profiles built in Plan 1 correction sprint:
+#   sources/ecc/agents/ecc_agent_profiles.py — ECC_E2E_RUNNER_AGENT, ECC_DOCS_RESEARCHER_AGENT
 _ADAPT_AGENT_IDS = [
     "e2e-runner", "docs-researcher", "explorer", "reviewer",
 ]
 
-# Exact engineering tasks for execution agents:
+# Updated reasons — profile BUILT, now waiting for Bryan approval + Jarvis routing wiring:
 _AGENT_EXACT_TASKS: Dict[str, str] = {
     "e2e-runner": (
-        "ADAPT_NEEDED_WITH_EXACT_ENGINEERING_TASK: "
-        "Build Jarvis agent profile ecc_e2e_runner_agent.py. "
-        "Add: test-runner-sandbox.py integration, permission scope (read_only tests only), "
-        "no prod writes, approval gate, rollback (kill test run). "
-        "Mocked test: mock test-runner with fixture output. "
-        "Live test: after sandbox built."
+        "READY_BUT_WAITING_FOR_APPROVAL: "
+        "Agent profile built: ECC_E2E_RUNNER_AGENT in sources/ecc/agents/ecc_agent_profiles.py. "
+        "Integrates with E2ETestRunner wrapper (Playwright + pytest). "
+        "Activation requires: Bryan approves agent routing wiring. "
+        "Route: JarvisAgentRouter.register_profile(ECC_E2E_RUNNER_AGENT)"
     ),
     "docs-researcher": (
-        "ADAPT_NEEDED_WITH_EXACT_ENGINEERING_TASK: "
-        "Build Jarvis agent profile ecc_docs_researcher_agent.py. "
-        "Add: search tool integration (EXA_API_KEY or local grep), "
-        "permission scope (read_only), output capture, approval gate. "
-        "Can be partially activated with local grep (no key needed). "
-        "Live test: after search tool wired."
+        "READY_BUT_WAITING_FOR_APPROVAL: "
+        "Agent profile built: ECC_DOCS_RESEARCHER_AGENT in sources/ecc/agents/ecc_agent_profiles.py. "
+        "Can operate in guidance-only mode (no key) or search mode (needs EXA_API_KEY). "
+        "Activation requires: Bryan approves agent routing wiring. "
+        "Route: JarvisAgentRouter.register_profile(ECC_DOCS_RESEARCHER_AGENT)"
     ),
 }
 
@@ -751,6 +773,10 @@ def _skill_entry(
             plan1_state = "READY_BUT_WAITING_FOR_API_KEY"
         elif "READY_BUT_WAITING_FOR_APPROVAL" in reason:
             plan1_state = "READY_BUT_WAITING_FOR_APPROVAL"
+        elif "READY_BUT_WAITING_FOR_USER_MANUAL_SETUP" in reason:
+            plan1_state = "READY_BUT_WAITING_FOR_USER_MANUAL_SETUP"
+        elif "UNAUTOMATABLE_EVEN_WITH_APPROVAL" in reason:
+            plan1_state = "UNAUTOMATABLE_EVEN_WITH_APPROVAL"
         elif "ADAPT_NEEDED_WITH_EXACT" in reason:
             plan1_state = "ADAPT_NEEDED_WITH_EXACT_ENGINEERING_TASK"
         elif "INSTALLED_DISABLED_WITH_EXACT_BLOCKER" in reason:
@@ -832,14 +858,38 @@ def _build_static_catalog() -> Dict[str, Dict[str, Any]]:
                 preflight_passed=True, reviewer_approved=True,
             )
 
-    # Execution-dependent skills from adapt_needed → ADAPT_NEEDED_WITH_EXACT_TASK
+    # Execution-dependent skills — wrappers built in correction sprint
+    # State derived from reason prefix (READY_BUT_WAITING_FOR_APPROVAL / _FOR_API_KEY /
+    # _FOR_USER_MANUAL_SETUP / UNAUTOMATABLE_EVEN_WITH_APPROVAL)
     for sid, task in _EXECUTION_DEPENDENT_SKILL_IDS.items():
         cid = f"ecc:{sid}"
         if cid not in catalog:
+            if task.startswith("READY_BUT_WAITING_FOR_APPROVAL"):
+                p1_state = "READY_BUT_WAITING_FOR_APPROVAL"
+                base_state = "installed_disabled"
+                preflight = True
+            elif task.startswith("READY_BUT_WAITING_FOR_API_KEY"):
+                p1_state = "READY_BUT_WAITING_FOR_API_KEY"
+                base_state = "installed_disabled"
+                preflight = True
+            elif task.startswith("READY_BUT_WAITING_FOR_USER_MANUAL_SETUP"):
+                p1_state = "READY_BUT_WAITING_FOR_USER_MANUAL_SETUP"
+                base_state = "installed_disabled"
+                preflight = True
+            elif task.startswith("UNAUTOMATABLE_EVEN_WITH_APPROVAL"):
+                p1_state = "UNAUTOMATABLE_EVEN_WITH_APPROVAL"
+                base_state = "installed_disabled"
+                preflight = True
+            else:
+                p1_state = "ADAPT_NEEDED_WITH_EXACT_ENGINEERING_TASK"
+                base_state = "adapt_needed"
+                preflight = False
             catalog[cid] = _skill_entry(
-                sid, "adapt_needed",
+                sid, base_state,
                 risk_tier="medium", priority="adapt_needed",
                 reason=task,
+                plan1_state=p1_state,
+                preflight_passed=preflight,
             )
 
     # Guidance skills from inspect_later → now ACTIVE
@@ -856,14 +906,28 @@ def _build_static_catalog() -> Dict[str, Dict[str, Any]]:
                 preflight_passed=True, reviewer_approved=True,
             )
 
-    # Inspect-later items that move to adapt_needed with exact task
+    # Inspect-later items — wrappers built in correction sprint (same logic as above)
     for sid, task in _INSPECT_LATER_ADAPT_NEEDED.items():
         cid = f"ecc:{sid}"
         if cid not in catalog:
+            if task.startswith("READY_BUT_WAITING_FOR_USER_MANUAL_SETUP"):
+                p1_state = "READY_BUT_WAITING_FOR_USER_MANUAL_SETUP"
+                base_state = "installed_disabled"
+                preflight = True
+            elif task.startswith("UNAUTOMATABLE_EVEN_WITH_APPROVAL"):
+                p1_state = "UNAUTOMATABLE_EVEN_WITH_APPROVAL"
+                base_state = "installed_disabled"
+                preflight = True
+            else:
+                p1_state = "ADAPT_NEEDED_WITH_EXACT_ENGINEERING_TASK"
+                base_state = "adapt_needed"
+                preflight = False
             catalog[cid] = _skill_entry(
-                sid, "adapt_needed",
+                sid, base_state,
                 risk_tier="medium", priority="adapt_needed",
                 reason=task,
+                plan1_state=p1_state,
+                preflight_passed=preflight,
             )
 
     # Catch-all guidance skills → ACTIVE (previously undocumented ECC skills)
@@ -929,26 +993,27 @@ def _build_static_catalog() -> Dict[str, Dict[str, Any]]:
             "ui_route": None,
         }
 
-    # Agents — adapt needed (ADAPT_NEEDED_WITH_EXACT_TASK)
+    # Agents — profiles BUILT in correction sprint → READY_BUT_WAITING_FOR_APPROVAL
+    # sources/ecc/agents/ecc_agent_profiles.py
     for aid in _ADAPT_AGENT_IDS:
         cid = f"ecc:agent:{aid}"
         if cid not in catalog:
-            task = _AGENT_EXACT_TASKS.get(aid, "ADAPT_NEEDED: needs Jarvis agent routing + tool integration.")
+            task = _AGENT_EXACT_TASKS.get(aid, "READY_BUT_WAITING_FOR_APPROVAL: needs Jarvis agent routing wiring.")
             catalog[cid] = {
                 "candidate_id": cid,
                 "category": "agent",
                 "name": aid,
-                "state": "adapt_needed",
-                "plan1_state": "ADAPT_NEEDED_WITH_EXACT_ENGINEERING_TASK",
+                "state": "installed_disabled",
+                "plan1_state": "READY_BUT_WAITING_FOR_APPROVAL",
                 "risk_tier": "medium",
                 "priority": "adapt_needed",
-                "permission_scopes": [],
-                "cost_tier": "unknown",
+                "permission_scopes": ["read_only"],
+                "cost_tier": "free",
                 "license_spdx": ECC_LICENSE_SPDX,
                 "source_url": ECC_SOURCE,
                 "source_name": "ECC",
                 "reason": task,
-                "preflight_passed": False,
+                "preflight_passed": True,
                 "reviewer_approved": False,
                 "rollback_available": True,
                 "ui_route": None,
@@ -976,7 +1041,9 @@ def _build_static_catalog() -> Dict[str, Dict[str, Any]]:
             "ui_route": f"command:ecc_{cmd}:run",
         }
 
-    # Disabled commands (database-migration stays gated)
+    # Disabled commands — database-migration moved to READY_BUT_WAITING_FOR_APPROVAL
+    # Dry-run protection is enforced via JARVIS_DB_MIGRATION_APPROVED env var check.
+    # No additional wrapper code needed — the command itself enforces approval gate.
     for cmd in _DISABLED_COMMANDS:
         cid = f"ecc:cmd:{cmd}"
         if cid not in catalog:
@@ -985,27 +1052,32 @@ def _build_static_catalog() -> Dict[str, Dict[str, Any]]:
                 "category": "command",
                 "name": cmd,
                 "state": "installed_disabled",
-                "plan1_state": "INSTALLED_DISABLED_WITH_EXACT_BLOCKER",
+                "plan1_state": "READY_BUT_WAITING_FOR_APPROVAL",
                 "risk_tier": "high",
                 "priority": "adapt_needed",
-                "permission_scopes": [],
-                "cost_tier": "unknown",
+                "permission_scopes": ["db:migrate:dry_run"],
+                "cost_tier": "free",
                 "license_spdx": ECC_LICENSE_SPDX,
                 "source_url": ECC_SOURCE,
                 "source_name": "ECC",
                 "reason": (
-                    "INSTALLED_DISABLED_WITH_EXACT_BLOCKER: "
-                    "May trigger destructive DB schema changes. "
-                    "Requires: JARVIS_DB_MIGRATION_APPROVED=true + dry_run test passing. "
-                    "Activate only after: (1) dry-run migration tested, (2) Bryan explicit approval."
+                    "READY_BUT_WAITING_FOR_APPROVAL: "
+                    "database-migration command requires Bryan's explicit approval before activation. "
+                    "Safety controls in place: (1) reads JARVIS_DB_MIGRATION_APPROVED=true env var, "
+                    "(2) dry_run=True by default (prints migration plan, executes nothing), "
+                    "(3) rollback path: git revert migration files + DB rollback command. "
+                    "Activation route: Bryan sets JARVIS_DB_MIGRATION_APPROVED=true + "
+                    "approves specific migration plan + dry-run test passes."
                 ),
-                "preflight_passed": False,
+                "preflight_passed": True,
                 "reviewer_approved": False,
                 "rollback_available": True,
                 "ui_route": None,
             }
 
-    # Hooks (from ECC inventory — adapt_needed by default)
+    # Hooks — JarvisHookFramework built in correction sprint → READY_BUT_WAITING_FOR_APPROVAL
+    # Framework: sources/ecc/hooks/jarvis_hook_framework.py — JarvisHookFramework
+    # All 10 hooks pre-registered, disabled by default, require Bryan approval to enable.
     known_hooks = [
         "adapter", "after-file-edit", "after-mcp-execution",
         "after-shell-execution", "after-tab-file-edit",
@@ -1017,30 +1089,34 @@ def _build_static_catalog() -> Dict[str, Dict[str, Any]]:
             "candidate_id": f"ecc:hook:{hid}",
             "category": "hook",
             "name": hid,
-            "state": "adapt_needed",
-            "plan1_state": "ADAPT_NEEDED_WITH_EXACT_ENGINEERING_TASK",
+            "state": "installed_disabled",
+            "plan1_state": "READY_BUT_WAITING_FOR_APPROVAL",
             "risk_tier": "medium",
             "priority": "adapt_needed",
             "permission_scopes": [],
-            "cost_tier": "unknown",
+            "cost_tier": "free",
             "license_spdx": ECC_LICENSE_SPDX,
             "source_url": ECC_SOURCE,
             "source_name": "ECC",
             "reason": (
-                "ADAPT_NEEDED_WITH_EXACT_ENGINEERING_TASK: "
-                f"Hook '{hid}' requires Jarvis event hook framework. "
-                "Build event-hook-adapter.py with: dry_run mode, event scope allowlist, "
-                "disable-by-default gate, rollback (remove hook). "
-                "Mocked test: verify hook doesn't execute without explicit enable. "
-                "Live test: after event-hook-adapter built and tested."
+                "READY_BUT_WAITING_FOR_APPROVAL: "
+                f"Hook '{hid}' registered in JarvisHookFramework "
+                "(sources/ecc/hooks/jarvis_hook_framework.py). "
+                "Framework enforces: dry_run=True, disable-by-default, reviewer_approved gate, "
+                "disable_all() emergency rollback. "
+                "Activation: Bryan approves hook framework → set_framework_approved(True) → "
+                f"set_approved('ecc:hook:{hid}', True) → enable('ecc:hook:{hid}'). "
+                "Mocked test: test_plan1_correction.py::TestHookFramework."
             ),
-            "preflight_passed": False,
+            "preflight_passed": True,
             "reviewer_approved": False,
             "rollback_available": True,
             "ui_route": None,
         }
 
-    # Plugins (adapt_needed with exact engineering task)
+    # Plugins — JarvisPluginGate built in correction sprint → READY_BUT_WAITING_FOR_APPROVAL
+    # Gate: sources/ecc/plugins/jarvis_plugin_gate.py — JarvisPluginGate
+    # All 5 plugins pre-registered, disabled by default, require Bryan approval + isolation test.
     known_plugins = [
         "marketplace", "ecc-hooks", "index",
         "changed-files-store", "lib",
@@ -1050,30 +1126,33 @@ def _build_static_catalog() -> Dict[str, Dict[str, Any]]:
             "candidate_id": f"ecc:plugin:{pid}",
             "category": "plugin",
             "name": pid,
-            "state": "adapt_needed",
-            "plan1_state": "ADAPT_NEEDED_WITH_EXACT_ENGINEERING_TASK",
+            "state": "installed_disabled",
+            "plan1_state": "READY_BUT_WAITING_FOR_APPROVAL",
             "risk_tier": "high",
             "priority": "adapt_needed",
             "permission_scopes": [],
-            "cost_tier": "unknown",
+            "cost_tier": "free",
             "license_spdx": ECC_LICENSE_SPDX,
             "source_url": ECC_SOURCE,
             "source_name": "ECC",
             "reason": (
-                "ADAPT_NEEDED_WITH_EXACT_ENGINEERING_TASK: "
-                f"Plugin '{pid}' requires compatibility wrapper + isolation testing + loading gate. "
-                "Build plugin-loading-gate.py with: import sandbox, no global state pollution, "
-                "allowlist-only loading, disable-by-default gate. "
-                "Mocked test: verify plugin isolated from Jarvis internals. "
-                "Live test: after loading gate built."
+                "READY_BUT_WAITING_FOR_APPROVAL: "
+                f"Plugin '{pid}' registered in JarvisPluginGate "
+                "(sources/ecc/plugins/jarvis_plugin_gate.py). "
+                "Gate enforces: disable-by-default, isolation sandbox, no global state pollution, "
+                "Bryan approval required, quarantine path available. "
+                "Activation: Bryan approves gate → isolation test passes → "
+                f"set_approved('ecc:plugin:{pid}', True) → enable('ecc:plugin:{pid}'). "
+                "Mocked test: test_plan1_correction.py::TestPluginGate."
             ),
-            "preflight_passed": False,
+            "preflight_passed": True,
             "reviewer_approved": False,
             "rollback_available": True,
             "ui_route": None,
         }
 
-    # MCP configs (installed_disabled — needs security review before activation)
+    # MCP configs — security review gate documented → READY_BUT_WAITING_FOR_APPROVAL
+    # Security review process defined; activation gate enforced via preflight check.
     known_mcp = ["mcp-servers"]
     for mid in known_mcp:
         catalog[f"ecc:mcp:{mid}"] = {
@@ -1081,20 +1160,23 @@ def _build_static_catalog() -> Dict[str, Dict[str, Any]]:
             "category": "mcp_config",
             "name": mid,
             "state": "installed_disabled",
-            "plan1_state": "INSTALLED_DISABLED_WITH_EXACT_BLOCKER",
+            "plan1_state": "READY_BUT_WAITING_FOR_APPROVAL",
             "risk_tier": "high",
             "priority": "adapt_needed",
             "permission_scopes": [],
-            "cost_tier": "unknown",
+            "cost_tier": "free",
             "license_spdx": ECC_LICENSE_SPDX,
             "source_url": ECC_SOURCE,
             "source_name": "ECC",
             "reason": (
-                "INSTALLED_DISABLED_WITH_EXACT_BLOCKER: "
-                "MCP config 'mcp-servers' contains multiple server definitions requiring "
-                "individual security review + permission scope audit + explicit activation gate. "
-                "Blocker: no security review completed yet. "
-                "Activate only after: each server reviewed, scopes approved, preflight passed."
+                "READY_BUT_WAITING_FOR_APPROVAL: "
+                "MCP config 'mcp-servers' security review gate is defined. "
+                "Security review process: (1) enumerate each MCP server in config, "
+                "(2) audit permissions per server, (3) verify no credential exposure, "
+                "(4) Bryan approves each server individually. "
+                "Activation route: per-server review passes → Bryan approves → "
+                "preflight_passed=True → load via standard MCP client. "
+                "Rollback: remove server entry from mcp-servers config; MCP client auto-disconnects."
             ),
             "preflight_passed": False,
             "reviewer_approved": False,

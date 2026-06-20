@@ -352,14 +352,17 @@ class TestActiveCountConsistency:
         assert adapted_vs["difference_count"] == 1
         assert adapted_vs["is_consistent"] is True  # deliberate design, fully documented
 
-    def test_continuous_learning_v2_is_adapt_needed_in_catalog(self) -> None:
-        """The 23rd adapted manifest (continuous-learning-v2) is adapt_needed in catalog."""
+    def test_continuous_learning_v2_is_ready_for_api_key(self) -> None:
+        """After correction sprint: continuous-learning-v2 wrapper built → READY_BUT_WAITING_FOR_API_KEY."""
         catalog = ECCCatalog()
         entry = catalog.get("ecc:continuous-learning-v2")
         assert entry is not None, "ecc:continuous-learning-v2 must be in catalog"
-        assert entry["state"] == "adapt_needed", (
-            f"Expected adapt_needed, got {entry['state']} — "
-            "adapted manifest exists but catalog state is pending execution wiring"
+        assert entry["plan1_state"] == "READY_BUT_WAITING_FOR_API_KEY", (
+            f"Expected READY_BUT_WAITING_FOR_API_KEY, got {entry.get('plan1_state')} — "
+            "ContinuousLearningV2Wrapper built in correction sprint; needs AIMLAPI_API_KEY"
+        )
+        assert entry["state"] == "installed_disabled", (
+            f"Expected installed_disabled, got {entry['state']}"
         )
 
     def test_eval_harness_is_installed_disabled_not_active(self) -> None:

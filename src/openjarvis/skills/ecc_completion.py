@@ -29,6 +29,7 @@ class Plan1State:
     ACTIVE = "ACTIVE"
     READY_BUT_WAITING_FOR_API_KEY = "READY_BUT_WAITING_FOR_API_KEY"
     READY_BUT_WAITING_FOR_APPROVAL = "READY_BUT_WAITING_FOR_APPROVAL"
+    READY_BUT_WAITING_FOR_USER_MANUAL_SETUP = "READY_BUT_WAITING_FOR_USER_MANUAL_SETUP"
     ADAPT_NEEDED_WITH_EXACT_ENGINEERING_TASK = "ADAPT_NEEDED_WITH_EXACT_ENGINEERING_TASK"
     INSTALLED_DISABLED_WITH_EXACT_BLOCKER = "INSTALLED_DISABLED_WITH_EXACT_BLOCKER"
     UNAUTOMATABLE_EVEN_WITH_APPROVAL = "UNAUTOMATABLE_EVEN_WITH_APPROVAL"
@@ -688,6 +689,47 @@ ECC_KEY_REQUIREMENTS: List[Dict[str, Any]] = [
         "rollback_path": "Delete webhook; revoke API key from Stripe dashboard",
         "completable_with_keys": True,
         "impossible_even_with_keys": ["Financial risk — use Stripe test mode keys first (sk_test_...)"],
+    },
+    # ---- Added in Plan 1 correction sprint (wrappers built) ----
+    {
+        "skill_id": "nutrient-document-processing",
+        "provider": "Nutrient.io / PSPDFKit",
+        "required_env_keys": ["NUTRIENT_API_KEY"],
+        "optional_env_keys": [],
+        "oauth_scopes": [],
+        "account_setup": "Nutrient.io account at nutrient.io; or obtain PSPDFKit commercial license",
+        "risk": "low",
+        "jarvis_permission_scope": "documents:process:read_write",
+        "plan1_state": Plan1State.READY_BUT_WAITING_FOR_API_KEY,
+        "exact_blocker": "Missing NUTRIENT_API_KEY. Wrapper built: NutrientDocWrapper in sources/ecc/wrappers/execution_wrappers.py",
+        "mocked_test_command": "uv run pytest tests/skills/test_plan1_correction.py::TestExecutionWrappers::test_nutrient_doc_mocked",
+        "live_test_command": "NUTRIENT_API_KEY=$NUTRIENT_API_KEY uv run python -c \"from openjarvis.skills.sources.ecc.wrappers.execution_wrappers import NutrientDocWrapper; w=NutrientDocWrapper(reviewer_approved=True); print(w.process_document('test.pdf', dry_run=True))\"",
+        "activation_route": "Set NUTRIENT_API_KEY; Bryan approves; enable NutrientDocWrapper",
+        "rollback_path": "Unset NUTRIENT_API_KEY; disable wrapper",
+        "completable_with_keys": True,
+        "impossible_even_with_keys": [],
+    },
+    {
+        "skill_id": "continuous-learning-v2",
+        "provider": "AIMLAPI (primary) / OpenRouter (fallback)",
+        "required_env_keys": ["AIMLAPI_API_KEY"],
+        "optional_env_keys": ["OPENROUTER_API_KEY"],
+        "oauth_scopes": [],
+        "account_setup": "AIMLAPI account at aimlapi.com (covers Claude/GPT/Gemini + 200 models)",
+        "risk": "low",
+        "jarvis_permission_scope": "llm:training_pipeline:read_write",
+        "plan1_state": Plan1State.READY_BUT_WAITING_FOR_API_KEY,
+        "exact_blocker": (
+            "Missing AIMLAPI_API_KEY (or OPENROUTER_API_KEY fallback). "
+            "No native Anthropic/OpenAI key required — consolidated to AIMLAPI gateway. "
+            "Wrapper built: ContinuousLearningV2Wrapper in sources/ecc/wrappers/execution_wrappers.py"
+        ),
+        "mocked_test_command": "uv run pytest tests/skills/test_plan1_correction.py::TestExecutionWrappers::test_continuous_learning_mocked",
+        "live_test_command": "AIMLAPI_API_KEY=$AIMLAPI_API_KEY uv run python -c \"from openjarvis.skills.sources.ecc.wrappers.execution_wrappers import ContinuousLearningV2Wrapper; w=ContinuousLearningV2Wrapper(reviewer_approved=True); print(w.run_training_cycle(dry_run=True))\"",
+        "activation_route": "Set AIMLAPI_API_KEY; Bryan approves; enable ContinuousLearningV2Wrapper",
+        "rollback_path": "Unset AIMLAPI_API_KEY; disable wrapper",
+        "completable_with_keys": True,
+        "impossible_even_with_keys": [],
     },
 ]
 

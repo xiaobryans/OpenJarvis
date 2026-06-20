@@ -1,0 +1,1306 @@
+{
+  "generated_by": "openjarvis.skills.ecc_provider_consolidation",
+  "sprint": "Plan 1 ECC Correction Pass \u2014 Provider Consolidation",
+  "consolidation_summary": {
+    "total_api_key_skills": 37,
+    "consolidatable_via_aimlapi": 7,
+    "require_native_provider": 30,
+    "aimlapi_skill_ids": [
+      "ecc-tools-cost-audit",
+      "article-writing",
+      "content-engine",
+      "brand-voice",
+      "investor-materials",
+      "continuous-learning-v2",
+      "fal-ai-media"
+    ],
+    "native_skill_ids": [
+      "exa-search",
+      "deep-research",
+      "market-research",
+      "research-ops",
+      "brand-discovery",
+      "competitive-platform-analysis",
+      "competitive-report-structure",
+      "github-ops",
+      "configure-ecc",
+      "jira-integration",
+      "google-workspace-ops",
+      "messages-ops",
+      "unified-notifications-ops",
+      "social-publisher",
+      "x-api",
+      "crosspost",
+      "social-graph-ranker",
+      "email-ops",
+      "investor-outreach",
+      "marketing-campaign",
+      "videodb",
+      "knowledge-ops",
+      "lead-intelligence",
+      "seo",
+      "project-flow-ops",
+      "team-builder",
+      "data-scraper-agent",
+      "stripe-integration",
+      "agent-payment-x402",
+      "nutrient-document-processing"
+    ],
+    "key_reduction": {
+      "original_keys_needed": "35+ separate provider API keys",
+      "after_consolidation": "1 AIMLAPI_API_KEY + 14 native service keys + 1 OAuth flow",
+      "savings": "Eliminates separate Anthropic/OpenAI/fal.ai keys"
+    }
+  },
+  "minimal_shopping_list": {
+    "A_gateway_keys": {
+      "description": "AI/model/media gateway \u2014 covers multiple LLM/media skills with ONE key",
+      "keys": {
+        "AIMLAPI_API_KEY": {
+          "account": "Sign up at aimlapi.com",
+          "covers": [
+            "ecc-tools-cost-audit",
+            "article-writing",
+            "content-engine",
+            "brand-voice",
+            "investor-materials",
+            "continuous-learning-v2",
+            "fal-ai-media"
+          ],
+          "note": "Replaces separate Anthropic/OpenAI/Gemini/fal.ai keys for these skills"
+        }
+      },
+      "fallback_keys": {
+        "OPENROUTER_API_KEY": {
+          "account": "Sign up at openrouter.ai (may already be configured)",
+          "covers": [
+            "ecc-tools-cost-audit",
+            "article-writing",
+            "content-engine",
+            "brand-voice",
+            "investor-materials"
+          ],
+          "note": "If AIMLAPI_API_KEY not available, OPENROUTER_API_KEY suffices for LLM-only skills"
+        }
+      },
+      "skills_count": 7
+    },
+    "B_native_service_connectors": {
+      "description": "Native service connectors \u2014 required because no aggregator covers these",
+      "keys": {
+        "EXA_API_KEY": {
+          "account": "Sign up at exa.ai",
+          "covers": [
+            "exa-search",
+            "deep-research",
+            "market-research",
+            "research-ops",
+            "brand-discovery",
+            "competitive-platform-analysis",
+            "competitive-report-structure"
+          ],
+          "note": "ONE key covers 7 search/research skills"
+        },
+        "GITHUB_TOKEN": {
+          "account": "Generate PAT at github.com/settings/tokens (repo+workflow scopes)",
+          "covers": [
+            "github-ops",
+            "configure-ecc"
+          ],
+          "note": "ONE token covers 2 GitHub skills"
+        },
+        "SLACK_BOT_TOKEN": {
+          "account": "Create app at api.slack.com",
+          "covers": [
+            "messages-ops",
+            "unified-notifications-ops"
+          ],
+          "note": "ONE token covers 2 messaging skills"
+        },
+        "TWITTER_API_KEY + TWITTER_API_SECRET + TWITTER_ACCESS_TOKEN + TWITTER_ACCESS_TOKEN_SECRET": {
+          "account": "Twitter Developer account at developer.twitter.com",
+          "covers": [
+            "social-publisher",
+            "x-api",
+            "crosspost"
+          ],
+          "note": "ONE Twitter Developer account covers 3 social skills"
+        },
+        "TWITTER_BEARER_TOKEN": {
+          "account": "Auto-generated from same Twitter Developer account",
+          "covers": [
+            "social-graph-ranker"
+          ],
+          "note": "Read-only bearer token \u2014 cheaper than full OAuth"
+        },
+        "RESEND_API_KEY + EMAIL_FROM": {
+          "account": "Sign up at resend.com; verify sender domain",
+          "covers": [
+            "email-ops",
+            "investor-outreach",
+            "marketing-campaign"
+          ],
+          "note": "ONE Resend account covers 3 email skills"
+        },
+        "VIDEODB_API_KEY": {
+          "account": "Sign up at videodb.io",
+          "covers": [
+            "videodb"
+          ]
+        },
+        "LINEAR_API_KEY": {
+          "account": "Linear account at linear.app; Settings \u2192 API",
+          "covers": [
+            "project-flow-ops"
+          ]
+        },
+        "APOLLO_API_KEY": {
+          "account": "Apollo.io account at apollo.io",
+          "covers": [
+            "lead-intelligence"
+          ]
+        },
+        "AHREFS_API_KEY": {
+          "account": "Ahrefs account at ahrefs.com",
+          "covers": [
+            "seo"
+          ]
+        },
+        "GREENHOUSE_API_KEY": {
+          "account": "Greenhouse account at greenhouse.io",
+          "covers": [
+            "team-builder"
+          ]
+        },
+        "PINECONE_API_KEY + PINECONE_ENV": {
+          "account": "Pinecone account at pinecone.io",
+          "covers": [
+            "knowledge-ops"
+          ]
+        },
+        "SCRAPING_BEE_API_KEY": {
+          "account": "ScrapingBee account at scrapingbee.com",
+          "covers": [
+            "data-scraper-agent"
+          ]
+        },
+        "JIRA_API_TOKEN + JIRA_BASE_URL + JIRA_EMAIL": {
+          "account": "id.atlassian.com/manage-profile/security/api-tokens",
+          "covers": [
+            "jira-integration"
+          ]
+        },
+        "NUTRIENT_API_KEY": {
+          "account": "nutrient.io or PSPDFKit license",
+          "covers": [
+            "nutrient-document-processing"
+          ]
+        }
+      }
+    },
+    "C_oauth_browser_setup": {
+      "description": "OAuth / browser-consent setups required",
+      "items": {
+        "Google Workspace OAuth": {
+          "skill_ids": [
+            "google-workspace-ops"
+          ],
+          "steps": [
+            "1. Create Google Cloud Console project",
+            "2. Enable required APIs (Gmail/Calendar/Drive)",
+            "3. Create OAuth 2.0 credentials",
+            "4. Complete OAuth consent screen",
+            "5. Run browser OAuth flow to obtain GOOGLE_REFRESH_TOKEN"
+          ],
+          "env_keys": [
+            "GOOGLE_CLIENT_ID",
+            "GOOGLE_CLIENT_SECRET",
+            "GOOGLE_REFRESH_TOKEN"
+          ]
+        }
+      }
+    },
+    "D_financial_high_risk_approvals": {
+      "description": "Financial/high-risk \u2014 require Bryan's explicit approval beyond just keys",
+      "items": {
+        "Stripe Integration": {
+          "skill_ids": [
+            "stripe-integration"
+          ],
+          "keys": [
+            "STRIPE_API_KEY (use sk_test_... first)",
+            "STRIPE_WEBHOOK_SECRET"
+          ],
+          "approval_note": "Use Stripe test mode (sk_test_...) before live keys"
+        },
+        "X402 Payment Agent": {
+          "skill_ids": [
+            "agent-payment-x402"
+          ],
+          "keys": [
+            "X402_PAYMENT_KEY"
+          ],
+          "approval_note": "Requires Bryan explicit financial approval BEFORE providing key"
+        }
+      }
+    },
+    "E_optional_later": {
+      "description": "Optional keys that expand functionality but are not required",
+      "items": {
+        "PERPLEXITY_API_KEY": "Optional upgrade for deep-research, research-ops",
+        "SERP_API_KEY": "Optional upgrade for market-research",
+        "LINKEDIN_ACCESS_TOKEN": "Optional for social-publisher, crosspost, marketing-campaign",
+        "META_PAGE_ACCESS_TOKEN": "Optional for social-publisher",
+        "CONTENTFUL_API_KEY / NOTION_API_KEY": "Optional CMS publishing for content-engine",
+        "CLEARBIT_API_KEY / HUNTER_API_KEY": "Optional upgrade for lead-intelligence",
+        "SENDGRID_API_KEY": "Alternative to RESEND_API_KEY for email-ops",
+        "SEMRUSH_API_KEY": "Alternative to AHREFS_API_KEY for seo"
+      }
+    }
+  },
+  "per_skill_table": [
+    {
+      "skill_id": "ecc-tools-cost-audit",
+      "original_provider": "Anthropic / OpenAI / OpenRouter",
+      "original_keys": [
+        "ANTHROPIC_API_KEY"
+      ],
+      "provider_category": "ai_model",
+      "can_use_aimlapi": true,
+      "aimlapi_coverage_note": "AIMLAPI aggregates Anthropic Claude + OpenAI + 200+ models",
+      "can_use_openrouter": true,
+      "can_use_openai_compatible_gateway": true,
+      "final_recommended_provider": "AIMLAPI (primary) / OPENROUTER (fallback)",
+      "final_required_env_keys": [
+        "AIMLAPI_API_KEY"
+      ],
+      "final_optional_env_keys": [
+        "OPENROUTER_API_KEY"
+      ],
+      "native_provider_required": false,
+      "native_provider_reason": null,
+      "completable_with_keys": true,
+      "oauth_or_manual_setup": null,
+      "live_test_command": "AIMLAPI_API_KEY=$AIMLAPI_API_KEY uv run python -c \"from openjarvis.skills.ecc_completion import live_test_skill; live_test_skill('ecc-tools-cost-audit')\"",
+      "mocked_test_command": "uv run pytest tests/skills/test_plan1_correction.py::TestProviderConsolidation::test_ecc_tools_cost_audit_uses_gateway",
+      "activation_route": "Set AIMLAPI_API_KEY; enable skill in catalog",
+      "rollback_path": "Unset AIMLAPI_API_KEY; skill auto-disables"
+    },
+    {
+      "skill_id": "article-writing",
+      "original_provider": "LLM (any provider)",
+      "original_keys": [
+        "ANTHROPIC_API_KEY"
+      ],
+      "provider_category": "ai_model",
+      "can_use_aimlapi": true,
+      "aimlapi_coverage_note": "AIMLAPI covers Claude/GPT/Gemini for article writing",
+      "can_use_openrouter": true,
+      "can_use_openai_compatible_gateway": true,
+      "final_recommended_provider": "AIMLAPI (primary) / OPENROUTER (fallback)",
+      "final_required_env_keys": [
+        "AIMLAPI_API_KEY"
+      ],
+      "final_optional_env_keys": [
+        "OPENROUTER_API_KEY"
+      ],
+      "native_provider_required": false,
+      "native_provider_reason": null,
+      "completable_with_keys": true,
+      "oauth_or_manual_setup": null,
+      "live_test_command": "AIMLAPI_API_KEY=$AIMLAPI_API_KEY uv run python -c \"from openjarvis.skills.ecc_completion import live_test_skill; live_test_skill('article-writing')\"",
+      "mocked_test_command": "uv run pytest tests/skills/test_plan1_correction.py::TestProviderConsolidation::test_article_writing_uses_gateway",
+      "activation_route": "Set AIMLAPI_API_KEY (or OPENROUTER_API_KEY if already configured); enable skill",
+      "rollback_path": "Unset AIMLAPI_API_KEY"
+    },
+    {
+      "skill_id": "content-engine",
+      "original_provider": "LLM (OpenRouter) + optional CMS",
+      "original_keys": [
+        "OPENROUTER_API_KEY"
+      ],
+      "provider_category": "ai_model",
+      "can_use_aimlapi": true,
+      "aimlapi_coverage_note": "AIMLAPI can substitute for OPENROUTER_API_KEY",
+      "can_use_openrouter": true,
+      "can_use_openai_compatible_gateway": true,
+      "final_recommended_provider": "AIMLAPI or OPENROUTER (already consolidated)",
+      "final_required_env_keys": [
+        "AIMLAPI_API_KEY"
+      ],
+      "final_optional_env_keys": [
+        "OPENROUTER_API_KEY",
+        "CONTENTFUL_API_KEY",
+        "NOTION_API_KEY"
+      ],
+      "native_provider_required": false,
+      "native_provider_reason": null,
+      "completable_with_keys": true,
+      "oauth_or_manual_setup": null,
+      "live_test_command": "AIMLAPI_API_KEY=$AIMLAPI_API_KEY uv run python -c \"from openjarvis.skills.ecc_completion import live_test_skill; live_test_skill('content-engine')\"",
+      "mocked_test_command": "uv run pytest tests/skills/test_plan1_correction.py::TestProviderConsolidation::test_content_engine_uses_gateway",
+      "activation_route": "Set AIMLAPI_API_KEY or OPENROUTER_API_KEY; enable skill",
+      "rollback_path": "Unset key; disable skill"
+    },
+    {
+      "skill_id": "brand-voice",
+      "original_provider": "LLM",
+      "original_keys": [
+        "OPENROUTER_API_KEY"
+      ],
+      "provider_category": "ai_model",
+      "can_use_aimlapi": true,
+      "aimlapi_coverage_note": "AIMLAPI covers brand analysis LLM calls",
+      "can_use_openrouter": true,
+      "can_use_openai_compatible_gateway": true,
+      "final_recommended_provider": "AIMLAPI (primary) / OPENROUTER (fallback)",
+      "final_required_env_keys": [
+        "AIMLAPI_API_KEY"
+      ],
+      "final_optional_env_keys": [
+        "OPENROUTER_API_KEY"
+      ],
+      "native_provider_required": false,
+      "native_provider_reason": null,
+      "completable_with_keys": true,
+      "oauth_or_manual_setup": null,
+      "live_test_command": "AIMLAPI_API_KEY=$AIMLAPI_API_KEY uv run python -c \"from openjarvis.skills.ecc_completion import live_test_skill; live_test_skill('brand-voice')\"",
+      "mocked_test_command": "uv run pytest tests/skills/test_plan1_correction.py::TestProviderConsolidation::test_brand_voice_uses_gateway",
+      "activation_route": "Set AIMLAPI_API_KEY; enable skill",
+      "rollback_path": "Unset AIMLAPI_API_KEY"
+    },
+    {
+      "skill_id": "investor-materials",
+      "original_provider": "LLM",
+      "original_keys": [
+        "ANTHROPIC_API_KEY"
+      ],
+      "provider_category": "ai_model",
+      "can_use_aimlapi": true,
+      "aimlapi_coverage_note": "AIMLAPI covers document generation LLM calls",
+      "can_use_openrouter": true,
+      "can_use_openai_compatible_gateway": true,
+      "final_recommended_provider": "AIMLAPI (primary) / OPENROUTER (fallback)",
+      "final_required_env_keys": [
+        "AIMLAPI_API_KEY"
+      ],
+      "final_optional_env_keys": [
+        "OPENROUTER_API_KEY"
+      ],
+      "native_provider_required": false,
+      "native_provider_reason": null,
+      "completable_with_keys": true,
+      "oauth_or_manual_setup": null,
+      "live_test_command": "AIMLAPI_API_KEY=$AIMLAPI_API_KEY uv run python -c \"from openjarvis.skills.ecc_completion import live_test_skill; live_test_skill('investor-materials')\"",
+      "mocked_test_command": "uv run pytest tests/skills/test_plan1_correction.py::TestProviderConsolidation::test_investor_materials_uses_gateway",
+      "activation_route": "Set AIMLAPI_API_KEY; enable skill",
+      "rollback_path": "Unset AIMLAPI_API_KEY"
+    },
+    {
+      "skill_id": "continuous-learning-v2",
+      "original_provider": "LLM (training pipeline)",
+      "original_keys": [
+        "OPENROUTER_API_KEY"
+      ],
+      "provider_category": "ai_model",
+      "can_use_aimlapi": true,
+      "aimlapi_coverage_note": "AIMLAPI covers LLM calls for training pipeline",
+      "can_use_openrouter": true,
+      "can_use_openai_compatible_gateway": true,
+      "final_recommended_provider": "AIMLAPI (primary) / OPENROUTER (fallback)",
+      "final_required_env_keys": [
+        "AIMLAPI_API_KEY"
+      ],
+      "final_optional_env_keys": [
+        "OPENROUTER_API_KEY"
+      ],
+      "native_provider_required": false,
+      "native_provider_reason": null,
+      "completable_with_keys": true,
+      "oauth_or_manual_setup": null,
+      "live_test_command": "AIMLAPI_API_KEY=$AIMLAPI_API_KEY uv run python -c \"from openjarvis.skills.sources.ecc.wrappers.execution_wrappers import ContinuousLearningV2Wrapper; w=ContinuousLearningV2Wrapper(reviewer_approved=True); print(w.run_training_cycle(dry_run=True))\"",
+      "mocked_test_command": "uv run pytest tests/skills/test_plan1_correction.py::TestExecutionWrappers::test_continuous_learning_mocked",
+      "activation_route": "Set AIMLAPI_API_KEY + Bryan approval; enable wrapper",
+      "rollback_path": "Unset AIMLAPI_API_KEY; wrapper auto-blocks"
+    },
+    {
+      "skill_id": "fal-ai-media",
+      "original_provider": "fal.ai",
+      "original_keys": [
+        "FAL_API_KEY"
+      ],
+      "provider_category": "image_model",
+      "can_use_aimlapi": true,
+      "aimlapi_coverage_note": "AIMLAPI.com aggregates many image/video generation models including Flux, SDXL, and similar models that fal.ai provides. Specific fal.ai models (e.g. fast-sdxl, flux-dev) are available via AIMLAPI. Exact model routing may differ from native fal.ai API. If skill requires fal-specific API surface (RunPod model IDs), native key needed.",
+      "can_use_openrouter": false,
+      "can_use_openai_compatible_gateway": false,
+      "final_recommended_provider": "AIMLAPI (covers fal-equivalent models) \u2014 fallback to FAL_API_KEY if specific fal model ID required",
+      "final_required_env_keys": [
+        "AIMLAPI_API_KEY"
+      ],
+      "final_optional_env_keys": [
+        "FAL_API_KEY"
+      ],
+      "native_provider_required": false,
+      "native_provider_reason": "Only if skill requires fal.ai-specific model IDs not available via AIMLAPI",
+      "completable_with_keys": true,
+      "oauth_or_manual_setup": null,
+      "live_test_command": "AIMLAPI_API_KEY=$AIMLAPI_API_KEY uv run python -c \"from openjarvis.skills.ecc_completion import live_test_skill; live_test_skill('fal-ai-media')\"",
+      "mocked_test_command": "uv run pytest tests/skills/test_plan1_correction.py::TestProviderConsolidation::test_fal_ai_uses_aimlapi",
+      "activation_route": "Set AIMLAPI_API_KEY; enable skill",
+      "rollback_path": "Unset AIMLAPI_API_KEY"
+    },
+    {
+      "skill_id": "exa-search",
+      "original_provider": "Exa",
+      "original_keys": [
+        "EXA_API_KEY"
+      ],
+      "provider_category": "search/data",
+      "can_use_aimlapi": false,
+      "aimlapi_coverage_note": "AIMLAPI is an LLM/model aggregator; does not cover semantic search APIs",
+      "can_use_openrouter": false,
+      "can_use_openai_compatible_gateway": false,
+      "final_recommended_provider": "Exa (native)",
+      "final_required_env_keys": [
+        "EXA_API_KEY"
+      ],
+      "final_optional_env_keys": [],
+      "native_provider_required": true,
+      "native_provider_reason": "Exa is a specialized semantic search service with unique indexing \u2014 no aggregator replacement",
+      "completable_with_keys": true,
+      "oauth_or_manual_setup": "Sign up at exa.ai; generate API key from dashboard",
+      "live_test_command": "EXA_API_KEY=$EXA_API_KEY uv run python -c \"from openjarvis.skills.ecc_completion import live_test_skill; live_test_skill('exa-search')\"",
+      "mocked_test_command": "uv run pytest tests/skills/test_plan1_completion.py::TestEccKeySkillsMocked::test_exa_search_mocked",
+      "activation_route": "Set EXA_API_KEY; enable skill",
+      "rollback_path": "Unset EXA_API_KEY"
+    },
+    {
+      "skill_id": "deep-research",
+      "original_provider": "Exa or Perplexity",
+      "original_keys": [
+        "EXA_API_KEY"
+      ],
+      "provider_category": "search/data",
+      "can_use_aimlapi": false,
+      "aimlapi_coverage_note": "Research search requires Exa/Perplexity native APIs",
+      "can_use_openrouter": false,
+      "can_use_openai_compatible_gateway": false,
+      "final_recommended_provider": "Exa (primary) \u2014 shares key with exa-search",
+      "final_required_env_keys": [
+        "EXA_API_KEY"
+      ],
+      "final_optional_env_keys": [
+        "PERPLEXITY_API_KEY"
+      ],
+      "native_provider_required": true,
+      "native_provider_reason": "Semantic search requires native search API",
+      "completable_with_keys": true,
+      "oauth_or_manual_setup": null,
+      "live_test_command": "EXA_API_KEY=$EXA_API_KEY uv run python -c \"from openjarvis.skills.ecc_completion import live_test_skill; live_test_skill('deep-research')\"",
+      "mocked_test_command": "uv run pytest tests/skills/test_plan1_completion.py::TestEccKeySkillsMocked::test_deep_research_mocked",
+      "activation_route": "Set EXA_API_KEY; enable skill",
+      "rollback_path": "Unset EXA_API_KEY"
+    },
+    {
+      "skill_id": "market-research",
+      "original_provider": "Exa + SERP API",
+      "original_keys": [
+        "EXA_API_KEY"
+      ],
+      "provider_category": "search/data",
+      "can_use_aimlapi": false,
+      "aimlapi_coverage_note": "Market research requires native search API",
+      "can_use_openrouter": false,
+      "can_use_openai_compatible_gateway": false,
+      "final_recommended_provider": "Exa (shares key with exa-search)",
+      "final_required_env_keys": [
+        "EXA_API_KEY"
+      ],
+      "final_optional_env_keys": [
+        "SERP_API_KEY"
+      ],
+      "native_provider_required": true,
+      "native_provider_reason": "Search API required for market intelligence",
+      "completable_with_keys": true,
+      "oauth_or_manual_setup": null,
+      "live_test_command": "EXA_API_KEY=$EXA_API_KEY uv run python -c \"from openjarvis.skills.ecc_completion import live_test_skill; live_test_skill('market-research')\"",
+      "mocked_test_command": "uv run pytest tests/skills/test_plan1_completion.py::TestEccKeySkillsMocked::test_market_research_mocked",
+      "activation_route": "Set EXA_API_KEY; enable skill",
+      "rollback_path": "Unset EXA_API_KEY"
+    },
+    {
+      "skill_id": "research-ops",
+      "original_provider": "Exa or Perplexity",
+      "original_keys": [
+        "EXA_API_KEY"
+      ],
+      "provider_category": "search/data",
+      "can_use_aimlapi": false,
+      "aimlapi_coverage_note": "Research ops requires native search API",
+      "can_use_openrouter": false,
+      "can_use_openai_compatible_gateway": false,
+      "final_recommended_provider": "Exa (shares key with exa-search)",
+      "final_required_env_keys": [
+        "EXA_API_KEY"
+      ],
+      "final_optional_env_keys": [
+        "PERPLEXITY_API_KEY"
+      ],
+      "native_provider_required": true,
+      "native_provider_reason": "Search API required",
+      "completable_with_keys": true,
+      "oauth_or_manual_setup": null,
+      "live_test_command": "EXA_API_KEY=$EXA_API_KEY uv run python -c \"from openjarvis.skills.ecc_completion import live_test_skill; live_test_skill('research-ops')\"",
+      "mocked_test_command": "uv run pytest tests/skills/test_plan1_completion.py::TestEccKeySkillsMocked::test_research_ops_mocked",
+      "activation_route": "Set EXA_API_KEY; enable skill",
+      "rollback_path": "Unset EXA_API_KEY"
+    },
+    {
+      "skill_id": "brand-discovery",
+      "original_provider": "Exa",
+      "original_keys": [
+        "EXA_API_KEY"
+      ],
+      "provider_category": "search/data",
+      "can_use_aimlapi": false,
+      "aimlapi_coverage_note": "Brand discovery requires native search API",
+      "can_use_openrouter": false,
+      "can_use_openai_compatible_gateway": false,
+      "final_recommended_provider": "Exa (shares key with exa-search)",
+      "final_required_env_keys": [
+        "EXA_API_KEY"
+      ],
+      "final_optional_env_keys": [],
+      "native_provider_required": true,
+      "native_provider_reason": "Brand web search requires Exa API",
+      "completable_with_keys": true,
+      "oauth_or_manual_setup": null,
+      "live_test_command": "EXA_API_KEY=$EXA_API_KEY uv run python -c \"from openjarvis.skills.ecc_completion import live_test_skill; live_test_skill('brand-discovery')\"",
+      "mocked_test_command": "uv run pytest tests/skills/test_plan1_completion.py::TestEccKeySkillsMocked::test_brand_discovery_mocked",
+      "activation_route": "Set EXA_API_KEY; enable skill",
+      "rollback_path": "Unset EXA_API_KEY"
+    },
+    {
+      "skill_id": "competitive-platform-analysis",
+      "original_provider": "Exa",
+      "original_keys": [
+        "EXA_API_KEY"
+      ],
+      "provider_category": "search/data",
+      "can_use_aimlapi": false,
+      "aimlapi_coverage_note": "Competitive analysis requires native search API",
+      "can_use_openrouter": false,
+      "can_use_openai_compatible_gateway": false,
+      "final_recommended_provider": "Exa (shares key with exa-search)",
+      "final_required_env_keys": [
+        "EXA_API_KEY"
+      ],
+      "final_optional_env_keys": [],
+      "native_provider_required": true,
+      "native_provider_reason": "Web search required for competitive intelligence",
+      "completable_with_keys": true,
+      "oauth_or_manual_setup": null,
+      "live_test_command": "EXA_API_KEY=$EXA_API_KEY uv run python -c \"from openjarvis.skills.ecc_completion import live_test_skill; live_test_skill('competitive-platform-analysis')\"",
+      "mocked_test_command": "uv run pytest tests/skills/test_plan1_completion.py::TestEccKeySkillsMocked::test_competitive_platform_mocked",
+      "activation_route": "Set EXA_API_KEY; enable skill",
+      "rollback_path": "Unset EXA_API_KEY"
+    },
+    {
+      "skill_id": "competitive-report-structure",
+      "original_provider": "Exa",
+      "original_keys": [
+        "EXA_API_KEY"
+      ],
+      "provider_category": "search/data",
+      "can_use_aimlapi": false,
+      "aimlapi_coverage_note": "Competitive reports require native search API",
+      "can_use_openrouter": false,
+      "can_use_openai_compatible_gateway": false,
+      "final_recommended_provider": "Exa (shares key with exa-search)",
+      "final_required_env_keys": [
+        "EXA_API_KEY"
+      ],
+      "final_optional_env_keys": [],
+      "native_provider_required": true,
+      "native_provider_reason": "Web search required",
+      "completable_with_keys": true,
+      "oauth_or_manual_setup": null,
+      "live_test_command": "EXA_API_KEY=$EXA_API_KEY uv run python -c \"from openjarvis.skills.ecc_completion import live_test_skill; live_test_skill('competitive-report-structure')\"",
+      "mocked_test_command": "uv run pytest tests/skills/test_plan1_completion.py::TestEccKeySkillsMocked::test_competitive_report_mocked",
+      "activation_route": "Set EXA_API_KEY; enable skill",
+      "rollback_path": "Unset EXA_API_KEY"
+    },
+    {
+      "skill_id": "github-ops",
+      "original_provider": "GitHub",
+      "original_keys": [
+        "GITHUB_TOKEN"
+      ],
+      "provider_category": "code/repo",
+      "can_use_aimlapi": false,
+      "aimlapi_coverage_note": "GitHub API is a native service connector \u2014 no aggregator",
+      "can_use_openrouter": false,
+      "can_use_openai_compatible_gateway": false,
+      "final_recommended_provider": "GitHub (native)",
+      "final_required_env_keys": [
+        "GITHUB_TOKEN"
+      ],
+      "final_optional_env_keys": [
+        "GITHUB_ORG",
+        "GITHUB_REPO"
+      ],
+      "native_provider_required": true,
+      "native_provider_reason": "GitHub REST/GraphQL API requires native GitHub token",
+      "completable_with_keys": true,
+      "oauth_or_manual_setup": "Generate PAT at github.com/settings/tokens with repo+workflow scopes",
+      "live_test_command": "GITHUB_TOKEN=$GITHUB_TOKEN uv run python -c \"from openjarvis.skills.ecc_completion import live_test_skill; live_test_skill('github-ops')\"",
+      "mocked_test_command": "uv run pytest tests/skills/test_plan1_completion.py::TestEccKeySkillsMocked::test_github_ops_mocked",
+      "activation_route": "Set GITHUB_TOKEN; enable skill with read_only=True first",
+      "rollback_path": "Revoke PAT from GitHub settings"
+    },
+    {
+      "skill_id": "configure-ecc",
+      "original_provider": "GitHub",
+      "original_keys": [
+        "GITHUB_TOKEN"
+      ],
+      "provider_category": "code/repo",
+      "can_use_aimlapi": false,
+      "aimlapi_coverage_note": "GitHub write API requires native token",
+      "can_use_openrouter": false,
+      "can_use_openai_compatible_gateway": false,
+      "final_recommended_provider": "GitHub (shares token with github-ops)",
+      "final_required_env_keys": [
+        "GITHUB_TOKEN"
+      ],
+      "final_optional_env_keys": [],
+      "native_provider_required": true,
+      "native_provider_reason": "ECC config repo requires GitHub write access",
+      "completable_with_keys": true,
+      "oauth_or_manual_setup": "Same GITHUB_TOKEN as github-ops",
+      "live_test_command": "GITHUB_TOKEN=$GITHUB_TOKEN uv run python -c \"from openjarvis.skills.ecc_completion import live_test_skill; live_test_skill('configure-ecc')\"",
+      "mocked_test_command": "uv run pytest tests/skills/test_plan1_completion.py::TestEccKeySkillsMocked::test_configure_ecc_mocked",
+      "activation_route": "Set GITHUB_TOKEN; enable skill",
+      "rollback_path": "Revoke GITHUB_TOKEN"
+    },
+    {
+      "skill_id": "jira-integration",
+      "original_provider": "Atlassian Jira",
+      "original_keys": [
+        "JIRA_API_TOKEN",
+        "JIRA_BASE_URL",
+        "JIRA_EMAIL"
+      ],
+      "provider_category": "work/productivity",
+      "can_use_aimlapi": false,
+      "aimlapi_coverage_note": "Jira is a project management service \u2014 no aggregator",
+      "can_use_openrouter": false,
+      "can_use_openai_compatible_gateway": false,
+      "final_recommended_provider": "Jira (native)",
+      "final_required_env_keys": [
+        "JIRA_API_TOKEN",
+        "JIRA_BASE_URL",
+        "JIRA_EMAIL"
+      ],
+      "final_optional_env_keys": [
+        "JIRA_PROJECT_KEY"
+      ],
+      "native_provider_required": true,
+      "native_provider_reason": "Jira REST API requires native Jira credentials",
+      "completable_with_keys": true,
+      "oauth_or_manual_setup": "Generate API token at id.atlassian.com/manage-profile/security/api-tokens",
+      "live_test_command": "JIRA_API_TOKEN=$JIRA_API_TOKEN JIRA_BASE_URL=$JIRA_BASE_URL JIRA_EMAIL=$JIRA_EMAIL uv run python -c \"from openjarvis.skills.ecc_completion import live_test_skill; live_test_skill('jira-integration')\"",
+      "mocked_test_command": "uv run pytest tests/skills/test_plan1_completion.py::TestEccKeySkillsMocked::test_jira_integration_mocked",
+      "activation_route": "Set Jira env vars; enable skill",
+      "rollback_path": "Unset Jira env vars"
+    },
+    {
+      "skill_id": "google-workspace-ops",
+      "original_provider": "Google Workspace",
+      "original_keys": [
+        "GOOGLE_CLIENT_ID",
+        "GOOGLE_CLIENT_SECRET",
+        "GOOGLE_REFRESH_TOKEN"
+      ],
+      "provider_category": "work/productivity",
+      "can_use_aimlapi": false,
+      "aimlapi_coverage_note": "Google Workspace is a native service \u2014 no aggregator",
+      "can_use_openrouter": false,
+      "can_use_openai_compatible_gateway": false,
+      "final_recommended_provider": "Google Workspace (native)",
+      "final_required_env_keys": [
+        "GOOGLE_CLIENT_ID",
+        "GOOGLE_CLIENT_SECRET",
+        "GOOGLE_REFRESH_TOKEN"
+      ],
+      "final_optional_env_keys": [
+        "GOOGLE_SCOPES",
+        "GOOGLE_USER_EMAIL"
+      ],
+      "native_provider_required": true,
+      "native_provider_reason": "Google Workspace APIs require OAuth 2.0 credentials",
+      "completable_with_keys": true,
+      "oauth_or_manual_setup": "Google Cloud Console project + OAuth consent screen + browser flow to obtain refresh token",
+      "live_test_command": "GOOGLE_CLIENT_ID=$GC_ID GOOGLE_CLIENT_SECRET=$GC_SECRET GOOGLE_REFRESH_TOKEN=$GC_RT uv run python -c \"from openjarvis.skills.ecc_completion import live_test_skill; live_test_skill('google-workspace-ops')\"",
+      "mocked_test_command": "uv run pytest tests/skills/test_plan1_completion.py::TestEccKeySkillsMocked::test_google_workspace_mocked",
+      "activation_route": "Set Google env vars + OAuth browser flow to get refresh token",
+      "rollback_path": "Revoke refresh token at myaccount.google.com/permissions"
+    },
+    {
+      "skill_id": "messages-ops",
+      "original_provider": "Slack / Telegram / Discord",
+      "original_keys": [
+        "SLACK_BOT_TOKEN"
+      ],
+      "provider_category": "messaging",
+      "can_use_aimlapi": false,
+      "aimlapi_coverage_note": "Messaging platforms require native API tokens",
+      "can_use_openrouter": false,
+      "can_use_openai_compatible_gateway": false,
+      "final_recommended_provider": "Slack (native) \u2014 shares token with unified-notifications-ops",
+      "final_required_env_keys": [
+        "SLACK_BOT_TOKEN"
+      ],
+      "final_optional_env_keys": [
+        "TELEGRAM_BOT_TOKEN",
+        "DISCORD_BOT_TOKEN"
+      ],
+      "native_provider_required": true,
+      "native_provider_reason": "Messaging APIs are native service connectors",
+      "completable_with_keys": true,
+      "oauth_or_manual_setup": "Create Slack app at api.slack.com; install to workspace",
+      "live_test_command": "SLACK_BOT_TOKEN=$SLACK_BOT_TOKEN uv run python -c \"from openjarvis.skills.ecc_completion import live_test_skill; live_test_skill('messages-ops')\"",
+      "mocked_test_command": "uv run pytest tests/skills/test_plan1_completion.py::TestEccKeySkillsMocked::test_messages_ops_mocked",
+      "activation_route": "Set SLACK_BOT_TOKEN; enable skill",
+      "rollback_path": "Revoke bot token from Slack app settings"
+    },
+    {
+      "skill_id": "unified-notifications-ops",
+      "original_provider": "Multiple notification platforms",
+      "original_keys": [
+        "NOTIFICATION_PROVIDER",
+        "SLACK_BOT_TOKEN"
+      ],
+      "provider_category": "messaging",
+      "can_use_aimlapi": false,
+      "aimlapi_coverage_note": "Notification services require native tokens",
+      "can_use_openrouter": false,
+      "can_use_openai_compatible_gateway": false,
+      "final_recommended_provider": "Slack (shares token with messages-ops)",
+      "final_required_env_keys": [
+        "SLACK_BOT_TOKEN"
+      ],
+      "final_optional_env_keys": [
+        "TELEGRAM_BOT_TOKEN",
+        "PAGERDUTY_API_KEY"
+      ],
+      "native_provider_required": true,
+      "native_provider_reason": "Notification services require native tokens",
+      "completable_with_keys": true,
+      "oauth_or_manual_setup": null,
+      "live_test_command": "SLACK_BOT_TOKEN=$SLACK_BOT_TOKEN uv run python -c \"from openjarvis.skills.ecc_completion import live_test_skill; live_test_skill('unified-notifications-ops')\"",
+      "mocked_test_command": "uv run pytest tests/skills/test_plan1_completion.py::TestEccKeySkillsMocked::test_unified_notifications_mocked",
+      "activation_route": "Set SLACK_BOT_TOKEN; enable skill",
+      "rollback_path": "Unset SLACK_BOT_TOKEN"
+    },
+    {
+      "skill_id": "social-publisher",
+      "original_provider": "Twitter/X + LinkedIn + Meta",
+      "original_keys": [
+        "TWITTER_API_KEY",
+        "TWITTER_API_SECRET",
+        "TWITTER_ACCESS_TOKEN",
+        "TWITTER_ACCESS_TOKEN_SECRET"
+      ],
+      "provider_category": "social",
+      "can_use_aimlapi": false,
+      "aimlapi_coverage_note": "Social publishing requires native platform APIs",
+      "can_use_openrouter": false,
+      "can_use_openai_compatible_gateway": false,
+      "final_recommended_provider": "Twitter/X (native) \u2014 shares keys with x-api and crosspost",
+      "final_required_env_keys": [
+        "TWITTER_API_KEY",
+        "TWITTER_API_SECRET",
+        "TWITTER_ACCESS_TOKEN",
+        "TWITTER_ACCESS_TOKEN_SECRET"
+      ],
+      "final_optional_env_keys": [
+        "LINKEDIN_ACCESS_TOKEN",
+        "META_PAGE_ACCESS_TOKEN"
+      ],
+      "native_provider_required": true,
+      "native_provider_reason": "Social platform APIs require native credentials",
+      "completable_with_keys": true,
+      "oauth_or_manual_setup": "Twitter Developer account at developer.twitter.com",
+      "live_test_command": "uv run python -c \"from openjarvis.skills.ecc_completion import live_test_skill; live_test_skill('social-publisher')\"",
+      "mocked_test_command": "uv run pytest tests/skills/test_plan1_completion.py::TestEccKeySkillsMocked::test_social_publisher_mocked",
+      "activation_route": "Set Twitter API keys; enable with dry_run=True first",
+      "rollback_path": "Unset API keys; revoke from Twitter Developer Portal"
+    },
+    {
+      "skill_id": "x-api",
+      "original_provider": "X (Twitter)",
+      "original_keys": [
+        "X_API_KEY",
+        "X_API_SECRET",
+        "X_ACCESS_TOKEN",
+        "X_ACCESS_TOKEN_SECRET"
+      ],
+      "provider_category": "social",
+      "can_use_aimlapi": false,
+      "aimlapi_coverage_note": "X/Twitter API is a native service connector",
+      "can_use_openrouter": false,
+      "can_use_openai_compatible_gateway": false,
+      "final_recommended_provider": "X/Twitter (native) \u2014 shares token set with social-publisher and crosspost",
+      "final_required_env_keys": [
+        "X_API_KEY",
+        "X_API_SECRET",
+        "X_ACCESS_TOKEN",
+        "X_ACCESS_TOKEN_SECRET"
+      ],
+      "final_optional_env_keys": [
+        "X_BEARER_TOKEN"
+      ],
+      "native_provider_required": true,
+      "native_provider_reason": "X REST API v2 requires native credentials",
+      "completable_with_keys": true,
+      "oauth_or_manual_setup": "Twitter Developer account; apply for elevated access",
+      "live_test_command": "uv run python -c \"from openjarvis.skills.ecc_completion import live_test_skill; live_test_skill('x-api')\"",
+      "mocked_test_command": "uv run pytest tests/skills/test_plan1_completion.py::TestEccKeySkillsMocked::test_x_api_mocked",
+      "activation_route": "Set X env vars; enable with dry_run=True",
+      "rollback_path": "Revoke tokens from X Developer Portal"
+    },
+    {
+      "skill_id": "crosspost",
+      "original_provider": "Multiple social platforms",
+      "original_keys": [
+        "TWITTER_API_KEY",
+        "TWITTER_API_SECRET",
+        "TWITTER_ACCESS_TOKEN",
+        "TWITTER_ACCESS_TOKEN_SECRET"
+      ],
+      "provider_category": "social",
+      "can_use_aimlapi": false,
+      "aimlapi_coverage_note": "Social crossposting requires native platform APIs",
+      "can_use_openrouter": false,
+      "can_use_openai_compatible_gateway": false,
+      "final_recommended_provider": "Twitter/X (shares keys with x-api + social-publisher)",
+      "final_required_env_keys": [
+        "TWITTER_API_KEY",
+        "TWITTER_API_SECRET",
+        "TWITTER_ACCESS_TOKEN",
+        "TWITTER_ACCESS_TOKEN_SECRET"
+      ],
+      "final_optional_env_keys": [
+        "LINKEDIN_ACCESS_TOKEN",
+        "META_PAGE_ACCESS_TOKEN"
+      ],
+      "native_provider_required": true,
+      "native_provider_reason": "Crossposting requires native social API credentials",
+      "completable_with_keys": true,
+      "oauth_or_manual_setup": "Twitter Developer account; optionally LinkedIn OAuth",
+      "live_test_command": "uv run python -c \"from openjarvis.skills.ecc_completion import live_test_skill; live_test_skill('crosspost')\"",
+      "mocked_test_command": "uv run pytest tests/skills/test_plan1_completion.py::TestEccKeySkillsMocked::test_crosspost_mocked",
+      "activation_route": "Set Twitter API keys; enable with dry_run=True",
+      "rollback_path": "Unset API keys"
+    },
+    {
+      "skill_id": "social-graph-ranker",
+      "original_provider": "X/Twitter",
+      "original_keys": [
+        "TWITTER_BEARER_TOKEN"
+      ],
+      "provider_category": "social",
+      "can_use_aimlapi": false,
+      "aimlapi_coverage_note": "Social graph data requires native Twitter API",
+      "can_use_openrouter": false,
+      "can_use_openai_compatible_gateway": false,
+      "final_recommended_provider": "X/Twitter (bearer token \u2014 read-only; cheaper than full OAuth)",
+      "final_required_env_keys": [
+        "TWITTER_BEARER_TOKEN"
+      ],
+      "final_optional_env_keys": [],
+      "native_provider_required": true,
+      "native_provider_reason": "Twitter v2 API requires bearer token for read-only graph access",
+      "completable_with_keys": true,
+      "oauth_or_manual_setup": "Twitter Developer account; bearer token is auto-generated",
+      "live_test_command": "TWITTER_BEARER_TOKEN=$TBT uv run python -c \"from openjarvis.skills.ecc_completion import live_test_skill; live_test_skill('social-graph-ranker')\"",
+      "mocked_test_command": "uv run pytest tests/skills/test_plan1_completion.py::TestEccKeySkillsMocked::test_social_graph_ranker_mocked",
+      "activation_route": "Set TWITTER_BEARER_TOKEN; enable skill",
+      "rollback_path": "Revoke bearer token"
+    },
+    {
+      "skill_id": "email-ops",
+      "original_provider": "SMTP / Resend / SendGrid",
+      "original_keys": [
+        "RESEND_API_KEY",
+        "EMAIL_FROM"
+      ],
+      "provider_category": "email",
+      "can_use_aimlapi": false,
+      "aimlapi_coverage_note": "Email sending requires native email service API",
+      "can_use_openrouter": false,
+      "can_use_openai_compatible_gateway": false,
+      "final_recommended_provider": "Resend (shares key with investor-outreach + marketing-campaign)",
+      "final_required_env_keys": [
+        "RESEND_API_KEY",
+        "EMAIL_FROM"
+      ],
+      "final_optional_env_keys": [
+        "SMTP_HOST",
+        "SMTP_USER",
+        "SMTP_PASS",
+        "SENDGRID_API_KEY"
+      ],
+      "native_provider_required": true,
+      "native_provider_reason": "Email delivery requires native email service credentials",
+      "completable_with_keys": true,
+      "oauth_or_manual_setup": "Resend account at resend.com; verify sender domain",
+      "live_test_command": "RESEND_API_KEY=$RESEND_API_KEY EMAIL_FROM=$EMAIL_FROM uv run python -c \"from openjarvis.skills.ecc_completion import live_test_skill; live_test_skill('email-ops')\"",
+      "mocked_test_command": "uv run pytest tests/skills/test_plan1_completion.py::TestEccKeySkillsMocked::test_email_ops_mocked",
+      "activation_route": "Set RESEND_API_KEY + EMAIL_FROM; enable with dry_run=True first",
+      "rollback_path": "Unset RESEND_API_KEY"
+    },
+    {
+      "skill_id": "investor-outreach",
+      "original_provider": "Resend email",
+      "original_keys": [
+        "RESEND_API_KEY",
+        "EMAIL_FROM"
+      ],
+      "provider_category": "email",
+      "can_use_aimlapi": false,
+      "aimlapi_coverage_note": "Email delivery requires native API",
+      "can_use_openrouter": false,
+      "can_use_openai_compatible_gateway": false,
+      "final_recommended_provider": "Resend (shares key with email-ops + marketing-campaign)",
+      "final_required_env_keys": [
+        "RESEND_API_KEY",
+        "EMAIL_FROM"
+      ],
+      "final_optional_env_keys": [
+        "AIRTABLE_API_KEY"
+      ],
+      "native_provider_required": true,
+      "native_provider_reason": "Email outreach requires native email service",
+      "completable_with_keys": true,
+      "oauth_or_manual_setup": "Same RESEND_API_KEY + EMAIL_FROM as email-ops",
+      "live_test_command": "RESEND_API_KEY=$RESEND_API_KEY EMAIL_FROM=$EMAIL_FROM uv run python -c \"from openjarvis.skills.ecc_completion import live_test_skill; live_test_skill('investor-outreach')\"",
+      "mocked_test_command": "uv run pytest tests/skills/test_plan1_completion.py::TestEccKeySkillsMocked::test_investor_outreach_mocked",
+      "activation_route": "Set RESEND_API_KEY + EMAIL_FROM; enable with dry_run=True",
+      "rollback_path": "Unset RESEND_API_KEY"
+    },
+    {
+      "skill_id": "marketing-campaign",
+      "original_provider": "Email + Social APIs",
+      "original_keys": [
+        "RESEND_API_KEY",
+        "EMAIL_FROM"
+      ],
+      "provider_category": "email",
+      "can_use_aimlapi": false,
+      "aimlapi_coverage_note": "Campaign sending requires native APIs",
+      "can_use_openrouter": false,
+      "can_use_openai_compatible_gateway": false,
+      "final_recommended_provider": "Resend (shares key with email-ops + investor-outreach)",
+      "final_required_env_keys": [
+        "RESEND_API_KEY",
+        "EMAIL_FROM"
+      ],
+      "final_optional_env_keys": [
+        "TWITTER_API_KEY",
+        "LINKEDIN_ACCESS_TOKEN"
+      ],
+      "native_provider_required": true,
+      "native_provider_reason": "Campaign delivery requires native email/social APIs",
+      "completable_with_keys": true,
+      "oauth_or_manual_setup": "Same RESEND_API_KEY + EMAIL_FROM as email-ops",
+      "live_test_command": "RESEND_API_KEY=$RESEND_API_KEY EMAIL_FROM=$EMAIL_FROM uv run python -c \"from openjarvis.skills.ecc_completion import live_test_skill; live_test_skill('marketing-campaign')\"",
+      "mocked_test_command": "uv run pytest tests/skills/test_plan1_completion.py::TestEccKeySkillsMocked::test_marketing_campaign_mocked",
+      "activation_route": "Set RESEND_API_KEY + EMAIL_FROM; enable with dry_run=True",
+      "rollback_path": "Unset RESEND_API_KEY"
+    },
+    {
+      "skill_id": "videodb",
+      "original_provider": "VideoDB",
+      "original_keys": [
+        "VIDEODB_API_KEY"
+      ],
+      "provider_category": "storage/database",
+      "can_use_aimlapi": false,
+      "aimlapi_coverage_note": "VideoDB is a specialized video database \u2014 no aggregator",
+      "can_use_openrouter": false,
+      "can_use_openai_compatible_gateway": false,
+      "final_recommended_provider": "VideoDB (native)",
+      "final_required_env_keys": [
+        "VIDEODB_API_KEY"
+      ],
+      "final_optional_env_keys": [],
+      "native_provider_required": true,
+      "native_provider_reason": "VideoDB is a unique video indexing/search service",
+      "completable_with_keys": true,
+      "oauth_or_manual_setup": "Sign up at videodb.io; generate API key",
+      "live_test_command": "VIDEODB_API_KEY=$VIDEODB_API_KEY uv run python -c \"from openjarvis.skills.ecc_completion import live_test_skill; live_test_skill('videodb')\"",
+      "mocked_test_command": "uv run pytest tests/skills/test_plan1_completion.py::TestEccKeySkillsMocked::test_videodb_mocked",
+      "activation_route": "Set VIDEODB_API_KEY; enable skill",
+      "rollback_path": "Unset VIDEODB_API_KEY"
+    },
+    {
+      "skill_id": "knowledge-ops",
+      "original_provider": "Pinecone or Weaviate",
+      "original_keys": [
+        "PINECONE_API_KEY",
+        "PINECONE_ENV"
+      ],
+      "provider_category": "embedding/vector",
+      "can_use_aimlapi": false,
+      "aimlapi_coverage_note": "Vector database is a native service \u2014 no aggregator",
+      "can_use_openrouter": false,
+      "can_use_openai_compatible_gateway": false,
+      "final_recommended_provider": "Pinecone (native)",
+      "final_required_env_keys": [
+        "PINECONE_API_KEY",
+        "PINECONE_ENV"
+      ],
+      "final_optional_env_keys": [
+        "WEAVIATE_URL",
+        "WEAVIATE_API_KEY",
+        "QDRANT_URL",
+        "QDRANT_API_KEY"
+      ],
+      "native_provider_required": true,
+      "native_provider_reason": "Vector database requires native service credentials",
+      "completable_with_keys": true,
+      "oauth_or_manual_setup": "Pinecone account at pinecone.io",
+      "live_test_command": "PINECONE_API_KEY=$PINECONE_API_KEY uv run python -c \"from openjarvis.skills.ecc_completion import live_test_skill; live_test_skill('knowledge-ops')\"",
+      "mocked_test_command": "uv run pytest tests/skills/test_plan1_completion.py::TestEccKeySkillsMocked::test_knowledge_ops_mocked",
+      "activation_route": "Set PINECONE_API_KEY + PINECONE_ENV; enable skill",
+      "rollback_path": "Unset PINECONE_API_KEY; delete Pinecone index if created"
+    },
+    {
+      "skill_id": "lead-intelligence",
+      "original_provider": "Apollo.io",
+      "original_keys": [
+        "APOLLO_API_KEY"
+      ],
+      "provider_category": "search/data",
+      "can_use_aimlapi": false,
+      "aimlapi_coverage_note": "CRM/lead data requires native service API",
+      "can_use_openrouter": false,
+      "can_use_openai_compatible_gateway": false,
+      "final_recommended_provider": "Apollo.io (native)",
+      "final_required_env_keys": [
+        "APOLLO_API_KEY"
+      ],
+      "final_optional_env_keys": [
+        "CLEARBIT_API_KEY",
+        "HUNTER_API_KEY"
+      ],
+      "native_provider_required": true,
+      "native_provider_reason": "Lead intelligence requires native CRM data API",
+      "completable_with_keys": true,
+      "oauth_or_manual_setup": "Apollo.io account at apollo.io",
+      "live_test_command": "APOLLO_API_KEY=$APOLLO_API_KEY uv run python -c \"from openjarvis.skills.ecc_completion import live_test_skill; live_test_skill('lead-intelligence')\"",
+      "mocked_test_command": "uv run pytest tests/skills/test_plan1_completion.py::TestEccKeySkillsMocked::test_lead_intelligence_mocked",
+      "activation_route": "Set APOLLO_API_KEY; enable skill",
+      "rollback_path": "Unset APOLLO_API_KEY"
+    },
+    {
+      "skill_id": "seo",
+      "original_provider": "Ahrefs or SEMrush",
+      "original_keys": [
+        "AHREFS_API_KEY"
+      ],
+      "provider_category": "search/data",
+      "can_use_aimlapi": false,
+      "aimlapi_coverage_note": "SEO analytics requires native SEO tool API",
+      "can_use_openrouter": false,
+      "can_use_openai_compatible_gateway": false,
+      "final_recommended_provider": "Ahrefs (native)",
+      "final_required_env_keys": [
+        "AHREFS_API_KEY"
+      ],
+      "final_optional_env_keys": [
+        "SEMRUSH_API_KEY",
+        "MOZ_ACCESS_ID",
+        "MOZ_SECRET_KEY"
+      ],
+      "native_provider_required": true,
+      "native_provider_reason": "SEO metrics require native SEO tool API",
+      "completable_with_keys": true,
+      "oauth_or_manual_setup": "Ahrefs account at ahrefs.com",
+      "live_test_command": "AHREFS_API_KEY=$AHREFS_API_KEY uv run python -c \"from openjarvis.skills.ecc_completion import live_test_skill; live_test_skill('seo')\"",
+      "mocked_test_command": "uv run pytest tests/skills/test_plan1_completion.py::TestEccKeySkillsMocked::test_seo_mocked",
+      "activation_route": "Set AHREFS_API_KEY; enable skill",
+      "rollback_path": "Unset AHREFS_API_KEY"
+    },
+    {
+      "skill_id": "project-flow-ops",
+      "original_provider": "Linear or Jira",
+      "original_keys": [
+        "LINEAR_API_KEY"
+      ],
+      "provider_category": "work/productivity",
+      "can_use_aimlapi": false,
+      "aimlapi_coverage_note": "Project management requires native API",
+      "can_use_openrouter": false,
+      "can_use_openai_compatible_gateway": false,
+      "final_recommended_provider": "Linear (native) \u2014 simpler than Jira",
+      "final_required_env_keys": [
+        "LINEAR_API_KEY"
+      ],
+      "final_optional_env_keys": [
+        "JIRA_API_TOKEN",
+        "JIRA_BASE_URL",
+        "JIRA_EMAIL"
+      ],
+      "native_provider_required": true,
+      "native_provider_reason": "Project management requires native API",
+      "completable_with_keys": true,
+      "oauth_or_manual_setup": "Linear account at linear.app; generate API key from Settings \u2192 API",
+      "live_test_command": "LINEAR_API_KEY=$LINEAR_API_KEY uv run python -c \"from openjarvis.skills.ecc_completion import live_test_skill; live_test_skill('project-flow-ops')\"",
+      "mocked_test_command": "uv run pytest tests/skills/test_plan1_completion.py::TestEccKeySkillsMocked::test_project_flow_ops_mocked",
+      "activation_route": "Set LINEAR_API_KEY; enable skill",
+      "rollback_path": "Unset LINEAR_API_KEY"
+    },
+    {
+      "skill_id": "team-builder",
+      "original_provider": "Greenhouse or Workday",
+      "original_keys": [
+        "GREENHOUSE_API_KEY"
+      ],
+      "provider_category": "work/productivity",
+      "can_use_aimlapi": false,
+      "aimlapi_coverage_note": "HR/recruiting requires native service API",
+      "can_use_openrouter": false,
+      "can_use_openai_compatible_gateway": false,
+      "final_recommended_provider": "Greenhouse (native)",
+      "final_required_env_keys": [
+        "GREENHOUSE_API_KEY"
+      ],
+      "final_optional_env_keys": [
+        "WORKDAY_API_KEY",
+        "LEVER_API_KEY"
+      ],
+      "native_provider_required": true,
+      "native_provider_reason": "Recruiting/HR service requires native API credentials",
+      "completable_with_keys": true,
+      "oauth_or_manual_setup": "Greenhouse account at greenhouse.io",
+      "live_test_command": "GREENHOUSE_API_KEY=$GREENHOUSE_API_KEY uv run python -c \"from openjarvis.skills.ecc_completion import live_test_skill; live_test_skill('team-builder')\"",
+      "mocked_test_command": "uv run pytest tests/skills/test_plan1_completion.py::TestEccKeySkillsMocked::test_team_builder_mocked",
+      "activation_route": "Set GREENHOUSE_API_KEY; enable skill",
+      "rollback_path": "Unset GREENHOUSE_API_KEY"
+    },
+    {
+      "skill_id": "data-scraper-agent",
+      "original_provider": "ScrapingBee or BrightData",
+      "original_keys": [
+        "SCRAPING_BEE_API_KEY"
+      ],
+      "provider_category": "search/data",
+      "can_use_aimlapi": false,
+      "aimlapi_coverage_note": "Web scraping requires native scraping service API",
+      "can_use_openrouter": false,
+      "can_use_openai_compatible_gateway": false,
+      "final_recommended_provider": "ScrapingBee (native)",
+      "final_required_env_keys": [
+        "SCRAPING_BEE_API_KEY"
+      ],
+      "final_optional_env_keys": [
+        "BRIGHTDATA_USERNAME",
+        "BRIGHTDATA_PASSWORD"
+      ],
+      "native_provider_required": true,
+      "native_provider_reason": "Web scraping with proxy rotation requires native scraping service",
+      "completable_with_keys": true,
+      "oauth_or_manual_setup": "ScrapingBee account at scrapingbee.com",
+      "live_test_command": "SCRAPING_BEE_API_KEY=$SCRAPING_BEE_API_KEY uv run python -c \"from openjarvis.skills.ecc_completion import live_test_skill; live_test_skill('data-scraper-agent')\"",
+      "mocked_test_command": "uv run pytest tests/skills/test_plan1_completion.py::TestEccKeySkillsMocked::test_data_scraper_mocked",
+      "activation_route": "Set SCRAPING_BEE_API_KEY; enable skill",
+      "rollback_path": "Unset SCRAPING_BEE_API_KEY"
+    },
+    {
+      "skill_id": "stripe-integration",
+      "original_provider": "Stripe",
+      "original_keys": [
+        "STRIPE_API_KEY",
+        "STRIPE_WEBHOOK_SECRET"
+      ],
+      "provider_category": "payments/financial",
+      "can_use_aimlapi": false,
+      "aimlapi_coverage_note": "Payment processing requires native Stripe API",
+      "can_use_openrouter": false,
+      "can_use_openai_compatible_gateway": false,
+      "final_recommended_provider": "Stripe (native)",
+      "final_required_env_keys": [
+        "STRIPE_API_KEY",
+        "STRIPE_WEBHOOK_SECRET"
+      ],
+      "final_optional_env_keys": [
+        "STRIPE_PRICE_ID",
+        "STRIPE_PUBLISHABLE_KEY"
+      ],
+      "native_provider_required": true,
+      "native_provider_reason": "Payment processing requires native Stripe credentials",
+      "completable_with_keys": true,
+      "oauth_or_manual_setup": "Stripe account at stripe.com; use sk_test_... keys first",
+      "live_test_command": "STRIPE_API_KEY=$STRIPE_API_KEY uv run python -c \"from openjarvis.skills.ecc_completion import live_test_skill; live_test_skill('stripe-integration')\"",
+      "mocked_test_command": "uv run pytest tests/skills/test_plan1_completion.py::TestEccKeySkillsMocked::test_stripe_integration_mocked",
+      "activation_route": "Set STRIPE_API_KEY (use sk_test_... first) + STRIPE_WEBHOOK_SECRET",
+      "rollback_path": "Delete webhook; revoke API key from Stripe dashboard"
+    },
+    {
+      "skill_id": "agent-payment-x402",
+      "original_provider": "X402 Protocol",
+      "original_keys": [
+        "X402_PAYMENT_KEY"
+      ],
+      "provider_category": "payments/financial",
+      "can_use_aimlapi": false,
+      "aimlapi_coverage_note": "Payment protocol requires native credentials",
+      "can_use_openrouter": false,
+      "can_use_openai_compatible_gateway": false,
+      "final_recommended_provider": "X402 Protocol (native) \u2014 financial risk requires Bryan approval",
+      "final_required_env_keys": [
+        "X402_PAYMENT_KEY"
+      ],
+      "final_optional_env_keys": [
+        "STRIPE_API_KEY"
+      ],
+      "native_provider_required": true,
+      "native_provider_reason": "X402 payment protocol requires native credentials + Bryan financial approval",
+      "completable_with_keys": true,
+      "oauth_or_manual_setup": "X402 protocol account; requires Bryan explicit financial approval",
+      "live_test_command": "X402_PAYMENT_KEY=$X402_PAYMENT_KEY uv run python -c \"from openjarvis.skills.ecc_completion import live_test_skill; live_test_skill('agent-payment-x402')\"",
+      "mocked_test_command": "uv run pytest tests/skills/test_plan1_completion.py::TestEccKeySkillsMocked::test_agent_payment_mocked",
+      "activation_route": "Set X402_PAYMENT_KEY + Bryan explicit approval + dry_run test first",
+      "rollback_path": "Revoke X402 payment key; disable skill immediately"
+    },
+    {
+      "skill_id": "nutrient-document-processing",
+      "original_provider": "Nutrient.io / PSPDFKit",
+      "original_keys": [
+        "NUTRIENT_API_KEY"
+      ],
+      "provider_category": "document_processing",
+      "can_use_aimlapi": false,
+      "aimlapi_coverage_note": "Document processing SDK is a native service",
+      "can_use_openrouter": false,
+      "can_use_openai_compatible_gateway": false,
+      "final_recommended_provider": "Nutrient.io (native)",
+      "final_required_env_keys": [
+        "NUTRIENT_API_KEY"
+      ],
+      "final_optional_env_keys": [],
+      "native_provider_required": true,
+      "native_provider_reason": "PDF/document processing SDK requires native credentials",
+      "completable_with_keys": true,
+      "oauth_or_manual_setup": "Nutrient.io account at nutrient.io or PSPDFKit license",
+      "live_test_command": "NUTRIENT_API_KEY=$NUTRIENT_API_KEY uv run python -c \"from openjarvis.skills.sources.ecc.wrappers.execution_wrappers import NutrientDocWrapper; w=NutrientDocWrapper(reviewer_approved=True); print(w.process_document('test.pdf', dry_run=True))\"",
+      "mocked_test_command": "uv run pytest tests/skills/test_plan1_correction.py::TestExecutionWrappers::test_nutrient_doc_mocked",
+      "activation_route": "Set NUTRIENT_API_KEY + Bryan approval; enable wrapper",
+      "rollback_path": "Unset NUTRIENT_API_KEY"
+    }
+  ]
+}
