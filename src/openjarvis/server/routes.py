@@ -148,23 +148,43 @@ async def chat_completions(request_body: ChatCompletionRequest, request: Request
                     _reply = f"Voice status unavailable: {_ve}"
 
             # Front-door coding/workbench routing.
-            # Triggers: explicit "jarvis code:", "jarvis pipeline:", "[PIPELINE]" prefix.
-            # Routes the prompt through CodingPipeline and returns structured result.
-            # Falls through to normal LLM path for all other messages.
+            #
+            # Tier 1 — explicit prefix triggers (always route):
+            #   "jarvis code:", "jarvis pipeline:", "jarvis fix:", "[pipeline]", etc.
+            # Tier 2 — natural coding intent (no prefix required):
+            #   Detected via detect_coding_intent() — Python/local-first, no model call.
+            #   "fix this bug", "patch the failing test", "continue the sprint", etc.
+            # Non-coding questions fall through to normal LLM path.
+            # Gate 0 time/date/status/voice-status shortcuts fire BEFORE this block.
             _CODING_PREFIXES = (
                 "jarvis code:", "jarvis pipeline:", "jarvis fix:",
                 "[pipeline]", "[code]", "jarvis run pipeline:",
             )
-            _raw_user = request_body.messages[-1].content or "" if request_body.messages else ""
+            _raw_user = (request_body.messages[-1].content or "") if request_body.messages else ""
             _raw_lower = _raw_user.strip().lower()
-            _is_coding_route = any(_raw_lower.startswith(pfx) for pfx in _CODING_PREFIXES)
-            if _is_coding_route and not request_body.stream:
-                # Strip the prefix to get the actual coding prompt
+
+            # Tier 1: explicit prefix
+            _prefix_match = any(_raw_lower.startswith(pfx) for pfx in _CODING_PREFIXES)
+
+            # Tier 2: natural coding intent (only for non-streaming, non-tool requests)
+            _natural_coding = False
+            if not _prefix_match and not request_body.stream and not request_body.tools:
+                try:
+                    from openjarvis.workbench.pipeline import detect_coding_intent
+                    _natural_coding = detect_coding_intent(_raw_user.strip())
+                except Exception:
+                    _natural_coding = False
+
+            _is_coding_route = (_prefix_match or _natural_coding) and not request_body.stream
+
+            if _is_coding_route:
+                # Strip explicit prefix if present; natural intent uses full message
                 _coding_prompt = _raw_user.strip()
-                for _pfx in _CODING_PREFIXES:
-                    if _coding_prompt.lower().startswith(_pfx):
-                        _coding_prompt = _coding_prompt[len(_pfx):].strip()
-                        break
+                if _prefix_match:
+                    for _pfx in _CODING_PREFIXES:
+                        if _coding_prompt.lower().startswith(_pfx):
+                            _coding_prompt = _coding_prompt[len(_pfx):].strip()
+                            break
                 try:
                     from openjarvis.workbench.pipeline import CodingPipeline, PipelineConfig
                     _pcfg = PipelineConfig(
@@ -180,8 +200,9 @@ async def chat_completions(request_body: ChatCompletionRequest, request: Request
                     _verdict = _pr.verdict
                     _files_read = len([c for c in _pr.file_contents.values()
                                        if c and not c.startswith("[FILE_NOT_FOUND")])
+                    _intent_tag = "(prefix)" if _prefix_match else "(natural intent)"
                     _reply = (
-                        f"**Jarvis CodingPipeline** — verdict: **{_verdict}**\n\n"
+                        f"**Jarvis CodingPipeline** {_intent_tag} — verdict: **{_verdict}**\n\n"
                         f"- Category: {_pr.classification.get('category', '?')}\n"
                         f"- Risk tier: {_pr.classification.get('risk_tier', '?')}\n"
                         f"- Files inspected: {len(_pr.files_inspected)} "

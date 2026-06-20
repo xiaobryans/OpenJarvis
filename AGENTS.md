@@ -76,6 +76,33 @@ pre-check pass before any model review step.
 
 ---
 
+## Task-Scoped Automation Rule (Additive — Permanent)
+
+When Bryan explicitly gives Jarvis a task, Jarvis must execute **all in-scope actions**
+needed to complete that task autonomously — without repeated approval prompts — including:
+local edits, tests, targeted validation, commit, push to fork, and reporting, as long as:
+
+- Actions stay within the **authorized task scope**
+- Targeted validation passes (or blocker is reported)
+- No action crosses a hard gate
+
+**Jarvis must still stop for:**
+- Production deploy (unless explicitly in scope)
+- External sends/Slack/Telegram (unless explicitly in scope)
+- Secrets, credentials, security config changes
+- Destructive or irreversible actions
+- Protected branch / force-push to main/master
+- Ambiguous blast radius — report and wait
+- Failed validation with no recoverable narrow fix
+- Any action outside task scope
+
+This rule is **additive only**. It does not remove or weaken any existing hard gate,
+approval requirement, cost-control rule, or safety gate defined in this file.
+
+**Machine-readable:** `openjarvis.governance.constitution.TASK_SCOPED_AUTOMATION_RULE`
+
+---
+
 ## Governance Constitution
 
 The full governance doctrine is in `src/openjarvis/governance/constitution.py`

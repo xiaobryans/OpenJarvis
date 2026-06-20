@@ -73,6 +73,103 @@ PIPELINE_BLOCKED = "BLOCKED"
 PIPELINE_FAIL = "FAIL"
 
 # ---------------------------------------------------------------------------
+# Natural coding intent detection (Python/local-first — no model call)
+# ---------------------------------------------------------------------------
+
+import re as _re
+
+# Verbs that signal the user wants Jarvis to *act* on code
+_CODING_VERBS = frozenset({
+    "fix", "patch", "implement", "add", "create", "refactor", "debug",
+    "test", "write", "update", "change", "modify", "build", "run",
+    "execute", "commit", "push", "validate", "review", "check", "inspect",
+    "lint", "format", "continue", "resume", "apply", "deploy", "revert",
+    "rollback", "improve", "optimize",
+})
+
+# Objects that signal code-domain work
+_CODING_OBJECTS = frozenset({
+    "bug", "test", "feature", "code", "function", "method", "class",
+    "module", "file", "route", "api", "endpoint", "schema", "migration",
+    "sprint", "ticket", "pr", "diff", "patch", "error", "crash",
+    "validation", "pipeline", "workflow", "regression", "failing",
+    "build", "lint", "coverage", "null", "pointer", "exception",
+    "traceback", "stack", "trace", "type", "attribute", "key",
+    "import", "syntax", "assertion", "deprecation", "warning",
+})
+
+# File extension pattern
+_FILE_EXT_PAT = _re.compile(
+    r'\b\w[\w./\-]*\.(?:py|ts|js|tsx|jsx|json|yaml|yml|toml|sh|rs|go|java|kt|rb|md)\b'
+)
+
+# Phrases that signal conceptual questions — skip pipeline routing
+_CONCEPTUAL_STARTERS = (
+    "what is", "what are", "what does", "what do",
+    "how does", "how do", "how is", "how are",
+    "why is", "why are", "why does", "why do",
+    "explain", "tell me", "describe", "can you explain",
+    "what's the difference", "when should", "where is",
+)
+
+
+def detect_coding_intent(message: str) -> bool:
+    """Return True when message is a clear coding-action request.
+
+    Uses only Python regex/keyword matching — zero model calls.
+    False positives are safe (falls through to normal LLM path on error).
+    Conservative: question/explanation starters always return False.
+
+    Examples that return True:
+      "fix this bug in user.py"
+      "patch the failing test"
+      "continue the current sprint"
+      "run validation and commit"
+      "review the diff and implement the fix"
+
+    Examples that return False:
+      "what is Python"
+      "how does the pipeline work"
+      "tell me about the project"
+      "what time is it"
+    """
+    stripped = message.strip()
+    lower = stripped.lower()
+
+    # Conceptual question starters → never coding intent
+    for starter in _CONCEPTUAL_STARTERS:
+        if lower.startswith(starter):
+            return False
+
+    # Pure questions starting with interrogatives
+    if _re.match(r'^(what|how|why|when|where|who|which|whose)\b', lower):
+        return False
+
+    words = set(_re.findall(r'\b[a-z]+\b', lower))
+    has_verb = bool(words & _CODING_VERBS)
+    has_object = bool(words & _CODING_OBJECTS)
+    has_file = bool(_FILE_EXT_PAT.search(lower))
+
+    # Strong: file reference + action verb
+    if has_file and has_verb:
+        return True
+
+    # Strong: action verb + coding object
+    if has_verb and has_object:
+        return True
+
+    # Continue/resume sprint or workflow
+    if _re.search(r'\b(continue|resume)\b.{0,30}\b(sprint|workflow|task|coding)\b', lower):
+        return True
+
+    # Run validation and commit/push
+    if _re.search(r'\brun\b.{0,20}\b(validation|test|tests)\b', lower):
+        return True
+
+    return False
+
+
+# ---------------------------------------------------------------------------
 # Task classification
 # ---------------------------------------------------------------------------
 
@@ -722,6 +819,264 @@ class CodingPipeline:
         """Return model routing cost summary for a session."""
         return self._router.session_cost_summary(session_id)
 
+    def run_with_patch(
+        self,
+        prompt: str,
+        file_name: str,
+        original_content: str,
+        fixed_content: str,
+        rationale: str,
+        validation_pre: Optional[str] = None,
+        validation_post: Optional[str] = None,
+        session_id: Optional[str] = None,
+        task_id: Optional[str] = None,
+    ) -> PipelineResult:
+        """Real multi-step patch flow on an isolated temp git repo.
+
+        Steps:
+          1. Classify task
+          2. Create isolated temp git repo with original (buggy) file
+          3. Worker reads original file (real file_contents)
+          4. Worker applies fix (write corrected content)
+          5. Capture real git diff
+          6. Run pre-fix validation (expected to fail — proves bug exists)
+          7. Run post-fix validation (expected to pass — proves fix works)
+          8. Submit complete evidence bundle to independent reviewer
+          9. Return verdict + rollback path
+
+        The worker never self-certifies. The reviewer is always a separate object.
+        Rollback: git checkout HEAD -- <file> in the temp repo.
+        No changes are made to the real repository.
+        """
+        import tempfile
+        import shutil
+
+        t0 = time.time()
+        run_id = uuid.uuid4().hex[:16]
+        session_id = session_id or uuid.uuid4().hex[:16]
+        task_id = task_id or uuid.uuid4().hex[:16]
+        events: List[str] = []
+        model_decisions: List[Dict[str, Any]] = []
+        checkpoint_id: Optional[str] = None
+
+        # ── Step 1: Classify ──────────────────────────────────────────────
+        classification = classify_task(prompt)
+        events.append(f"classify: category={classification['category']} risk={classification['risk_tier']}")
+
+        # ── Step 2: Set up isolated temp git repo ─────────────────────────
+        tmp_dir = tempfile.mkdtemp(prefix="jarvis_patch_")
+        try:
+            # Init git repo in temp dir
+            subprocess.run(["git", "init"], cwd=tmp_dir, capture_output=True, check=True)
+            subprocess.run(["git", "config", "user.email", "jarvis@openjarvis.ai"],
+                           cwd=tmp_dir, capture_output=True, check=True)
+            subprocess.run(["git", "config", "user.name", "Jarvis Worker"],
+                           cwd=tmp_dir, capture_output=True, check=True)
+
+            # Write original (buggy) file and commit it
+            target = Path(tmp_dir) / file_name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(original_content, encoding="utf-8")
+            subprocess.run(["git", "add", file_name], cwd=tmp_dir, capture_output=True, check=True)
+            subprocess.run(["git", "commit", "-m", "initial: original (buggy) version"],
+                           cwd=tmp_dir, capture_output=True, check=True)
+            events.append(f"worker_setup: temp git repo created, original committed ({len(original_content)} chars)")
+
+            # ── Step 3: Route to model tier ──────────────────────────────
+            decision = self._router.route(
+                subtask_id=f"{task_id}-patch",
+                tool_id="file_read",
+                description=prompt[:120],
+                session_id=session_id,
+                task_id=task_id,
+                category=classification["category"],
+                high_trust=classification["is_risky"],
+            )
+            model_decisions.append(decision.to_dict())
+            events.append(f"route: tier={decision.assigned_tier.value} model={decision.assigned_model}")
+
+            # ── Step 4: Worker reads original file (real file_contents) ──
+            file_contents = {file_name: original_content[:4096]}
+            events.append(f"worker_read: {file_name} read ({len(original_content)} chars)")
+
+            # ── Step 5: Pre-fix validation (should fail — proves bug) ─────
+            pre_validation_outputs: List[Dict[str, Any]] = []
+            if validation_pre:
+                pre_out = run_validation([validation_pre], cwd=tmp_dir, timeout=self._cfg.validation_timeout_s)
+                pre_validation_outputs = pre_out
+                pre_passed = all(v["passed"] for v in pre_out)
+                events.append(
+                    f"validation_pre: {'PASS (unexpected)' if pre_passed else 'FAIL (confirms bug exists)'}"
+                )
+                self._event_log.push(
+                    session_id=session_id, task_id=task_id,
+                    event_type=EVENT_SUBTASK_DONE if not pre_passed else EVENT_VALIDATION_FAILED,
+                    title=f"Pre-fix validation: {'bug confirmed' if not pre_passed else 'WARNING: pre-fix passed'}",
+                    detail=pre_out[0]["output"][:200] if pre_out else "",
+                    tone="info" if not pre_passed else "warning",
+                )
+
+            # ── Step 6: Worker applies fix ────────────────────────────────
+            target.write_text(fixed_content, encoding="utf-8")
+            events.append(f"worker_patch: fix applied to {file_name}")
+            self._event_log.push(
+                session_id=session_id, task_id=task_id,
+                event_type=EVENT_EXECUTION_STARTED,
+                title=f"Worker applied patch to {file_name}",
+                detail=rationale[:200],
+                tone="info",
+            )
+
+            # ── Step 7: Capture real git diff ─────────────────────────────
+            diff_result = subprocess.run(
+                ["git", "diff", "HEAD", "--", file_name],
+                cwd=tmp_dir, capture_output=True, text=True, timeout=10,
+            )
+            real_diff = diff_result.stdout.strip()
+            events.append(f"worker_diff: git diff captured ({len(real_diff)} chars)")
+
+            # ── Step 8: Post-fix validation (should pass — proves fix) ────
+            post_cmds = [validation_post] if validation_post else []
+            post_validation_outputs: List[Dict[str, Any]] = []
+            loop = BoundedRepairLoop(max_attempts=self._cfg.max_loop_attempts)
+
+            if post_cmds:
+                while loop.can_retry():
+                    vout = run_validation(post_cmds, cwd=tmp_dir, timeout=self._cfg.validation_timeout_s)
+                    post_validation_outputs = vout
+                    all_passed = all(v["passed"] for v in vout)
+
+                    if all_passed:
+                        events.append(f"validation_post: PASS ({len(vout)} cmd(s) — fix confirmed)")
+                        break
+
+                    failed = [v["command"] for v in vout if not v["passed"]]
+                    events.append(f"validation_post: FAIL attempt {len(loop.state.attempts)+1}: {failed}")
+                    self._event_log.push(
+                        session_id=session_id, task_id=task_id,
+                        event_type=EVENT_VALIDATION_FAILED,
+                        title="Post-fix validation failed",
+                        detail=str(failed)[:200],
+                        tone="error",
+                    )
+                    repair = loop.decide(
+                        router=self._router,
+                        subtask_id=f"{task_id}-post-validate",
+                        tool_id="shell_exec_readonly",
+                        session_id=session_id, task_id=task_id,
+                        validation_failed=True, terminal_error=False,
+                        error_message=str(failed),
+                    )
+                    if not repair.get("retry", False):
+                        events.append(f"loop_cap: {repair.get('reason', 'max_attempts_exceeded')}")
+                        break
+
+            # ── Step 9: Rollback path ─────────────────────────────────────
+            rollback = (
+                f"git checkout HEAD -- {file_name}  "
+                f"# Revert worker patch in temp repo; original: '{original_content[:60].strip()}'"
+            )
+            self._event_log.push(
+                session_id=session_id, task_id=task_id,
+                event_type=EVENT_ROLLBACK_GUIDANCE,
+                title="Rollback path surfaced",
+                detail=rollback[:200],
+                tone="info",
+            )
+            events.append(f"rollback: {rollback[:80]}")
+
+            # ── Step 10: Submit evidence to independent reviewer ──────────
+            # Reviewer sees only POST-fix validation (pass/fail of the fix itself).
+            # Pre-fix validation is recorded in extra{} as proof the bug existed.
+            evidence = EvidenceBundle(
+                task_id=task_id,
+                session_id=session_id,
+                worker_id=self._cfg.worker_id,
+                prompt=prompt,
+                plan_summary=(
+                    f"Patch task: {classification['category']} | "
+                    f"file={file_name} | rationale={rationale[:100]}"
+                ),
+                files_inspected=[file_name],
+                files_changed=[file_name],
+                patch_diff=real_diff,
+                validation_commands=([validation_post] if validation_post else []),
+                validation_outputs=post_validation_outputs,
+                rollback_path=rollback,
+                loop_state=loop.state.to_dict(),
+                model_decisions=model_decisions,
+                extra={
+                    "pre_validation_outputs": pre_validation_outputs,
+                    "bug_confirmed": (
+                        any(not v["passed"] for v in pre_validation_outputs)
+                        if pre_validation_outputs else None
+                    ),
+                    "diff_char_count": len(real_diff),
+                },
+            )
+            all_validation = pre_validation_outputs + post_validation_outputs
+
+            reviewer_verdict: Optional[ReviewVerdict] = None
+            final_verdict = PIPELINE_HOLD
+
+            try:
+                reviewer_verdict = self._reviewer.review(evidence)
+                final_verdict = reviewer_verdict.verdict.value
+                events.append(f"reviewer: verdict={final_verdict} reasons={reviewer_verdict.reasons[:2]}")
+            except ValueError as exc:
+                events.append(f"reviewer_error: {exc}")
+                final_verdict = PIPELINE_BLOCKED
+
+            # ── Step 11: Log completion ────────────────────────────────────
+            self._event_log.push(
+                session_id=session_id, task_id=task_id,
+                event_type=EVENT_EXECUTION_COMPLETE,
+                title=f"Patch pipeline complete: {final_verdict}",
+                detail=f"run_id={run_id} diff_chars={len(real_diff)}",
+                tone="success" if final_verdict == PIPELINE_PASS else "warning",
+            )
+
+            # ── Step 12: Checkpoint on PASS ───────────────────────────────
+            if final_verdict == PIPELINE_PASS:
+                cp = self._checkpoint.save_checkpoint(
+                    session_id=session_id,
+                    task_id=task_id,
+                    label=f"patch-{run_id}",
+                    evidence=json.dumps({
+                        "file_name": file_name,
+                        "diff_chars": len(real_diff),
+                        "post_validation": post_validation_outputs,
+                    })[:1024],
+                    verdict="ACCEPT",
+                    notes={"run_id": run_id, "verdict": final_verdict},
+                )
+                checkpoint_id = cp.id
+                events.append(f"checkpoint: accepted id={checkpoint_id}")
+
+            return PipelineResult(
+                run_id=run_id,
+                task_id=task_id,
+                session_id=session_id,
+                verdict=final_verdict,
+                classification=classification,
+                plan_summary=evidence.plan_summary,
+                files_inspected=[file_name],
+                file_contents=file_contents,
+                files_changed=[file_name],
+                patch_diff=real_diff,
+                validation_outputs=all_validation,
+                reviewer_verdict=reviewer_verdict.to_dict() if reviewer_verdict else None,
+                rollback_instruction=rollback,
+                model_decisions=model_decisions,
+                loop_state=loop.state.to_dict(),
+                events=events,
+                duration_s=time.time() - t0,
+                checkpoint_id=checkpoint_id if final_verdict == PIPELINE_PASS else None,
+            )
+
+        finally:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+
     def close(self) -> None:
         self._router.close()
         self._checkpoint.close()
@@ -734,6 +1089,7 @@ __all__ = [
     "PipelineConfig",
     "PipelineResult",
     "classify_task",
+    "detect_coding_intent",
     "PIPELINE_PASS",
     "PIPELINE_HOLD",
     "PIPELINE_BLOCKED",
