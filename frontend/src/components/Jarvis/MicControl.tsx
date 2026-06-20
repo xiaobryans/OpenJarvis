@@ -6,14 +6,15 @@
  * call the same backend endpoints and listen to the same SSE stream.
  *
  * Click contract:
- *   voice off          → enable voice + start turn (one tap = ready to speak)
- *   idle (enabled)     → start turn
- *   recording          → end_recording (force-finalize)
- *   waiting_for_silence→ end_recording (force-finalize)
- *   transcribing       → cancel
- *   thinking           → cancel
- *   speaking           → cancel (kills TTS)
- *   error / cancelled  → start turn (retry)
+ *   voice off           → enable voice + start turn (one tap = ready to speak)
+ *   idle (enabled)      → start turn
+ *   recording           → end_recording (force-finalize)
+ *   waiting_for_silence → end_recording (force-finalize)
+ *   follow_up_listening → end_recording (submit follow-up early) or cancel
+ *   transcribing        → cancel
+ *   thinking            → cancel
+ *   speaking            → cancel (kills TTS)
+ *   error / cancelled   → start turn (retry)
  */
 
 import { useCallback } from 'react';
@@ -37,6 +38,8 @@ function micLabel(phase: TurnPhase, enabled: boolean): string {
       return 'Recording — tap to finalize';
     case 'waiting_for_silence':
       return 'Silence detected — tap to finalize';
+    case 'follow_up_listening':
+      return 'Follow-up — tap to finalize or cancel';
     case 'transcribing':
       return 'Transcribing — tap to cancel';
     case 'thinking':
@@ -59,6 +62,8 @@ function micColor(phase: TurnPhase, enabled: boolean): string {
     case 'recording':
     case 'waiting_for_silence':
       return 'rgba(255, 110, 100, 0.95)';
+    case 'follow_up_listening':
+      return 'rgba(255, 160, 80, 0.90)';
     case 'transcribing':
     case 'thinking':
       return 'rgba(160, 140, 255, 0.95)';
@@ -94,6 +99,12 @@ export function MicControl({
       await onEndRecording();
       return;
     }
+    if (phase === 'follow_up_listening') {
+      // Tap during follow-up: submit current audio early if any was captured,
+      // otherwise cancel the follow-up and end the conversation.
+      await onEndRecording();
+      return;
+    }
     if (
       phase === 'transcribing' ||
       phase === 'thinking' ||
@@ -117,7 +128,7 @@ export function MicControl({
   const label = micLabel(phase, voiceEnabled);
   const isActiveListening =
     voiceEnabled &&
-    (phase === 'recording' || phase === 'waiting_for_silence');
+    (phase === 'recording' || phase === 'waiting_for_silence' || phase === 'follow_up_listening');
   const isProcessing =
     voiceEnabled &&
     (phase === 'transcribing' || phase === 'thinking' || phase === 'speaking');

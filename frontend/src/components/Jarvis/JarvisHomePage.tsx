@@ -33,6 +33,7 @@ export function JarvisHomePage() {
     partialTranscript,
     response,
     lastError,
+    micDiag,
     enableVoice,
     disableVoice,
     startTurn,
@@ -78,6 +79,7 @@ export function JarvisHomePage() {
           partialTranscript={partialTranscript}
           response={response}
           lastError={lastError}
+          micDiag={micDiag}
         />
       </div>
 
@@ -97,6 +99,8 @@ export function JarvisHomePage() {
           style={{ color: 'rgba(160, 180, 220, 0.40)' }}
         >
           <span>⌘K — transcript & text fallback</span>
+          <span aria-hidden="true">·</span>
+          <span>Follow-up listening active after reply</span>
           <span aria-hidden="true">·</span>
           <span>Wake word — coming soon</span>
         </div>

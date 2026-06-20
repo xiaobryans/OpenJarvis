@@ -10,8 +10,8 @@ Design principles
 * cancel_turn() is always effective — at recording, STT, route, or TTS.
 * end_recording_now() submits captured audio immediately (End & send escape).
 
-Turn pipeline
--------------
+Turn pipeline (single turn)
+----------------------------
   start_turn() called
   → RECORDING          (adaptive VAD; abort_event for End & send)
   → audio validation   (size, duration, sample_rate; fail fast with exact reason)
@@ -19,13 +19,19 @@ Turn pipeline
   → transcript gate    (existing energy/hallucination/confidence gates)
   → THINKING           (existing engine + safety gates; 60 s timeout)
   → SPEAKING           (existing TTS path; 30 s timeout)
-  → IDLE               (turn_complete emitted)
+  → FOLLOW_UP_LISTENING (brief wait for next utterance — no tap required)
+     ↳ speech detected  → RECORDING → TRANSCRIBING → THINKING → SPEAKING → FOLLOW_UP_LISTENING
+     ↳ stop phrase      → IDLE (conversation_ended)
+     ↳ timeout          → IDLE (conversation_timeout)
+     ↳ cancel           → CANCELLED → IDLE
 
 Safety preserved
 ----------------
 * query_jarvis_text() calls setup_security() unconditionally.
 * Dangerous commands still require approval.
 * No secrets in SSE events or logs.
+* Follow-up mode does NOT skip approval gates for tool/action requests.
+* Conversation does NOT record indefinitely — FOLLOW_UP_TIMEOUT_S cap applies.
 
 Reuse (no new STT/TTS/engine systems)
 --------------------------------------
@@ -34,6 +40,23 @@ Reuse (no new STT/TTS/engine systems)
 * evaluate_voice_transcript   — voice_conversation.py
 * query_jarvis_text           — voice_conversation.py
 * speak_response              — voice_conversation.py
+
+Mic pickup / gain normalization
+--------------------------------
+* After recording, audio is gain-normalized before STT if RMS is below
+  _TARGET_SPEECH_RMS.  This improves STT accuracy when Bryan is speaking
+  at normal volume from normal laptop distance.
+* Original RMS, scale factor, and "mic_too_quiet" diagnostic are emitted
+  via the vad SSE event so the UI can surface a hint.
+* Maximum scale factor is capped at _GAIN_NORM_MAX_SCALE to avoid
+  amplifying ambient noise (fans, HVAC) instead of speech.
+
+Wake word
+---------
+* Wake word: HOLD — no provider is configured or proven on this system.
+* Diagnostics (wake_enabled, wake_available, etc.) are exposed via status()
+  so the UI can show accurate "wake word — coming soon" state.
+* Tap-to-speak (the current path) is unaffected.
 """
 
 from __future__ import annotations
@@ -46,7 +69,7 @@ import threading
 import time
 import wave
 from enum import Enum
-from typing import Any, Callable, Dict, Generator, List, Optional
+from typing import Any, Callable, Dict, Generator, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +90,59 @@ _TTS_TIMEOUT_S: float = 30.0
 _MIN_AUDIO_BYTES: int = 500      # WAV header + minimal audio
 _MIN_AUDIO_DURATION_S: float = 0.1
 
+# ---------------------------------------------------------------------------
+# Follow-up listening (hands-free conversation mode)
+# ---------------------------------------------------------------------------
+
+# How long to wait for a follow-up utterance after Jarvis finishes speaking.
+# After this window with no speech detected, conversation returns to idle.
+# Override via JARVIS_VOICE_FOLLOWUP_TIMEOUT_S env var.
+_FOLLOWUP_TIMEOUT_S: float = 10.0
+
+# Minimum recording before silence endpointing during follow-up.
+# Shorter than main turn so the user doesn't need to wait as long.
+_FOLLOWUP_MIN_RECORD_S: float = 0.5
+
+# ---------------------------------------------------------------------------
+# Mic gain normalization
+# ---------------------------------------------------------------------------
+
+# Target RMS for normalized audio before STT.
+# Normal conversational speech at laptop distance ≈ 600–3000 RMS (int16).
+# If recording RMS is below this, we scale up to improve STT accuracy.
+# Override via JARVIS_VOICE_TARGET_SPEECH_RMS env var.
+_TARGET_SPEECH_RMS: float = 1000.0
+
+# Maximum gain multiplier — cap prevents amplifying pure noise when the
+# mic captures only ambient noise with no real speech.
+_GAIN_NORM_MAX_SCALE: float = 6.0
+
+# "Mic too quiet" hint threshold: if we had to apply > this multiplier,
+# the original signal was very faint. UI shows a diagnostic hint.
+_GAIN_TOO_QUIET_SCALE: float = 4.0
+
+# ---------------------------------------------------------------------------
+# Stop phrases — end the conversation and return to idle
+# ---------------------------------------------------------------------------
+
+_STOP_PHRASES: frozenset = frozenset({
+    "stop",
+    "stop listening",
+    "cancel",
+    "never mind",
+    "nevermind",
+    "that's all",
+    "thats all",
+    "pause",
+    "go back to sleep",
+    "go to sleep",
+    "goodbye",
+    "goodbye jarvis",
+    "sleep",
+    "exit",
+    "quit",
+})
+
 
 # ---------------------------------------------------------------------------
 # State enum
@@ -80,6 +156,7 @@ class TurnPhase(str, Enum):
     TRANSCRIBING = "transcribing"
     THINKING = "thinking"
     SPEAKING = "speaking"
+    FOLLOW_UP_LISTENING = "follow_up_listening"
     ERROR = "error"
     CANCELLED = "cancelled"
 
@@ -287,6 +364,7 @@ class VoiceTurnEngine:
         self,
         silence_stop_ms: Optional[float] = None,
         silence_rms_threshold: Optional[float] = None,
+        followup_enabled: bool = True,
     ) -> None:
         self._lock = threading.Lock()
         self._phase = TurnPhase.IDLE
@@ -302,6 +380,21 @@ class VoiceTurnEngine:
         )
         self._silence_rms_threshold: float = silence_rms_threshold or _env_float(
             "JARVIS_VOICE_SILENCE_RMS", 300.0
+        )
+
+        # Follow-up listening config
+        self._followup_timeout_s: float = _env_float(
+            "JARVIS_VOICE_FOLLOWUP_TIMEOUT_S", _FOLLOWUP_TIMEOUT_S
+        )
+        self._followup_enabled: bool = followup_enabled
+
+        # Conversation-level tracking (resets on each start_turn)
+        self._conversation_turns: int = 0   # number of turns in current conversation
+        self._in_conversation: bool = False  # True while follow-up loop is running
+
+        # Gain normalization
+        self._target_speech_rms: float = _env_float(
+            "JARVIS_VOICE_TARGET_SPEECH_RMS", _TARGET_SPEECH_RMS
         )
 
         # Signals
@@ -328,6 +421,9 @@ class VoiceTurnEngine:
         self._partial_sse_count: int = 0
         self._partial_diag: Dict[str, Any] = {}
         self._last_partial_diag: Dict[str, Any] = {}
+
+        # Mic gain diagnostics (per-turn)
+        self._last_gain_diag: Dict[str, Any] = {}
 
     # ------------------------------------------------------------------
     # Public API
@@ -361,6 +457,8 @@ class VoiceTurnEngine:
             self._last_transcript = ""
             self._last_response = ""
             self._last_error = None
+            self._conversation_turns = 0
+            self._in_conversation = False
             self._phase = TurnPhase.RECORDING
 
         self._emit({"type": "state", "state": TurnPhase.RECORDING.value, "turn_id": turn_id})
@@ -376,7 +474,11 @@ class VoiceTurnEngine:
         return {"ok": True, "turn_id": turn_id}
 
     def cancel_turn(self) -> Dict[str, Any]:
-        """Cancel the current turn at whatever stage it's in."""
+        """Cancel the current turn at whatever stage it's in.
+
+        Works during FOLLOW_UP_LISTENING — cancels the follow-up recording and
+        exits the conversation loop, returning to IDLE.
+        """
         with self._lock:
             phase = self._phase
             turn_id = self._active_turn_id
@@ -417,6 +519,20 @@ class VoiceTurnEngine:
                 "last_error": self._last_error,
                 "last_vad": self._last_vad,
                 "partial_diag": self._last_partial_diag,
+                # Follow-up / conversation mode
+                "follow_up_enabled": self._followup_enabled,
+                "follow_up_timeout_s": self._followup_timeout_s,
+                "in_conversation": self._in_conversation,
+                "conversation_turns": self._conversation_turns,
+                # Mic gain diagnostics
+                "mic_gain_diag": self._last_gain_diag,
+                # Wake word diagnostics (HOLD — no provider configured)
+                "wake_enabled": False,
+                "wake_available": False,
+                "wake_provider": None,
+                "wake_worker_running": False,
+                "wake_last_error": "not_implemented: no wake-word provider configured in this build",
+                "wake_last_detected_at": None,
             }
 
     def subscribe(self) -> "queue.Queue[Dict]":
@@ -489,51 +605,35 @@ class VoiceTurnEngine:
     # ------------------------------------------------------------------
 
     def _run_turn(self, turn_id: int, language: str) -> None:
-        """Full turn pipeline — runs in a daemon thread."""
+        """Full turn pipeline — runs in a daemon thread.
+
+        After TTS completes, enters the follow-up listening loop so Bryan can
+        respond naturally without tapping the mic again.  The loop exits when:
+          - Bryan says a stop phrase ("stop", "cancel", "that's all", etc.)
+          - No speech is detected within _followup_timeout_s seconds
+          - cancel_turn() is called
+
+        When follow-up is disabled (followup_enabled=False), the turn
+        finalizes immediately after TTS completes.
+        """
         if not self._is_turn_live(turn_id):
             return
         try:
-            # Stage 1: Record
-            audio, ok = self._stage_record(turn_id)
-            if audio is None:
-                return  # _stage_record already set phase + finalised
+            # ── First turn in the conversation ──────────────────────────
+            first_ok = self._run_single_turn(turn_id, language)
+            if first_ok is None:
+                return  # error / cancel — pipeline already finalized
 
-            # Stage 2: Validate audio
-            if not self._is_turn_live(turn_id):
-                self._set_phase(TurnPhase.CANCELLED)
+            # ── Follow-up conversation loop (or finalize if disabled) ────
+            if self._followup_enabled and not self._cancel_event.is_set():
+                self._follow_up_loop(turn_id, language)
+            else:
+                # Follow-up disabled — finalize immediately after TTS
+                if self._is_turn_live(turn_id) and not self._cancel_event.is_set():
+                    self._set_phase(TurnPhase.IDLE, reason="turn_complete")
+                elif self._cancel_event.is_set():
+                    self._set_phase(TurnPhase.CANCELLED)
                 self._finalize(turn_id)
-                return
-
-            validation = _validate_audio(audio)
-            if not validation["ok"]:
-                reason = f"audio_invalid: {validation['reason']}"
-                logger.warning("Turn %d audio validation failed: %s", turn_id, validation)
-                self._last_error = reason
-                self._emit({"type": "error", "reason": reason, "detail": validation})
-                self._set_phase(TurnPhase.ERROR, reason=reason)
-                self._finalize(turn_id)
-                return
-
-            # Stage 3: STT
-            if not self._is_turn_live(turn_id):
-                self._set_phase(TurnPhase.CANCELLED)
-                self._finalize(turn_id)
-                return
-            text = self._stage_stt(turn_id, audio, language)
-            if text is None:
-                return
-
-            # Stage 4: Route / model
-            if not self._is_turn_live(turn_id):
-                self._set_phase(TurnPhase.CANCELLED)
-                self._finalize(turn_id)
-                return
-            response = self._stage_route(turn_id, text)
-            if response is None:
-                return
-
-            # Stage 5: TTS
-            self._stage_tts(turn_id, response)
 
         except Exception as exc:
             logger.exception("VoiceTurnEngine: unexpected error in turn %d", turn_id)
@@ -543,9 +643,244 @@ class VoiceTurnEngine:
                 self._set_phase(TurnPhase.ERROR, reason=self._last_error)
                 self._finalize(turn_id)
 
+    def _run_single_turn(self, turn_id: int, language: str) -> Optional[bool]:
+        """Execute one RECORDING→TRANSCRIBING→THINKING→SPEAKING cycle.
+
+        Returns True when TTS completes successfully (caller may follow-up).
+        Returns None when cancelled / error (turn already finalized).
+        Does NOT finalize on success — caller decides what comes next.
+        """
+        # Stage 1: Record
+        audio, ok = self._stage_record(turn_id)
+        if audio is None:
+            return None  # _stage_record already set phase + finalised
+
+        # Stage 2: Validate audio
+        if not self._is_turn_live(turn_id):
+            self._set_phase(TurnPhase.CANCELLED)
+            self._finalize(turn_id)
+            return None
+
+        validation = _validate_audio(audio)
+        if not validation["ok"]:
+            reason = f"audio_invalid: {validation['reason']}"
+            logger.warning("Turn %d audio validation failed: %s", turn_id, validation)
+            self._last_error = reason
+            self._emit({"type": "error", "reason": reason, "detail": validation})
+            self._set_phase(TurnPhase.ERROR, reason=reason)
+            self._finalize(turn_id)
+            return None
+
+        # Stage 3: STT
+        if not self._is_turn_live(turn_id):
+            self._set_phase(TurnPhase.CANCELLED)
+            self._finalize(turn_id)
+            return None
+        text = self._stage_stt(turn_id, audio, language)
+        if text is None:
+            return None
+
+        # Stage 4: Route / model
+        if not self._is_turn_live(turn_id):
+            self._set_phase(TurnPhase.CANCELLED)
+            self._finalize(turn_id)
+            return None
+        response = self._stage_route(turn_id, text)
+        if response is None:
+            return None
+
+        # Stage 5: TTS
+        tts_ok = self._stage_tts_nonfinalize(turn_id, response)
+        if not tts_ok:
+            return None  # cancelled — already finalized in _stage_tts_nonfinalize
+
+        with self._lock:
+            self._conversation_turns += 1
+
+        return True
+
+    def _follow_up_loop(self, turn_id: int, language: str) -> None:
+        """Hands-free follow-up listening after TTS completes.
+
+        Waits up to _followup_timeout_s for the user to speak.  If speech
+        is detected, processes another full RECORDING→STT→THINKING→TTS cycle.
+        Exits on stop phrase, timeout, or cancel.  Always finalizes the turn.
+        """
+        with self._lock:
+            self._in_conversation = True
+
+        try:
+            while self._is_turn_live(turn_id) and not self._cancel_event.is_set():
+                # Enter follow-up listening state
+                self._set_phase(
+                    TurnPhase.FOLLOW_UP_LISTENING,
+                    timeout_s=self._followup_timeout_s,
+                    conversation_turns=self._conversation_turns,
+                )
+                self._emit({
+                    "type": "follow_up_listening",
+                    "timeout_s": self._followup_timeout_s,
+                    "conversation_turns": self._conversation_turns,
+                })
+                logger.info(
+                    "VoiceTurnEngine: follow-up listening (turn=%d, timeout=%.1fs)",
+                    turn_id, self._followup_timeout_s,
+                )
+
+                # Record follow-up audio.  max_seconds = followup_timeout_s so
+                # we return quickly if the user stays silent.
+                self._recording_abort.clear()
+                audio, stop_reason = self._record_followup(turn_id)
+                if audio is None:
+                    # Cancelled during recording
+                    break
+
+                if stop_reason == "pre_speech_timeout":
+                    # No speech — conversation timed out naturally
+                    logger.info(
+                        "VoiceTurnEngine: follow-up timed out (turn=%d)", turn_id
+                    )
+                    self._emit({
+                        "type": "conversation_ended",
+                        "reason": "timeout",
+                        "conversation_turns": self._conversation_turns,
+                    })
+                    break
+
+                # Validate + STT on the follow-up audio
+                validation = _validate_audio(audio)
+                if not validation["ok"]:
+                    logger.debug("Follow-up audio validation failed: %s", validation)
+                    self._emit({
+                        "type": "conversation_ended",
+                        "reason": "audio_invalid",
+                        "conversation_turns": self._conversation_turns,
+                    })
+                    break
+
+                if not self._is_turn_live(turn_id) or self._cancel_event.is_set():
+                    break
+
+                # Gain-normalize and transcribe the follow-up
+                audio, _gain_diag = _normalize_audio_gain(
+                    audio, self._target_speech_rms
+                )
+                self._last_gain_diag = _gain_diag
+
+                self._set_phase(TurnPhase.TRANSCRIBING)
+                from openjarvis.autonomy.voice_conversation import (
+                    evaluate_voice_transcript,
+                    transcribe_command_result,
+                )
+                try:
+                    stt_result = transcribe_command_result(audio, language=language)
+                    text = (
+                        stt_result.text.strip()
+                        if hasattr(stt_result, "text")
+                        else str(stt_result).strip()
+                    )
+                except Exception as exc:
+                    logger.warning("Follow-up STT failed: %s", exc)
+                    self._emit({
+                        "type": "conversation_ended",
+                        "reason": f"stt_error: {exc}",
+                        "conversation_turns": self._conversation_turns,
+                    })
+                    break
+
+                # Stop-phrase check (before transcript gate so stop always works)
+                normalized = text.lower().strip().rstrip(".,!?")
+                if normalized in _STOP_PHRASES:
+                    logger.info(
+                        "Follow-up stop phrase detected: %r (turn=%d)", text, turn_id
+                    )
+                    self._last_transcript = text
+                    self._emit({"type": "transcript", "text": text})
+                    self._emit({
+                        "type": "conversation_ended",
+                        "reason": "stop_phrase",
+                        "stop_phrase": text,
+                        "conversation_turns": self._conversation_turns,
+                    })
+                    break
+
+                # Transcript gate
+                is_stop = normalized in _STOP_PHRASES
+                decision = evaluate_voice_transcript(
+                    text, stt_result, wav_bytes=audio, is_stop_phrase=is_stop
+                )
+                if not decision.accepted:
+                    logger.info(
+                        "Follow-up transcript rejected (%s) — staying in follow-up",
+                        decision.reason,
+                    )
+                    # Re-enter follow-up loop (don't break conversation for bad clip)
+                    continue
+
+                text = decision.text
+                self._last_transcript = text
+                self._emit({"type": "transcript", "text": text})
+                logger.info("Follow-up transcript: %r (turn=%d)", text, turn_id)
+
+                # Route + TTS for the follow-up utterance
+                if not self._is_turn_live(turn_id) or self._cancel_event.is_set():
+                    break
+                response = self._stage_route(turn_id, text)
+                if response is None:
+                    return  # cancelled/error — already finalized
+
+                tts_ok = self._stage_tts_nonfinalize(turn_id, response)
+                if not tts_ok:
+                    return  # cancelled — already finalized
+
+                with self._lock:
+                    self._conversation_turns += 1
+
+                # Loop: go back to FOLLOW_UP_LISTENING
+
+        finally:
+            with self._lock:
+                self._in_conversation = False
+
+        # Return to idle cleanly
+        if self._is_turn_live(turn_id) and not self._cancel_event.is_set():
+            self._set_phase(TurnPhase.IDLE, reason="conversation_complete")
+        elif self._cancel_event.is_set():
+            self._set_phase(TurnPhase.CANCELLED)
+        self._finalize(turn_id)
+
     # ------------------------------------------------------------------
     # Stage implementations
     # ------------------------------------------------------------------
+
+    def _record_followup(self, turn_id: int) -> Tuple[Optional[bytes], str]:
+        """Record a follow-up utterance with a short timeout.
+
+        Returns (wav_bytes, stop_reason).  Returns (None, "cancelled") on cancel.
+        stop_reason "pre_speech_timeout" means no speech in the window.
+        """
+        from openjarvis.autonomy.voice_conversation import record_command_audio_vad
+
+        if not self._is_turn_live(turn_id) or self._cancel_event.is_set():
+            return None, "cancelled"
+
+        try:
+            audio, stop_reason = record_command_audio_vad(
+                min_seconds=_FOLLOWUP_MIN_RECORD_S,
+                silence_stop_ms=self._silence_stop_ms,
+                max_seconds=self._followup_timeout_s,
+                sample_rate=16000,
+                silence_rms_threshold=self._silence_rms_threshold,
+                abort_event=self._recording_abort,
+            )
+        except Exception as exc:
+            logger.warning("Follow-up recording failed: %s", exc)
+            return None, "recording_error"
+
+        if self._cancel_event.is_set() or not self._is_turn_live(turn_id):
+            return None, "cancelled"
+
+        return audio, stop_reason
 
     def _stage_record(self, turn_id: int):
         """Record with adaptive VAD. Returns (audio_bytes, ok) or (None, False)."""
@@ -736,8 +1071,33 @@ class VoiceTurnEngine:
         return audio, True
 
     def _stage_stt(self, turn_id: int, audio: bytes, language: str) -> Optional[str]:
-        """Run STT with timeout. Returns transcript text or None on error/cancel."""
+        """Run STT with timeout. Returns transcript text or None on error/cancel.
+
+        Applies gain normalization before STT to improve accuracy when the mic
+        captures audio at low volume (normal speaking at normal laptop distance).
+        The original RMS and scale factor are stored in self._last_gain_diag and
+        emitted as part of the vad SSE event diagnostics.
+        """
         self._set_phase(TurnPhase.TRANSCRIBING)
+
+        # Gain-normalize the audio before STT.  The VAD already completed so
+        # this does not affect endpointing — it only improves STT input quality.
+        audio, gain_diag = _normalize_audio_gain(audio, self._target_speech_rms)
+        self._last_gain_diag = gain_diag
+        if gain_diag.get("too_quiet"):
+            logger.warning(
+                "Mic too quiet: original_rms=%.0f scale=%.2fx — "
+                "try speaking louder or closer to the mic",
+                gain_diag.get("original_rms", 0),
+                gain_diag.get("scale", 1.0),
+            )
+            self._emit({
+                "type": "mic_diag",
+                "too_quiet": True,
+                "original_rms": gain_diag.get("original_rms"),
+                "scale": gain_diag.get("scale"),
+                "hint": "Mic too quiet — try speaking louder or closer to the MacBook",
+            })
 
         from openjarvis.autonomy.voice_conversation import (
             evaluate_voice_transcript,
@@ -877,8 +1237,13 @@ class VoiceTurnEngine:
         )
         return response
 
-    def _stage_tts(self, turn_id: int, text: str) -> None:
-        """Speak response with timeout (non-fatal on timeout — text was displayed)."""
+    def _stage_tts_nonfinalize(self, turn_id: int, text: str) -> bool:
+        """Speak response with timeout. Does NOT finalize the turn.
+
+        Returns True when TTS completes normally (caller continues conversation).
+        Returns False when cancelled (turn already finalized by this method).
+        Non-fatal on TTS timeout — text was already displayed to user.
+        """
         self._set_phase(TurnPhase.SPEAKING)
 
         from openjarvis.autonomy.voice_conversation import speak_response
@@ -906,13 +1271,117 @@ class VoiceTurnEngine:
         except Exception as exc:
             logger.warning("Turn %d TTS error (non-fatal): %s", turn_id, exc)
 
-        # Always complete turn normally — even on TTS failure, the text was shown
-        if self._is_turn_live(turn_id) and not cancel.is_set():
-            self._set_phase(TurnPhase.IDLE, reason="turn_complete")
-        elif cancel.is_set():
+        if cancel.is_set() or not self._is_turn_live(turn_id):
             self._set_phase(TurnPhase.CANCELLED)
+            self._finalize(turn_id)
+            return False
 
-        self._finalize(turn_id)
+        return True
+
+
+# ---------------------------------------------------------------------------
+# Audio gain normalization
+# ---------------------------------------------------------------------------
+
+
+def _normalize_audio_gain(
+    wav_bytes: bytes,
+    target_rms: float = _TARGET_SPEECH_RMS,
+    max_scale: float = _GAIN_NORM_MAX_SCALE,
+) -> Tuple[bytes, Dict[str, Any]]:
+    """Normalize WAV audio to target_rms if the recording is quieter.
+
+    Applies uniform gain so Deepgram/Whisper STT receives audio at a consistent
+    level regardless of mic distance or soft speaking volume.
+
+    Clipping protection: scales are capped so no sample exceeds ±30000 (int16
+    range ±32767), leaving ~3 dB headroom.  max_scale caps the multiplier so
+    pure-noise clips aren't amplified into speech-like energy.
+
+    Returns (normalized_wav_bytes, diag_dict).
+    diag_dict keys:
+      original_rms   — RMS before normalization
+      target_rms     — target RMS value used
+      scale          — scale factor applied (1.0 = no change)
+      too_quiet      — True when scale > _GAIN_TOO_QUIET_SCALE (mic is very faint)
+      clipped        — True when clipping protection reduced the scale
+    """
+    diag: Dict[str, Any] = {
+        "original_rms": 0.0,
+        "target_rms": target_rms,
+        "scale": 1.0,
+        "too_quiet": False,
+        "clipped": False,
+    }
+
+    if not wav_bytes:
+        return wav_bytes, diag
+
+    try:
+        import numpy as np
+    except ImportError:
+        # numpy not available — skip normalization, return original
+        return wav_bytes, diag
+
+    try:
+        with wave.open(io.BytesIO(wav_bytes), "rb") as wf:
+            n_channels = wf.getnchannels()
+            sample_width = wf.getsampwidth()
+            frame_rate = wf.getframerate()
+            raw_frames = wf.readframes(wf.getnframes())
+    except Exception:
+        return wav_bytes, diag
+
+    if not raw_frames or sample_width != 2:
+        # Only normalize int16 (2-byte) PCM — skip other formats
+        return wav_bytes, diag
+
+    samples = np.frombuffer(raw_frames, dtype=np.int16).astype(np.float64)
+    if samples.size == 0:
+        return wav_bytes, diag
+
+    rms = float(np.sqrt(np.mean(samples ** 2)))
+    diag["original_rms"] = round(rms, 1)
+
+    if rms < 1.0:
+        # Near-silent — no normalization (would just amplify noise)
+        return wav_bytes, diag
+
+    if rms >= target_rms:
+        # Already loud enough — no normalization needed
+        return wav_bytes, diag
+
+    # Compute desired scale
+    ideal_scale = target_rms / rms
+    peak = float(np.max(np.abs(samples)))
+
+    # Clipping protection: don't let any sample exceed ±30000
+    max_safe_scale = 30000.0 / peak if peak > 0 else max_scale
+    scale = min(ideal_scale, max_scale, max_safe_scale)
+    clipped = scale < ideal_scale
+
+    diag["scale"] = round(scale, 3)
+    diag["too_quiet"] = scale > _GAIN_TOO_QUIET_SCALE
+    diag["clipped"] = clipped
+
+    scaled = np.clip(samples * scale, -32767, 32767).astype(np.int16)
+    new_raw = scaled.tobytes()
+
+    buf = io.BytesIO()
+    try:
+        with wave.open(buf, "wb") as wf:
+            wf.setnchannels(n_channels)
+            wf.setsampwidth(sample_width)
+            wf.setframerate(frame_rate)
+            wf.writeframes(new_raw)
+    except Exception:
+        return wav_bytes, diag
+
+    logger.debug(
+        "Gain norm: rms=%.0f → scale=%.2fx target=%.0f clipped=%s too_quiet=%s",
+        rms, scale, target_rms, clipped, diag["too_quiet"],
+    )
+    return buf.getvalue(), diag
 
 
 # ---------------------------------------------------------------------------
@@ -994,4 +1463,6 @@ __all__ = [
     "VoiceTurnEngine",
     "get_engine",
     "_validate_audio",
+    "_normalize_audio_gain",
+    "_STOP_PHRASES",
 ]

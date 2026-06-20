@@ -32,6 +32,7 @@ from openjarvis.autonomy.voice_turn_engine import (
     TurnPhase,
     VoiceTurnEngine,
     _validate_audio,
+    _normalize_audio_gain,
 )
 
 
@@ -53,7 +54,8 @@ def _make_wav(duration_s: float = 0.5, sample_rate: int = 16000) -> bytes:
 
 
 def _make_engine(**kwargs) -> VoiceTurnEngine:
-    """Engine with short timeouts for testing."""
+    """Engine with follow-up disabled (prevents tests from hanging on real mic)."""
+    kwargs.setdefault("followup_enabled", False)
     e = VoiceTurnEngine(**kwargs)
     return e
 
@@ -147,7 +149,8 @@ def engine():
 _RECORD_PATH = "openjarvis.autonomy.voice_turn_engine.VoiceTurnEngine._stage_record"
 _STT_PATH = "openjarvis.autonomy.voice_turn_engine.VoiceTurnEngine._stage_stt"
 _ROUTE_PATH = "openjarvis.autonomy.voice_turn_engine.VoiceTurnEngine._stage_route"
-_TTS_PATH = "openjarvis.autonomy.voice_turn_engine.VoiceTurnEngine._stage_tts"
+# TTS stage is now _stage_tts_nonfinalize — caller owns finalization
+_TTS_PATH = "openjarvis.autonomy.voice_turn_engine.VoiceTurnEngine._stage_tts_nonfinalize"
 
 
 def _mock_record(wav: bytes):
@@ -176,12 +179,15 @@ def _mock_route(response: str):
 
 
 def _mock_tts():
+    """Mock TTS stage — sets SPEAKING and returns True (success).
+
+    Finalization is now the caller's responsibility (_run_turn).
+    With followup_enabled=False (test default), _run_turn finalizes to IDLE.
+    """
     def _impl(self, turn_id, text):
         self._set_phase(TurnPhase.SPEAKING)
-        # Complete normally
-        if self._is_turn_live(turn_id) and not self._cancel_event.is_set():
-            self._set_phase(TurnPhase.IDLE, reason="turn_complete")
-        self._finalize(turn_id)
+        # Don't finalize — _run_turn does that after this returns True
+        return True
     return _impl
 
 
@@ -198,7 +204,7 @@ class TestTurnComplete:
                 patch.object(engine, "_stage_record", _mock_record(wav).__get__(engine, VoiceTurnEngine)),
                 patch.object(engine, "_stage_stt", _mock_stt("hello jarvis").__get__(engine, VoiceTurnEngine)),
                 patch.object(engine, "_stage_route", _mock_route("Hi there!").__get__(engine, VoiceTurnEngine)),
-                patch.object(engine, "_stage_tts", _mock_tts().__get__(engine, VoiceTurnEngine)),
+                patch.object(engine, "_stage_tts_nonfinalize", _mock_tts().__get__(engine, VoiceTurnEngine)),
             ):
                 result = engine.start_turn()
                 assert result["ok"] is True
@@ -236,12 +242,11 @@ class TestTurnComplete:
             self._last_response = "ok"
             return "ok"
 
-        def _tts_stage(self, turn_id, text):
+        def _tts_nonfinalize(self, turn_id, text):
             states.append("speaking")
             self._set_phase(TurnPhase.SPEAKING)
-            if self._is_turn_live(turn_id) and not self._cancel_event.is_set():
-                self._set_phase(TurnPhase.IDLE, reason="turn_complete")
-            self._finalize(turn_id)
+            # Don't finalize — _run_turn handles it
+            return True
 
         q = engine.subscribe()
         try:
@@ -249,7 +254,7 @@ class TestTurnComplete:
                 patch.object(engine, "_stage_record", _recording_stage.__get__(engine)),
                 patch.object(engine, "_stage_stt", _stt_stage.__get__(engine)),
                 patch.object(engine, "_stage_route", _route_stage.__get__(engine)),
-                patch.object(engine, "_stage_tts", _tts_stage.__get__(engine)),
+                patch.object(engine, "_stage_tts_nonfinalize", _tts_nonfinalize.__get__(engine)),
             ):
                 engine.start_turn()
                 _drain_events(engine, timeout=5, pre_subscribed_q=q)
@@ -276,7 +281,7 @@ class TestEndAndSend:
             patch.object(engine, "_stage_record", _recording_that_waits.__get__(engine)),
             patch.object(engine, "_stage_stt", _mock_stt("test").__get__(engine)),
             patch.object(engine, "_stage_route", _mock_route("ok").__get__(engine)),
-            patch.object(engine, "_stage_tts", _mock_tts().__get__(engine)),
+            patch.object(engine, "_stage_tts_nonfinalize", _mock_tts().__get__(engine)),
         ):
             engine.start_turn()
             _wait_phase(engine, TurnPhase.RECORDING, timeout=1.0)
@@ -452,6 +457,7 @@ class TestCancel:
             patch.object(engine, "_stage_record", _mock_record(wav).__get__(engine)),
             patch.object(engine, "_stage_stt", _mock_stt("query").__get__(engine)),
             patch.object(engine, "_stage_route", _blocking_route.__get__(engine)),
+            # TTS never reached — no need to mock
         ):
             engine.start_turn()
             assert thinking_started.wait(timeout=3.0)
@@ -523,7 +529,7 @@ class TestNoInfiniteState:
                 patch.object(engine, "_stage_record", _mock_record(wav).__get__(engine)),
                 patch.object(engine, "_stage_stt", _mock_stt("hello").__get__(engine)),
                 patch.object(engine, "_stage_route", _mock_route("hi").__get__(engine)),
-                patch.object(engine, "_stage_tts", _mock_tts().__get__(engine)),
+                patch.object(engine, "_stage_tts_nonfinalize", _mock_tts().__get__(engine)),
             ):
                 engine.start_turn()
                 _drain_events(engine, timeout=8, pre_subscribed_q=q)
@@ -556,7 +562,7 @@ class TestNoInfiniteState:
                 patch.object(engine, "_stage_record", _mock_record(wav).__get__(engine)),
                 patch.object(engine, "_stage_stt", _mock_stt("hello").__get__(engine)),
                 patch.object(engine, "_stage_route", _mock_route("hi").__get__(engine)),
-                patch.object(engine, "_stage_tts", _mock_tts().__get__(engine)),
+                patch.object(engine, "_stage_tts_nonfinalize", _mock_tts().__get__(engine)),
             ):
                 result = engine.start_turn()
                 assert result["ok"] is True

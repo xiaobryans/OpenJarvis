@@ -557,9 +557,36 @@ async def voice_turn_end_recording() -> Dict[str, Any]:
 
 @router.get("/v1/voice/turn/status")
 async def voice_turn_status() -> Dict[str, Any]:
-    """Current turn engine state — safe to poll."""
+    """Current turn engine state — safe to poll.
+
+    Includes follow-up / conversation mode state and wake diagnostics.
+    """
     engine = _get_turn_engine()
-    return engine.status()
+    st = engine.status()
+
+    # Surface mic input device (macOS) as a non-secret diagnostic.
+    # Failure is non-fatal — mic_input_device omitted if unavailable.
+    try:
+        import subprocess as _sp
+        _res = _sp.run(
+            ["system_profiler", "SPAudioDataType", "-json"],
+            capture_output=True, text=True, timeout=3
+        )
+        if _res.returncode == 0:
+            import json as _json
+            _audio = _json.loads(_res.stdout)
+            _items = _audio.get("SPAudioDataType", [])
+            _inputs = [
+                i.get("_name", "")
+                for item in _items
+                for i in item.get("coreaudio_input_source", [])
+            ]
+            if _inputs:
+                st["mic_input_device"] = _inputs[0]
+    except Exception:
+        pass
+
+    return st
 
 
 @router.get("/v1/voice/turn/events")

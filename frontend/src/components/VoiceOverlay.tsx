@@ -41,6 +41,7 @@ const TURN_LABEL: Record<TurnPhase, string> = {
   idle: 'Ready — press Speak now',
   recording: 'Recording',
   waiting_for_silence: 'Waiting for silence',
+  follow_up_listening: 'Listening for follow-up…',
   transcribing: 'Transcribing',
   thinking: 'Thinking',
   speaking: 'Speaking',

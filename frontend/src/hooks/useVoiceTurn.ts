@@ -30,6 +30,7 @@ export type TurnPhase =
   | 'transcribing'
   | 'thinking'
   | 'speaking'
+  | 'follow_up_listening'
   | 'error'
   | 'cancelled';
 
@@ -43,6 +44,13 @@ export interface VadDiag {
   effective_threshold?: number;
 }
 
+export interface MicDiag {
+  too_quiet: boolean;
+  original_rms?: number;
+  scale?: number;
+  hint?: string;
+}
+
 export interface TurnEvent {
   type:
     | 'state'
@@ -54,6 +62,9 @@ export interface TurnEvent {
     | 'vad'
     | 'error'
     | 'turn_done'
+    | 'follow_up_listening'
+    | 'conversation_ended'
+    | 'mic_diag'
     | 'keepalive';
   state?: TurnPhase;
   text?: string;
@@ -71,6 +82,15 @@ export interface TurnEvent {
   model?: string;
   provider?: string;
   complexity_tier?: string;
+  // follow-up fields
+  timeout_s?: number;
+  conversation_turns?: number;
+  stop_phrase?: string;
+  // mic_diag fields
+  too_quiet?: boolean;
+  original_rms?: number;
+  scale?: number;
+  hint?: string;
 }
 
 export interface VoiceTurnState {
@@ -83,6 +103,9 @@ export interface VoiceTurnState {
   lastError: string | null;
   lastVad: VadDiag | null;
   routeInfo: { model?: string; provider?: string; tier?: string } | null;
+  micDiag: MicDiag | null;
+  conversationTurns: number;
+  inFollowUp: boolean;
 }
 
 export interface VoiceTurnActions {
@@ -112,6 +135,9 @@ export function useVoiceTurn(): UseVoiceTurnReturn {
   const [lastError, setLastError] = useState<string | null>(null);
   const [lastVad, setLastVad] = useState<VadDiag | null>(null);
   const [routeInfo, setRouteInfo] = useState<VoiceTurnState['routeInfo']>(null);
+  const [micDiag, setMicDiag] = useState<MicDiag | null>(null);
+  const [conversationTurns, setConversationTurns] = useState(0);
+  const [inFollowUp, setInFollowUp] = useState(false);
 
   const esRef = useRef<EventSource | null>(null);
   const enabledRef = useRef(false);
@@ -140,12 +166,43 @@ export function useVoiceTurn(): UseVoiceTurnReturn {
       if (data.type === 'state' && data.state) {
         setPhase(data.state);
         if (data.turn_id != null) setTurnId(data.turn_id);
-        if (data.state === 'idle') {
-          // clear per-turn state on completion
+        if (data.state === 'follow_up_listening') {
+          setInFollowUp(true);
+          setPartialTranscript(''); // clear partial on follow-up entry
+        }
+        if (data.state === 'idle' || data.state === 'cancelled') {
+          setInFollowUp(false);
+        }
+        if (data.state === 'recording') {
+          // Clear per-turn display state when a follow-up recording starts
+          setPartialTranscript('');
         }
         if (data.state === 'error' && data.reason) {
           setLastError(data.reason);
         }
+      }
+
+      if (data.type === 'follow_up_listening') {
+        setInFollowUp(true);
+        if (data.conversation_turns != null) {
+          setConversationTurns(data.conversation_turns);
+        }
+      }
+
+      if (data.type === 'conversation_ended') {
+        setInFollowUp(false);
+        if (data.conversation_turns != null) {
+          setConversationTurns(data.conversation_turns);
+        }
+      }
+
+      if (data.type === 'mic_diag') {
+        setMicDiag({
+          too_quiet: data.too_quiet ?? false,
+          original_rms: data.original_rms,
+          scale: data.scale,
+          hint: data.hint,
+        });
       }
 
       if (data.type === 'partial_transcript' && data.text != null) {
@@ -219,6 +276,9 @@ export function useVoiceTurn(): UseVoiceTurnReturn {
     setPartialTranscript('');
     setResponse('');
     setLastError(null);
+    setMicDiag(null);
+    setConversationTurns(0);
+    setInFollowUp(false);
     connectSSE();
   }, [connectSSE]);
 
@@ -323,6 +383,9 @@ export function useVoiceTurn(): UseVoiceTurnReturn {
     lastError,
     lastVad,
     routeInfo,
+    micDiag,
+    conversationTurns,
+    inFollowUp,
     // actions
     enableVoice,
     disableVoice,

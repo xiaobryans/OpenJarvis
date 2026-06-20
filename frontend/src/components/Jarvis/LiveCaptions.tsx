@@ -9,9 +9,11 @@
  *     phase === 'speaking' and lingers briefly after.
  *   - Empty state when voice off or idle with no transcript/response yet:
  *     small hint instead of fake content.
+ *   - Follow-up state: "Listening for follow-up…" during follow_up_listening.
+ *   - Mic diagnostic hint shown when mic_diag.too_quiet is true.
  */
 
-import type { TurnPhase } from '../../hooks/useVoiceTurn';
+import type { MicDiag, TurnPhase } from '../../hooks/useVoiceTurn';
 
 interface Props {
   phase: TurnPhase;
@@ -20,6 +22,7 @@ interface Props {
   partialTranscript: string;
   response: string;
   lastError: string | null;
+  micDiag?: MicDiag | null;
 }
 
 const RECORDING_PHASES: TurnPhase[] = ['recording', 'waiting_for_silence'];
@@ -31,14 +34,24 @@ export function LiveCaptions({
   partialTranscript,
   response,
   lastError,
+  micDiag,
 }: Props) {
   const showError = phase === 'error' && lastError;
   const isRecording = RECORDING_PHASES.includes(phase);
+  const isFollowUp = phase === 'follow_up_listening';
 
   // Determine what text to show in the user caption area.
-  // Priority: final transcript > partial (while recording) > nothing
-  const userText = transcript || (isRecording ? partialTranscript : '');
-  const isPartial = !transcript && !!partialTranscript && isRecording;
+  // Priority: final transcript > partial (while recording or follow-up) > nothing
+  const userText = transcript || ((isRecording || isFollowUp) ? partialTranscript : '');
+  const isPartial = !transcript && !!partialTranscript && (isRecording || isFollowUp);
+
+  const hintText = (() => {
+    if (!voiceEnabled) return 'Voice off — tap the mic below to enable Jarvis';
+    if (phase === 'idle') return 'Tap mic to speak · ⌘K for transcript & text';
+    if (phase === 'recording' || phase === 'waiting_for_silence') return 'Listening…';
+    if (phase === 'follow_up_listening') return 'Listening for follow-up…';
+    return '';
+  })();
 
   return (
     <div
@@ -56,6 +69,19 @@ export function LiveCaptions({
           }}
         >
           Voice error: {lastError}
+        </div>
+      )}
+
+      {micDiag?.too_quiet && (
+        <div
+          className="px-3 py-1.5 rounded-lg text-xs"
+          style={{
+            background: 'rgba(255, 180, 60, 0.08)',
+            border: '1px solid rgba(255, 180, 60, 0.22)',
+            color: 'rgba(255, 210, 120, 0.90)',
+          }}
+        >
+          {micDiag.hint ?? 'Mic too quiet — try speaking louder or closer to the MacBook'}
         </div>
       )}
 
@@ -99,22 +125,18 @@ export function LiveCaptions({
         </div>
       )}
 
-      {!userText && !response && !showError && (
+      {!userText && !response && !showError && hintText && (
         <div
           className="text-center"
           style={{
             fontSize: 13,
             letterSpacing: '0.04em',
-            color: 'rgba(160, 180, 220, 0.45)',
+            color: isFollowUp
+              ? 'rgba(140, 200, 255, 0.60)'
+              : 'rgba(160, 180, 220, 0.45)',
           }}
         >
-          {!voiceEnabled
-            ? 'Voice off — tap the mic below to enable Jarvis'
-            : phase === 'idle'
-              ? 'Tap mic to speak · ⌘K for transcript & text'
-              : phase === 'recording' || phase === 'waiting_for_silence'
-                ? 'Listening...'
-                : ''}
+          {hintText}
         </div>
       )}
     </div>
