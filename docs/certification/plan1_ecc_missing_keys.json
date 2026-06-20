@@ -1,0 +1,878 @@
+{
+  "generated_by": "openjarvis.skills.ecc_completion",
+  "sprint": "Plan 1 ECC Completion Sprint \u2014 Pre-Keys (Prompt 1)",
+  "total_api_key_skills": 35,
+  "skills": [
+    {
+      "skill_id": "exa-search",
+      "provider": "Exa",
+      "required_env_keys": [
+        "EXA_API_KEY"
+      ],
+      "optional_env_keys": [],
+      "oauth_scopes": [],
+      "account_setup": "Sign up at exa.ai, generate API key from dashboard",
+      "risk": "read_only",
+      "jarvis_permission_scope": "search:read_only",
+      "plan1_state": "READY_BUT_WAITING_FOR_API_KEY",
+      "exact_blocker": "Missing EXA_API_KEY env var",
+      "mocked_test_command": "uv run pytest tests/skills/test_plan1_completion.py::TestEccKeySkillsMocked::test_exa_search_mocked",
+      "live_test_command": "EXA_API_KEY=$EXA_API_KEY uv run python -c \"from openjarvis.skills.ecc_completion import live_test_skill; live_test_skill('exa-search')\"",
+      "activation_route": "Set EXA_API_KEY env var, then call catalog.get('ecc:exa-search') \u2192 update state to active",
+      "rollback_path": "Unset EXA_API_KEY; skill auto-disables via key presence check",
+      "completable_with_keys": true,
+      "impossible_even_with_keys": []
+    },
+    {
+      "skill_id": "fal-ai-media",
+      "provider": "fal.ai",
+      "required_env_keys": [
+        "FAL_API_KEY"
+      ],
+      "optional_env_keys": [],
+      "oauth_scopes": [],
+      "account_setup": "Sign up at fal.ai, generate API key from dashboard",
+      "risk": "action",
+      "jarvis_permission_scope": "media:generate",
+      "plan1_state": "READY_BUT_WAITING_FOR_API_KEY",
+      "exact_blocker": "Missing FAL_API_KEY env var",
+      "mocked_test_command": "uv run pytest tests/skills/test_plan1_completion.py::TestEccKeySkillsMocked::test_fal_ai_media_mocked",
+      "live_test_command": "FAL_API_KEY=$FAL_API_KEY uv run python -c \"from openjarvis.skills.ecc_completion import live_test_skill; live_test_skill('fal-ai-media')\"",
+      "activation_route": "Set FAL_API_KEY env var, enable skill in catalog",
+      "rollback_path": "Unset FAL_API_KEY; skill auto-disables",
+      "completable_with_keys": true,
+      "impossible_even_with_keys": []
+    },
+    {
+      "skill_id": "deep-research",
+      "provider": "Exa or Perplexity",
+      "required_env_keys": [
+        "EXA_API_KEY"
+      ],
+      "optional_env_keys": [
+        "PERPLEXITY_API_KEY"
+      ],
+      "oauth_scopes": [],
+      "account_setup": "Exa.ai account required; optional Perplexity account for deeper research",
+      "risk": "read_only",
+      "jarvis_permission_scope": "search:read_only",
+      "plan1_state": "READY_BUT_WAITING_FOR_API_KEY",
+      "exact_blocker": "Missing EXA_API_KEY (and optionally PERPLEXITY_API_KEY)",
+      "mocked_test_command": "uv run pytest tests/skills/test_plan1_completion.py::TestEccKeySkillsMocked::test_deep_research_mocked",
+      "live_test_command": "EXA_API_KEY=$EXA_API_KEY uv run python -c \"from openjarvis.skills.ecc_completion import live_test_skill; live_test_skill('deep-research')\"",
+      "activation_route": "Set EXA_API_KEY; skill becomes active",
+      "rollback_path": "Unset EXA_API_KEY",
+      "completable_with_keys": true,
+      "impossible_even_with_keys": []
+    },
+    {
+      "skill_id": "market-research",
+      "provider": "Exa + SERP API",
+      "required_env_keys": [
+        "EXA_API_KEY"
+      ],
+      "optional_env_keys": [
+        "SERP_API_KEY",
+        "GOOGLE_SEARCH_API_KEY"
+      ],
+      "oauth_scopes": [],
+      "account_setup": "Exa.ai account; optional SerpAPI account (serpapi.com)",
+      "risk": "read_only",
+      "jarvis_permission_scope": "search:read_only",
+      "plan1_state": "READY_BUT_WAITING_FOR_API_KEY",
+      "exact_blocker": "Missing EXA_API_KEY",
+      "mocked_test_command": "uv run pytest tests/skills/test_plan1_completion.py::TestEccKeySkillsMocked::test_market_research_mocked",
+      "live_test_command": "EXA_API_KEY=$EXA_API_KEY uv run python -c \"from openjarvis.skills.ecc_completion import live_test_skill; live_test_skill('market-research')\"",
+      "activation_route": "Set EXA_API_KEY; enable skill",
+      "rollback_path": "Unset EXA_API_KEY",
+      "completable_with_keys": true,
+      "impossible_even_with_keys": []
+    },
+    {
+      "skill_id": "data-scraper-agent",
+      "provider": "ScrapingBee or BrightData",
+      "required_env_keys": [
+        "SCRAPING_BEE_API_KEY"
+      ],
+      "optional_env_keys": [
+        "BRIGHTDATA_USERNAME",
+        "BRIGHTDATA_PASSWORD"
+      ],
+      "oauth_scopes": [],
+      "account_setup": "ScrapingBee account at scrapingbee.com; or BrightData account",
+      "risk": "read_only",
+      "jarvis_permission_scope": "web:scrape:read_only",
+      "plan1_state": "READY_BUT_WAITING_FOR_API_KEY",
+      "exact_blocker": "Missing SCRAPING_BEE_API_KEY",
+      "mocked_test_command": "uv run pytest tests/skills/test_plan1_completion.py::TestEccKeySkillsMocked::test_data_scraper_mocked",
+      "live_test_command": "SCRAPING_BEE_API_KEY=$SCRAPING_BEE_API_KEY uv run python -c \"from openjarvis.skills.ecc_completion import live_test_skill; live_test_skill('data-scraper-agent')\"",
+      "activation_route": "Set SCRAPING_BEE_API_KEY; enable skill",
+      "rollback_path": "Unset SCRAPING_BEE_API_KEY",
+      "completable_with_keys": true,
+      "impossible_even_with_keys": []
+    },
+    {
+      "skill_id": "social-publisher",
+      "provider": "Multiple social platforms",
+      "required_env_keys": [
+        "TWITTER_API_KEY",
+        "TWITTER_API_SECRET",
+        "TWITTER_ACCESS_TOKEN",
+        "TWITTER_ACCESS_TOKEN_SECRET"
+      ],
+      "optional_env_keys": [
+        "LINKEDIN_ACCESS_TOKEN",
+        "META_PAGE_ACCESS_TOKEN",
+        "INSTAGRAM_ACCESS_TOKEN"
+      ],
+      "oauth_scopes": [
+        "twitter.write",
+        "linkedin.share",
+        "meta.publish"
+      ],
+      "account_setup": "Twitter Developer account (developer.twitter.com), LinkedIn app, Meta Business account",
+      "risk": "send",
+      "jarvis_permission_scope": "social:publish",
+      "plan1_state": "READY_BUT_WAITING_FOR_API_KEY",
+      "exact_blocker": "Missing TWITTER_API_KEY + TWITTER_API_SECRET + access tokens",
+      "mocked_test_command": "uv run pytest tests/skills/test_plan1_completion.py::TestEccKeySkillsMocked::test_social_publisher_mocked",
+      "live_test_command": "uv run python -c \"from openjarvis.skills.ecc_completion import live_test_skill; live_test_skill('social-publisher')\"",
+      "activation_route": "Set social API keys; enable skill with dry_run=True first",
+      "rollback_path": "Unset social API keys; disable skill",
+      "completable_with_keys": true,
+      "impossible_even_with_keys": []
+    },
+    {
+      "skill_id": "email-ops",
+      "provider": "SMTP / Resend / SendGrid",
+      "required_env_keys": [
+        "EMAIL_FROM"
+      ],
+      "optional_env_keys": [
+        "SMTP_HOST",
+        "SMTP_USER",
+        "SMTP_PASS",
+        "SMTP_PORT",
+        "RESEND_API_KEY",
+        "SENDGRID_API_KEY"
+      ],
+      "oauth_scopes": [],
+      "account_setup": "One of: SMTP credentials, Resend account (resend.com), or SendGrid account",
+      "risk": "send",
+      "jarvis_permission_scope": "email:send",
+      "plan1_state": "READY_BUT_WAITING_FOR_API_KEY",
+      "exact_blocker": "Missing email provider credentials (SMTP or RESEND_API_KEY or SENDGRID_API_KEY)",
+      "mocked_test_command": "uv run pytest tests/skills/test_plan1_completion.py::TestEccKeySkillsMocked::test_email_ops_mocked",
+      "live_test_command": "RESEND_API_KEY=$RESEND_API_KEY EMAIL_FROM=$EMAIL_FROM uv run python -c \"from openjarvis.skills.ecc_completion import live_test_skill; live_test_skill('email-ops')\"",
+      "activation_route": "Set email provider keys; enable skill with dry_run=True first",
+      "rollback_path": "Unset email keys; disable skill",
+      "completable_with_keys": true,
+      "impossible_even_with_keys": []
+    },
+    {
+      "skill_id": "github-ops",
+      "provider": "GitHub",
+      "required_env_keys": [
+        "GITHUB_TOKEN"
+      ],
+      "optional_env_keys": [
+        "GITHUB_ORG",
+        "GITHUB_REPO"
+      ],
+      "oauth_scopes": [
+        "repo",
+        "workflow",
+        "issues:write",
+        "pull_requests:write"
+      ],
+      "account_setup": "GitHub account; generate Personal Access Token or GitHub App token with write scopes",
+      "risk": "write",
+      "jarvis_permission_scope": "github:repo:write",
+      "plan1_state": "READY_BUT_WAITING_FOR_API_KEY",
+      "exact_blocker": "Missing GITHUB_TOKEN with write scopes",
+      "mocked_test_command": "uv run pytest tests/skills/test_plan1_completion.py::TestEccKeySkillsMocked::test_github_ops_mocked",
+      "live_test_command": "GITHUB_TOKEN=$GITHUB_TOKEN uv run python -c \"from openjarvis.skills.ecc_completion import live_test_skill; live_test_skill('github-ops')\"",
+      "activation_route": "Set GITHUB_TOKEN; enable skill with read_only=True first",
+      "rollback_path": "Unset GITHUB_TOKEN; revoke token if needed",
+      "completable_with_keys": true,
+      "impossible_even_with_keys": []
+    },
+    {
+      "skill_id": "jira-integration",
+      "provider": "Atlassian Jira",
+      "required_env_keys": [
+        "JIRA_API_TOKEN",
+        "JIRA_BASE_URL",
+        "JIRA_EMAIL"
+      ],
+      "optional_env_keys": [
+        "JIRA_PROJECT_KEY"
+      ],
+      "oauth_scopes": [],
+      "account_setup": "Jira account; generate API token at id.atlassian.com/manage-profile/security/api-tokens",
+      "risk": "write",
+      "jarvis_permission_scope": "jira:issues:write",
+      "plan1_state": "READY_BUT_WAITING_FOR_API_KEY",
+      "exact_blocker": "Missing JIRA_API_TOKEN + JIRA_BASE_URL + JIRA_EMAIL",
+      "mocked_test_command": "uv run pytest tests/skills/test_plan1_completion.py::TestEccKeySkillsMocked::test_jira_integration_mocked",
+      "live_test_command": "JIRA_API_TOKEN=$JIRA_API_TOKEN JIRA_BASE_URL=$JIRA_BASE_URL JIRA_EMAIL=$JIRA_EMAIL uv run python -c \"from openjarvis.skills.ecc_completion import live_test_skill; live_test_skill('jira-integration')\"",
+      "activation_route": "Set Jira env vars; enable skill",
+      "rollback_path": "Unset Jira env vars",
+      "completable_with_keys": true,
+      "impossible_even_with_keys": []
+    },
+    {
+      "skill_id": "google-workspace-ops",
+      "provider": "Google Workspace",
+      "required_env_keys": [
+        "GOOGLE_CLIENT_ID",
+        "GOOGLE_CLIENT_SECRET",
+        "GOOGLE_REFRESH_TOKEN"
+      ],
+      "optional_env_keys": [
+        "GOOGLE_SCOPES",
+        "GOOGLE_USER_EMAIL"
+      ],
+      "oauth_scopes": [
+        "gmail.readonly",
+        "calendar.events",
+        "drive.file",
+        "docs.readonly"
+      ],
+      "account_setup": "Google Cloud Console project; OAuth 2.0 credentials; complete consent screen; obtain refresh token",
+      "risk": "read_only",
+      "jarvis_permission_scope": "google:workspace:read",
+      "plan1_state": "READY_BUT_WAITING_FOR_API_KEY",
+      "exact_blocker": "Missing GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET + GOOGLE_REFRESH_TOKEN + OAuth browser consent",
+      "mocked_test_command": "uv run pytest tests/skills/test_plan1_completion.py::TestEccKeySkillsMocked::test_google_workspace_mocked",
+      "live_test_command": "GOOGLE_CLIENT_ID=$GC_ID GOOGLE_CLIENT_SECRET=$GC_SECRET GOOGLE_REFRESH_TOKEN=$GC_RT uv run python -c \"from openjarvis.skills.ecc_completion import live_test_skill; live_test_skill('google-workspace-ops')\"",
+      "activation_route": "Set Google env vars; requires OAuth browser flow to obtain refresh token",
+      "rollback_path": "Revoke refresh token at myaccount.google.com/permissions",
+      "completable_with_keys": true,
+      "impossible_even_with_keys": [
+        "Requires OAuth browser consent screen \u2014 cannot automate without browser access"
+      ]
+    },
+    {
+      "skill_id": "messages-ops",
+      "provider": "Slack / Telegram / Discord",
+      "required_env_keys": [
+        "SLACK_BOT_TOKEN"
+      ],
+      "optional_env_keys": [
+        "TELEGRAM_BOT_TOKEN",
+        "DISCORD_BOT_TOKEN",
+        "SLACK_SIGNING_SECRET"
+      ],
+      "oauth_scopes": [
+        "chat:write",
+        "channels:read"
+      ],
+      "account_setup": "Slack workspace \u2192 create app at api.slack.com; or Telegram BotFather; or Discord Developer Portal",
+      "risk": "send",
+      "jarvis_permission_scope": "messaging:send",
+      "plan1_state": "READY_BUT_WAITING_FOR_API_KEY",
+      "exact_blocker": "Missing SLACK_BOT_TOKEN (or TELEGRAM_BOT_TOKEN / DISCORD_BOT_TOKEN)",
+      "mocked_test_command": "uv run pytest tests/skills/test_plan1_completion.py::TestEccKeySkillsMocked::test_messages_ops_mocked",
+      "live_test_command": "SLACK_BOT_TOKEN=$SLACK_BOT_TOKEN uv run python -c \"from openjarvis.skills.ecc_completion import live_test_skill; live_test_skill('messages-ops')\"",
+      "activation_route": "Set SLACK_BOT_TOKEN; enable skill with dry_run=True first",
+      "rollback_path": "Revoke bot token from Slack app settings",
+      "completable_with_keys": true,
+      "impossible_even_with_keys": []
+    },
+    {
+      "skill_id": "x-api",
+      "provider": "X (Twitter)",
+      "required_env_keys": [
+        "X_API_KEY",
+        "X_API_SECRET",
+        "X_ACCESS_TOKEN",
+        "X_ACCESS_TOKEN_SECRET"
+      ],
+      "optional_env_keys": [
+        "X_BEARER_TOKEN"
+      ],
+      "oauth_scopes": [
+        "tweet.read",
+        "tweet.write",
+        "users.read"
+      ],
+      "account_setup": "X Developer account at developer.twitter.com; create app; apply for elevated access for write",
+      "risk": "send",
+      "jarvis_permission_scope": "social:x:write",
+      "plan1_state": "READY_BUT_WAITING_FOR_API_KEY",
+      "exact_blocker": "Missing X_API_KEY + X_API_SECRET + X_ACCESS_TOKEN + X_ACCESS_TOKEN_SECRET",
+      "mocked_test_command": "uv run pytest tests/skills/test_plan1_completion.py::TestEccKeySkillsMocked::test_x_api_mocked",
+      "live_test_command": "X_API_KEY=$X_API_KEY X_API_SECRET=$X_API_SECRET X_ACCESS_TOKEN=$X_AT X_ACCESS_TOKEN_SECRET=$X_ATS uv run python -c \"from openjarvis.skills.ecc_completion import live_test_skill; live_test_skill('x-api')\"",
+      "activation_route": "Set all X env vars; enable skill with dry_run=True",
+      "rollback_path": "Revoke access token from X Developer Portal",
+      "completable_with_keys": true,
+      "impossible_even_with_keys": []
+    },
+    {
+      "skill_id": "unified-notifications-ops",
+      "provider": "Multiple (Slack / Telegram / Email / PagerDuty)",
+      "required_env_keys": [
+        "NOTIFICATION_PROVIDER"
+      ],
+      "optional_env_keys": [
+        "SLACK_BOT_TOKEN",
+        "TELEGRAM_BOT_TOKEN",
+        "RESEND_API_KEY",
+        "PAGERDUTY_API_KEY"
+      ],
+      "oauth_scopes": [],
+      "account_setup": "Set NOTIFICATION_PROVIDER=slack|telegram|email|pagerduty; provide corresponding key",
+      "risk": "send",
+      "jarvis_permission_scope": "notifications:send",
+      "plan1_state": "READY_BUT_WAITING_FOR_API_KEY",
+      "exact_blocker": "Missing NOTIFICATION_PROVIDER + provider-specific key",
+      "mocked_test_command": "uv run pytest tests/skills/test_plan1_completion.py::TestEccKeySkillsMocked::test_unified_notifications_mocked",
+      "live_test_command": "NOTIFICATION_PROVIDER=slack SLACK_BOT_TOKEN=$SLACK_BOT_TOKEN uv run python -c \"from openjarvis.skills.ecc_completion import live_test_skill; live_test_skill('unified-notifications-ops')\"",
+      "activation_route": "Set NOTIFICATION_PROVIDER + matching key; enable skill",
+      "rollback_path": "Unset NOTIFICATION_PROVIDER",
+      "completable_with_keys": true,
+      "impossible_even_with_keys": []
+    },
+    {
+      "skill_id": "lead-intelligence",
+      "provider": "Apollo.io or Clearbit",
+      "required_env_keys": [
+        "APOLLO_API_KEY"
+      ],
+      "optional_env_keys": [
+        "CLEARBIT_API_KEY",
+        "HUNTER_API_KEY"
+      ],
+      "oauth_scopes": [],
+      "account_setup": "Apollo.io account at apollo.io; generate API key from settings",
+      "risk": "read_only",
+      "jarvis_permission_scope": "crm:contacts:read",
+      "plan1_state": "READY_BUT_WAITING_FOR_API_KEY",
+      "exact_blocker": "Missing APOLLO_API_KEY (or CLEARBIT_API_KEY)",
+      "mocked_test_command": "uv run pytest tests/skills/test_plan1_completion.py::TestEccKeySkillsMocked::test_lead_intelligence_mocked",
+      "live_test_command": "APOLLO_API_KEY=$APOLLO_API_KEY uv run python -c \"from openjarvis.skills.ecc_completion import live_test_skill; live_test_skill('lead-intelligence')\"",
+      "activation_route": "Set APOLLO_API_KEY; enable skill",
+      "rollback_path": "Unset APOLLO_API_KEY",
+      "completable_with_keys": true,
+      "impossible_even_with_keys": []
+    },
+    {
+      "skill_id": "investor-outreach",
+      "provider": "Email (Resend/SendGrid) + CRM",
+      "required_env_keys": [
+        "EMAIL_FROM",
+        "RESEND_API_KEY"
+      ],
+      "optional_env_keys": [
+        "CRM_API_KEY",
+        "AIRTABLE_API_KEY"
+      ],
+      "oauth_scopes": [],
+      "account_setup": "Resend account (resend.com) + optional Airtable or CRM account",
+      "risk": "send",
+      "jarvis_permission_scope": "email:send:outreach",
+      "plan1_state": "READY_BUT_WAITING_FOR_API_KEY",
+      "exact_blocker": "Missing RESEND_API_KEY + EMAIL_FROM",
+      "mocked_test_command": "uv run pytest tests/skills/test_plan1_completion.py::TestEccKeySkillsMocked::test_investor_outreach_mocked",
+      "live_test_command": "RESEND_API_KEY=$RESEND_API_KEY EMAIL_FROM=$EMAIL_FROM uv run python -c \"from openjarvis.skills.ecc_completion import live_test_skill; live_test_skill('investor-outreach')\"",
+      "activation_route": "Set RESEND_API_KEY + EMAIL_FROM; enable with dry_run=True first",
+      "rollback_path": "Unset RESEND_API_KEY",
+      "completable_with_keys": true,
+      "impossible_even_with_keys": []
+    },
+    {
+      "skill_id": "crosspost",
+      "provider": "Multiple social platforms",
+      "required_env_keys": [
+        "TWITTER_API_KEY",
+        "TWITTER_API_SECRET",
+        "TWITTER_ACCESS_TOKEN",
+        "TWITTER_ACCESS_TOKEN_SECRET"
+      ],
+      "optional_env_keys": [
+        "LINKEDIN_ACCESS_TOKEN",
+        "META_PAGE_ACCESS_TOKEN"
+      ],
+      "oauth_scopes": [
+        "twitter.write",
+        "linkedin.share"
+      ],
+      "account_setup": "Twitter Developer account; LinkedIn OAuth; optionally Meta Business",
+      "risk": "send",
+      "jarvis_permission_scope": "social:crosspost",
+      "plan1_state": "READY_BUT_WAITING_FOR_API_KEY",
+      "exact_blocker": "Missing Twitter API keys (minimum); optionally LinkedIn + Meta tokens",
+      "mocked_test_command": "uv run pytest tests/skills/test_plan1_completion.py::TestEccKeySkillsMocked::test_crosspost_mocked",
+      "live_test_command": "uv run python -c \"from openjarvis.skills.ecc_completion import live_test_skill; live_test_skill('crosspost')\"",
+      "activation_route": "Set Twitter API keys; enable with dry_run=True",
+      "rollback_path": "Unset API keys",
+      "completable_with_keys": true,
+      "impossible_even_with_keys": []
+    },
+    {
+      "skill_id": "videodb",
+      "provider": "VideoDB",
+      "required_env_keys": [
+        "VIDEODB_API_KEY"
+      ],
+      "optional_env_keys": [],
+      "oauth_scopes": [],
+      "account_setup": "VideoDB account at videodb.io; generate API key",
+      "risk": "read_only",
+      "jarvis_permission_scope": "media:video:read",
+      "plan1_state": "READY_BUT_WAITING_FOR_API_KEY",
+      "exact_blocker": "Missing VIDEODB_API_KEY",
+      "mocked_test_command": "uv run pytest tests/skills/test_plan1_completion.py::TestEccKeySkillsMocked::test_videodb_mocked",
+      "live_test_command": "VIDEODB_API_KEY=$VIDEODB_API_KEY uv run python -c \"from openjarvis.skills.ecc_completion import live_test_skill; live_test_skill('videodb')\"",
+      "activation_route": "Set VIDEODB_API_KEY; enable skill",
+      "rollback_path": "Unset VIDEODB_API_KEY",
+      "completable_with_keys": true,
+      "impossible_even_with_keys": []
+    },
+    {
+      "skill_id": "ecc-tools-cost-audit",
+      "provider": "Anthropic / OpenAI / OpenRouter",
+      "required_env_keys": [
+        "ANTHROPIC_API_KEY"
+      ],
+      "optional_env_keys": [
+        "OPENAI_API_KEY",
+        "OPENROUTER_API_KEY"
+      ],
+      "oauth_scopes": [],
+      "account_setup": "Anthropic account; or OpenRouter account (already configured if OPENROUTER_API_KEY is set)",
+      "risk": "read_only",
+      "jarvis_permission_scope": "llm:usage:read",
+      "plan1_state": "READY_BUT_WAITING_FOR_API_KEY",
+      "exact_blocker": "Missing ANTHROPIC_API_KEY (or OPENROUTER_API_KEY if already configured)",
+      "mocked_test_command": "uv run pytest tests/skills/test_plan1_completion.py::TestEccKeySkillsMocked::test_ecc_tools_cost_audit_mocked",
+      "live_test_command": "ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY uv run python -c \"from openjarvis.skills.ecc_completion import live_test_skill; live_test_skill('ecc-tools-cost-audit')\"",
+      "activation_route": "Set ANTHROPIC_API_KEY or OPENROUTER_API_KEY; enable skill",
+      "rollback_path": "Unset API key",
+      "completable_with_keys": true,
+      "impossible_even_with_keys": []
+    },
+    {
+      "skill_id": "configure-ecc",
+      "provider": "GitHub",
+      "required_env_keys": [
+        "GITHUB_TOKEN"
+      ],
+      "optional_env_keys": [
+        "ECC_REPO_PATH"
+      ],
+      "oauth_scopes": [
+        "repo:write"
+      ],
+      "account_setup": "GitHub PAT with write access to ECC config repo (affaan-m/ECC or Bryan's fork)",
+      "risk": "write",
+      "jarvis_permission_scope": "github:ecc:configure",
+      "plan1_state": "READY_BUT_WAITING_FOR_API_KEY",
+      "exact_blocker": "Missing GITHUB_TOKEN with write scopes to ECC repo",
+      "mocked_test_command": "uv run pytest tests/skills/test_plan1_completion.py::TestEccKeySkillsMocked::test_configure_ecc_mocked",
+      "live_test_command": "GITHUB_TOKEN=$GITHUB_TOKEN uv run python -c \"from openjarvis.skills.ecc_completion import live_test_skill; live_test_skill('configure-ecc')\"",
+      "activation_route": "Set GITHUB_TOKEN with write scopes; enable skill",
+      "rollback_path": "Revoke token; revert ECC config changes via git revert",
+      "completable_with_keys": true,
+      "impossible_even_with_keys": []
+    },
+    {
+      "skill_id": "article-writing",
+      "provider": "OpenRouter / Anthropic / OpenAI",
+      "required_env_keys": [],
+      "optional_env_keys": [
+        "OPENROUTER_API_KEY",
+        "ANTHROPIC_API_KEY",
+        "OPENAI_API_KEY"
+      ],
+      "oauth_scopes": [],
+      "account_setup": "Uses existing LLM configuration; likely already active via OPENROUTER_API_KEY",
+      "risk": "read_only",
+      "jarvis_permission_scope": "content:generate:read_only",
+      "plan1_state": "READY_BUT_WAITING_FOR_API_KEY",
+      "exact_blocker": "Requires LLM API key (may already be configured via OPENROUTER_API_KEY)",
+      "mocked_test_command": "uv run pytest tests/skills/test_plan1_completion.py::TestEccKeySkillsMocked::test_article_writing_mocked",
+      "live_test_command": "uv run python -c \"from openjarvis.skills.ecc_completion import live_test_skill; live_test_skill('article-writing')\"",
+      "activation_route": "If OPENROUTER_API_KEY is set, activate immediately; otherwise set ANTHROPIC_API_KEY",
+      "rollback_path": "Disable skill in catalog",
+      "completable_with_keys": true,
+      "impossible_even_with_keys": []
+    },
+    {
+      "skill_id": "content-engine",
+      "provider": "LLM + optional CMS",
+      "required_env_keys": [
+        "OPENROUTER_API_KEY"
+      ],
+      "optional_env_keys": [
+        "CMS_API_KEY",
+        "CONTENTFUL_API_KEY",
+        "NOTION_API_KEY"
+      ],
+      "oauth_scopes": [],
+      "account_setup": "LLM API (OpenRouter); optional CMS for publishing",
+      "risk": "write",
+      "jarvis_permission_scope": "content:generate:write",
+      "plan1_state": "READY_BUT_WAITING_FOR_API_KEY",
+      "exact_blocker": "Requires OPENROUTER_API_KEY (may already be configured)",
+      "mocked_test_command": "uv run pytest tests/skills/test_plan1_completion.py::TestEccKeySkillsMocked::test_content_engine_mocked",
+      "live_test_command": "uv run python -c \"from openjarvis.skills.ecc_completion import live_test_skill; live_test_skill('content-engine')\"",
+      "activation_route": "If OPENROUTER_API_KEY set, enable skill; add CMS key for publishing",
+      "rollback_path": "Disable skill in catalog",
+      "completable_with_keys": true,
+      "impossible_even_with_keys": []
+    },
+    {
+      "skill_id": "brand-discovery",
+      "provider": "Exa or SERP API",
+      "required_env_keys": [
+        "EXA_API_KEY"
+      ],
+      "optional_env_keys": [
+        "SERP_API_KEY"
+      ],
+      "oauth_scopes": [],
+      "account_setup": "Exa.ai account",
+      "risk": "read_only",
+      "jarvis_permission_scope": "search:brand:read",
+      "plan1_state": "READY_BUT_WAITING_FOR_API_KEY",
+      "exact_blocker": "Missing EXA_API_KEY",
+      "mocked_test_command": "uv run pytest tests/skills/test_plan1_completion.py::TestEccKeySkillsMocked::test_brand_discovery_mocked",
+      "live_test_command": "EXA_API_KEY=$EXA_API_KEY uv run python -c \"from openjarvis.skills.ecc_completion import live_test_skill; live_test_skill('brand-discovery')\"",
+      "activation_route": "Set EXA_API_KEY; enable skill",
+      "rollback_path": "Unset EXA_API_KEY",
+      "completable_with_keys": true,
+      "impossible_even_with_keys": []
+    },
+    {
+      "skill_id": "brand-voice",
+      "provider": "OpenRouter / Anthropic",
+      "required_env_keys": [],
+      "optional_env_keys": [
+        "OPENROUTER_API_KEY",
+        "ANTHROPIC_API_KEY"
+      ],
+      "oauth_scopes": [],
+      "account_setup": "Uses existing LLM configuration",
+      "risk": "read_only",
+      "jarvis_permission_scope": "content:analysis:read_only",
+      "plan1_state": "READY_BUT_WAITING_FOR_API_KEY",
+      "exact_blocker": "Requires LLM API key (may already be configured)",
+      "mocked_test_command": "uv run pytest tests/skills/test_plan1_completion.py::TestEccKeySkillsMocked::test_brand_voice_mocked",
+      "live_test_command": "uv run python -c \"from openjarvis.skills.ecc_completion import live_test_skill; live_test_skill('brand-voice')\"",
+      "activation_route": "If OPENROUTER_API_KEY set, activate immediately",
+      "rollback_path": "Disable skill",
+      "completable_with_keys": true,
+      "impossible_even_with_keys": []
+    },
+    {
+      "skill_id": "competitive-platform-analysis",
+      "provider": "Exa",
+      "required_env_keys": [
+        "EXA_API_KEY"
+      ],
+      "optional_env_keys": [
+        "SERP_API_KEY"
+      ],
+      "oauth_scopes": [],
+      "account_setup": "Exa.ai account",
+      "risk": "read_only",
+      "jarvis_permission_scope": "search:competitive:read",
+      "plan1_state": "READY_BUT_WAITING_FOR_API_KEY",
+      "exact_blocker": "Missing EXA_API_KEY",
+      "mocked_test_command": "uv run pytest tests/skills/test_plan1_completion.py::TestEccKeySkillsMocked::test_competitive_platform_mocked",
+      "live_test_command": "EXA_API_KEY=$EXA_API_KEY uv run python -c \"from openjarvis.skills.ecc_completion import live_test_skill; live_test_skill('competitive-platform-analysis')\"",
+      "activation_route": "Set EXA_API_KEY; enable skill",
+      "rollback_path": "Unset EXA_API_KEY",
+      "completable_with_keys": true,
+      "impossible_even_with_keys": []
+    },
+    {
+      "skill_id": "competitive-report-structure",
+      "provider": "Exa",
+      "required_env_keys": [
+        "EXA_API_KEY"
+      ],
+      "optional_env_keys": [],
+      "oauth_scopes": [],
+      "account_setup": "Exa.ai account",
+      "risk": "read_only",
+      "jarvis_permission_scope": "search:reports:read",
+      "plan1_state": "READY_BUT_WAITING_FOR_API_KEY",
+      "exact_blocker": "Missing EXA_API_KEY",
+      "mocked_test_command": "uv run pytest tests/skills/test_plan1_completion.py::TestEccKeySkillsMocked::test_competitive_report_mocked",
+      "live_test_command": "EXA_API_KEY=$EXA_API_KEY uv run python -c \"from openjarvis.skills.ecc_completion import live_test_skill; live_test_skill('competitive-report-structure')\"",
+      "activation_route": "Set EXA_API_KEY; enable skill",
+      "rollback_path": "Unset EXA_API_KEY",
+      "completable_with_keys": true,
+      "impossible_even_with_keys": []
+    },
+    {
+      "skill_id": "investor-materials",
+      "provider": "LLM",
+      "required_env_keys": [],
+      "optional_env_keys": [
+        "OPENROUTER_API_KEY",
+        "ANTHROPIC_API_KEY"
+      ],
+      "oauth_scopes": [],
+      "account_setup": "Uses existing LLM configuration",
+      "risk": "read_only",
+      "jarvis_permission_scope": "content:generate:read_only",
+      "plan1_state": "READY_BUT_WAITING_FOR_API_KEY",
+      "exact_blocker": "Requires LLM API key (may already be configured via OPENROUTER_API_KEY)",
+      "mocked_test_command": "uv run pytest tests/skills/test_plan1_completion.py::TestEccKeySkillsMocked::test_investor_materials_mocked",
+      "live_test_command": "uv run python -c \"from openjarvis.skills.ecc_completion import live_test_skill; live_test_skill('investor-materials')\"",
+      "activation_route": "If OPENROUTER_API_KEY set, activate immediately",
+      "rollback_path": "Disable skill",
+      "completable_with_keys": true,
+      "impossible_even_with_keys": []
+    },
+    {
+      "skill_id": "marketing-campaign",
+      "provider": "Email + Social APIs",
+      "required_env_keys": [
+        "RESEND_API_KEY",
+        "EMAIL_FROM"
+      ],
+      "optional_env_keys": [
+        "TWITTER_API_KEY",
+        "LINKEDIN_ACCESS_TOKEN",
+        "META_PAGE_ACCESS_TOKEN"
+      ],
+      "oauth_scopes": [
+        "email.send",
+        "twitter.write"
+      ],
+      "account_setup": "Resend account; Twitter Developer account; optional LinkedIn/Meta",
+      "risk": "send",
+      "jarvis_permission_scope": "marketing:campaign:send",
+      "plan1_state": "READY_BUT_WAITING_FOR_API_KEY",
+      "exact_blocker": "Missing RESEND_API_KEY + EMAIL_FROM (minimum); optionally social API keys",
+      "mocked_test_command": "uv run pytest tests/skills/test_plan1_completion.py::TestEccKeySkillsMocked::test_marketing_campaign_mocked",
+      "live_test_command": "RESEND_API_KEY=$RESEND_API_KEY EMAIL_FROM=$EMAIL_FROM uv run python -c \"from openjarvis.skills.ecc_completion import live_test_skill; live_test_skill('marketing-campaign')\"",
+      "activation_route": "Set email keys; enable with dry_run=True first",
+      "rollback_path": "Unset email keys",
+      "completable_with_keys": true,
+      "impossible_even_with_keys": []
+    },
+    {
+      "skill_id": "seo",
+      "provider": "Ahrefs or SEMrush or Moz",
+      "required_env_keys": [
+        "AHREFS_API_KEY"
+      ],
+      "optional_env_keys": [
+        "SEMRUSH_API_KEY",
+        "MOZ_ACCESS_ID",
+        "MOZ_SECRET_KEY"
+      ],
+      "oauth_scopes": [],
+      "account_setup": "Ahrefs account (ahrefs.com); or SEMrush; or Moz Pro",
+      "risk": "read_only",
+      "jarvis_permission_scope": "seo:metrics:read",
+      "plan1_state": "READY_BUT_WAITING_FOR_API_KEY",
+      "exact_blocker": "Missing AHREFS_API_KEY (or SEMRUSH_API_KEY or MOZ keys)",
+      "mocked_test_command": "uv run pytest tests/skills/test_plan1_completion.py::TestEccKeySkillsMocked::test_seo_mocked",
+      "live_test_command": "AHREFS_API_KEY=$AHREFS_API_KEY uv run python -c \"from openjarvis.skills.ecc_completion import live_test_skill; live_test_skill('seo')\"",
+      "activation_route": "Set AHREFS_API_KEY; enable skill",
+      "rollback_path": "Unset API key",
+      "completable_with_keys": true,
+      "impossible_even_with_keys": []
+    },
+    {
+      "skill_id": "agent-payment-x402",
+      "provider": "X402 Protocol / Payment Provider",
+      "required_env_keys": [
+        "X402_PAYMENT_KEY"
+      ],
+      "optional_env_keys": [
+        "STRIPE_API_KEY",
+        "COINBASE_API_KEY"
+      ],
+      "oauth_scopes": [],
+      "account_setup": "X402 protocol account; or Stripe account with payment intents enabled",
+      "risk": "financial",
+      "jarvis_permission_scope": "payments:charge",
+      "plan1_state": "READY_BUT_WAITING_FOR_API_KEY",
+      "exact_blocker": "Missing X402_PAYMENT_KEY; financial risk requires Bryan's explicit approval",
+      "mocked_test_command": "uv run pytest tests/skills/test_plan1_completion.py::TestEccKeySkillsMocked::test_agent_payment_mocked",
+      "live_test_command": "X402_PAYMENT_KEY=$X402_PAYMENT_KEY uv run python -c \"from openjarvis.skills.ecc_completion import live_test_skill; live_test_skill('agent-payment-x402')\"",
+      "activation_route": "Set X402_PAYMENT_KEY + Bryan explicit approval + dry_run test first",
+      "rollback_path": "Revoke X402 payment key; disable skill immediately",
+      "completable_with_keys": true,
+      "impossible_even_with_keys": [
+        "Financial risk \u2014 requires Bryan explicit approval even with keys"
+      ]
+    },
+    {
+      "skill_id": "social-graph-ranker",
+      "provider": "Social Media APIs",
+      "required_env_keys": [
+        "TWITTER_BEARER_TOKEN"
+      ],
+      "optional_env_keys": [
+        "LINKEDIN_ACCESS_TOKEN",
+        "X_API_KEY"
+      ],
+      "oauth_scopes": [
+        "twitter.read"
+      ],
+      "account_setup": "Twitter Developer account; generate bearer token",
+      "risk": "read_only",
+      "jarvis_permission_scope": "social:graph:read",
+      "plan1_state": "READY_BUT_WAITING_FOR_API_KEY",
+      "exact_blocker": "Missing TWITTER_BEARER_TOKEN",
+      "mocked_test_command": "uv run pytest tests/skills/test_plan1_completion.py::TestEccKeySkillsMocked::test_social_graph_ranker_mocked",
+      "live_test_command": "TWITTER_BEARER_TOKEN=$TBT uv run python -c \"from openjarvis.skills.ecc_completion import live_test_skill; live_test_skill('social-graph-ranker')\"",
+      "activation_route": "Set TWITTER_BEARER_TOKEN; enable skill",
+      "rollback_path": "Revoke bearer token",
+      "completable_with_keys": true,
+      "impossible_even_with_keys": []
+    },
+    {
+      "skill_id": "research-ops",
+      "provider": "Exa or Perplexity",
+      "required_env_keys": [
+        "EXA_API_KEY"
+      ],
+      "optional_env_keys": [
+        "PERPLEXITY_API_KEY"
+      ],
+      "oauth_scopes": [],
+      "account_setup": "Exa.ai account",
+      "risk": "read_only",
+      "jarvis_permission_scope": "research:search:read",
+      "plan1_state": "READY_BUT_WAITING_FOR_API_KEY",
+      "exact_blocker": "Missing EXA_API_KEY",
+      "mocked_test_command": "uv run pytest tests/skills/test_plan1_completion.py::TestEccKeySkillsMocked::test_research_ops_mocked",
+      "live_test_command": "EXA_API_KEY=$EXA_API_KEY uv run python -c \"from openjarvis.skills.ecc_completion import live_test_skill; live_test_skill('research-ops')\"",
+      "activation_route": "Set EXA_API_KEY; enable skill",
+      "rollback_path": "Unset EXA_API_KEY",
+      "completable_with_keys": true,
+      "impossible_even_with_keys": []
+    },
+    {
+      "skill_id": "knowledge-ops",
+      "provider": "Pinecone or Weaviate or Qdrant",
+      "required_env_keys": [
+        "PINECONE_API_KEY"
+      ],
+      "optional_env_keys": [
+        "PINECONE_ENV",
+        "WEAVIATE_URL",
+        "WEAVIATE_API_KEY",
+        "QDRANT_URL",
+        "QDRANT_API_KEY"
+      ],
+      "oauth_scopes": [],
+      "account_setup": "Pinecone account at pinecone.io; or Weaviate Cloud; or Qdrant Cloud",
+      "risk": "write",
+      "jarvis_permission_scope": "knowledge:vector:write",
+      "plan1_state": "READY_BUT_WAITING_FOR_API_KEY",
+      "exact_blocker": "Missing PINECONE_API_KEY (or WEAVIATE_URL + WEAVIATE_API_KEY or QDRANT_URL + QDRANT_API_KEY)",
+      "mocked_test_command": "uv run pytest tests/skills/test_plan1_completion.py::TestEccKeySkillsMocked::test_knowledge_ops_mocked",
+      "live_test_command": "PINECONE_API_KEY=$PINECONE_API_KEY uv run python -c \"from openjarvis.skills.ecc_completion import live_test_skill; live_test_skill('knowledge-ops')\"",
+      "activation_route": "Set PINECONE_API_KEY + PINECONE_ENV; enable skill",
+      "rollback_path": "Unset PINECONE_API_KEY; delete Pinecone index if created",
+      "completable_with_keys": true,
+      "impossible_even_with_keys": []
+    },
+    {
+      "skill_id": "project-flow-ops",
+      "provider": "Linear or Jira",
+      "required_env_keys": [
+        "LINEAR_API_KEY"
+      ],
+      "optional_env_keys": [
+        "JIRA_API_TOKEN",
+        "JIRA_BASE_URL",
+        "JIRA_EMAIL"
+      ],
+      "oauth_scopes": [],
+      "account_setup": "Linear account at linear.app; generate API key from Settings \u2192 API",
+      "risk": "write",
+      "jarvis_permission_scope": "project:issues:write",
+      "plan1_state": "READY_BUT_WAITING_FOR_API_KEY",
+      "exact_blocker": "Missing LINEAR_API_KEY (or JIRA_API_TOKEN + JIRA_BASE_URL + JIRA_EMAIL)",
+      "mocked_test_command": "uv run pytest tests/skills/test_plan1_completion.py::TestEccKeySkillsMocked::test_project_flow_ops_mocked",
+      "live_test_command": "LINEAR_API_KEY=$LINEAR_API_KEY uv run python -c \"from openjarvis.skills.ecc_completion import live_test_skill; live_test_skill('project-flow-ops')\"",
+      "activation_route": "Set LINEAR_API_KEY; enable skill",
+      "rollback_path": "Unset LINEAR_API_KEY",
+      "completable_with_keys": true,
+      "impossible_even_with_keys": []
+    },
+    {
+      "skill_id": "team-builder",
+      "provider": "Greenhouse or Workday",
+      "required_env_keys": [
+        "GREENHOUSE_API_KEY"
+      ],
+      "optional_env_keys": [
+        "WORKDAY_API_KEY",
+        "LEVER_API_KEY"
+      ],
+      "oauth_scopes": [],
+      "account_setup": "Greenhouse account at greenhouse.io; generate Harvest API key",
+      "risk": "write",
+      "jarvis_permission_scope": "hr:candidates:write",
+      "plan1_state": "READY_BUT_WAITING_FOR_API_KEY",
+      "exact_blocker": "Missing GREENHOUSE_API_KEY (or WORKDAY_API_KEY or LEVER_API_KEY)",
+      "mocked_test_command": "uv run pytest tests/skills/test_plan1_completion.py::TestEccKeySkillsMocked::test_team_builder_mocked",
+      "live_test_command": "GREENHOUSE_API_KEY=$GREENHOUSE_API_KEY uv run python -c \"from openjarvis.skills.ecc_completion import live_test_skill; live_test_skill('team-builder')\"",
+      "activation_route": "Set GREENHOUSE_API_KEY; enable skill",
+      "rollback_path": "Unset GREENHOUSE_API_KEY",
+      "completable_with_keys": true,
+      "impossible_even_with_keys": []
+    },
+    {
+      "skill_id": "stripe-integration",
+      "provider": "Stripe",
+      "required_env_keys": [
+        "STRIPE_API_KEY",
+        "STRIPE_WEBHOOK_SECRET"
+      ],
+      "optional_env_keys": [
+        "STRIPE_PRICE_ID",
+        "STRIPE_PUBLISHABLE_KEY"
+      ],
+      "oauth_scopes": [],
+      "account_setup": "Stripe account at stripe.com; generate API keys from Dashboard \u2192 Developers \u2192 API Keys",
+      "risk": "financial",
+      "jarvis_permission_scope": "payments:stripe:write",
+      "plan1_state": "READY_BUT_WAITING_FOR_API_KEY",
+      "exact_blocker": "Missing STRIPE_API_KEY + STRIPE_WEBHOOK_SECRET; financial risk requires Bryan approval",
+      "mocked_test_command": "uv run pytest tests/skills/test_plan1_completion.py::TestEccKeySkillsMocked::test_stripe_integration_mocked",
+      "live_test_command": "STRIPE_API_KEY=$STRIPE_API_KEY uv run python -c \"from openjarvis.skills.ecc_completion import live_test_skill; live_test_skill('stripe-integration')\"",
+      "activation_route": "Set STRIPE_API_KEY + STRIPE_WEBHOOK_SECRET; use test mode first (sk_test_...)",
+      "rollback_path": "Delete webhook; revoke API key from Stripe dashboard",
+      "completable_with_keys": true,
+      "impossible_even_with_keys": [
+        "Financial risk \u2014 use Stripe test mode keys first (sk_test_...)"
+      ]
+    }
+  ],
+  "prompt2_inputs": [
+    "EXA_API_KEY \u2014 for exa-search, deep-research, market-research, research-ops, brand-discovery, competitive-platform-analysis, competitive-report-structure",
+    "FAL_API_KEY \u2014 for fal-ai-media",
+    "GITHUB_TOKEN (write) \u2014 for github-ops, configure-ecc",
+    "JIRA_API_TOKEN + JIRA_BASE_URL + JIRA_EMAIL \u2014 for jira-integration",
+    "GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET + GOOGLE_REFRESH_TOKEN \u2014 for google-workspace-ops (requires OAuth browser flow)",
+    "SLACK_BOT_TOKEN (or TELEGRAM_BOT_TOKEN) \u2014 for messages-ops, unified-notifications-ops",
+    "X_API_KEY + X_API_SECRET + X_ACCESS_TOKEN + X_ACCESS_TOKEN_SECRET \u2014 for x-api, social-publisher, crosspost",
+    "VIDEODB_API_KEY \u2014 for videodb",
+    "STRIPE_API_KEY + STRIPE_WEBHOOK_SECRET (use sk_test_... first) \u2014 for stripe-integration",
+    "LINEAR_API_KEY (or JIRA_API_TOKEN) \u2014 for project-flow-ops",
+    "APOLLO_API_KEY \u2014 for lead-intelligence",
+    "AHREFS_API_KEY (or SEMRUSH_API_KEY) \u2014 for seo",
+    "GREENHOUSE_API_KEY \u2014 for team-builder",
+    "PINECONE_API_KEY + PINECONE_ENV \u2014 for knowledge-ops",
+    "SCRAPING_BEE_API_KEY \u2014 for data-scraper-agent",
+    "RESEND_API_KEY + EMAIL_FROM \u2014 for email-ops, investor-outreach, marketing-campaign",
+    "TWITTER_BEARER_TOKEN \u2014 for social-graph-ranker",
+    "ANTHROPIC_API_KEY \u2014 for ecc-tools-cost-audit (or OPENROUTER_API_KEY if already set)",
+    "X402_PAYMENT_KEY + Bryan approval \u2014 for agent-payment-x402 (financial risk)",
+    "Bryan approval \u2014 for all 11 planning/review agents (after Jarvis routing wired)"
+  ]
+}

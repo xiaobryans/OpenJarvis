@@ -90,8 +90,9 @@ class TestRawCoverageTraceability:
             assert RAW_INVENTORY_COUNTS[cat] > 0, f"Category {cat} has zero raw count"
 
     def test_known_raw_skills_count(self) -> None:
-        """Known raw skills count is 273 (from official ECC inventory)."""
-        assert RAW_INVENTORY_COUNTS["skills"] == 273
+        """Known raw skills count is 300 (updated in Plan 1 ECC completion sprint:
+        50 catch-all guidance skills added, raising lower-bound from 273 to 300)."""
+        assert RAW_INVENTORY_COUNTS["skills"] == 300
 
     def test_known_raw_commands_count(self) -> None:
         """Known raw commands count is 432 (from official ECC inventory)."""
@@ -215,11 +216,15 @@ class TestRawToUniqueInvariant:
         )
 
     def test_skills_traceability(self) -> None:
-        """273 raw skills = 240 explicit + 33 catch-all."""
-        assert RAW_INVENTORY_COUNTS["skills"] == 273
-        assert EXPLICITLY_CATALOGED_COUNTS["skills"] == 240
-        assert CATCH_ALL_COUNTS["skills"] == 33
-        assert 273 == 240 + 33
+        """300 raw skills = 291 explicit + 9 catch-all.
+
+        Updated in Plan 1 ECC completion sprint: 50 catch-all skills moved to explicit,
+        raising explicit from 240→291 and raw lower-bound from 273→300.
+        """
+        assert RAW_INVENTORY_COUNTS["skills"] == 300
+        assert EXPLICITLY_CATALOGED_COUNTS["skills"] == 291
+        assert CATCH_ALL_COUNTS["skills"] == 9
+        assert 300 == 291 + 9
 
     def test_commands_traceability(self) -> None:
         """432 raw commands = 9 explicit + 423 catch-all."""
@@ -280,14 +285,19 @@ class TestRawToUniqueInvariant:
 
 
 class TestActiveCountConsistency:
-    """Active count is 28 = 22 skills + 3 contexts + 3 commands."""
+    """Active count is 255 post Plan 1 completion sprint.
 
-    def test_active_total_is_28(self) -> None:
-        """Catalog active count is 28 (authoritative)."""
+    Pre-sprint baseline was 28 (22 skills + 3 contexts + 3 commands).
+    Plan 1 ECC completion sprint activated 227 additional guidance skills.
+    New baseline: 244 skills + 3 contexts + 8 commands = 255.
+    """
+
+    def test_active_total_is_255(self) -> None:
+        """Catalog active count is 255 (post Plan 1 completion sprint)."""
         catalog = ECCCatalog()
         summary = catalog.get_status_summary()
-        assert summary["active_count"] == 28, (
-            f"Expected 28 active items, got {summary['active_count']}"
+        assert summary["active_count"] == 255, (
+            f"Expected 255 active items, got {summary['active_count']}"
         )
 
     def test_active_total_matches_expected_constant(self) -> None:
@@ -298,18 +308,18 @@ class TestActiveCountConsistency:
             f"active_count={summary['active_count']} ≠ ACTIVE_COUNT_BY_CATEGORY['TOTAL']={ACTIVE_COUNT_BY_CATEGORY['TOTAL']}"
         )
 
-    def test_active_decomposition_22_3_3(self) -> None:
-        """Active = 22 skills + 3 contexts + 3 commands = 28."""
+    def test_active_decomposition_post_sprint(self) -> None:
+        """Active = 244 skills + 3 contexts + 8 commands = 255 (post Plan 1 sprint)."""
         catalog = ECCCatalog()
         trace = catalog.get_traceability_summary()
         by_cat = trace["active_count_decomposition"]["by_category"]
 
-        assert by_cat.get("skill", 0) == 22, f"Expected 22 active skills, got {by_cat.get('skill', 0)}"
+        assert by_cat.get("skill", 0) == 244, f"Expected 244 active skills, got {by_cat.get('skill', 0)}"
         assert by_cat.get("context", 0) == 3, f"Expected 3 active contexts, got {by_cat.get('context', 0)}"
-        assert by_cat.get("command", 0) == 3, f"Expected 3 active commands, got {by_cat.get('command', 0)}"
+        assert by_cat.get("command", 0) == 8, f"Expected 8 active commands, got {by_cat.get('command', 0)}"
 
         total = by_cat.get("skill", 0) + by_cat.get("context", 0) + by_cat.get("command", 0)
-        assert total == 28, f"Sum of active by category = {total}, expected 28"
+        assert total == 255, f"Sum of active by category = {total}, expected 255"
 
     def test_active_item_list_length_matches_count(self) -> None:
         """active_items list length equals active_count (no phantom entries)."""
@@ -646,12 +656,16 @@ class TestCountConsistencyRegression:
         assert summary["active_count"] == len(active_items)
 
     def test_catalog_total_registered_count(self) -> None:
-        """Catalog has 281 total registered entries (not grown by accident)."""
+        """Catalog has 332 total registered entries (post Plan 1 completion sprint).
+
+        Pre-sprint baseline was ~281. Plan 1 sprint added 50 catch-all skills,
+        plus hooks/plugins/MCP/agent/command entries = 332 total.
+        """
         catalog = ECCCatalog()
         summary = catalog.get_status_summary()
         # Allow small variance (±10) since catalog might be updated
-        assert 270 <= summary["total_registered"] <= 300, (
-            f"Total registered {summary['total_registered']} out of expected range [270, 300]"
+        assert 320 <= summary["total_registered"] <= 345, (
+            f"Total registered {summary['total_registered']} out of expected range [320, 345]"
         )
 
     def test_skill_category_count(self) -> None:
