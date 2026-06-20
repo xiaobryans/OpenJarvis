@@ -156,6 +156,8 @@ export function UniversalComposer() {
     enableVoice,
     disableVoice,
     phase: voicePhase,
+    transcript: voiceTranscript,
+    response: voiceResponse,
     lastError: voiceError,
     startTurn,
     cancelTurn,
@@ -164,6 +166,45 @@ export function UniversalComposer() {
 
   const isRecording = voicePhase === 'recording' || voicePhase === 'waiting_for_silence';
   const isActiveTurn = voicePhase !== 'idle' && voicePhase !== 'error' && voicePhase !== 'cancelled';
+
+  // When a voice turn completes, push transcript + response into the conversation canvas
+  const prevPhaseRef = useRef<TurnPhase>('idle');
+  useEffect(() => {
+    const wasActive =
+      prevPhaseRef.current !== 'idle' &&
+      prevPhaseRef.current !== 'error' &&
+      prevPhaseRef.current !== 'cancelled';
+    const nowIdle = voicePhase === 'idle';
+    if (wasActive && nowIdle && voiceTranscript) {
+      // Commit voice transcript as user message + response as assistant message
+      let cId = useAppStore.getState().activeId;
+      if (!cId) {
+        cId = createConversation(selectedModel || 'voice');
+      }
+      const userMsg: ChatMessage = {
+        id: generateId(),
+        role: 'user',
+        content: voiceTranscript,
+        timestamp: Date.now(),
+      };
+      addMessage(cId, userMsg);
+      if (voiceResponse) {
+        const assistantMsg: ChatMessage = {
+          id: generateId(),
+          role: 'assistant',
+          content: voiceResponse,
+          timestamp: Date.now() + 1,
+        };
+        addMessage(cId, assistantMsg);
+      }
+    }
+    prevPhaseRef.current = voicePhase;
+  }, [voicePhase, voiceTranscript, voiceResponse, addMessage, createConversation, selectedModel]);
+
+  // Auto-open voice panel when a turn goes active so user always sees phase/transcript
+  useEffect(() => {
+    if (isActiveTurn && !showVoicePanel) setShowVoicePanel(true);
+  }, [isActiveTurn, showVoicePanel]);
 
   // Dictation speech (for text field)
   const { state: speechState, error: speechError, available: speechAvailable, startRecording, stopRecording } = useSpeech();
@@ -340,57 +381,26 @@ export function UniversalComposer() {
           }
         }
       } else {
-        const res = await fetch(`${getBase()}/v1/chat`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            messages: apiMessages,
-            model: selectedModel,
-            stream: true,
-            temperature,
-            max_tokens: maxTokens,
-          }),
-          signal: controller.signal,
-        });
-
-        if (!res.ok) {
-          const err = await res.text();
-          throw new Error(`API error ${res.status}: ${err}`);
-        }
-
-        const reader = res.body?.getReader();
-        const decoder = new TextDecoder();
-        let buf = '';
-
-        if (reader) {
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            buf += decoder.decode(value, { stream: true });
-            const lines = buf.split('\n');
-            buf = lines.pop() ?? '';
-            for (const line of lines) {
-              if (!line.startsWith('data: ')) continue;
-              const raw = line.slice(6).trim();
-              if (raw === '[DONE]') break;
-              try {
-                const data = JSON.parse(raw);
-                const delta = data.choices?.[0]?.delta?.content;
-                if (delta) {
-                  if (!ttftMs) ttftMs = Date.now() - startTime;
-                  accumulatedContent += delta;
-                  setStreamState({ content: accumulatedContent });
-                  const now = Date.now();
-                  if (now - lastFlush >= 80) {
-                    updateLastAssistant(convId, accumulatedContent, toolCalls.length > 0 ? [...toolCalls] : undefined);
-                    lastFlush = now;
-                  }
-                }
-                if (data.usage) usage = data.usage;
-                if (data.choices?.[0]?.finish_reason === 'stop') break;
-              } catch {}
+        for await (const ev of streamChat(
+          { model: selectedModel, messages: apiMessages, stream: true, temperature, max_tokens: maxTokens },
+          controller.signal,
+        )) {
+          try {
+            const data = JSON.parse(ev.data);
+            const delta = data.choices?.[0]?.delta?.content;
+            if (delta) {
+              if (!ttftMs) ttftMs = Date.now() - startTime;
+              accumulatedContent += delta;
+              setStreamState({ content: accumulatedContent });
+              const now = Date.now();
+              if (now - lastFlush >= 80) {
+                updateLastAssistant(convId, accumulatedContent, toolCalls.length > 0 ? [...toolCalls] : undefined);
+                lastFlush = now;
+              }
             }
-          }
+            if (data.usage) usage = data.usage;
+            if (data.choices?.[0]?.finish_reason === 'stop') break;
+          } catch {}
         }
       }
     } catch (err: any) {
@@ -689,7 +699,25 @@ export function UniversalComposer() {
             </div>
 
             {voiceEnabled && (
-              <div className="px-3 pb-2.5 flex items-center gap-2">
+              <div className="px-3 pb-2.5 space-y-2">
+                {/* Live transcript */}
+                {(voiceTranscript || voiceResponse) && (
+                  <div className="rounded-lg p-2 space-y-1.5" style={{ background: 'var(--color-bg-tertiary)' }}>
+                    {voiceTranscript && (
+                      <p className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                        <span className="font-medium" style={{ color: 'var(--color-text-tertiary)' }}>You: </span>
+                        {voiceTranscript}
+                      </p>
+                    )}
+                    {voiceResponse && (
+                      <p className="text-xs" style={{ color: 'var(--color-text-primary)' }}>
+                        <span className="font-medium" style={{ color: 'var(--p2-teal)' }}>Jarvis: </span>
+                        {voiceResponse}
+                      </p>
+                    )}
+                  </div>
+                )}
+                <div className="flex items-center gap-2">
                 {/* Speak now */}
                 {!isActiveTurn && (
                   <button
@@ -746,6 +774,7 @@ export function UniversalComposer() {
                     Cancel
                   </button>
                 )}
+                </div>{/* end flex button row */}
               </div>
             )}
           </div>

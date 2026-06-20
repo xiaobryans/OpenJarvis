@@ -881,21 +881,21 @@
 
 /* Ambient core: soft radial pulse for idle mood */
 @keyframes p2-ambient-idle {
-  0%, 100% { opacity: 0.30; transform: scale(1.00); }
-  50%       { opacity: 0.50; transform: scale(1.04); }
+  0%, 100% { opacity: 0.55; transform: scale(1.00) scaleX(1.00); }
+  50%       { opacity: 0.85; transform: scale(1.06) scaleX(1.04); }
 }
 
 /* Ambient core: ripple for listening/approval mood */
 @keyframes p2-ambient-listen {
-  0%   { opacity: 0.20; transform: scale(0.92); }
-  40%  { opacity: 0.55; transform: scale(1.06); }
-  100% { opacity: 0.20; transform: scale(0.92); }
+  0%   { opacity: 0.40; transform: scale(0.90); }
+  35%  { opacity: 0.90; transform: scale(1.10); }
+  100% { opacity: 0.40; transform: scale(0.90); }
 }
 
 /* Ambient core: fast throb for processing */
 @keyframes p2-ambient-process {
-  0%, 100% { opacity: 0.35; transform: scale(1.00); }
-  50%       { opacity: 0.60; transform: scale(1.08); }
+  0%, 100% { opacity: 0.55; transform: scale(1.00); }
+  50%       { opacity: 0.95; transform: scale(1.12); }
 }
 
 /* Mode A → B fade-in work surface */

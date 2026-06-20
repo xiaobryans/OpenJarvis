@@ -220,6 +220,7 @@ function TopBar({ apiReachable }: { apiReachable: boolean | null }) {
   const setComposerOpen = useAppStore((s) => s.setComposerOpen);
   const selectedModel = useAppStore((s) => s.selectedModel);
   const streamState = useAppStore((s) => s.streamState);
+  const uiMode = useAppStore((s) => s.uiMode);
 
   const pageLabel = () => {
     const path = location.pathname;
@@ -253,6 +254,25 @@ function TopBar({ apiReachable }: { apiReachable: boolean | null }) {
       >
         {pageLabel().toUpperCase()}
       </span>
+
+      {/* Mode A/B pill — subtle but always visible */}
+      <div
+        title={uiMode === 'B' ? 'Work surface active (Mode B)' : 'Idle front door (Mode A)'}
+        style={{
+          fontSize: '9px',
+          fontFamily: 'var(--font-hud)',
+          letterSpacing: '0.08em',
+          padding: '1px 5px',
+          borderRadius: '4px',
+          background: uiMode === 'B' ? 'var(--p2-teal-dim)' : 'var(--color-bg-tertiary)',
+          color: uiMode === 'B' ? 'var(--p2-teal)' : 'var(--color-text-tertiary)',
+          border: uiMode === 'B' ? '1px solid var(--p2-teal)' : '1px solid var(--color-border)',
+          transition: 'all 500ms cubic-bezier(0.4,0,0.2,1)',
+          userSelect: 'none',
+        }}
+      >
+        {uiMode}
+      </div>
 
       {/* Streaming badge — Mode B indicator */}
       {streamState.isStreaming && (
@@ -357,8 +377,8 @@ export function Layout() {
     };
   }, []);
 
-  // Mode A/B: ambient intensity — higher in B, low in A
-  const ambientIntensity = uiMode === 'B' ? 0.35 : 0.12;
+  // Mode A/B: ambient intensity — much more visible in both modes
+  const ambientIntensity = uiMode === 'B' ? 0.75 : 0.45;
 
   // Determine ambient mood from store state (keep Layout self-contained)
   const isStreaming = useAppStore((s) => s.streamState.isStreaming);
@@ -379,6 +399,25 @@ export function Layout() {
 
       {/* Plan 2 ambient identity layer — behind everything */}
       <AmbientCore mood={ambientMood} intensity={ambientIntensity} />
+
+      {/* Mode indicator strip — thin top-edge accent that shifts on A→B */}
+      <div
+        aria-hidden="true"
+        style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          height: '2px',
+          zIndex: 200,
+          pointerEvents: 'none',
+          background: uiMode === 'B'
+            ? 'linear-gradient(90deg, transparent 0%, var(--p2-teal) 30%, var(--p2-teal) 70%, transparent 100%)'
+            : 'linear-gradient(90deg, transparent 0%, var(--p2-teal-dim) 40%, var(--p2-teal-dim) 60%, transparent 100%)',
+          opacity: uiMode === 'B' ? 0.75 : 0.25,
+          transition: 'opacity 600ms cubic-bezier(0.4,0,0.2,1), background 600ms cubic-bezier(0.4,0,0.2,1)',
+        }}
+      />
 
       {/* Slim nav rail */}
       <NavRail apiReachable={apiReachable} />

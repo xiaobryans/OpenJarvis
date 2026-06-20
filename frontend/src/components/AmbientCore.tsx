@@ -1,13 +1,14 @@
 /**
- * AmbientCore — lightweight Plan 2 visual identity layer.
+ * AmbientCore — living Plan 2 identity layer.
  *
  * Rules:
  * - No permanent stars, rings, constellations, nebula, or sci-fi wallpaper.
- * - CSS-only: two soft radial gradients + an optional inner glow disc.
+ * - CSS-only: three-layer radial depth system — haze → mid-field → core orb.
  * - Mood-reactive via className + CSS variable.
  * - Degrades cleanly: remove <AmbientCore /> and nothing breaks.
  * - Renders behind all content (z-index 0, pointer-events none).
  * - Intensity 0 = invisible; intensity 1 = full presence.
+ * - Respects prefers-reduced-motion.
  */
 
 import { useMemo } from 'react';
@@ -21,18 +22,15 @@ interface AmbientCoreProps {
   enabled?: boolean;
 }
 
-/**
- * Returns the CSS var name for the primary glow for the given mood.
- * Falls back to teal.
- */
-function moodToGlowVar(mood: AmbientMood): string {
+/** Mood → tighter glow shadow with color + spread that suits depth. */
+function moodToGlowShadow(mood: AmbientMood): string {
   switch (mood) {
-    case 'listening':  return 'var(--p2-glow-amber)';
-    case 'processing': return 'var(--p2-glow-indigo)';
-    case 'speaking':   return 'var(--p2-glow-mint)';
-    case 'error':      return 'var(--p2-glow-coral)';
-    case 'approval':   return 'var(--p2-glow-amber)';
-    default:           return 'var(--p2-glow-teal)';
+    case 'listening':  return '0 0 60px 20px rgba(245,158,11,0.45), 0 0 120px 40px rgba(245,158,11,0.18)';
+    case 'processing': return '0 0 60px 20px rgba(99,102,241,0.45), 0 0 120px 40px rgba(99,102,241,0.18)';
+    case 'speaking':   return '0 0 60px 20px rgba(16,185,129,0.45), 0 0 120px 40px rgba(16,185,129,0.18)';
+    case 'error':      return '0 0 60px 20px rgba(244,63,94,0.45), 0 0 120px 40px rgba(244,63,94,0.18)';
+    case 'approval':   return '0 0 60px 20px rgba(245,158,11,0.42), 0 0 100px 35px rgba(245,158,11,0.16)';
+    default:           return '0 0 60px 20px rgba(8,145,178,0.38), 0 0 120px 40px rgba(8,145,178,0.14)';
   }
 }
 
@@ -41,60 +39,66 @@ export function AmbientCore({ mood, intensity, enabled = true }: AmbientCoreProp
 
   const moodClass = moodToCSSClass(mood);
   const glowColor = moodToCSSVar(mood);
-  const glowShadow = moodToGlowVar(mood);
+  const glowShadow = moodToGlowShadow(mood);
 
-  // Outer ambient haze — large, very soft, fills the background corners
+  // Layer 1 — Atmospheric haze: large diffuse fill from the top-center
   const hazeStyle = useMemo(() => ({
     position: 'fixed' as const,
     inset: 0,
     zIndex: 0,
     pointerEvents: 'none' as const,
-    opacity: intensity * 0.6,
-    background: `radial-gradient(ellipse 80% 60% at 50% 0%, ${glowColor} 0%, transparent 70%)`,
-    transition: `opacity var(--p2-dur-slow) var(--p2-ease-smooth), background var(--p2-dur-slow) var(--p2-ease-smooth)`,
+    opacity: intensity * 0.55,
+    background: `radial-gradient(ellipse 100% 55% at 50% -5%, ${glowColor} 0%, transparent 72%)`,
+    transition: 'opacity 1200ms cubic-bezier(0.4,0,0.2,1), background 1200ms cubic-bezier(0.4,0,0.2,1)',
   }), [intensity, glowColor]);
 
-  // Inner identity disc — small, crisp, anchored to the center-top
-  // This is the "core" presence dot — subtle, not dominant.
-  const discStyle = useMemo(() => ({
+  // Layer 2 — Mid-field glow: medium disc, acts as depth "atmosphere"
+  const midStyle = useMemo(() => ({
     position: 'fixed' as const,
-    top: '-40px',
+    top: '-60px',
     left: '50%',
     transform: 'translateX(-50%)',
     zIndex: 0,
     pointerEvents: 'none' as const,
-    width: '160px',
-    height: '80px',
-    borderRadius: '0 0 80px 80px',
-    opacity: intensity * 0.7,
+    width: '420px',
+    height: '200px',
+    borderRadius: '0 0 210px 210px',
+    opacity: intensity * 0.5,
     background: glowColor,
-    filter: 'blur(28px)',
-    boxShadow: intensity > 0.4 ? glowShadow : 'none',
-    transition: `opacity var(--p2-dur-slow) var(--p2-ease-smooth), background var(--p2-dur-slow) var(--p2-ease-smooth), box-shadow var(--p2-dur-base) var(--p2-ease-smooth)`,
+    filter: 'blur(55px)',
+    transition: 'opacity 1000ms cubic-bezier(0.4,0,0.2,1), background 1000ms cubic-bezier(0.4,0,0.2,1)',
+  }), [intensity, glowColor]);
+
+  // Layer 3 — Core orb: small, bright center with crisp glow, carries animation
+  const coreStyle = useMemo(() => ({
+    position: 'fixed' as const,
+    top: '-28px',
+    left: '50%',
+    transform: 'translateX(-50%)',
+    zIndex: 0,
+    pointerEvents: 'none' as const,
+    width: '120px',
+    height: '56px',
+    borderRadius: '0 0 60px 60px',
+    opacity: intensity * 0.9,
+    background: glowColor,
+    filter: 'blur(16px)',
+    boxShadow: intensity > 0.25 ? glowShadow : 'none',
+    transition: 'opacity 800ms cubic-bezier(0.4,0,0.2,1), background 800ms cubic-bezier(0.4,0,0.2,1), box-shadow 600ms cubic-bezier(0.4,0,0.2,1)',
   }), [intensity, glowColor, glowShadow]);
 
   return (
     <>
-      {/* Outer haze — fills background with mood color */}
-      <div
-        aria-hidden="true"
-        style={hazeStyle}
-      />
+      {/* Layer 1 — Atmospheric haze */}
+      <div aria-hidden="true" style={hazeStyle} />
 
-      {/* Inner core disc — animated with mood class */}
-      <div
-        aria-hidden="true"
-        className={moodClass}
-        style={discStyle}
-      />
+      {/* Layer 2 — Mid-field depth */}
+      <div aria-hidden="true" style={midStyle} />
+
+      {/* Layer 3 — Core orb with mood animation */}
+      <div aria-hidden="true" className={moodClass} style={coreStyle} />
     </>
   );
 }
 
-/**
- * AmbientCorePortal — renders AmbientCore outside the layout flow.
- * Use this if you want the ambient layer to truly underlay everything
- * including fixed elements (attach to document.body via React.createPortal
- * if needed in future). For now it's just a named wrapper.
- */
 export { AmbientCore as AmbientCorePortal };
