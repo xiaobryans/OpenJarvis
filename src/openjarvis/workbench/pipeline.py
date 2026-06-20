@@ -838,6 +838,426 @@ class CodingPipeline:
         """Return model routing cost summary for a session."""
         return self._router.session_cost_summary(session_id)
 
+    def run_task(
+        self,
+        prompt: str,
+        file_hints: Optional[List[str]] = None,
+        worker: Optional[object] = None,
+        validation_pre: Optional[str] = None,
+        validation_post: Optional[str] = None,
+        session_id: Optional[str] = None,
+        task_id: Optional[str] = None,
+    ) -> PipelineResult:
+        """Autonomous task execution — worker identifies files and decides patches.
+
+        Unlike run_with_patch() / run_multi_file_patch(), the WORKER decides:
+          - which files to inspect (via identify_files() + CodingManager.plan())
+          - what patch to apply (via generate_patch() on real file contents)
+
+        The caller supplies ONLY the task prompt. No pre-baked patch content.
+
+        Workflow:
+          1. Classify task
+          2. CodingManager.plan() → likely_files hint
+          3. worker.identify_files() on actual repo files
+          4. inspect_files() → read actual repo file contents
+          5. worker.generate_patch() for each file (worker decides fix)
+          6. Filter to files where worker made a decision
+          7. Set up isolated temp git repo with original contents
+          8. Apply worker patches
+          9. Capture real git diff
+          10. Pre/post validation
+          11. Independent reviewer verdict
+          12. Rollback + checkpoint
+
+        Args:
+            prompt: Natural-language task description (the only required input).
+            file_hints: Optional explicit file paths to inspect. If not supplied,
+                worker.identify_files() and CodingManager.plan() are used.
+            worker: Optional TaskWorker override. Defaults to create_worker()
+                (LocalPatternWorker if JARVIS_OPENROUTER_KEY not set).
+            validation_pre: Shell command to run before patch (expected to fail).
+            validation_post: Shell command to run after patch (expected to pass).
+        """
+        import tempfile
+        import shutil
+
+        t0 = time.time()
+        run_id = uuid.uuid4().hex[:16]
+        session_id = session_id or uuid.uuid4().hex[:16]
+        task_id = task_id or uuid.uuid4().hex[:16]
+        events: List[str] = []
+        model_decisions: List[Dict[str, Any]] = []
+        checkpoint_id: Optional[str] = None
+
+        # ── Step 1: Classify ──────────────────────────────────────────────
+        classification = classify_task(prompt)
+        events.append(
+            f"classify: category={classification['category']} risk={classification['risk_tier']}"
+        )
+
+        # ── Step 2: Create task worker ────────────────────────────────────
+        from openjarvis.workbench.task_worker import create_worker, TaskWorker
+        if worker is None:
+            _worker: TaskWorker = create_worker()
+        else:
+            _worker = worker  # type: ignore[assignment]
+        events.append(f"worker: {_worker.explain()[:80]}")
+
+        # ── Step 3: Build task plan + identify files ──────────────────────
+        plan_summary = f"Autonomous task: {prompt[:80]}"
+        plan_data: Dict[str, Any] = {}
+        likely_files: List[str] = list(file_hints or [])
+
+        try:
+            from openjarvis.workbench.coding_manager import CodingManager
+            _cm_db = str(Path(self._cfg.db_path).parent) if self._cfg.db_path else None
+            _cm = CodingManager(repo_path=self._cfg.repo_path, db_dir=_cm_db)
+            _tp = _cm.plan(prompt, dry_run=True, repo_path=self._cfg.repo_path)
+            plan_data = {
+                "subtasks": len(_tp.subtasks),
+                "likely_files": _tp.likely_files,
+                "task_type": _tp.task_type,
+                "approval_gates": _tp.approval_gates,
+            }
+            plan_summary = (
+                f"Autonomous task: subtasks={len(_tp.subtasks)} type={_tp.task_type} | "
+                f"{prompt[:60]}"
+            )
+            if _tp.likely_files:
+                likely_files = (_tp.likely_files + likely_files)[:self._cfg.max_inspect_files]
+            events.append(
+                f"plan: subtasks={len(_tp.subtasks)} likely_files={_tp.likely_files[:3]} "
+                f"type={_tp.task_type}"
+            )
+        except Exception as _pe:
+            events.append(f"plan_skipped: {type(_pe).__name__}: {_pe!s:.80}")
+
+        # Worker identifies additional files by analyzing the prompt
+        worker_files = _worker.identify_files(prompt, self._cfg.repo_path)
+        for f in worker_files:
+            if f not in likely_files:
+                likely_files.append(f)
+        likely_files = likely_files[:self._cfg.max_inspect_files]
+        events.append(f"identify_files: worker+plan={likely_files} (targeted, no broad scan)")
+
+        # ── Step 4: Route to model tier ───────────────────────────────────
+        decision = self._router.route(
+            subtask_id=f"{task_id}-autonomous",
+            tool_id="file_read",
+            description=prompt[:120],
+            session_id=session_id,
+            task_id=task_id,
+            category=classification["category"],
+            high_trust=classification["is_risky"],
+        )
+        model_decisions.append(decision.to_dict())
+        events.append(
+            f"route: tier={decision.assigned_tier.value} model={decision.assigned_model}"
+        )
+
+        # ── Step 5: Read actual repo file contents ────────────────────────
+        # file_contents: bounded preview for evidence/reporting (200 lines)
+        # full_contents: complete file content for worker patch generation
+        file_contents: Dict[str, str] = {}
+        full_contents: Dict[str, str] = {}
+        if likely_files:
+            try:
+                file_contents = inspect_files(
+                    likely_files, repo_path=self._cfg.repo_path,
+                    max_lines_per_file=200,
+                )
+                # Read full content for worker (needed for valid syntax-check of patch)
+                _base = Path(self._cfg.repo_path)
+                for fpath in likely_files:
+                    _fp = _base / fpath
+                    if _fp.exists():
+                        try:
+                            full_contents[fpath] = _fp.read_text(encoding="utf-8", errors="replace")
+                        except Exception:
+                            full_contents[fpath] = file_contents.get(fpath, "[READ_ERROR]")
+                    else:
+                        full_contents[fpath] = file_contents.get(fpath, "[FILE_NOT_FOUND]")
+                readable = {k: v for k, v in file_contents.items()
+                            if not v.startswith("[FILE_NOT_FOUND") and not v.startswith("[READ_ERROR")}
+                events.append(
+                    f"worker_read: {len(readable)}/{len(likely_files)} files read from repo"
+                )
+            except Exception as exc:
+                events.append(f"inspect_error: {exc!s:.80}")
+        else:
+            events.append("identify_files: no files identified from prompt or plan")
+
+        # ── Step 6: Worker generates patches (worker decides content) ─────
+        # Worker uses full file content for accurate analysis and valid syntax.
+        # file_contents (truncated) is kept for evidence reporting only.
+        from openjarvis.workbench.task_worker import WorkerDecision
+        worker_decisions: List[WorkerDecision] = []
+        for fpath, content in full_contents.items():
+            if content.startswith("[FILE_NOT_FOUND") or content.startswith("[READ_ERROR"):
+                continue
+            wd = _worker.generate_patch(prompt, fpath, content)
+            if wd and wd.changed:
+                worker_decisions.append(wd)
+                events.append(
+                    f"worker_patch: {fpath} — pattern={wd.pattern_used} "
+                    f"confidence={wd.confidence:.2f} | {wd.rationale[:60]}"
+                )
+            else:
+                events.append(f"worker_noop: {fpath} — no applicable pattern found")
+
+        if not worker_decisions:
+            # Worker found no applicable fix — HOLD with evidence
+            self._event_log.push(
+                session_id=session_id, task_id=task_id,
+                event_type=EVENT_SUBTASK_DONE,
+                title="Worker: no applicable pattern found",
+                detail=f"Files inspected: {list(file_contents.keys())}",
+                tone="warning",
+            )
+            return PipelineResult(
+                run_id=run_id, task_id=task_id, session_id=session_id,
+                verdict=PIPELINE_HOLD,
+                classification=classification,
+                plan_summary=f"{plan_summary} | worker: no pattern applied",
+                files_inspected=likely_files,
+                file_contents=file_contents,
+                files_changed=[],
+                patch_diff="",
+                validation_outputs=[],
+                reviewer_verdict=None,
+                rollback_instruction="No changes made — nothing to roll back",
+                model_decisions=model_decisions,
+                loop_state={"stopped": False, "max_attempts": 3, "attempts": []},
+                events=events,
+                duration_s=time.time() - t0,
+                checkpoint_id=None,
+            )
+
+        # Build patch list from worker decisions (original = full content from repo)
+        patches_to_apply = [
+            (wd.file_path, wd.original_content, wd.patch_content)
+            for wd in worker_decisions
+        ]
+        # Ensure file_contents evidence uses full content for worker-changed files
+        for wd in worker_decisions:
+            if wd.file_path not in file_contents or len(file_contents[wd.file_path]) < 100:
+                file_contents[wd.file_path] = wd.original_content[:4096]
+        files_targeted = [wd.file_path for wd in worker_decisions]
+
+        tmp_dir = tempfile.mkdtemp(prefix="jarvis_run_task_")
+        try:
+            # ── Step 7: Set up isolated temp git repo ─────────────────────
+            subprocess.run(["git", "init"], cwd=tmp_dir, capture_output=True, check=True)
+            subprocess.run(
+                ["git", "config", "user.email", "jarvis@openjarvis.ai"],
+                cwd=tmp_dir, capture_output=True, check=True,
+            )
+            subprocess.run(
+                ["git", "config", "user.name", "Jarvis Worker"],
+                cwd=tmp_dir, capture_output=True, check=True,
+            )
+
+            # Write ACTUAL repo file contents as originals
+            for file_path_rel, original_content, _ in patches_to_apply:
+                target = Path(tmp_dir) / file_path_rel
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(original_content, encoding="utf-8")
+            subprocess.run(["git", "add", "."], cwd=tmp_dir, capture_output=True, check=True)
+            subprocess.run(
+                ["git", "commit", "-m", "original: actual repo content before worker patch"],
+                cwd=tmp_dir, capture_output=True, check=True,
+            )
+            events.append(
+                f"worker_setup: temp git repo with {len(patches_to_apply)} real file(s)"
+            )
+
+            # ── Step 8: Pre-fix validation ────────────────────────────────
+            pre_validation_outputs: List[Dict[str, Any]] = []
+            if validation_pre:
+                pre_out = run_validation(
+                    [validation_pre], cwd=tmp_dir, timeout=self._cfg.validation_timeout_s
+                )
+                pre_validation_outputs = pre_out
+                pre_passed = all(v["passed"] for v in pre_out)
+                events.append(
+                    f"validation_pre: {'PASS (unexpected)' if pre_passed else 'FAIL (state confirmed)'}"
+                )
+
+            # ── Step 9: Apply worker-generated patches ────────────────────
+            for file_path_rel, _, patch_content in patches_to_apply:
+                target = Path(tmp_dir) / file_path_rel
+                target.write_text(patch_content, encoding="utf-8")
+
+            # ── Step 10: Capture real git diff ────────────────────────────
+            diff_result = subprocess.run(
+                ["git", "diff", "HEAD"],
+                cwd=tmp_dir, capture_output=True, text=True, timeout=10,
+            )
+            real_diff = diff_result.stdout.strip()
+            diff_file_count = real_diff.count("diff --git")
+            events.append(
+                f"worker_diff: git diff captured ({len(real_diff)} chars, {diff_file_count} file(s))"
+            )
+
+            # ── Step 11: Post-fix validation + repair loop ────────────────
+            post_cmds = [validation_post] if validation_post else []
+            post_validation_outputs: List[Dict[str, Any]] = []
+            loop = BoundedRepairLoop(max_attempts=self._cfg.max_loop_attempts)
+
+            if post_cmds:
+                while loop.can_retry():
+                    vout = run_validation(
+                        post_cmds, cwd=tmp_dir, timeout=self._cfg.validation_timeout_s
+                    )
+                    post_validation_outputs = vout
+                    if all(v["passed"] for v in vout):
+                        events.append(
+                            f"validation_post: PASS ({len(vout)} cmd(s) — worker fix confirmed)"
+                        )
+                        break
+                    failed = [v["command"] for v in vout if not v["passed"]]
+                    events.append(
+                        f"validation_post: FAIL attempt {len(loop.state.attempts)+1}: {failed}"
+                    )
+                    repair = loop.decide(
+                        router=self._router,
+                        subtask_id=f"{task_id}-post-validate",
+                        tool_id="shell_exec_readonly",
+                        session_id=session_id, task_id=task_id,
+                        validation_failed=True, terminal_error=False,
+                        error_message=str(failed),
+                    )
+                    if not repair.get("retry", False):
+                        events.append(f"loop_cap: {repair.get('reason', 'max_attempts_exceeded')}")
+                        break
+
+            # ── Step 12: Rollback path (covers all changed files) ─────────
+            rollback_cmds = " && ".join(
+                f"git checkout HEAD -- {f}" for f in files_targeted
+            )
+            rollback = f"{rollback_cmds}  # Worker-generated patches; rollback all {len(files_targeted)} file(s)"
+            events.append(f"rollback: {rollback[:100]}")
+
+            # ── Step 13: Commit/push readiness ────────────────────────────
+            commit_ready = (
+                bool(real_diff) and (
+                    not post_validation_outputs
+                    or all(v["passed"] for v in post_validation_outputs)
+                )
+            )
+            commit_cmd = None
+            if commit_ready:
+                commit_cmd = (
+                    f"git add {' '.join(files_targeted)} && "
+                    f"git commit -m 'worker: {prompt[:50].strip()}' && "
+                    f"git push fork localhost-get-tool"
+                )
+                events.append(
+                    f"commit_ready: YES (dry_run=True) — "
+                    f"command: {commit_cmd}"
+                )
+            else:
+                events.append("commit_ready: NO — diff empty or validation failed")
+
+            # ── Step 14: Submit evidence to independent reviewer ──────────
+            evidence = EvidenceBundle(
+                task_id=task_id,
+                session_id=session_id,
+                worker_id=self._cfg.worker_id,
+                prompt=prompt,
+                plan_summary=plan_summary,
+                files_inspected=likely_files,
+                files_changed=files_targeted,
+                patch_diff=real_diff,
+                validation_commands=post_cmds,
+                validation_outputs=post_validation_outputs,
+                rollback_path=rollback,
+                loop_state=loop.state.to_dict(),
+                model_decisions=model_decisions,
+                extra={
+                    "pre_validation_outputs": pre_validation_outputs,
+                    "worker_decisions": [
+                        {
+                            "file": wd.file_path,
+                            "pattern": wd.pattern_used,
+                            "confidence": wd.confidence,
+                            "rationale": wd.rationale[:200],
+                        }
+                        for wd in worker_decisions
+                    ],
+                    "diff_file_count": diff_file_count,
+                    "commit_ready": commit_ready,
+                    "commit_cmd": commit_cmd,
+                    "plan_data": plan_data,
+                },
+            )
+
+            reviewer_verdict = None
+            final_verdict = PIPELINE_HOLD
+
+            try:
+                reviewer_verdict = self._reviewer.review(evidence)
+                final_verdict = reviewer_verdict.verdict.value
+                events.append(
+                    f"reviewer: verdict={final_verdict} reasons={reviewer_verdict.reasons[:2]}"
+                )
+            except ValueError as exc:
+                events.append(f"reviewer_error: {exc}")
+                final_verdict = PIPELINE_BLOCKED
+
+            self._event_log.push(
+                session_id=session_id, task_id=task_id,
+                event_type=EVENT_EXECUTION_COMPLETE,
+                title=f"Autonomous task complete: {final_verdict}",
+                detail=f"run_id={run_id} files={len(patches_to_apply)} diff={len(real_diff)}",
+                tone="success" if final_verdict == PIPELINE_PASS else "warning",
+            )
+
+            if final_verdict == PIPELINE_PASS:
+                cp = self._checkpoint.save_checkpoint(
+                    session_id=session_id,
+                    task_id=task_id,
+                    label=f"run-task-{run_id}",
+                    evidence=json.dumps({
+                        "files_changed": files_targeted,
+                        "diff_chars": len(real_diff),
+                        "worker_decisions": [
+                            {"file": wd.file_path, "pattern": wd.pattern_used}
+                            for wd in worker_decisions
+                        ],
+                        "commit_ready": commit_ready,
+                    })[:1024],
+                    verdict="ACCEPT",
+                    notes={"run_id": run_id, "verdict": final_verdict},
+                )
+                checkpoint_id = cp.id
+                events.append(f"checkpoint: accepted id={checkpoint_id}")
+
+            return PipelineResult(
+                run_id=run_id,
+                task_id=task_id,
+                session_id=session_id,
+                verdict=final_verdict,
+                classification=classification,
+                plan_summary=plan_summary,
+                files_inspected=likely_files,
+                file_contents=file_contents,
+                files_changed=files_targeted,
+                patch_diff=real_diff,
+                validation_outputs=post_validation_outputs,
+                reviewer_verdict=reviewer_verdict.to_dict() if reviewer_verdict else None,
+                rollback_instruction=rollback,
+                model_decisions=model_decisions,
+                loop_state=loop.state.to_dict(),
+                events=events,
+                duration_s=time.time() - t0,
+                checkpoint_id=checkpoint_id if final_verdict == PIPELINE_PASS else None,
+            )
+
+        finally:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+
     def run_multi_file_patch(
         self,
         prompt: str,
@@ -1456,6 +1876,7 @@ __all__ = [
     "FilePatch",
     "classify_task",
     "detect_coding_intent",
+    "inspect_files",
     "PIPELINE_PASS",
     "PIPELINE_HOLD",
     "PIPELINE_BLOCKED",
