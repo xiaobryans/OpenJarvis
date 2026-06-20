@@ -133,7 +133,7 @@ def _env_float(key: str, default: float) -> float:
 # ---------------------------------------------------------------------------
 
 _DEFAULT_MIN_RECORD_SECONDS: float = 1.0
-_DEFAULT_SILENCE_STOP_MS: float = 4000.0
+_DEFAULT_SILENCE_STOP_MS: float = 1000.0
 _DEFAULT_MAX_RECORD_SECONDS: float = 120.0
 # Raised from 150 → 300: typical laptop fan/HVAC ambient is 100-250 RMS (int16).
 # A threshold of 300 ensures ambient noise is always classified as silence while

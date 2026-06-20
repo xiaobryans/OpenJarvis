@@ -34,6 +34,7 @@ import { ApprovalBell } from './ApprovalBell';
 import { SystemPulse } from './SystemPulse';
 import { AmbientCore } from './AmbientCore';
 import { JarvisOrb } from './JarvisOrb';
+import { AgentOrbitLayer } from './AgentOrbitLayer';
 import { CloudStatusChip } from './Cloud/CloudStatusStrip';
 import { useAppStore } from '../lib/store';
 import { checkHealth } from '../lib/api';
@@ -221,7 +222,6 @@ function TopBar({ apiReachable }: { apiReachable: boolean | null }) {
   const setComposerOpen = useAppStore((s) => s.setComposerOpen);
   const selectedModel = useAppStore((s) => s.selectedModel);
   const streamState = useAppStore((s) => s.streamState);
-  const uiMode = useAppStore((s) => s.uiMode);
 
   const pageLabel = () => {
     const path = location.pathname;
@@ -256,26 +256,7 @@ function TopBar({ apiReachable }: { apiReachable: boolean | null }) {
         {pageLabel().toUpperCase()}
       </span>
 
-      {/* Mode A/B pill — subtle but always visible */}
-      <div
-        title={uiMode === 'B' ? 'Work surface active (Mode B)' : 'Idle front door (Mode A)'}
-        style={{
-          fontSize: '9px',
-          fontFamily: 'var(--font-hud)',
-          letterSpacing: '0.08em',
-          padding: '1px 5px',
-          borderRadius: '4px',
-          background: uiMode === 'B' ? 'var(--p2-teal-dim)' : 'var(--color-bg-tertiary)',
-          color: uiMode === 'B' ? 'var(--p2-teal)' : 'var(--color-text-tertiary)',
-          border: uiMode === 'B' ? '1px solid var(--p2-teal)' : '1px solid var(--color-border)',
-          transition: 'all 500ms cubic-bezier(0.4,0,0.2,1)',
-          userSelect: 'none',
-        }}
-      >
-        {uiMode}
-      </div>
-
-      {/* Streaming badge — Mode B indicator */}
+      {/* Streaming badge */}
       {streamState.isStreaming && (
         <div
           className="flex items-center gap-1.5 text-[10px] px-2 py-0.5 rounded-full"
@@ -403,6 +384,9 @@ export function Layout() {
 
       {/* Jarvis central orb — living 3D identity core */}
       <JarvisOrb mood={ambientMood} uiMode={uiMode} />
+
+      {/* Agent/bot status halo around the orb */}
+      <AgentOrbitLayer uiMode={uiMode} />
 
       {/* Mode indicator strip — thin top-edge accent that shifts on A→B */}
       <div

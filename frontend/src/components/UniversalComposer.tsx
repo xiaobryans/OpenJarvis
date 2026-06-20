@@ -229,6 +229,7 @@ export function UniversalComposer() {
   const setStreamState = useAppStore((s) => s.setStreamState);
   const resetStream = useAppStore((s) => s.resetStream);
   const modelLoading = useAppStore((s) => s.modelLoading);
+  const messages = useAppStore((s) => s.messages);
   const deepResearch = useAppStore((s) => s.deepResearch);
   const setDeepResearch = useAppStore((s) => s.setDeepResearch);
   const setCommandPaletteOpen = useAppStore((s) => s.setCommandPaletteOpen);
@@ -288,6 +289,39 @@ export function UniversalComposer() {
   useEffect(() => {
     if (isActiveTurn && !showVoicePanel) setShowVoicePanel(true);
   }, [isActiveTurn, showVoicePanel]);
+
+  // Sync live voice state to global store → VoiceCaptionOverlay in ChatArea reads it
+  const setVoiceCaptionState = useAppStore((s) => s.setVoiceCaptionState);
+  useEffect(() => {
+    setVoiceCaptionState({ transcript: voiceTranscript, response: voiceResponse, phase: voicePhase });
+  }, [voicePhase, voiceTranscript, voiceResponse, setVoiceCaptionState]);
+
+  // Barge-in: during Jarvis speaking, browser SpeechRecognition listens for stop keywords
+  // and calls cancelTurn() so user doesn't need Cmd+K or mouse to interrupt.
+  // Limitation: acoustic feedback may cause false positives on speakers (works best with headphones).
+  useEffect(() => {
+    if (voicePhase !== 'speaking') return;
+    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SR) return; // Browser doesn't support Web Speech API
+    let recognition: any;
+    try {
+      recognition = new SR();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.onresult = (event: any) => {
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const text = event.results[i][0].transcript.toLowerCase().trim();
+          if (/\b(stop|cancel|wait|never mind|nevermind|pause|enough|quiet)\b/.test(text)) {
+            cancelTurn();
+            try { recognition.stop(); } catch {}
+            break;
+          }
+        }
+      };
+      recognition.start();
+    } catch {}
+    return () => { try { recognition?.stop(); } catch {} };
+  }, [voicePhase, cancelTurn]);
 
   // Dictation speech (for text field)
   const { state: speechState, error: speechError, available: speechAvailable, startRecording, stopRecording } = useSpeech();
@@ -650,8 +684,8 @@ export function UniversalComposer() {
               className="w-2 h-2 rounded-full shrink-0"
               style={{ background: 'var(--p2-teal)', boxShadow: 'var(--p2-glow-teal)' }}
             />
-            <span className="text-[11px] font-semibold tracking-[0.18em]" style={{ color: 'var(--color-text-secondary)', fontFamily: 'var(--font-hud)' }}>
-              JARVIS
+            <span className="text-[11px] font-semibold tracking-[0.14em]" style={{ color: 'var(--color-text-secondary)', fontFamily: 'var(--font-hud)' }}>
+              TRANSCRIPT &amp; CHAT
             </span>
             {selectedModel && (
               <button
@@ -689,6 +723,31 @@ export function UniversalComposer() {
             <X size={14} />
           </button>
         </div>
+
+        {/* ── Transcript / message history ── shown when no slash matches and has messages */}
+        {slashMatches.length === 0 && messages.length > 0 && (
+          <div
+            className="px-4 pb-2 pt-3 max-h-[220px] overflow-y-auto"
+            style={{ borderBottom: '1px solid var(--color-border)' }}
+          >
+            <div className="text-[9px] uppercase tracking-[0.14em] mb-2" style={{ color: 'var(--color-text-tertiary)', fontFamily: 'var(--font-hud)' }}>
+              Transcript
+            </div>
+            {messages.slice(-6).map((msg) => (
+              <div key={msg.id} className="mb-2 last:mb-0">
+                <span
+                  className="text-[10px] font-medium mr-1.5"
+                  style={{ color: msg.role === 'user' ? 'rgba(255,255,255,0.45)' : 'var(--p2-teal)' }}
+                >
+                  {msg.role === 'user' ? 'You' : 'Jarvis'}
+                </span>
+                <span className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                  {msg.content.slice(0, 120)}{msg.content.length > 120 ? '…' : ''}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* ── Slash command suggestions ── */}
         {slashMatches.length > 0 && (

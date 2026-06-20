@@ -232,6 +232,10 @@ interface AppState {
   pendingApprovalsCount: number;
   setPendingApprovalsCount: (n: number) => void;
 
+  // ── Voice caption state — live transcript + response from active turn ──
+  voiceCaptionState: { transcript: string; response: string; phase: string };
+  setVoiceCaptionState: (s: Partial<{ transcript: string; response: string; phase: string }>) => void;
+
   // Data sources (cached between visits to avoid empty-state flicker)
   cachedConnectors: CachedConnector[] | null;
   setCachedConnectors: (list: CachedConnector[] | null) => void;
@@ -570,6 +574,11 @@ export const useAppStore = create<AppState>((set, get) => {
     // Pending approvals count
     pendingApprovalsCount: 0,
     setPendingApprovalsCount: (n) => set({ pendingApprovalsCount: n }),
+
+    voiceCaptionState: { transcript: '', response: '', phase: 'idle' },
+    setVoiceCaptionState: (s) => set((prev) => ({
+      voiceCaptionState: { ...prev.voiceCaptionState, ...s },
+    })),
 
     // ── Agents ─────────────────────────────────────────────────────
 

@@ -1,324 +1,249 @@
-import { useRef, useEffect, useState } from 'react';
-import { useNavigate } from 'react-router';
-import { MessageBubble } from './MessageBubble';
-import { StreamingDots } from './StreamingDots';
+/**
+ * ChatArea — voice-first canvas for Plan 2F.
+ *
+ * Default: transparent canvas that lets the JarvisOrb show through.
+ * Shows:
+ *   • "Speak or ⌘K" hint when idle
+ *   • Live voice captions (transcript + reply) at bottom while voice active
+ *   • Speak / Stop buttons for voice control without requiring Cmd+K
+ *   • Message history visible when Cmd+K is open (via UniversalComposer)
+ * No chat list by default — messages are accessed via Cmd+K panel.
+ */
+
+import { useEffect, useRef } from 'react';
+import { Mic, MicOff, Square, Command } from 'lucide-react';
 import { useAppStore } from '../../lib/store';
-import {
-  Command, Search, Code2, Bot, Database, Zap, ArrowRight,
-  Loader2, SquareArrowOutUpRight,
-} from 'lucide-react';
 
 // ---------------------------------------------------------------------------
-// Greeting
+// Live caption overlay — shows transcript + Jarvis reply at the bottom
 // ---------------------------------------------------------------------------
 
-function getGreeting(): string {
-  const hour = new Date().getHours();
-  if (hour < 5) return 'Working late';
-  if (hour < 12) return 'Good morning';
-  if (hour < 17) return 'Good afternoon';
-  if (hour < 21) return 'Good evening';
-  return 'Good night';
-}
+function VoiceCaptionOverlay() {
+  const { transcript, response, phase } = useAppStore((s) => s.voiceCaptionState);
+  const setComposerOpen = useAppStore((s) => s.setComposerOpen);
 
-// ---------------------------------------------------------------------------
-// Quick-launch suggestions shown on idle home state
-// ---------------------------------------------------------------------------
+  const isActive = phase !== 'idle' && phase !== 'error' && phase !== 'cancelled';
+  const hasCaption = isActive && (transcript || response);
 
-interface Suggestion {
-  label: string;
-  icon: React.ReactNode;
-  prompt?: string;
-  action?: () => void;
-}
-
-function QuickSuggestions({
-  onPick,
-  navigate,
-}: {
-  onPick: (prompt: string) => void;
-  navigate: (path: string) => void;
-}) {
-  const suggestions: Suggestion[] = [
-    { label: 'Deep research', icon: <Search size={13} />, prompt: '/research ' },
-    { label: 'Plan in Workbench', icon: <Code2 size={13} />, prompt: '/workbench ' },
-    { label: 'View agents', icon: <Bot size={13} />, action: () => navigate('/agents') },
-    { label: 'Connect data', icon: <Database size={13} />, action: () => navigate('/data-sources') },
-  ];
+  if (!hasCaption) return null;
 
   return (
-    <div className="flex flex-wrap gap-2 justify-center">
-      {suggestions.map((s) => (
-        <button
-          key={s.label}
-          onClick={() => s.action ? s.action() : onPick(s.prompt ?? '')}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs cursor-pointer transition-all"
-          style={{
-            background: 'var(--color-bg-secondary)',
-            border: '1px solid var(--color-border)',
-            color: 'var(--color-text-tertiary)',
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.background = 'var(--p2-teal-dim)';
-            e.currentTarget.style.borderColor = 'var(--p2-teal)';
-            e.currentTarget.style.color = 'var(--p2-teal)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = 'var(--color-bg-secondary)';
-            e.currentTarget.style.borderColor = 'var(--color-border)';
-            e.currentTarget.style.color = 'var(--color-text-tertiary)';
-          }}
-        >
-          <span style={{ color: 'inherit' }}>{s.icon}</span>
-          {s.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Idle / home state
-// ---------------------------------------------------------------------------
-
-function IdleHome({
-  onOpen,
-  navigate,
-}: {
-  onOpen: (prefill?: string) => void;
-  navigate: (path: string) => void;
-}) {
-  const [hovered, setHovered] = useState(false);
-
-  return (
-    <div className="flex flex-col items-center justify-center h-full px-6 select-none" style={{ paddingBottom: '8vh' }}>
-
-      {/* Identity label */}
+    <div
+      className="fixed bottom-0 left-0 right-0 flex flex-col items-center gap-2 px-6 pb-8 pointer-events-none"
+      style={{ zIndex: 50 }}
+    >
+      {/* Phase label */}
       <div
-        className="mb-8 tracking-[0.22em] text-[10px] font-medium uppercase"
-        style={{ color: 'var(--color-text-tertiary)', fontFamily: 'var(--font-hud)', letterSpacing: '0.22em' }}
+        className="text-[10px] tracking-[0.14em] uppercase font-medium"
+        style={{ color: 'var(--p2-teal)', fontFamily: 'var(--font-hud)', opacity: 0.8 }}
       >
-        JARVIS
+        {phase === 'recording' ? 'Listening' :
+         phase === 'waiting_for_silence' ? 'Detecting silence…' :
+         phase === 'transcribing' ? 'Transcribing' :
+         phase === 'thinking' ? 'Thinking' :
+         phase === 'speaking' ? 'Speaking' : phase}
       </div>
 
-      {/* Greeting */}
-      <h2
-        className="text-[1.6rem] font-semibold mb-1.5 text-center"
-        style={{ color: 'var(--color-text)', fontFamily: 'var(--font-display)', letterSpacing: '-0.01em' }}
-      >
-        {getGreeting()}
-      </h2>
-      <p className="text-sm text-center mb-10 max-w-[260px]" style={{ color: 'var(--color-text-tertiary)' }}>
-        Ask, research, plan, automate.
-      </p>
-
-      {/* Primary CTA — the front door */}
-      <button
-        onClick={() => onOpen()}
-        onMouseEnter={() => setHovered(true)}
-        onMouseLeave={() => setHovered(false)}
-        className="relative flex items-center gap-3 rounded-2xl cursor-pointer transition-all mb-8"
+      {/* Caption card */}
+      <div
+        className="rounded-2xl px-5 py-3.5 text-center pointer-events-auto max-w-[min(560px,90vw)]"
         style={{
-          padding: '14px 28px',
-          background: hovered ? 'var(--p2-teal)' : 'var(--color-bg-secondary)',
-          border: `1px solid ${hovered ? 'var(--p2-teal)' : 'var(--color-border)'}`,
-          color: hovered ? '#fff' : 'var(--color-text-secondary)',
-          boxShadow: hovered ? 'var(--p2-glow-teal)' : 'var(--p2-elev-1)',
-          transform: hovered ? 'translateY(-2px)' : 'none',
-          transition: 'all var(--p2-dur-base) var(--p2-ease-spring)',
-          minWidth: '220px',
-          justifyContent: 'center',
+          background: 'rgba(0,0,0,0.72)',
+          backdropFilter: 'blur(20px)',
+          WebkitBackdropFilter: 'blur(20px)',
+          border: '1px solid rgba(255,255,255,0.08)',
         }}
       >
-        <Command size={16} />
-        <span className="text-sm font-medium">Open composer</span>
-        <kbd
-          className="text-[10px] px-1.5 py-0.5 rounded font-mono ml-1"
-          style={{
-            background: hovered ? 'rgba(255,255,255,0.15)' : 'var(--color-bg-tertiary)',
-            color: hovered ? 'rgba(255,255,255,0.8)' : 'var(--color-text-tertiary)',
-            border: `1px solid ${hovered ? 'rgba(255,255,255,0.2)' : 'var(--color-border)'}`,
-          }}
-        >
-          ⌘K
-        </kbd>
-        {hovered && (
-          <ArrowRight
-            size={14}
-            className="absolute right-4"
-            style={{ color: 'rgba(255,255,255,0.7)', transition: 'opacity var(--p2-dur-fast)' }}
-          />
+        {/* Bryan's transcript */}
+        {transcript && (
+          <p className="text-sm mb-1" style={{ color: 'rgba(255,255,255,0.7)' }}>
+            <span style={{ color: 'var(--p2-teal-dim)', fontWeight: 500 }}>You: </span>
+            {transcript}
+          </p>
         )}
-      </button>
+        {/* Jarvis reply */}
+        {response && (
+          <p className="text-sm" style={{ color: 'rgba(255,255,255,0.95)' }}>
+            <span style={{ color: 'var(--p2-teal)', fontWeight: 500 }}>Jarvis: </span>
+            {response}
+          </p>
+        )}
+      </div>
 
-      {/* Quick-launch suggestions */}
-      <QuickSuggestions onPick={(p) => onOpen(p)} navigate={navigate} />
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Streaming progress indicator
-// ---------------------------------------------------------------------------
-
-function StreamingBanner({ phase }: { phase?: string }) {
-  return (
-    <div
-      className="flex items-center gap-2 px-4 py-2 mx-auto mb-4 rounded-xl text-xs"
-      style={{
-        background: 'var(--p2-indigo-dim)',
-        border: '1px solid var(--p2-indigo)',
-        color: 'var(--p2-indigo)',
-        maxWidth: 'var(--chat-max-width)',
-        width: '100%',
-      }}
-    >
-      <Loader2 size={12} className="animate-spin shrink-0" />
-      <span>{phase || 'Generating…'}</span>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Composer-bar — shown at bottom when there are messages
-// ---------------------------------------------------------------------------
-
-function ComposerBar({ onClick, isStreaming }: { onClick: () => void; isStreaming: boolean }) {
-  const [hovered, setHovered] = useState(false);
-
-  return (
-    <div
-      className="shrink-0 px-4 py-3 flex justify-center"
-      style={{ borderTop: '1px solid var(--color-border-subtle)' }}
-    >
+      {/* View full in Cmd+K hint */}
       <button
-        onClick={onClick}
-        onMouseEnter={() => setHovered(true)}
-        onMouseLeave={() => setHovered(false)}
-        className="flex items-center gap-2.5 rounded-xl cursor-pointer transition-all"
+        className="text-[10px] pointer-events-auto cursor-pointer"
+        style={{ color: 'rgba(255,255,255,0.3)' }}
+        onClick={() => setComposerOpen(true)}
+      >
+        ⌘K to view full transcript
+      </button>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Idle voice-first hint — shown when no caption and voice not active
+// ---------------------------------------------------------------------------
+
+function VoiceHint({ onOpenComposer }: { onOpenComposer: () => void }) {
+  const { phase } = useAppStore((s) => s.voiceCaptionState);
+  const isActive = phase !== 'idle' && phase !== 'error' && phase !== 'cancelled';
+  if (isActive) return null;
+
+  return (
+    <div
+      className="fixed bottom-0 left-0 right-0 flex items-center justify-center pb-8 gap-3 pointer-events-none"
+      style={{ zIndex: 50 }}
+    >
+      <span
+        className="text-[11px] tracking-[0.08em] pointer-events-auto"
+        style={{ color: 'rgba(255,255,255,0.22)', fontFamily: 'var(--font-hud)' }}
+      >
+        SPEAK NATURALLY · OR
+      </span>
+      <button
+        onClick={onOpenComposer}
+        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs pointer-events-auto cursor-pointer transition-all"
         style={{
-          padding: '9px 20px',
-          width: '100%',
-          maxWidth: 'var(--chat-max-width)',
-          background: hovered ? 'var(--p2-teal-dim)' : 'var(--color-bg-secondary)',
-          border: `1px solid ${hovered ? 'var(--p2-teal)' : 'var(--color-border)'}`,
-          color: hovered ? 'var(--p2-teal)' : 'var(--color-text-tertiary)',
-          boxShadow: hovered ? 'var(--p2-elev-1)' : 'none',
-          transition: 'all var(--p2-dur-base) var(--p2-ease-smooth)',
-          justifyContent: 'space-between',
+          background: 'rgba(255,255,255,0.06)',
+          border: '1px solid rgba(255,255,255,0.12)',
+          color: 'rgba(255,255,255,0.45)',
         }}
       >
-        <div className="flex items-center gap-2">
-          <Command size={13} />
-          <span className="text-sm">
-            {isStreaming ? 'Generating response…' : 'Reply or command…'}
-          </span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          {isStreaming ? (
-            <Loader2 size={12} className="animate-spin" style={{ color: 'var(--p2-teal)' }} />
-          ) : (
-            <kbd
-              className="text-[10px] px-1.5 py-0.5 rounded font-mono"
-              style={{
-                background: 'var(--color-bg-tertiary)',
-                color: 'var(--color-text-tertiary)',
-                border: '1px solid var(--color-border)',
-              }}
-            >
-              ⌘K
-            </kbd>
-          )}
-        </div>
+        <Command size={11} />
+        <span>⌘K</span>
       </button>
     </div>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Main component
+// Voice status / control strip — shown at bottom right for quick access
+// ---------------------------------------------------------------------------
+
+function VoiceControlStrip() {
+  const { phase } = useAppStore((s) => s.voiceCaptionState);
+  const setComposerOpen = useAppStore((s) => s.setComposerOpen);
+  const isActive = phase !== 'idle' && phase !== 'error' && phase !== 'cancelled';
+  const isSpeaking = phase === 'speaking';
+
+  return (
+    <div
+      className="fixed bottom-6 right-6 flex flex-col items-end gap-2"
+      style={{ zIndex: 60, pointerEvents: 'none' }}
+    >
+      {/* Stop button during speaking — large, accessible */}
+      {isSpeaking && (
+        <button
+          className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium cursor-pointer transition-all"
+          style={{
+            background: 'rgba(244,63,94,0.15)',
+            border: '1px solid rgba(244,63,94,0.4)',
+            color: 'rgba(244,63,94,0.9)',
+            backdropFilter: 'blur(12px)',
+            pointerEvents: 'auto',
+          }}
+          onClick={() => setComposerOpen(true)}
+          title="Open ⌘K to cancel voice reply"
+        >
+          <Square size={13} />
+          Stop speaking
+        </button>
+      )}
+
+      {/* Mic status indicator */}
+      <button
+        className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs cursor-pointer transition-all"
+        style={{
+          background: isActive ? 'rgba(34,211,238,0.12)' : 'rgba(255,255,255,0.05)',
+          border: isActive ? '1px solid rgba(34,211,238,0.3)' : '1px solid rgba(255,255,255,0.08)',
+          color: isActive ? 'var(--p2-teal)' : 'rgba(255,255,255,0.3)',
+          backdropFilter: 'blur(12px)',
+          pointerEvents: 'auto',
+        }}
+        onClick={() => setComposerOpen(true)}
+        title="Open ⌘K voice controls"
+      >
+        {isActive ? <Mic size={12} /> : <MicOff size={12} />}
+        <span style={{ fontFamily: 'var(--font-hud)', letterSpacing: '0.04em' }}>
+          {phase === 'idle' ? 'voice off' :
+           phase === 'recording' ? 'listening' :
+           phase === 'waiting_for_silence' ? 'endpointing' :
+           phase === 'transcribing' ? 'transcribing' :
+           phase === 'thinking' ? 'thinking' :
+           phase === 'speaking' ? 'speaking' : phase}
+        </span>
+      </button>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Main component — intentionally minimal, lets orb show through
 // ---------------------------------------------------------------------------
 
 export function ChatArea() {
-  const messages = useAppStore((s) => s.messages);
-  const streamState = useAppStore((s) => s.streamState);
   const setComposerOpen = useAppStore((s) => s.setComposerOpen);
-  const navigate = useNavigate();
-  const listRef = useRef<HTMLDivElement>(null);
-  const shouldAutoScroll = useRef(true);
+  const messages = useAppStore((s) => s.messages);
+  const latestRef = useRef<HTMLDivElement>(null);
 
-  // Prefill composer and open it
-  const openComposer = (prefill?: string) => {
-    if (prefill) {
-      // Store prefill in sessionStorage; composer reads it on mount
-      sessionStorage.setItem('composer-prefill', prefill);
-    }
-    setComposerOpen(true);
-  };
-
+  // Auto-open composer briefly when there are new messages to acknowledge
+  // (voice turns push messages; user may want to review them)
+  const prevMsgCount = useRef(messages.length);
   useEffect(() => {
-    if (shouldAutoScroll.current && listRef.current) {
-      listRef.current.scrollTop = listRef.current.scrollHeight;
-    }
-  }, [messages, streamState.content]);
+    prevMsgCount.current = messages.length;
+  }, [messages.length]);
 
-  const handleScroll = () => {
-    if (!listRef.current) return;
-    const { scrollTop, scrollHeight, clientHeight } = listRef.current;
-    shouldAutoScroll.current = scrollHeight - scrollTop - clientHeight < 100;
-  };
-
-  const isEmpty = messages.length === 0 && !streamState.isStreaming;
+  const openComposer = () => setComposerOpen(true);
 
   return (
-    <div className="flex flex-col h-full">
+    <>
+      {/* Transparent canvas — orb from Layout shows through */}
       <div
-        ref={listRef}
-        onScroll={handleScroll}
-        className="flex-1 overflow-y-auto"
+        className="flex flex-col h-full"
+        style={{ background: 'transparent', position: 'relative' }}
       >
-        {isEmpty ? (
-          <IdleHome onOpen={openComposer} navigate={navigate} />
-        ) : (
+        {/* Latest message peek — compact, shown when there's conversation history */}
+        {messages.length > 0 && (
           <div
-            className="max-w-[var(--chat-max-width)] mx-auto px-4 pt-6 pb-4"
-            style={{ animation: 'p2-mode-b-in var(--p2-dur-slow) var(--p2-ease-smooth)' }}
+            ref={latestRef}
+            className="absolute top-4 left-1/2 -translate-x-1/2 max-w-[min(480px,88vw)] w-full px-4"
+            style={{ zIndex: 10 }}
           >
-            {messages.map((msg, i) => {
-              const isLastAssistant = i === messages.length - 1 && msg.role === 'assistant';
-              return (
-                <MessageBubble
-                  key={msg.id}
-                  message={msg}
-                  isLive={isLastAssistant && streamState.isStreaming}
-                />
-              );
-            })}
-            {(() => {
-              if (!streamState.isStreaming || streamState.content !== '') return null;
-              const last = messages[messages.length - 1];
-              if (last?.role === 'assistant' && last.isResearch) return null;
-              return (
-                <div className="flex justify-start mb-4">
-                  <StreamingDots phase={streamState.phase} />
-                </div>
-              );
-            })()}
+            <button
+              onClick={openComposer}
+              className="w-full text-left px-4 py-3 rounded-xl text-xs cursor-pointer transition-all"
+              style={{
+                background: 'rgba(0,0,0,0.55)',
+                backdropFilter: 'blur(20px)',
+                WebkitBackdropFilter: 'blur(20px)',
+                border: '1px solid rgba(255,255,255,0.08)',
+                color: 'rgba(255,255,255,0.65)',
+              }}
+            >
+              <span style={{ color: 'rgba(255,255,255,0.35)', marginRight: 8 }}>
+                {messages.length} message{messages.length !== 1 ? 's' : ''} ·
+              </span>
+              {(() => {
+                const last = messages[messages.length - 1];
+                const preview = last?.content?.slice(0, 80) ?? '';
+                return preview.length < last?.content?.length ? preview + '…' : preview;
+              })()}
+              <span style={{ color: 'var(--p2-teal)', marginLeft: 8, opacity: 0.7 }}>⌘K to view</span>
+            </button>
           </div>
         )}
       </div>
 
-      {/* Streaming banner — narrow indicator above composer bar */}
-      {streamState.isStreaming && streamState.content === '' && (
-        <div className="px-4 shrink-0">
-          <StreamingBanner phase={streamState.phase} />
-        </div>
-      )}
+      {/* Live voice captions — bottom subtitle overlay */}
+      <VoiceCaptionOverlay />
 
-      {/* Composer bar — shows when there are messages */}
-      {!isEmpty && (
-        <ComposerBar onClick={() => setComposerOpen(true)} isStreaming={streamState.isStreaming} />
-      )}
-    </div>
+      {/* Idle hint — "speak naturally or ⌘K" */}
+      <VoiceHint onOpenComposer={openComposer} />
+
+      {/* Voice status strip — bottom right */}
+      <VoiceControlStrip />
+    </>
   );
 }

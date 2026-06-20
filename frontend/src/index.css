@@ -967,6 +967,12 @@
   .jarvis-orb { animation: none !important; }
 }
 
+/* Agent orbit dot glow pulse — box-shadow + scale on inner div (no position conflict) */
+@keyframes agent-glow-pulse {
+  0%, 100% { transform: scale(1.0); opacity: 0.85; }
+  50%       { transform: scale(1.7); opacity: 1.0; }
+}
+
 /* Deep Research inline citation pills — small rounded chips that flow
    with the surrounding text and link out to the cited email. */
 .research-citation {
