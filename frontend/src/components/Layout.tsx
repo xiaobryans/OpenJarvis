@@ -26,17 +26,16 @@ import {
   Target,
   Code2,
   Rocket,
-  ChevronLeft,
-  ChevronRight,
   Command,
   Activity,
   X,
-  Bell,
 } from 'lucide-react';
 import { ApprovalBell } from './ApprovalBell';
 import { SystemPulse } from './SystemPulse';
+import { AmbientCore } from './AmbientCore';
 import { useAppStore } from '../lib/store';
 import { checkHealth } from '../lib/api';
+import { usePlan2ModeSync } from '../hooks/usePlan2Adapter';
 
 interface NavItem {
   path: string;
@@ -304,7 +303,11 @@ function TopBar({ apiReachable }: { apiReachable: boolean | null }) {
 
 export function Layout() {
   const systemPanelOpen = useAppStore((s) => s.systemPanelOpen);
+  const uiMode = useAppStore((s) => s.uiMode);
   const [apiReachable, setApiReachable] = useState<boolean | null>(null);
+
+  // Plan 2 mode A/B auto-transition (must be called once in tree)
+  usePlan2ModeSync();
 
   useEffect(() => {
     const check = () => checkHealth().then(setApiReachable);
@@ -318,9 +321,28 @@ export function Layout() {
     };
   }, []);
 
+  // Mode A/B: ambient intensity — higher in B, low in A
+  const ambientIntensity = uiMode === 'B' ? 0.35 : 0.12;
+
+  // Determine ambient mood from store state (keep Layout self-contained)
+  const isStreaming = useAppStore((s) => s.streamState.isStreaming);
+  const pendingApprovalsCount = useAppStore((s) => s.pendingApprovalsCount);
+  const ambientMood = isStreaming
+    ? ('processing' as const)
+    : pendingApprovalsCount > 0
+    ? ('approval' as const)
+    : ('idle' as const);
+
   return (
-    <div className="flex h-full w-full overflow-hidden" style={{ paddingTop: '3px' }}>
+    <div
+      className="flex h-full w-full overflow-hidden p2-mode-transition"
+      data-ui-mode={uiMode}
+      style={{ paddingTop: '3px' }}
+    >
       <div className="hud-backdrop" aria-hidden="true" />
+
+      {/* Plan 2 ambient identity layer — behind everything */}
+      <AmbientCore mood={ambientMood} intensity={ambientIntensity} />
 
       {/* Slim nav rail */}
       <NavRail apiReachable={apiReachable} />

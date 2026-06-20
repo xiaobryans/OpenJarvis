@@ -15,10 +15,11 @@ import { UniversalComposer } from './components/UniversalComposer';
 import { SetupScreen } from './components/SetupScreen';
 import { Toaster } from './components/ui/sonner';
 import { useAppStore } from './lib/store';
-import { fetchModels, fetchServerInfo, fetchSavings, submitSavings, isTauri } from './lib/api';
+import { fetchModels, fetchServerInfo, fetchSavings, submitSavings, isTauri, fetchPendingApprovals } from './lib/api';
 import { OptInModal } from './components/OptInModal';
 import { UpdateChecker } from './components/Desktop/UpdateChecker';
 import { track, hashId } from './lib/analytics';
+import { useSyncAgentsToRegistry } from './hooks/usePlan2Adapter';
 
 export default function App() {
   const [setupDone, setSetupDone] = useState(!isTauri());
@@ -163,6 +164,21 @@ export default function App() {
   }, []);
 
   const toggleSystemPanel = useAppStore((s) => s.toggleSystemPanel);
+  const setPendingApprovalsCount = useAppStore((s) => s.setPendingApprovalsCount);
+
+  // Plan 2: sync managed agents into the registry
+  useSyncAgentsToRegistry();
+
+  // Plan 2: poll pending approvals count and expose to store (feeds mode A/B trigger)
+  useEffect(() => {
+    const refresh = () =>
+      fetchPendingApprovals()
+        .then((list) => setPendingApprovalsCount(list.length))
+        .catch(() => {});
+    refresh();
+    const interval = setInterval(refresh, 15000);
+    return () => clearInterval(interval);
+  }, [setPendingApprovalsCount]);
 
   // Global keyboard shortcuts
   useEffect(() => {
