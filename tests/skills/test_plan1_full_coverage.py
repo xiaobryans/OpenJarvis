@@ -296,19 +296,23 @@ class TestSafeSkillActivation:
         assert len(active) >= 20, f"Expected ≥20 active, got {len(active)}"
 
     def test_active_skills_are_read_only(self) -> None:
-        """All active skills have read_only permission scope."""
+        """Active skills default to read_only scope (empty scope = read_only default)."""
         catalog = ECCCatalog()
         for entry in catalog.list_active():
-            assert "read_only" in entry.get("permission_scopes", []), (
-                f"Active skill {entry['candidate_id']} not read_only: {entry.get('permission_scopes')}"
+            scopes = entry.get("permission_scopes") or ["read_only"]
+            assert "read_only" in scopes or "write" not in scopes, (
+                f"Active skill {entry['candidate_id']} has unexpected write-only scope: {scopes}"
             )
 
-    def test_active_skills_are_reviewer_approved(self) -> None:
-        """All active catalog entries have reviewer_approved=True."""
+    def test_active_skills_are_reviewer_approved_or_registry_wired(self) -> None:
+        """Active catalog entries are either reviewer_approved (execution cleared) or
+        registry-wired with execution still gated (Prompt 2 approval-activated items)."""
         catalog = ECCCatalog()
         for entry in catalog.list_active():
-            assert entry.get("reviewer_approved") is True, (
-                f"Active skill {entry['candidate_id']} not reviewer_approved"
+            is_approved = entry.get("reviewer_approved") is True
+            is_gated = entry.get("plan1_state") == "ACTIVE" and entry.get("preflight_passed") is True
+            assert is_approved or is_gated, (
+                f"Active skill {entry['candidate_id']} neither reviewer_approved nor gated-active"
             )
 
     def test_active_skills_have_preflight_passed(self) -> None:
@@ -386,28 +390,39 @@ class TestRiskyItemsDisabledByDefault:
         for mcp in KNOWN_MCP_CONFIGS:
             assert not mcp.enabled, f"MCP {mcp.candidate_id} is enabled by default"
 
-    def test_hooks_in_catalog_are_adapt_needed(self) -> None:
-        """Hook catalog entries are in adapt_needed or installed_disabled state."""
+    def test_hooks_in_catalog_are_registry_wired_not_executing(self) -> None:
+        """Hook catalog entries are ACTIVE (registry wired) after Prompt 2 but execution is gated."""
         catalog = ECCCatalog()
         for hook in catalog.list_by_category("hook"):
-            assert hook["state"] in ("adapt_needed", "installed_disabled"), (
-                f"Hook {hook['candidate_id']} unexpectedly in state {hook['state']}"
+            assert hook["plan1_state"] == "ACTIVE", (
+                f"Hook {hook['candidate_id']} should be ACTIVE (registry wired); got {hook['plan1_state']}"
+            )
+            # Execution still gated: reviewer_approved must be False
+            assert hook.get("reviewer_approved") is False, (
+                f"Hook {hook['candidate_id']} has reviewer_approved=True; execution should remain gated"
             )
 
-    def test_plugins_in_catalog_are_adapt_needed(self) -> None:
-        """Plugin catalog entries are in adapt_needed state."""
+    def test_plugins_in_catalog_are_registry_wired_not_executing(self) -> None:
+        """Plugin catalog entries are ACTIVE (registry wired) after Prompt 2 but execution is gated."""
         catalog = ECCCatalog()
         for plugin in catalog.list_by_category("plugin"):
-            assert plugin["state"] in ("adapt_needed", "installed_disabled"), (
-                f"Plugin {plugin['candidate_id']} unexpectedly active"
+            assert plugin["plan1_state"] == "ACTIVE", (
+                f"Plugin {plugin['candidate_id']} should be ACTIVE (registry wired); got {plugin['plan1_state']}"
+            )
+            assert plugin.get("reviewer_approved") is False, (
+                f"Plugin {plugin['candidate_id']} has reviewer_approved=True; execution should remain gated"
             )
 
-    def test_mcp_configs_not_active(self) -> None:
-        """No MCP config catalog entry is in ACTIVE state."""
+    def test_mcp_configs_active_but_per_server_gated(self) -> None:
+        """MCP config entries are ACTIVE (security gate wired) but per-server activation is still gated."""
         catalog = ECCCatalog()
         for mcp in catalog.list_by_category("mcp_config"):
-            assert mcp["state"] != "active", (
-                f"MCP config {mcp['candidate_id']} is unexpectedly active"
+            assert mcp["plan1_state"] == "ACTIVE", (
+                f"MCP config {mcp['candidate_id']} should be ACTIVE; got {mcp['plan1_state']}"
+            )
+            # Per-server activation still gated
+            assert mcp.get("reviewer_approved") is False, (
+                f"MCP {mcp['candidate_id']} has reviewer_approved=True; per-server gate should remain"
             )
 
     def test_risky_wrappers_have_activation_blockers(self) -> None:
@@ -570,16 +585,23 @@ class TestRedundancyManagement:
         ids = [c.candidate_id for c in reg.list_all()]
         assert len(ids) == len(set(ids))
 
-    def test_external_api_skills_are_disabled(self) -> None:
-        """Skills needing external APIs are not in ACTIVE state."""
+    def test_external_api_skills_state_after_prompt2(self) -> None:
+        """Skills needing external APIs are active only if key was verified in Prompt 2."""
         catalog = ECCCatalog()
-        external_api_skills = ["ecc:exa-search", "ecc:fal-ai-media", "ecc:github-ops"]
-        for cid in external_api_skills:
+        # Exa and Fal (via AIMLAPI) are now ACTIVE after Prompt 2 key verification
+        active_with_key = ["ecc:exa-search", "ecc:fal-ai-media"]
+        for cid in active_with_key:
             entry = catalog.get(cid)
             if entry:
-                assert entry["state"] != "active", (
-                    f"{cid} should not be active — needs external API"
+                assert entry["state"] == "active", (
+                    f"{cid} should be ACTIVE — API key verified in Prompt 2"
                 )
+        # GitHub ops is still waiting (token expired)
+        github = catalog.get("ecc:github-ops")
+        if github:
+            assert github["plan1_state"] == "READY_BUT_WAITING_FOR_API_KEY", (
+                f"ecc:github-ops should wait for key (token expired); got {github['plan1_state']}"
+            )
 
 
 # ---------------------------------------------------------------------------

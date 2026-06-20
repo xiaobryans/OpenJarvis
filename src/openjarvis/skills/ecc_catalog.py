@@ -121,7 +121,12 @@ ACTIVE_COUNT_BY_CATEGORY: Dict[str, int] = {
     "skill": 244,    # 22 original + 77 from adapt_needed + 95 net new from inspect_later + 50 catch-all
     "context": 3,    # _ACTIVE_CONTEXTS
     "command": 8,    # 8 active commands (3 original + 5 newly activated)
-    "TOTAL": 255,    # 244 + 3 + 8 = 255
+    "TOTAL": 255,    # Pre-Prompt-2 baseline; Prompt-2 live validation raised total to 316
+    # Prompt-2 additions (activated by keys/approval/local tools):
+    # +24 API-key activated (AIMLAPI, EXA, Slack, Linear, Resend, VideoDB, Pinecone, Apollo, ScrapingBee)
+    # +36 approval activated (hooks, plugins, agents, wrappers, db-migration, mcp-servers)
+    # +1 Flox activated (flox-environments)
+    "PROMPT2_TOTAL": 316,  # = 255 + 61
 }
 
 # Adapted skills (SkillManifest objects in adapted_skills.py)
@@ -1184,6 +1189,106 @@ def _build_static_catalog() -> Dict[str, Dict[str, Any]]:
             "ui_route": None,
         }
 
+    # -----------------------------------------------------------------------
+    # Prompt 2 — Live Validation Override Pass
+    # Applied after all base catalog items are built.
+    # Security: no secrets read here; all decisions pre-computed from auth tests.
+    # -----------------------------------------------------------------------
+    from openjarvis.skills.ecc_live_validation import (  # noqa: PLC0415
+        ALL_API_KEY_ACTIVATED,
+        _APPROVAL_ACTIVATED,
+        _COST_BLOCKED_OPTIONAL_LATER_IDS,
+        _GITHUB_KEY_PRESENT_AUTH_FAILED,
+        _NOT_NEEDED_FOR_NOW_IDS,
+        _FLOX_ACTIVATED,
+        _PILLOW_WAITING,
+    )
+
+    # API-key-activated skills → ACTIVE
+    for cid in ALL_API_KEY_ACTIVATED:
+        if cid in catalog:
+            catalog[cid]["plan1_state"] = "ACTIVE"
+            catalog[cid]["state"] = "active"
+            catalog[cid]["preflight_passed"] = True
+            catalog[cid]["reviewer_approved"] = True
+            catalog[cid]["reason"] = (
+                "ACTIVE: API key verified in Prompt 2 live validation. "
+                "Provider auth test passed. Skill activated."
+            )
+
+    # Approval-activated items (registry wiring, execution still gated)
+    for cid in _APPROVAL_ACTIVATED:
+        if cid in catalog:
+            catalog[cid]["plan1_state"] = "ACTIVE"
+            catalog[cid]["state"] = "active"
+            catalog[cid]["preflight_passed"] = True
+            # reviewer_approved stays False for execution actions — only registry wiring is approved
+            # The plan1_state reflects framework availability, not unrestricted execution
+            existing_reason = catalog[cid].get("reason", "")
+            catalog[cid]["reason"] = (
+                "ACTIVE (registry wired, execution gated): "
+                "Bryan granted Prompt 2 approval for registry wiring + dry-run activation. "
+                "Risky execution remains disabled by reviewer_approved=False gate. "
+                f"Original: {existing_reason[:120]}"
+            )
+
+    # NOT_NEEDED_FOR_NOW items
+    for cid in _NOT_NEEDED_FOR_NOW_IDS:
+        if cid in catalog:
+            catalog[cid]["plan1_state"] = "NOT_NEEDED_FOR_NOW"
+            catalog[cid]["state"] = "installed_disabled"
+            catalog[cid]["reason"] = (
+                "NOT_NEEDED_FOR_NOW: Bryan confirmed skip in Prompt 2. "
+                "Provider not required for current Plan 1 capabilities. "
+                "Reactivate by setting the required API key and removing this override."
+            )
+
+    # COST_BLOCKED_OPTIONAL_LATER items
+    for cid in _COST_BLOCKED_OPTIONAL_LATER_IDS:
+        if cid in catalog:
+            catalog[cid]["plan1_state"] = "COST_BLOCKED_OPTIONAL_LATER"
+            catalog[cid]["state"] = "installed_disabled"
+            catalog[cid]["reason"] = (
+                "COST_BLOCKED_OPTIONAL_LATER: Provider key missing or too expensive for Plan 1. "
+                "Not required for any core accepted capability. "
+                "Activate later by providing the required provider key."
+            )
+
+    # GitHub key present but auth failed — keep READY_BUT_WAITING_FOR_API_KEY with clear note
+    for cid in _GITHUB_KEY_PRESENT_AUTH_FAILED:
+        if cid in catalog:
+            catalog[cid]["plan1_state"] = "READY_BUT_WAITING_FOR_API_KEY"
+            catalog[cid]["state"] = "installed_disabled"
+            catalog[cid]["reason"] = (
+                "READY_BUT_WAITING_FOR_API_KEY: GITHUB_TOKEN is present in .env but returned "
+                "401 Bad credentials during Prompt 2 live auth test. "
+                "Token is likely expired or revoked. "
+                "Fix: GitHub > Settings > Developer Settings > Personal access tokens > regenerate."
+            )
+
+    # Flox-activated items
+    for cid in _FLOX_ACTIVATED:
+        if cid in catalog:
+            catalog[cid]["plan1_state"] = "ACTIVE"
+            catalog[cid]["state"] = "active"
+            catalog[cid]["preflight_passed"] = True
+            catalog[cid]["reason"] = (
+                "ACTIVE: Flox CLI 1.13.0 confirmed installed in Prompt 2 local tool verification. "
+                "list_environments is read-only by default. "
+                "Environment creation requires Bryan approval via FloxEnvWrapper."
+            )
+
+    # Pillow-waiting items — Pillow not installed, stays in READY_BUT_WAITING_FOR_USER_MANUAL_SETUP
+    for cid in _PILLOW_WAITING:
+        if cid in catalog:
+            catalog[cid]["plan1_state"] = "READY_BUT_WAITING_FOR_USER_MANUAL_SETUP"
+            catalog[cid]["state"] = "installed_disabled"
+            catalog[cid]["reason"] = (
+                "READY_BUT_WAITING_FOR_USER_MANUAL_SETUP: Pillow not installed in Prompt 2 check. "
+                "Install: `uv add Pillow` then re-run Plan 1 certification. "
+                "No API key or approval needed — purely local image processing."
+            )
+
     return catalog
 
 
@@ -1371,8 +1476,9 @@ class ECCCatalog:
             "active_count_decomposition": {
                 "by_category": actual_active_by_cat,
                 "total": actual_total_active,
-                "expected_total": ACTIVE_COUNT_BY_CATEGORY["TOTAL"],
-                "matches_expected": actual_total_active == ACTIVE_COUNT_BY_CATEGORY["TOTAL"],
+                "expected_total": ACTIVE_COUNT_BY_CATEGORY.get("PROMPT2_TOTAL", ACTIVE_COUNT_BY_CATEGORY["TOTAL"]),
+                "matches_expected": actual_total_active == ACTIVE_COUNT_BY_CATEGORY.get("PROMPT2_TOTAL", ACTIVE_COUNT_BY_CATEGORY["TOTAL"]),
+                "pre_prompt2_baseline": ACTIVE_COUNT_BY_CATEGORY["TOTAL"],
                 "decomposition": f"{actual_active_by_cat} = {actual_total_active}",
             },
             "adapted_skills_vs_active": {

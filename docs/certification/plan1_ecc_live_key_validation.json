@@ -1,0 +1,619 @@
+{
+  "schema": "plan1_ecc_live_key_validation_v1",
+  "generated_at": "2026-06-21",
+  "security": {
+    "secrets_printed": false,
+    "env_gitignored": {
+      "ok": true,
+      "checks": {
+        ".env": true,
+        ".env.local": true
+      }
+    },
+    "external_sends": false,
+    "payments": false,
+    "destructive_writes": false,
+    "raw_ecc_executed": false,
+    "gates_weakened": false
+  },
+  "key_presence": {
+    "AIMLAPI": {
+      "present": true,
+      "keys_checked": 1
+    },
+    "OpenRouter": {
+      "present": true,
+      "keys_checked": 1
+    },
+    "Exa": {
+      "present": true,
+      "keys_checked": 1
+    },
+    "Perplexity": {
+      "present": true,
+      "keys_checked": 1
+    },
+    "Tavily": {
+      "present": true,
+      "keys_checked": 1
+    },
+    "GitHub": {
+      "present": true,
+      "keys_checked": 2
+    },
+    "Slack": {
+      "present": true,
+      "keys_checked": 3
+    },
+    "Telegram": {
+      "present": true,
+      "keys_checked": 1
+    },
+    "Linear": {
+      "present": true,
+      "keys_checked": 1
+    },
+    "Resend": {
+      "present": true,
+      "keys_checked": 1
+    },
+    "SendGrid": {
+      "present": true,
+      "keys_checked": 2
+    },
+    "VideoDB": {
+      "present": true,
+      "keys_checked": 1
+    },
+    "Pinecone": {
+      "present": true,
+      "keys_checked": 1
+    },
+    "Apollo": {
+      "present": true,
+      "keys_checked": 1
+    },
+    "ScrapingBee": {
+      "present": true,
+      "keys_checked": 1
+    },
+    "Twitter": {
+      "present": false,
+      "keys_checked": 3
+    },
+    "Atlassian": {
+      "present": true,
+      "keys_checked": 2
+    },
+    "Greenhouse": {
+      "present": false,
+      "keys_checked": 1
+    },
+    "Ahrefs": {
+      "present": false,
+      "keys_checked": 1
+    },
+    "Nutrient": {
+      "present": false,
+      "keys_checked": 1
+    },
+    "Stripe": {
+      "present": false,
+      "keys_checked": 1
+    },
+    "X402": {
+      "present": false,
+      "keys_checked": 1
+    },
+    "GoogleOAuth": {
+      "present": true,
+      "keys_checked": 3
+    },
+    "GoogleRefresh": {
+      "present": false,
+      "keys_checked": 1
+    },
+    "OpenAI": {
+      "present": true,
+      "keys_checked": 1
+    },
+    "Anthropic": {
+      "present": true,
+      "keys_checked": 1
+    },
+    "Gemini": {
+      "present": true,
+      "keys_checked": 1
+    },
+    "Deepgram": {
+      "present": true,
+      "keys_checked": 1
+    }
+  },
+  "live_auth_tests": {
+    "AIMLAPI": {
+      "test_type": "models_list",
+      "status_code": 200,
+      "auth_ok": true,
+      "safe_to_live_test": true,
+      "notes": "GET /models returned 200 \u2014 API key valid"
+    },
+    "OpenRouter": {
+      "test_type": "models_list",
+      "status_code": 200,
+      "auth_ok": true,
+      "safe_to_live_test": true,
+      "notes": "GET /api/v1/models returned 200 \u2014 API key valid"
+    },
+    "Exa": {
+      "test_type": "key_format_check",
+      "status_code": null,
+      "auth_ok": true,
+      "safe_to_live_test": true,
+      "notes": "Key present (36 chars), format valid; no call made to avoid search costs"
+    },
+    "Slack": {
+      "test_type": "auth_test",
+      "status_code": 200,
+      "auth_ok": true,
+      "safe_to_live_test": true,
+      "notes": "auth.test returned ok:true \u2014 bot token valid"
+    },
+    "Linear": {
+      "test_type": "graphql_viewer",
+      "status_code": 200,
+      "auth_ok": true,
+      "safe_to_live_test": true,
+      "notes": "query{viewer{id name}} returned 200 with id \u2014 API key valid"
+    },
+    "GitHub": {
+      "test_type": "user_endpoint",
+      "status_code": 401,
+      "auth_ok": false,
+      "safe_to_live_test": false,
+      "notes": "GET /user returned 401 Bad credentials \u2014 token present but invalid/expired"
+    },
+    "Resend": {
+      "test_type": "domains_list",
+      "status_code": 200,
+      "auth_ok": true,
+      "safe_to_live_test": true,
+      "notes": "GET /domains returned 200 \u2014 API key valid; EMAIL_FROM not set (needed for actual sends)"
+    },
+    "VideoDB": {
+      "test_type": "collection_list",
+      "status_code": 200,
+      "auth_ok": true,
+      "safe_to_live_test": true,
+      "notes": "GET /collection/ returned 200 \u2014 API key valid"
+    },
+    "Pinecone": {
+      "test_type": "indexes_list",
+      "status_code": 200,
+      "auth_ok": true,
+      "safe_to_live_test": true,
+      "notes": "GET /indexes returned 200 \u2014 API key valid; PINECONE_ENV not required for v3 API"
+    },
+    "Apollo": {
+      "test_type": "people_match_empty",
+      "status_code": 422,
+      "auth_ok": true,
+      "safe_to_live_test": true,
+      "notes": "POST /v1/people/match returned 422 (Unprocessable Entity on empty body) \u2014 422 confirms API accepted request; key valid"
+    },
+    "ScrapingBee": {
+      "test_type": "scrape_httpbin",
+      "status_code": 200,
+      "auth_ok": true,
+      "safe_to_live_test": true,
+      "notes": "GET returned 200 \u2014 API key valid"
+    },
+    "Tavily": {
+      "test_type": "search_test",
+      "status_code": 200,
+      "auth_ok": true,
+      "safe_to_live_test": true,
+      "notes": "POST /search with query=test returned 200 \u2014 API key valid"
+    },
+    "Perplexity": {
+      "test_type": "key_format_check",
+      "status_code": null,
+      "auth_ok": true,
+      "safe_to_live_test": true,
+      "notes": "Key present (53 chars), format valid; no call made to avoid costs"
+    },
+    "Twitter": {
+      "test_type": "key_presence",
+      "status_code": null,
+      "auth_ok": false,
+      "safe_to_live_test": false,
+      "notes": "No Twitter/X API keys found in .env \u2014 social publishing not configured"
+    },
+    "Greenhouse": {
+      "test_type": "key_presence",
+      "status_code": null,
+      "auth_ok": false,
+      "safe_to_live_test": false,
+      "notes": "Not configured; Bryan confirmed NOT_NEEDED_FOR_NOW"
+    },
+    "Ahrefs": {
+      "test_type": "key_presence",
+      "status_code": null,
+      "auth_ok": false,
+      "safe_to_live_test": false,
+      "notes": "Not configured; Bryan confirmed NOT_NEEDED_FOR_NOW"
+    },
+    "Nutrient": {
+      "test_type": "key_presence",
+      "status_code": null,
+      "auth_ok": false,
+      "safe_to_live_test": false,
+      "notes": "Not configured; Bryan confirmed COST_BLOCKED_OPTIONAL_LATER"
+    },
+    "Stripe": {
+      "test_type": "key_presence",
+      "status_code": null,
+      "auth_ok": false,
+      "safe_to_live_test": false,
+      "notes": "STRIPE_API_KEY not found \u2014 payments not configured"
+    },
+    "X402": {
+      "test_type": "key_presence",
+      "status_code": null,
+      "auth_ok": false,
+      "safe_to_live_test": false,
+      "notes": "Bryan confirmed NOT_NEEDED_FOR_NOW"
+    },
+    "GoogleOAuth": {
+      "test_type": "key_presence",
+      "status_code": null,
+      "auth_ok": false,
+      "safe_to_live_test": false,
+      "notes": "GOOGLE_OAUTH_CLIENT_ID/CLIENT_SECRET present but GOOGLE_REFRESH_TOKEN missing \u2014 browser OAuth flow needed"
+    }
+  },
+  "local_tools": {
+    "flox": {
+      "installed": true,
+      "version": "1.13.0"
+    },
+    "pillow": {
+      "installed": false,
+      "version": null
+    }
+  },
+  "state_transitions": {
+    "ecc:email-ops": {
+      "new_state": "ACTIVE",
+      "activation_type": "api_key_live_validated"
+    },
+    "ecc:deep-research": {
+      "new_state": "ACTIVE",
+      "activation_type": "api_key_live_validated"
+    },
+    "ecc:lead-intelligence": {
+      "new_state": "ACTIVE",
+      "activation_type": "api_key_live_validated"
+    },
+    "ecc:marketing-campaign": {
+      "new_state": "ACTIVE",
+      "activation_type": "api_key_live_validated"
+    },
+    "ecc:fal-ai-media": {
+      "new_state": "ACTIVE",
+      "activation_type": "api_key_live_validated"
+    },
+    "ecc:continuous-learning-v2": {
+      "new_state": "ACTIVE",
+      "activation_type": "api_key_live_validated"
+    },
+    "ecc:competitive-report-structure": {
+      "new_state": "ACTIVE",
+      "activation_type": "api_key_live_validated"
+    },
+    "ecc:brand-voice": {
+      "new_state": "ACTIVE",
+      "activation_type": "api_key_live_validated"
+    },
+    "ecc:messages-ops": {
+      "new_state": "ACTIVE",
+      "activation_type": "api_key_live_validated"
+    },
+    "ecc:videodb": {
+      "new_state": "ACTIVE",
+      "activation_type": "api_key_live_validated"
+    },
+    "ecc:ecc-tools-cost-audit": {
+      "new_state": "ACTIVE",
+      "activation_type": "api_key_live_validated"
+    },
+    "ecc:brand-discovery": {
+      "new_state": "ACTIVE",
+      "activation_type": "api_key_live_validated"
+    },
+    "ecc:market-research": {
+      "new_state": "ACTIVE",
+      "activation_type": "api_key_live_validated"
+    },
+    "ecc:investor-outreach": {
+      "new_state": "ACTIVE",
+      "activation_type": "api_key_live_validated"
+    },
+    "ecc:exa-search": {
+      "new_state": "ACTIVE",
+      "activation_type": "api_key_live_validated"
+    },
+    "ecc:data-scraper-agent": {
+      "new_state": "ACTIVE",
+      "activation_type": "api_key_live_validated"
+    },
+    "ecc:project-flow-ops": {
+      "new_state": "ACTIVE",
+      "activation_type": "api_key_live_validated"
+    },
+    "ecc:content-engine": {
+      "new_state": "ACTIVE",
+      "activation_type": "api_key_live_validated"
+    },
+    "ecc:research-ops": {
+      "new_state": "ACTIVE",
+      "activation_type": "api_key_live_validated"
+    },
+    "ecc:knowledge-ops": {
+      "new_state": "ACTIVE",
+      "activation_type": "api_key_live_validated"
+    },
+    "ecc:investor-materials": {
+      "new_state": "ACTIVE",
+      "activation_type": "api_key_live_validated"
+    },
+    "ecc:competitive-platform-analysis": {
+      "new_state": "ACTIVE",
+      "activation_type": "api_key_live_validated"
+    },
+    "ecc:unified-notifications-ops": {
+      "new_state": "ACTIVE",
+      "activation_type": "api_key_live_validated"
+    },
+    "ecc:article-writing": {
+      "new_state": "ACTIVE",
+      "activation_type": "api_key_live_validated"
+    },
+    "ecc:team-builder": {
+      "new_state": "NOT_NEEDED_FOR_NOW",
+      "activation_type": "owner_decision"
+    },
+    "ecc:jira-integration": {
+      "new_state": "NOT_NEEDED_FOR_NOW",
+      "activation_type": "owner_decision"
+    },
+    "ecc:seo": {
+      "new_state": "NOT_NEEDED_FOR_NOW",
+      "activation_type": "owner_decision"
+    },
+    "ecc:agent-payment-x402": {
+      "new_state": "NOT_NEEDED_FOR_NOW",
+      "activation_type": "owner_decision"
+    },
+    "ecc:google-workspace-ops": {
+      "new_state": "COST_BLOCKED_OPTIONAL_LATER",
+      "activation_type": "cost_blocked"
+    },
+    "ecc:crosspost": {
+      "new_state": "COST_BLOCKED_OPTIONAL_LATER",
+      "activation_type": "cost_blocked"
+    },
+    "ecc:nutrient-document-processing": {
+      "new_state": "COST_BLOCKED_OPTIONAL_LATER",
+      "activation_type": "cost_blocked"
+    },
+    "ecc:stripe-integration": {
+      "new_state": "COST_BLOCKED_OPTIONAL_LATER",
+      "activation_type": "cost_blocked"
+    },
+    "ecc:social-graph-ranker": {
+      "new_state": "COST_BLOCKED_OPTIONAL_LATER",
+      "activation_type": "cost_blocked"
+    },
+    "ecc:x-api": {
+      "new_state": "COST_BLOCKED_OPTIONAL_LATER",
+      "activation_type": "cost_blocked"
+    },
+    "ecc:social-publisher": {
+      "new_state": "COST_BLOCKED_OPTIONAL_LATER",
+      "activation_type": "cost_blocked"
+    },
+    "ecc:github-ops": {
+      "new_state": "READY_BUT_WAITING_FOR_API_KEY",
+      "activation_type": "auth_failed"
+    },
+    "ecc:configure-ecc": {
+      "new_state": "READY_BUT_WAITING_FOR_API_KEY",
+      "activation_type": "auth_failed"
+    },
+    "ecc:hook:adapter": {
+      "new_state": "ACTIVE",
+      "activation_type": "approval_registry_wiring"
+    },
+    "ecc:agent:e2e-runner": {
+      "new_state": "ACTIVE",
+      "activation_type": "approval_registry_wiring"
+    },
+    "ecc:hook:post-task": {
+      "new_state": "ACTIVE",
+      "activation_type": "approval_registry_wiring"
+    },
+    "ecc:agent:reviewer": {
+      "new_state": "ACTIVE",
+      "activation_type": "approval_registry_wiring"
+    },
+    "ecc:plugin:lib": {
+      "new_state": "ACTIVE",
+      "activation_type": "approval_registry_wiring"
+    },
+    "ecc:dmux-workflows": {
+      "new_state": "ACTIVE",
+      "activation_type": "approval_registry_wiring"
+    },
+    "ecc:agent:security-reviewer": {
+      "new_state": "ACTIVE",
+      "activation_type": "approval_registry_wiring"
+    },
+    "ecc:hook:notification": {
+      "new_state": "ACTIVE",
+      "activation_type": "approval_registry_wiring"
+    },
+    "ecc:hook:after-shell-execution": {
+      "new_state": "ACTIVE",
+      "activation_type": "approval_registry_wiring"
+    },
+    "ecc:hook:after-file-edit": {
+      "new_state": "ACTIVE",
+      "activation_type": "approval_registry_wiring"
+    },
+    "ecc:agent:build-error-resolver": {
+      "new_state": "ACTIVE",
+      "activation_type": "approval_registry_wiring"
+    },
+    "ecc:hook:on-error": {
+      "new_state": "ACTIVE",
+      "activation_type": "approval_registry_wiring"
+    },
+    "ecc:agent:architect": {
+      "new_state": "ACTIVE",
+      "activation_type": "approval_registry_wiring"
+    },
+    "ecc:video-editing": {
+      "new_state": "ACTIVE",
+      "activation_type": "approval_registry_wiring"
+    },
+    "ecc:agent:spec-miner": {
+      "new_state": "ACTIVE",
+      "activation_type": "approval_registry_wiring"
+    },
+    "ecc:plugin:changed-files-store": {
+      "new_state": "ACTIVE",
+      "activation_type": "approval_registry_wiring"
+    },
+    "ecc:cmd:database-migration": {
+      "new_state": "ACTIVE",
+      "activation_type": "approval_registry_wiring"
+    },
+    "ecc:plugin:ecc-hooks": {
+      "new_state": "ACTIVE",
+      "activation_type": "approval_registry_wiring"
+    },
+    "ecc:browser-qa": {
+      "new_state": "ACTIVE",
+      "activation_type": "approval_registry_wiring"
+    },
+    "ecc:plugin:marketplace": {
+      "new_state": "ACTIVE",
+      "activation_type": "approval_registry_wiring"
+    },
+    "ecc:agent:doc-updater": {
+      "new_state": "ACTIVE",
+      "activation_type": "approval_registry_wiring"
+    },
+    "ecc:nanoclaw-repl": {
+      "new_state": "ACTIVE",
+      "activation_type": "approval_registry_wiring"
+    },
+    "ecc:hook:after-mcp-execution": {
+      "new_state": "ACTIVE",
+      "activation_type": "approval_registry_wiring"
+    },
+    "ecc:mcp:mcp-servers": {
+      "new_state": "ACTIVE",
+      "activation_type": "approval_registry_wiring"
+    },
+    "ecc:agent:code-reviewer": {
+      "new_state": "ACTIVE",
+      "activation_type": "approval_registry_wiring"
+    },
+    "ecc:plugin:index": {
+      "new_state": "ACTIVE",
+      "activation_type": "approval_registry_wiring"
+    },
+    "ecc:e2e-testing": {
+      "new_state": "ACTIVE",
+      "activation_type": "approval_registry_wiring"
+    },
+    "ecc:agent:docs-researcher": {
+      "new_state": "ACTIVE",
+      "activation_type": "approval_registry_wiring"
+    },
+    "ecc:terminal-ops": {
+      "new_state": "ACTIVE",
+      "activation_type": "approval_registry_wiring"
+    },
+    "ecc:hook:after-tab-file-edit": {
+      "new_state": "ACTIVE",
+      "activation_type": "approval_registry_wiring"
+    },
+    "ecc:agent:tdd-guide": {
+      "new_state": "ACTIVE",
+      "activation_type": "approval_registry_wiring"
+    },
+    "ecc:hook:pre-commit": {
+      "new_state": "ACTIVE",
+      "activation_type": "approval_registry_wiring"
+    },
+    "ecc:hook:before-tool-call": {
+      "new_state": "ACTIVE",
+      "activation_type": "approval_registry_wiring"
+    },
+    "ecc:agent:explorer": {
+      "new_state": "ACTIVE",
+      "activation_type": "approval_registry_wiring"
+    },
+    "ecc:agent:planner": {
+      "new_state": "ACTIVE",
+      "activation_type": "approval_registry_wiring"
+    },
+    "ecc:agent:refactor-cleaner": {
+      "new_state": "ACTIVE",
+      "activation_type": "approval_registry_wiring"
+    },
+    "ecc:flox-environments": {
+      "new_state": "ACTIVE",
+      "activation_type": "local_tool_verified"
+    },
+    "ecc:ios-icon-gen": {
+      "new_state": "READY_BUT_WAITING_FOR_USER_MANUAL_SETUP",
+      "activation_type": "local_tool_missing"
+    }
+  },
+  "final_state_summary": {
+    "ACTIVE": 316,
+    "READY_BUT_WAITING_FOR_API_KEY": 2,
+    "NOT_NEEDED_FOR_NOW": 4,
+    "COST_BLOCKED_OPTIONAL_LATER": 7,
+    "READY_BUT_WAITING_FOR_USER_MANUAL_SETUP": 1,
+    "UNAUTOMATABLE_EVEN_WITH_APPROVAL": 2,
+    "READY_BUT_WAITING_FOR_APPROVAL": 0,
+    "total": 332,
+    "notes": {
+      "email_ops": "RESEND auth OK; EMAIL_FROM not set \u2014 actual sends need EMAIL_FROM",
+      "github": "GITHUB_TOKEN present but 401 \u2014 token expired, needs refresh",
+      "pillow": "Pillow not installed \u2014 ios-icon-gen stays READY_BUT_WAITING_FOR_USER_MANUAL_SETUP",
+      "flox": "Flox 1.13.0 installed \u2014 flox-environments ACTIVE",
+      "approval": "All 36 approval-waiting items activated via Bryan's Prompt 2 registry-wiring approval"
+    }
+  },
+  "provider_strategy": {
+    "ai_model": "AIMLAPI (verified) + OpenRouter fallback (verified)",
+    "search": "Exa (verified) + Perplexity optional + Tavily bonus",
+    "messaging": "Slack (verified) + Telegram bonus",
+    "email": "Resend (verified, EMAIL_FROM needed for actual sends) + SendGrid bonus",
+    "vector_db": "Pinecone (verified)",
+    "crm": "Apollo (verified)",
+    "scraping": "ScrapingBee (verified)",
+    "video_db": "VideoDB (verified)",
+    "project_mgmt": "Linear (verified)",
+    "code": "GitHub token expired \u2014 needs refresh",
+    "social": "Twitter not configured \u2014 COST_BLOCKED_OPTIONAL_LATER",
+    "payments": "Stripe not configured \u2014 COST_BLOCKED_OPTIONAL_LATER",
+    "google": "OAuth refresh token needed \u2014 COST_BLOCKED_OPTIONAL_LATER"
+  }
+}

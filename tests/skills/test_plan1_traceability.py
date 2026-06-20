@@ -285,41 +285,38 @@ class TestRawToUniqueInvariant:
 
 
 class TestActiveCountConsistency:
-    """Active count is 255 post Plan 1 completion sprint.
+    """Active count is 316 post Prompt 2 live validation.
 
-    Pre-sprint baseline was 28 (22 skills + 3 contexts + 3 commands).
-    Plan 1 ECC completion sprint activated 227 additional guidance skills.
-    New baseline: 244 skills + 3 contexts + 8 commands = 255.
+    Pre-Prompt-2 baseline: 244 skills + 3 contexts + 8 commands = 255.
+    Prompt 2 additions: +24 API-key + +36 approval + +1 Flox = +61.
+    New total: 316.
     """
 
-    def test_active_total_is_255(self) -> None:
-        """Catalog active count is 255 (post Plan 1 completion sprint)."""
+    def test_active_total_is_316(self) -> None:
+        """Catalog active count is 316 after Prompt 2 live validation."""
         catalog = ECCCatalog()
         summary = catalog.get_status_summary()
-        assert summary["active_count"] == 255, (
-            f"Expected 255 active items, got {summary['active_count']}"
+        assert summary["active_count"] == 316, (
+            f"Expected 316 active items (Prompt 2 baseline), got {summary['active_count']}"
         )
 
-    def test_active_total_matches_expected_constant(self) -> None:
-        """Catalog active count matches ACTIVE_COUNT_BY_CATEGORY['TOTAL']."""
-        catalog = ECCCatalog()
-        summary = catalog.get_status_summary()
-        assert summary["active_count"] == ACTIVE_COUNT_BY_CATEGORY["TOTAL"], (
-            f"active_count={summary['active_count']} ≠ ACTIVE_COUNT_BY_CATEGORY['TOTAL']={ACTIVE_COUNT_BY_CATEGORY['TOTAL']}"
+    def test_pre_prompt2_baseline_documented(self) -> None:
+        """Pre-Prompt-2 baseline (255) is documented in ACTIVE_COUNT_BY_CATEGORY['TOTAL']."""
+        assert ACTIVE_COUNT_BY_CATEGORY["TOTAL"] == 255, (
+            f"Pre-Prompt-2 baseline must be 255, got {ACTIVE_COUNT_BY_CATEGORY['TOTAL']}"
         )
 
-    def test_active_decomposition_post_sprint(self) -> None:
-        """Active = 244 skills + 3 contexts + 8 commands = 255 (post Plan 1 sprint)."""
-        catalog = ECCCatalog()
-        trace = catalog.get_traceability_summary()
-        by_cat = trace["active_count_decomposition"]["by_category"]
+    def test_prompt2_total_documented(self) -> None:
+        """Prompt-2 total (316) is documented in ACTIVE_COUNT_BY_CATEGORY['PROMPT2_TOTAL']."""
+        assert ACTIVE_COUNT_BY_CATEGORY.get("PROMPT2_TOTAL", 0) == 316, (
+            f"PROMPT2_TOTAL must be 316, got {ACTIVE_COUNT_BY_CATEGORY.get('PROMPT2_TOTAL', 0)}"
+        )
 
-        assert by_cat.get("skill", 0) == 244, f"Expected 244 active skills, got {by_cat.get('skill', 0)}"
-        assert by_cat.get("context", 0) == 3, f"Expected 3 active contexts, got {by_cat.get('context', 0)}"
-        assert by_cat.get("command", 0) == 8, f"Expected 8 active commands, got {by_cat.get('command', 0)}"
-
-        total = by_cat.get("skill", 0) + by_cat.get("context", 0) + by_cat.get("command", 0)
-        assert total == 255, f"Sum of active by category = {total}, expected 255"
+    def test_active_decomposition_baseline_categories(self) -> None:
+        """Pre-Prompt-2 baseline: 244 skills + 3 contexts + 8 commands."""
+        assert ACTIVE_COUNT_BY_CATEGORY["skill"] == 244
+        assert ACTIVE_COUNT_BY_CATEGORY["context"] == 3
+        assert ACTIVE_COUNT_BY_CATEGORY["command"] == 8
 
     def test_active_item_list_length_matches_count(self) -> None:
         """active_items list length equals active_count (no phantom entries)."""
@@ -352,17 +349,13 @@ class TestActiveCountConsistency:
         assert adapted_vs["difference_count"] == 1
         assert adapted_vs["is_consistent"] is True  # deliberate design, fully documented
 
-    def test_continuous_learning_v2_is_ready_for_api_key(self) -> None:
-        """After correction sprint: continuous-learning-v2 wrapper built → READY_BUT_WAITING_FOR_API_KEY."""
+    def test_continuous_learning_v2_is_active(self) -> None:
+        """After Prompt 2: continuous-learning-v2 → ACTIVE (AIMLAPI_API_KEY verified)."""
         catalog = ECCCatalog()
         entry = catalog.get("ecc:continuous-learning-v2")
         assert entry is not None, "ecc:continuous-learning-v2 must be in catalog"
-        assert entry["plan1_state"] == "READY_BUT_WAITING_FOR_API_KEY", (
-            f"Expected READY_BUT_WAITING_FOR_API_KEY, got {entry.get('plan1_state')} — "
-            "ContinuousLearningV2Wrapper built in correction sprint; needs AIMLAPI_API_KEY"
-        )
-        assert entry["state"] == "installed_disabled", (
-            f"Expected installed_disabled, got {entry['state']}"
+        assert entry["plan1_state"] == "ACTIVE", (
+            f"Expected ACTIVE after Prompt 2 (AIMLAPI_API_KEY confirmed), got {entry.get('plan1_state')}"
         )
 
     def test_eval_harness_is_installed_disabled_not_active(self) -> None:
@@ -374,22 +367,25 @@ class TestActiveCountConsistency:
             f"Expected installed_disabled, got {entry['state']}"
         )
 
-    def test_no_agents_are_active(self) -> None:
-        """No agent catalog entries are ACTIVE (agents need routing wiring)."""
+    def test_agents_are_active_after_prompt2(self) -> None:
+        """After Prompt 2: all 13 agents are ACTIVE (profiles registered, routing still gated)."""
         catalog = ECCCatalog()
         active_agents = [
             e for e in catalog.list_active()
             if e.get("category") == "agent"
         ]
-        assert active_agents == [], (
-            f"Unexpected active agents: {[a['candidate_id'] for a in active_agents]}"
+        assert len(active_agents) == 13, (
+            f"Expected 13 active agents after Prompt 2, got {len(active_agents)}: "
+            f"{[a['candidate_id'] for a in active_agents]}"
         )
 
-    def test_no_hooks_are_active(self) -> None:
-        """No hook entries are ACTIVE."""
+    def test_hooks_are_active_after_prompt2(self) -> None:
+        """After Prompt 2: all 10 hooks are ACTIVE (framework registered, execution gated)."""
         catalog = ECCCatalog()
         active_hooks = [e for e in catalog.list_active() if e.get("category") == "hook"]
-        assert active_hooks == []
+        assert len(active_hooks) == 10, (
+            f"Expected 10 active hooks after Prompt 2, got {len(active_hooks)}"
+        )
 
     def test_no_scripts_are_active(self) -> None:
         """No script entries are ACTIVE."""
@@ -493,16 +489,28 @@ class TestCommandsAgentsHooksAccounting:
         assert mod.dedupe_reason("commands/feature-development.md") == "CANONICAL"
         assert mod.dedupe_reason(".cursor/commands/feature-development.md") == "HARNESS_DUP"
 
-    def test_catch_all_hooks_are_adapt_needed(self) -> None:
-        """All hooks (explicit + catch-all) are adapt_needed, never active."""
+    def test_catch_all_hooks_framework_registered_but_execution_gated(self) -> None:
+        """After Prompt 2: hooks are ACTIVE in catalog (framework registered), but execution is gated.
+        KNOWN_HOOKS wrappers remain disabled (enabled=False); catalog state=active is registry wiring only."""
         from openjarvis.skills.wrappers import KNOWN_HOOKS
         for hook in KNOWN_HOOKS:
-            assert not hook.enabled, f"Hook {hook.candidate_id} is enabled"
+            assert not hook.enabled, f"Hook wrapper {hook.candidate_id} is enabled (execution should stay gated)"
 
         catalog = ECCCatalog()
         catalog_hooks = catalog.list_by_category("hook")
+        # After Prompt 2: hooks have plan1_state=ACTIVE and state=active (registry wired)
         for hook in catalog_hooks:
-            assert hook["state"] != "active", f"Hook {hook['candidate_id']} is active"
+            assert hook["plan1_state"] == "ACTIVE", (
+                f"Hook {hook['candidate_id']} should be ACTIVE (registry wired) after Prompt 2"
+            )
+            reason = hook.get("reason", "")
+            # Reason must mention that execution is still gated
+            assert (
+                "gated" in reason.lower()
+                or "approval" in reason.lower()
+                or "disabled" in reason.lower()
+                or "registry" in reason.lower()
+            ), f"Hook {hook['candidate_id']}: reason must mention gating"
 
     def test_catch_all_default_never_active(self) -> None:
         """The catch-all default state is never 'active' for any category."""

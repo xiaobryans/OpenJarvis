@@ -89,6 +89,8 @@ class TestStateModelCleanup:
             "READY_BUT_WAITING_FOR_API_KEY",
             "READY_BUT_WAITING_FOR_APPROVAL",
             "READY_BUT_WAITING_FOR_USER_MANUAL_SETUP",
+            "COST_BLOCKED_OPTIONAL_LATER",   # Added in Prompt 2
+            "NOT_NEEDED_FOR_NOW",             # Added in Prompt 2
             "ADAPT_NEEDED_WITH_EXACT_ENGINEERING_TASK",
             "UNAUTOMATABLE_EVEN_WITH_APPROVAL",
             "REJECTED_WITH_REASON",
@@ -111,14 +113,14 @@ class TestStateModelCleanup:
         assert state_sum == total, f"State counts {state_sum} != total {total}"
 
     def test_final_state_breakdown(self, catalog):
-        """Verify final state breakdown after correction sprint."""
+        """Verify final state breakdown after Prompt 2 live validation."""
         summary = catalog.get_plan1_completion_summary()
         states = summary["plan1_state_counts"]
-        assert states.get("ACTIVE", 0) == 255, f"Expected 255 ACTIVE, got {states.get('ACTIVE')}"
+        assert states.get("ACTIVE", 0) == 316, f"Expected 316 ACTIVE (Prompt 2), got {states.get('ACTIVE')}"
         assert states.get("ADAPT_NEEDED_WITH_EXACT_ENGINEERING_TASK", 0) == 0, "ADAPT_NEEDED must be 0"
         assert states.get("INSTALLED_DISABLED_WITH_EXACT_BLOCKER", 0) == 0, "INSTALLED_DISABLED must be 0"
         assert states.get("UNAUTOMATABLE_EVEN_WITH_APPROVAL", 0) >= 2, "Must have >= 2 UNAUTOMATABLE"
-        assert states.get("READY_BUT_WAITING_FOR_APPROVAL", 0) >= 11, "Must have >= 11 APPROVAL-WAITING"
+        assert states.get("READY_BUT_WAITING_FOR_APPROVAL", 0) == 0, "Must have 0 APPROVAL-WAITING after Prompt 2"
 
 
 # ---------------------------------------------------------------------------
@@ -130,46 +132,48 @@ class TestEngineeringItemsResolved:
     def test_browser_qa_state_correct(self, all_items):
         item = next((i for i in all_items if i.get("candidate_id") == "ecc:browser-qa"), None)
         assert item is not None, "browser-qa must be in catalog"
-        assert item["plan1_state"] == "READY_BUT_WAITING_FOR_APPROVAL", (
-            f"browser-qa state: {item['plan1_state']}"
+        assert item["plan1_state"] == "ACTIVE", (
+            f"browser-qa state after Prompt 2 approval: {item['plan1_state']}"
         )
 
     def test_terminal_ops_state_correct(self, all_items):
         item = next((i for i in all_items if i.get("candidate_id") == "ecc:terminal-ops"), None)
         assert item is not None
-        assert item["plan1_state"] == "READY_BUT_WAITING_FOR_APPROVAL"
+        assert item["plan1_state"] == "ACTIVE"
 
     def test_video_editing_state_correct(self, all_items):
         item = next((i for i in all_items if i.get("candidate_id") == "ecc:video-editing"), None)
         assert item is not None
-        assert item["plan1_state"] == "READY_BUT_WAITING_FOR_APPROVAL"
+        assert item["plan1_state"] == "ACTIVE"
 
     def test_dmux_workflows_state_correct(self, all_items):
         item = next((i for i in all_items if i.get("candidate_id") == "ecc:dmux-workflows"), None)
         assert item is not None
-        assert item["plan1_state"] == "READY_BUT_WAITING_FOR_APPROVAL"
+        assert item["plan1_state"] == "ACTIVE"
 
     def test_e2e_testing_state_correct(self, all_items):
         item = next((i for i in all_items if i.get("candidate_id") == "ecc:e2e-testing"), None)
         assert item is not None
-        assert item["plan1_state"] == "READY_BUT_WAITING_FOR_APPROVAL"
+        assert item["plan1_state"] == "ACTIVE"
 
     def test_nanoclaw_repl_state_correct(self, all_items):
         item = next((i for i in all_items if i.get("candidate_id") == "ecc:nanoclaw-repl"), None)
         assert item is not None
-        assert item["plan1_state"] == "READY_BUT_WAITING_FOR_APPROVAL"
+        assert item["plan1_state"] == "ACTIVE"
 
     def test_continuous_learning_v2_state_correct(self, all_items):
         item = next((i for i in all_items if i.get("candidate_id") == "ecc:continuous-learning-v2"), None)
         assert item is not None
-        assert item["plan1_state"] == "READY_BUT_WAITING_FOR_API_KEY", (
-            f"continuous-learning-v2 should wait for API key (AIMLAPI); got {item['plan1_state']}"
+        assert item["plan1_state"] == "ACTIVE", (
+            f"continuous-learning-v2 activated via AIMLAPI in Prompt 2; got {item['plan1_state']}"
         )
 
     def test_flox_environments_state_correct(self, all_items):
         item = next((i for i in all_items if i.get("candidate_id") == "ecc:flox-environments"), None)
         assert item is not None
-        assert item["plan1_state"] == "READY_BUT_WAITING_FOR_USER_MANUAL_SETUP"
+        assert item["plan1_state"] == "ACTIVE", (
+            f"flox-environments activated after Flox CLI confirmed installed; got {item['plan1_state']}"
+        )
 
     def test_ios_icon_gen_state_correct(self, all_items):
         item = next((i for i in all_items if i.get("candidate_id") == "ecc:ios-icon-gen"), None)
@@ -179,7 +183,9 @@ class TestEngineeringItemsResolved:
     def test_nutrient_doc_processing_state_correct(self, all_items):
         item = next((i for i in all_items if i.get("candidate_id") == "ecc:nutrient-document-processing"), None)
         assert item is not None
-        assert item["plan1_state"] == "READY_BUT_WAITING_FOR_API_KEY"
+        assert item["plan1_state"] == "COST_BLOCKED_OPTIONAL_LATER", (
+            f"nutrient is cost-blocked optional-later; got {item['plan1_state']}"
+        )
 
     def test_windows_desktop_e2e_state_correct(self, all_items):
         item = next((i for i in all_items if i.get("candidate_id") == "ecc:windows-desktop-e2e"), None)
@@ -191,24 +197,28 @@ class TestEngineeringItemsResolved:
     def test_agent_e2e_runner_state_correct(self, all_items):
         item = next((i for i in all_items if i.get("candidate_id") == "ecc:agent:e2e-runner"), None)
         assert item is not None
-        assert item["plan1_state"] == "READY_BUT_WAITING_FOR_APPROVAL"
+        assert item["plan1_state"] == "ACTIVE", (
+            f"e2e-runner agent activated (registry wired) in Prompt 2; got {item['plan1_state']}"
+        )
 
     def test_agent_docs_researcher_state_correct(self, all_items):
         item = next((i for i in all_items if i.get("candidate_id") == "ecc:agent:docs-researcher"), None)
         assert item is not None
-        assert item["plan1_state"] == "READY_BUT_WAITING_FOR_APPROVAL"
+        assert item["plan1_state"] == "ACTIVE", (
+            f"docs-researcher agent activated in Prompt 2; got {item['plan1_state']}"
+        )
 
     def test_all_hooks_state_correct(self, all_items):
         hooks = [i for i in all_items if i.get("category") == "hook"]
         assert len(hooks) == 10, f"Expected 10 hooks, got {len(hooks)}"
-        wrong = [(i["candidate_id"], i["plan1_state"]) for i in hooks if i["plan1_state"] != "READY_BUT_WAITING_FOR_APPROVAL"]
-        assert wrong == [], f"Hooks not in READY_BUT_WAITING_FOR_APPROVAL: {wrong}"
+        wrong = [(i["candidate_id"], i["plan1_state"]) for i in hooks if i["plan1_state"] != "ACTIVE"]
+        assert wrong == [], f"Hooks not ACTIVE after Prompt 2 registry wiring: {wrong}"
 
     def test_all_plugins_state_correct(self, all_items):
         plugins = [i for i in all_items if i.get("category") == "plugin"]
         assert len(plugins) == 5, f"Expected 5 plugins, got {len(plugins)}"
-        wrong = [(i["candidate_id"], i["plan1_state"]) for i in plugins if i["plan1_state"] != "READY_BUT_WAITING_FOR_APPROVAL"]
-        assert wrong == [], f"Plugins not in READY_BUT_WAITING_FOR_APPROVAL: {wrong}"
+        wrong = [(i["candidate_id"], i["plan1_state"]) for i in plugins if i["plan1_state"] != "ACTIVE"]
+        assert wrong == [], f"Plugins not ACTIVE after Prompt 2 registry wiring: {wrong}"
 
 
 # ---------------------------------------------------------------------------
@@ -232,8 +242,8 @@ class TestApprovalWaitingItems:
     def test_all_11_approval_agents_in_correct_state(self, all_items):
         for aid in self.APPROVAL_AGENT_IDS:
             item = next((i for i in all_items if i.get("candidate_id") == aid), None)
-            assert item["plan1_state"] == "READY_BUT_WAITING_FOR_APPROVAL", (
-                f"{aid} should be READY_BUT_WAITING_FOR_APPROVAL, got {item['plan1_state']}"
+            assert item["plan1_state"] == "ACTIVE", (
+                f"{aid} should be ACTIVE after Prompt 2 registry wiring, got {item['plan1_state']}"
             )
 
     def test_approval_agents_have_profiles(self):
@@ -263,20 +273,22 @@ class TestInstalledDisabledBlockersResolved:
         )
         assert item["reviewer_approved"] is False
 
-    def test_database_migration_is_approval_waiting(self, all_items):
+    def test_database_migration_is_active_gated(self, all_items):
         item = next((i for i in all_items if i.get("candidate_id") == "ecc:cmd:database-migration"), None)
         assert item is not None
-        assert item["plan1_state"] == "READY_BUT_WAITING_FOR_APPROVAL", (
-            f"database-migration should be READY_BUT_WAITING_FOR_APPROVAL; got {item['plan1_state']}"
+        assert item["plan1_state"] == "ACTIVE", (
+            f"database-migration is ACTIVE (registry wired) after Prompt 2; got {item['plan1_state']}"
         )
+        # reviewer_approved=False: activation logged, but destructive execution remains gated
         assert item["reviewer_approved"] is False
 
-    def test_mcp_servers_is_approval_waiting(self, all_items):
+    def test_mcp_servers_is_active_gated(self, all_items):
         item = next((i for i in all_items if i.get("candidate_id") == "ecc:mcp:mcp-servers"), None)
         assert item is not None
-        assert item["plan1_state"] == "READY_BUT_WAITING_FOR_APPROVAL", (
-            f"mcp-servers should be READY_BUT_WAITING_FOR_APPROVAL; got {item['plan1_state']}"
+        assert item["plan1_state"] == "ACTIVE", (
+            f"mcp-servers is ACTIVE (security gate wired) after Prompt 2; got {item['plan1_state']}"
         )
+        # reviewer_approved=False: per-server activation still requires explicit approval
         assert item["reviewer_approved"] is False
 
     def test_eval_harness_has_reason_documenting_policy(self, all_items):
@@ -815,10 +827,10 @@ class TestApiKeyDeltaReconciliation:
         assert "ecc:nutrient-document-processing" in addition_ids
         assert "ecc:continuous-learning-v2" in addition_ids
 
-    def test_actual_catalog_api_key_count_is_37(self, all_items):
+    def test_actual_catalog_api_key_count_after_prompt2(self, all_items):
         api_key_items = [i for i in all_items if i.get("plan1_state") == "READY_BUT_WAITING_FOR_API_KEY"]
-        assert len(api_key_items) == 37, (
-            f"Expected 37 API-key skills in catalog, got {len(api_key_items)}"
+        assert len(api_key_items) == 2, (
+            f"After Prompt 2: expected 2 API-key skills remaining (GitHub token expired), got {len(api_key_items)}"
         )
 
 
@@ -828,8 +840,10 @@ class TestApiKeyDeltaReconciliation:
 
 class TestActiveReachability:
 
-    def test_active_count_is_255(self, reachability_report):
-        assert reachability_report["total_active"] == 255
+    def test_active_count_is_316(self, reachability_report):
+        assert reachability_report["total_active"] == 316, (
+            f"After Prompt 2: expected 316 ACTIVE, got {reachability_report['total_active']}"
+        )
 
     def test_all_active_have_invocation_route(self, reachability_report):
         assert reachability_report["all_have_invocation_route"] is True
@@ -850,9 +864,9 @@ class TestActiveReachability:
             f"Expected 33 executable active items, got {reachability_report['executable_count']}"
         )
 
-    def test_guidance_count_is_222(self, reachability_report):
-        assert reachability_report["guidance_only_count"] == 222, (
-            f"Expected 222 guidance-only active items, got {reachability_report['guidance_only_count']}"
+    def test_guidance_count_is_283(self, reachability_report):
+        assert reachability_report["guidance_only_count"] == 283, (
+            f"Expected 283 guidance-only active items (316-33), got {reachability_report['guidance_only_count']}"
         )
 
     def test_guidance_items_labeled_as_guidance(self, reachability_report):
@@ -861,7 +875,7 @@ class TestActiveReachability:
             i for i in reachability_report["per_item"]
             if i["item_type"] == "guidance_only"
         ]
-        assert len(guidance_items) == 222
+        assert len(guidance_items) == 283
         for item in guidance_items:
             assert item["invocation_route"].startswith("GET /v1/intake/skill/"), (
                 f"Guidance item {item['candidate_id']} should have catalog API route"
@@ -879,7 +893,7 @@ class TestActiveReachability:
 
     def test_reachability_proof_string_present(self, reachability_report):
         proof = reachability_report.get("reachability_proof", "")
-        assert "255" in proof
+        assert "316" in proof
         assert "guidance" in proof.lower() or "catalog" in proof.lower()
 
 

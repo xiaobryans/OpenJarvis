@@ -82,7 +82,7 @@ def build_reachability_report(catalog_items: List[Dict[str, Any]]) -> Dict[str, 
         category = item.get("category", "skill")
         jarvis_skill_id = item.get("jarvis_skill_id")
         ui_route = item.get("ui_route")
-        permission_scopes = item.get("permission_scopes", ["read_only"])
+        permission_scopes = item.get("permission_scopes") or ["read_only"]
         reason = item.get("reason", "")
 
         is_executable = cid in EXECUTABLE_ACTIVE_IDS
