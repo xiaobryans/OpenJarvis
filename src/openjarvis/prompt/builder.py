@@ -41,7 +41,18 @@ class SystemPromptBuilder:
         self._skill_index = skill_index or []
         self._session_context = session_context
         self._previous_state = previous_state
-        self._skill_catalog_xml = skill_catalog_xml
+        # Auto-populate from the runtime SkillRegistry only when neither
+        # skill_catalog_xml nor skill_index was explicitly provided.
+        # Callers that pass skill_catalog_xml="" explicitly suppress auto-injection.
+        # Callers that pass skill_index keep the legacy skill_index path.
+        if skill_catalog_xml is None and not skill_index:
+            try:
+                from openjarvis.skills.catalog import get_runtime_skill_catalog_xml
+                self._skill_catalog_xml = get_runtime_skill_catalog_xml()
+            except Exception:
+                self._skill_catalog_xml = None
+        else:
+            self._skill_catalog_xml = skill_catalog_xml
         # Allow either name; skill_few_shot_examples is the Plan 2A canonical name.
         if skill_few_shot_examples is not None:
             self._skill_few_shot = list(skill_few_shot_examples)

@@ -44,6 +44,7 @@ dependencies = [
     "sounddevice>=0.5.5",
     "pynput>=1.8.2",
     "deepgram-sdk>=3.0",
+    "pillow>=12.1.1",
 ]
 
 [project.optional-dependencies]

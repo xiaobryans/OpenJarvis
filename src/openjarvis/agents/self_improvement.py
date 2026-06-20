@@ -17,16 +17,31 @@ Design invariants:
   - Fake prevention items are forbidden (must reference a real caught flaw).
   - Prevention items must have a concrete action, not just a description.
 
-Sprint: Full No-Gap Jarvis — Combined Sprint 3
+Persistence:
+  - All flaws, prevention items, cached plans, and routing memory are stored
+    in SQLite at ~/.jarvis/self_improvement.db (default).
+  - State survives process restart. New instances load existing records.
+  - db_path can be overridden for tests.
+
+Sprint: No-Gap Corrective Sprint 1
 """
 
 from __future__ import annotations
 
+import json
+import logging
+import sqlite3
 import time
 import uuid
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from pathlib import Path
+from typing import Any, Dict, Iterator, List, Optional
+
+logger = logging.getLogger(__name__)
+
+_DEFAULT_DB = Path.home() / ".jarvis" / "self_improvement.db"
 
 
 # ---------------------------------------------------------------------------
@@ -162,7 +177,7 @@ class SelfImprovementRegistry:
             root_cause="lint step not in execution plan",
             fix_applied="Added lint to plan builder",
         )
-        # Prevention item is auto-created:
+        # Prevention item is auto-created and persisted to SQLite:
         prevention = registry.get_prevention(flaw.prevention_item_id)
 
         # When a plan is reused:
@@ -172,11 +187,145 @@ class SelfImprovementRegistry:
             # Still run all gates_required — never skip them
     """
 
-    def __init__(self) -> None:
+    def __init__(self, db_path: Optional[Path] = None) -> None:
+        self._db_path = Path(db_path) if db_path else _DEFAULT_DB
+        self._db_path.parent.mkdir(parents=True, exist_ok=True)
+        # In-memory caches (warm from DB on init)
         self._flaws: Dict[str, CaughtFlaw] = {}
         self._prevention_items: Dict[str, PreventionItem] = {}
         self._cached_plans: Dict[str, CachedPlan] = {}
         self._routing_memory: Dict[str, Dict[str, Any]] = {}
+        self._persistence = "sqlite"
+        self._init_db()
+        self._load_from_db()
+
+    # ------------------------------------------------------------------
+    # SQLite persistence
+    # ------------------------------------------------------------------
+
+    @contextmanager
+    def _connect(self) -> Iterator[sqlite3.Connection]:
+        conn = sqlite3.connect(str(self._db_path), timeout=10)
+        conn.row_factory = sqlite3.Row
+        try:
+            yield conn
+        finally:
+            conn.close()
+
+    def _init_db(self) -> None:
+        with self._connect() as conn:
+            conn.executescript("""
+                CREATE TABLE IF NOT EXISTS flaws (
+                    flaw_id TEXT PRIMARY KEY,
+                    data TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS prevention_items (
+                    prevention_id TEXT PRIMARY KEY,
+                    data TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS cached_plans (
+                    task_type TEXT PRIMARY KEY,
+                    data TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS routing_memory (
+                    task_type TEXT PRIMARY KEY,
+                    data TEXT NOT NULL
+                );
+            """)
+            conn.commit()
+
+    def _load_from_db(self) -> None:
+        """Load all persisted records into in-memory caches on startup."""
+        try:
+            with self._connect() as conn:
+                for row in conn.execute("SELECT flaw_id, data FROM flaws"):
+                    d = json.loads(row["data"])
+                    self._flaws[row["flaw_id"]] = CaughtFlaw(
+                        flaw_id=d["flaw_id"],
+                        description=d["description"],
+                        severity=FlawSeverity(d["severity"]),
+                        caught_at=d["caught_at"],
+                        caught_by=d["caught_by"],
+                        affected_task=d["affected_task"],
+                        root_cause=d["root_cause"],
+                        fix_applied=d["fix_applied"],
+                        prevention_item_id=d.get("prevention_item_id"),
+                    )
+                for row in conn.execute("SELECT prevention_id, data FROM prevention_items"):
+                    d = json.loads(row["data"])
+                    self._prevention_items[row["prevention_id"]] = PreventionItem(
+                        prevention_id=d["prevention_id"],
+                        flaw_id=d["flaw_id"],
+                        description=d["description"],
+                        prevention_type=d["prevention_type"],
+                        concrete_action=d["concrete_action"],
+                        validation_command=d.get("validation_command"),
+                        applies_to=d.get("applies_to", []),
+                        active=d.get("active", True),
+                        created_at=d.get("created_at", time.time()),
+                    )
+                for row in conn.execute("SELECT task_type, data FROM cached_plans"):
+                    d = json.loads(row["data"])
+                    self._cached_plans[row["task_type"]] = CachedPlan(
+                        plan_id=d["plan_id"],
+                        task_type=d["task_type"],
+                        description=d["description"],
+                        plan_steps=d["plan_steps"],
+                        validation_commands=d["validation_commands"],
+                        routing_hint=d["routing_hint"],
+                        created_at=d.get("created_at", time.time()),
+                        last_used_at=d.get("last_used_at"),
+                        use_count=d.get("use_count", 0),
+                        gates_required=d.get("gates_required", []),
+                    )
+                for row in conn.execute("SELECT task_type, data FROM routing_memory"):
+                    self._routing_memory[row["task_type"]] = json.loads(row["data"])
+        except Exception as exc:
+            logger.warning("SelfImprovementRegistry: failed to load from DB: %s", exc)
+
+    def _persist_flaw(self, flaw: CaughtFlaw) -> None:
+        try:
+            with self._connect() as conn:
+                conn.execute(
+                    "INSERT OR REPLACE INTO flaws(flaw_id, data) VALUES(?, ?)",
+                    (flaw.flaw_id, json.dumps(flaw.to_dict())),
+                )
+                conn.commit()
+        except Exception as exc:
+            logger.warning("SelfImprovementRegistry: failed to persist flaw: %s", exc)
+
+    def _persist_prevention(self, item: PreventionItem) -> None:
+        try:
+            with self._connect() as conn:
+                conn.execute(
+                    "INSERT OR REPLACE INTO prevention_items(prevention_id, data) VALUES(?, ?)",
+                    (item.prevention_id, json.dumps(item.to_dict())),
+                )
+                conn.commit()
+        except Exception as exc:
+            logger.warning("SelfImprovementRegistry: failed to persist prevention: %s", exc)
+
+    def _persist_plan(self, plan: CachedPlan) -> None:
+        try:
+            with self._connect() as conn:
+                conn.execute(
+                    "INSERT OR REPLACE INTO cached_plans(task_type, data) VALUES(?, ?)",
+                    (plan.task_type, json.dumps(plan.to_dict())),
+                )
+                conn.commit()
+        except Exception as exc:
+            logger.warning("SelfImprovementRegistry: failed to persist plan: %s", exc)
+
+    def _persist_routing(self, task_type: str, entry: Dict[str, Any]) -> None:
+        try:
+            with self._connect() as conn:
+                conn.execute(
+                    "INSERT OR REPLACE INTO routing_memory(task_type, data) VALUES(?, ?)",
+                    (task_type, json.dumps(entry)),
+                )
+                conn.commit()
+        except Exception as exc:
+            logger.warning("SelfImprovementRegistry: failed to persist routing: %s", exc)
 
     # ------------------------------------------------------------------
     # Flaw recording
@@ -211,6 +360,7 @@ class SelfImprovementRegistry:
             applies_to=applies_to or [affected_task],
         )
         self._prevention_items[prevention_id] = prevention
+        self._persist_prevention(prevention)
 
         flaw = CaughtFlaw(
             flaw_id=flaw_id,
@@ -224,6 +374,7 @@ class SelfImprovementRegistry:
             prevention_item_id=prevention_id,
         )
         self._flaws[flaw_id] = flaw
+        self._persist_flaw(flaw)
 
         return flaw
 
@@ -249,6 +400,7 @@ class SelfImprovementRegistry:
 
     def register_plan(self, plan: CachedPlan) -> None:
         self._cached_plans[plan.task_type] = plan
+        self._persist_plan(plan)
 
     def get_cached_plan(self, task_type: str) -> Optional[CachedPlan]:
         return self._cached_plans.get(task_type)
@@ -258,6 +410,7 @@ class SelfImprovementRegistry:
         plan = self._cached_plans.get(task_type)
         if plan:
             plan.record_use()
+            self._persist_plan(plan)
         return plan
 
     # ------------------------------------------------------------------
@@ -272,12 +425,14 @@ class SelfImprovementRegistry:
         outcome: str,
     ) -> None:
         """Record a successful routing decision for future reference."""
-        self._routing_memory[task_type] = {
+        entry = {
             "model_tier": model_tier,
             "tools_used": tools_used,
             "outcome": outcome,
             "recorded_at": time.time(),
         }
+        self._routing_memory[task_type] = entry
+        self._persist_routing(task_type, entry)
 
     def get_routing_memory(self, task_type: str) -> Optional[Dict[str, Any]]:
         return self._routing_memory.get(task_type)
@@ -293,6 +448,8 @@ class SelfImprovementRegistry:
             "active_preventions": len(self.list_active_preventions()),
             "cached_plans": len(self._cached_plans),
             "routing_memory_entries": len(self._routing_memory),
+            "persistence": self._persistence,
+            "db_path": str(self._db_path),
         }
 
     def to_dict(self) -> Dict[str, Any]:

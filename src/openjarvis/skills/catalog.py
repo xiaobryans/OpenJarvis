@@ -170,4 +170,42 @@ def initialize_catalog() -> None:
     )
 
 
-__all__ = ["initialize_catalog"]
+def get_runtime_skill_catalog_xml() -> str:
+    """Return XML of available runtime skills, initializing catalogs first.
+
+    This is the canonical way for SystemPromptBuilder to get skill XML.
+    AVAILABLE and DEGRADED skills are listed — no blocked/planned entries.
+    Preserves distinction between executable and guidance packs.
+
+    Tool catalog is initialized first so SkillRegistry status computation
+    can resolve required tool IDs from the ToolRegistry.
+    """
+    try:
+        from openjarvis.tools.catalog import initialize_catalog as _init_tools
+        _init_tools()
+    except Exception:
+        pass
+    initialize_catalog()
+    # Include AVAILABLE and DEGRADED (required tools present, some optional missing).
+    all_skills = SkillRegistry.list_all()
+    available = [s for s in all_skills if s.status in ("available", "degraded")]
+    if not available:
+        return ""
+    lines = ["<available_skills>"]
+    for skill in available:
+        lines.append(f'  <skill id="{skill.skill_id}" status="{skill.status}">')
+        lines.append(f"    <name>{skill.display_name}</name>")
+        lines.append(f"    <description>{skill.description}</description>")
+        lines.append(f"    <risk_level>{skill.risk_level}</risk_level>")
+        lines.append(f"    <approval_policy>{skill.approval_policy}</approval_policy>")
+        if skill.examples:
+            lines.append("    <examples>")
+            for ex in skill.examples[:3]:
+                lines.append(f"      <example>{ex}</example>")
+            lines.append("    </examples>")
+        lines.append("  </skill>")
+    lines.append("</available_skills>")
+    return "\n".join(lines)
+
+
+__all__ = ["initialize_catalog", "get_runtime_skill_catalog_xml"]

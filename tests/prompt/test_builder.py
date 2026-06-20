@@ -106,6 +106,8 @@ def test_char_limit_truncation(memory_dir: Path):
     from openjarvis.prompt.builder import SystemPromptBuilder
 
     (memory_dir / "SOUL.md").write_text("x" * 10000)
+    # Pass skill_catalog_xml="" to suppress auto-injection so the 'x' count
+    # check only measures the soul content truncation (not skill catalog text).
     builder = SystemPromptBuilder(
         agent_template="You are Jarvis.",
         memory_files_config=MemoryFilesConfig(
@@ -114,6 +116,7 @@ def test_char_limit_truncation(memory_dir: Path):
             user_path=str(memory_dir / "USER.md"),
         ),
         system_prompt_config=SystemPromptConfig(soul_max_chars=100),
+        skill_catalog_xml="",
     )
     prompt = builder.build()
     assert prompt.count("x") <= 100
@@ -159,6 +162,8 @@ def test_dynamic_section_appended(memory_dir: Path):
 def test_sections_expose_prompt_metadata(memory_dir: Path):
     from openjarvis.prompt.builder import SystemPromptBuilder
 
+    # Pass skill_catalog_xml="" to suppress auto-injection for predictable
+    # section order in this structural test.
     builder = SystemPromptBuilder(
         agent_template="You are Jarvis.",
         memory_files_config=MemoryFilesConfig(
@@ -169,6 +174,7 @@ def test_sections_expose_prompt_metadata(memory_dir: Path):
         system_prompt_config=SystemPromptConfig(),
         session_context="Platform: CLI | Session: abc123",
         previous_state="Last task: summarize telemetry.",
+        skill_catalog_xml="",
     )
 
     sections = builder.sections()

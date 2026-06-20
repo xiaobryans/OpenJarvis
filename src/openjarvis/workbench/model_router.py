@@ -144,11 +144,22 @@ class ProviderConfig:
 
     @classmethod
     def from_env(cls) -> "ProviderConfig":
+        # Auto-detect adapter from available keys when not explicitly configured.
+        # Precedence: JARVIS_MODEL_ADAPTER env var > key-based auto-detection > "mock".
+        explicit_adapter = os.environ.get("JARVIS_MODEL_ADAPTER", "").strip()
+        if explicit_adapter:
+            adapter = explicit_adapter
+        elif os.environ.get("JARVIS_OPENROUTER_KEY", "").strip():
+            adapter = "openrouter"
+        elif os.environ.get("OPENROUTER_API_KEY", "").strip():
+            adapter = "openrouter"
+        else:
+            adapter = "mock"
         return cls(
             cheap_model=os.environ.get("JARVIS_CHEAP_MODEL", "deepseek/deepseek-chat"),
             mid_model=os.environ.get("JARVIS_MID_MODEL", "openai/gpt-4o-mini"),
             premium_model=os.environ.get("JARVIS_PREMIUM_MODEL", "anthropic/claude-opus-4-5"),
-            adapter=os.environ.get("JARVIS_MODEL_ADAPTER", "mock"),
+            adapter=adapter,
         )
 
     def model_for_tier(self, tier: ModelTier) -> str:
@@ -225,7 +236,11 @@ class ModelAdapter(Protocol):
 
 
 class MockModelAdapter:
-    """Dry-run/mock adapter — never makes real API calls. Used in tests."""
+    """Dry-run/mock adapter — never makes real API calls. Used in tests.
+
+    Always returns content prefixed with [MOCK:...] so callers can detect
+    mock output. is_mock=True and is_live_model=False are always set.
+    """
 
     def call(
         self,
@@ -242,6 +257,9 @@ class MockModelAdapter:
             "cost_usd": 0.0,
             "model": model,
             "adapter": "mock",
+            "is_mock": True,
+            "is_live_model": False,
+            "reason_if_not_live": "mock_adapter_active",
         }
 
 
@@ -255,7 +273,11 @@ class OpenRouterAdapter:
         max_tokens: int = 512,
     ) -> Dict[str, Any]:
         import os
-        api_key = os.environ.get("JARVIS_OPENROUTER_KEY", "")
+        # Accept either the canonical JARVIS_OPENROUTER_KEY or the common OPENROUTER_API_KEY alias.
+        api_key = (
+            os.environ.get("JARVIS_OPENROUTER_KEY", "").strip()
+            or os.environ.get("OPENROUTER_API_KEY", "").strip()
+        )
         if not api_key:
             return {
                 "content": "",
@@ -264,7 +286,10 @@ class OpenRouterAdapter:
                 "cost_usd": 0.0,
                 "model": model,
                 "adapter": "openrouter",
-                "error": "JARVIS_OPENROUTER_KEY not set — model call skipped",
+                "is_mock": False,
+                "is_live_model": False,
+                "error": "Neither JARVIS_OPENROUTER_KEY nor OPENROUTER_API_KEY is set — model call skipped",
+                "reason_if_not_live": "no_api_key",
             }
         try:
             import urllib.request
@@ -295,6 +320,8 @@ class OpenRouterAdapter:
                 "cost_usd": 0.0,
                 "model": model,
                 "adapter": "openrouter",
+                "is_mock": False,
+                "is_live_model": True,
             }
         except Exception as exc:
             logger.warning("OpenRouter call failed: %s", exc)

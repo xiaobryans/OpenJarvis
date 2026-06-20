@@ -186,11 +186,15 @@ async def chat_completions(request_body: ChatCompletionRequest, request: Request
                             _coding_prompt = _coding_prompt[len(_pfx):].strip()
                             break
                 try:
+                    from openjarvis.workbench.model_router import ProviderConfig
                     from openjarvis.workbench.pipeline import (
                         CodingPipeline, PipelineConfig
                     )
+                    _provider = ProviderConfig.from_env()
+                    _is_mock_adapter = _provider.adapter == "mock"
+                    # dry_run=False only when a real (non-mock) model adapter is configured.
                     _pcfg = PipelineConfig(
-                        dry_run=True,
+                        dry_run=_is_mock_adapter,
                         repo_path=getattr(request.app.state, "repo_path", "."),
                         use_real_worker=True,
                     )
@@ -206,8 +210,15 @@ async def chat_completions(request_body: ChatCompletionRequest, request: Request
                                        if c and not c.startswith("[FILE_NOT_FOUND")])
                     _intent_tag = "(prefix)" if _prefix_match else "(natural intent)"
                     _plan_note = _pr.plan_summary[:160] if _pr.plan_summary else "—"
+                    _model_status = (
+                        f"mock (no real key configured)"
+                        if _is_mock_adapter
+                        else f"live ({_provider.adapter})"
+                    )
                     _reply = (
                         f"**Jarvis CodingPipeline** {_intent_tag} — verdict: **{_verdict}**\n\n"
+                        f"- Model: {_model_status}\n"
+                        f"- dry_run: {_pcfg.dry_run}\n"
                         f"- Category: {_pr.classification.get('category', '?')}\n"
                         f"- Risk tier: {_pr.classification.get('risk_tier', '?')}\n"
                         f"- Files inspected: {len(_pr.files_inspected)} "

@@ -627,6 +627,8 @@ def serve(
     # Set up memory backend for context injection. Built before the scheduler
     # block so the executor's JarvisSystem can reference it (#263).
     memory_backend = None
+    _memory_available = False
+    _memory_init_error: str = ""
     if config.agent.context_from_memory:
         try:
             import openjarvis.tools.storage  # noqa: F401
@@ -638,9 +640,21 @@ def serve(
                     mem_key,
                     db_path=config.memory.db_path,
                 )
+                _memory_available = True
                 console.print("  Memory:    [cyan]active[/cyan]")
+            else:
+                _memory_init_error = f"Memory backend key '{mem_key}' not registered in MemoryRegistry"
+                console.print(
+                    f"  Memory:    [yellow]unavailable — {_memory_init_error}[/yellow]"
+                )
         except Exception as exc:
-            logger.debug("Memory backend init failed: %s", exc)
+            _memory_init_error = str(exc)
+            console.print(
+                f"  Memory:    [yellow]unavailable — {_memory_init_error}[/yellow]"
+            )
+            logger.warning("Memory backend init failed: %s", exc)
+    # Expose memory status on app state so /health and routes can report it.
+    # This is set on the app object after create_app() below.
 
     # Set up agent manager
     agent_manager = None
@@ -829,6 +843,10 @@ def serve(
         webhook_config=webhook_config,
         cors_origins=config.server.cors_origins,
     )
+    # Expose memory status so /health and routes can report it.
+    app.state.memory_available = _memory_available
+    app.state.memory_backend_key = config.memory.default_backend if config else ""
+    app.state.memory_init_error = _memory_init_error
 
     console.print(
         f"[green]Starting OpenJarvis API server[/green]\n"

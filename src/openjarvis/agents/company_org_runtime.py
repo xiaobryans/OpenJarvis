@@ -548,30 +548,127 @@ class CompanyOrgRuntime:
 
 
 # ---------------------------------------------------------------------------
-# Default safe local executor
+# Default safe local executor (gated, real tool dispatch)
 # ---------------------------------------------------------------------------
 
+# Allowlist of tool IDs that the default local executor may dispatch.
+# Only read-only / non-destructive tools are permitted. Every dispatch goes
+# through ToolExecutionGateway which enforces governance gates.
+_LOCAL_EXECUTOR_TOOL_ALLOWLIST: frozenset = frozenset(
+    [
+        "mission.list",
+        "mission.get",
+        "task.get",
+        "event.list_recent",
+        "project.list",
+        "project.get",
+        "agent.list",
+        "governance.gate_check",
+        "notify.status",
+        "memory.search",
+    ]
+)
+
+# Tool IDs that are NEVER permitted in the local executor (hard gates).
+_LOCAL_EXECUTOR_BLOCKED_TOOLS: frozenset = frozenset(
+    [
+        "shell_exec",
+        "fs_write",
+        "git_push",
+        "deploy",
+        "slack.send",
+        "telegram.send",
+        "email.send",
+    ]
+)
+
+
 def _default_local_executor(task: WorkerTask) -> Dict[str, Any]:
-    """Default executor: runs safe local simulation for known worker types.
+    """Gated local tool executor for CompanyOrgRuntime worker tasks.
 
-    Real tool execution (shell_exec, file_read, etc.) is gated by
-    the governance constitution and would require Bryan authorization
-    for any destructive action.
-
+    Replaces the former scaffold that returned a static fake artifact path.
     This executor:
-      - Does NOT run arbitrary shell commands
-      - Produces a structured output and artifact pointer
-      - Records execution metadata
+      - Dispatches only tools in _LOCAL_EXECUTOR_TOOL_ALLOWLIST.
+      - All dispatch goes through ToolExecutionGateway (governance gates, audit log).
+      - Returns an honest status when no tool matches the task or the tool is
+        blocked — never returns a fake success.
+      - No destructive actions by default.
+      - dry_run support: when task.input_data.get("dry_run") is True, records
+        intent but does not call gateway.execute().
+      - Audit log path: ~/.jarvis/tool_executions.db (ToolExecutionGateway default).
     """
-    artifact_path = f"/tmp/jarvis_artifacts/{task.task_id}_{task.worker_role_id}.json"
+    from openjarvis.tools.gateway import ToolExecutionGateway
+    from openjarvis.tools.jarvis_registry import ToolRegistry
+
+    dry_run = bool(task.input_data.get("dry_run", False))
+    task_tool_hint = task.input_data.get("tool_id", "")
+
+    # Determine which tool to dispatch, if any.
+    candidate_tool: str = ""
+    if task_tool_hint and task_tool_hint in _LOCAL_EXECUTOR_TOOL_ALLOWLIST:
+        candidate_tool = task_tool_hint
+    else:
+        # Hard-blocked tool requested: refuse immediately.
+        if task_tool_hint in _LOCAL_EXECUTOR_BLOCKED_TOOLS:
+            return {
+                "worker_role_id": task.worker_role_id,
+                "description": task.description,
+                "executed_at": time.time(),
+                "status": "blocked",
+                "tool_id": task_tool_hint,
+                "reason": (
+                    f"Tool '{task_tool_hint}' is hard-gated — "
+                    "Bryan authorization required per governance constitution."
+                ),
+                "artifact": None,
+            }
+        # No matching allowed tool — report unavailable rather than fake success.
+        return {
+            "worker_role_id": task.worker_role_id,
+            "description": task.description,
+            "executed_at": time.time(),
+            "status": "unavailable",
+            "tool_id": task_tool_hint or None,
+            "reason": (
+                f"No allowed local tool for task '{task.description[:80]}'. "
+                "Allowed tools: "
+                + ", ".join(sorted(_LOCAL_EXECUTOR_TOOL_ALLOWLIST))
+            ),
+            "artifact": None,
+        }
+
+    if dry_run:
+        return {
+            "worker_role_id": task.worker_role_id,
+            "description": task.description,
+            "executed_at": time.time(),
+            "status": "dry_run",
+            "tool_id": candidate_tool,
+            "inputs": {k: v for k, v in task.input_data.items() if k != "dry_run"},
+            "artifact": None,
+        }
+
+    # Real dispatch through the gateway (governance gates + audit log).
+    gateway = ToolExecutionGateway()
+    tool_inputs = {k: v for k, v in task.input_data.items()
+                   if k not in ("tool_id", "dry_run")}
+    result = gateway.execute(
+        candidate_tool,
+        inputs=tool_inputs,
+        project_id=task.input_data.get("project_id", ""),
+        task_id=task.task_id,
+        agent_id=task.worker_role_id,
+    )
+
     return {
         "worker_role_id": task.worker_role_id,
         "description": task.description,
         "executed_at": time.time(),
-        "input_keys": list(task.input_data.keys()),
-        "output_type": "local_safe_execution",
-        "artifact": artifact_path,
-        "notes": "Local safe executor — real tool execution requires Bryan authorization per action",
+        "status": result.outcome,
+        "tool_id": candidate_tool,
+        "output": result.output,
+        "error": result.error,
+        "artifact": None,
     }
 
 
