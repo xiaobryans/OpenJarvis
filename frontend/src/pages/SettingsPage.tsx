@@ -616,10 +616,15 @@ export function SettingsPage() {
               </span>
             </SettingRow>
 
-            {/* Hotkeys */}
-            <SettingRow label="Text & transcript fallback" description="Cmd+K — opens command palette for text input, transcript history, and commands">
+            {/* Cmd+K — text/transcript/chat fallback ONLY (no model picker) */}
+            <SettingRow label="Text & transcript fallback" description="Cmd+K — opens the chat/transcript fallback for typing to Jarvis and viewing history. Does not open a model or settings picker.">
               <span className="font-mono text-xs px-2 py-1 rounded" style={{ background: 'var(--color-bg-tertiary)', color: 'var(--color-text-secondary)' }}>
                 ⌘K
+              </span>
+            </SettingRow>
+            <SettingRow label="Model routing" description="Automatic / internal — Jarvis selects the model for each task. Model management is available in the sidebar for debugging only (no hotkey).">
+              <span className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--color-success, #22c55e)' }}>
+                <Check size={11} /> Automatic
               </span>
             </SettingRow>
             <SettingRow label="CLI voice hotkey (daemon mode)" description="Voice push-to-talk when running jarvis as CLI daemon — not active in packaged app">

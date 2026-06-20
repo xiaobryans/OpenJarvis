@@ -12,6 +12,7 @@ import { LogsPage } from './pages/LogsPage';
 import { MissionControlPage } from './pages/MissionControlPage';
 import { WorkbenchPage } from './pages/WorkbenchPage';
 import { CommandPalette } from './components/CommandPalette';
+import { TextFallbackPanel } from './components/TextFallbackPanel';
 import { SetupScreen } from './components/SetupScreen';
 import { Toaster } from './components/ui/sonner';
 import { useAppStore } from './lib/store';
@@ -40,7 +41,8 @@ export default function App() {
   const setSavings = useAppStore((s) => s.setSavings);
   const settings = useAppStore((s) => s.settings);
   const commandPaletteOpen = useAppStore((s) => s.commandPaletteOpen);
-  const setCommandPaletteOpen = useAppStore((s) => s.setCommandPaletteOpen);
+  const textFallbackOpen = useAppStore((s) => s.textFallbackOpen);
+  const setTextFallbackOpen = useAppStore((s) => s.setTextFallbackOpen);
   const optInEnabled = useAppStore((s) => s.optInEnabled);
   const optInDisplayName = useAppStore((s) => s.optInDisplayName);
   const optInEmail = useAppStore((s) => s.optInEmail);
@@ -165,9 +167,11 @@ export default function App() {
   // Global keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Cmd+K opens ONLY the text/transcript/chat fallback — never the model
+      // or settings picker. Model routing is automatic/internal.
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         e.preventDefault();
-        setCommandPaletteOpen(!commandPaletteOpen);
+        setTextFallbackOpen(!textFallbackOpen);
       }
       if ((e.metaKey || e.ctrlKey) && e.key === 'i') {
         e.preventDefault();
@@ -176,7 +180,7 @@ export default function App() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [commandPaletteOpen, setCommandPaletteOpen, toggleSystemPanel]);
+  }, [textFallbackOpen, setTextFallbackOpen, toggleSystemPanel]);
 
 
   if (!setupDone) {
@@ -202,6 +206,7 @@ export default function App() {
       </Routes>
       <Toaster position="bottom-right" />
       {commandPaletteOpen && <CommandPalette />}
+      {textFallbackOpen && <TextFallbackPanel />}
       {optInModalOpen && (
         <OptInModal onClose={() => setOptInModalOpen(false)} />
       )}

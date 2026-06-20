@@ -134,8 +134,11 @@ interface AppState {
   // Settings
   settings: Settings;
 
-  // Command palette
+  // Command palette (model manager — explicit/no hotkey)
   commandPaletteOpen: boolean;
+
+  // Text/transcript/chat fallback (Cmd+K) — never opens model picker
+  textFallbackOpen: boolean;
 
   // Sidebar
   sidebarOpen: boolean;
@@ -195,6 +198,7 @@ interface AppState {
 
   // Actions: UI
   setCommandPaletteOpen: (open: boolean) => void;
+  setTextFallbackOpen: (open: boolean) => void;
   toggleSidebar: () => void;
   setSidebarOpen: (open: boolean) => void;
   toggleSystemPanel: () => void;
@@ -258,6 +262,7 @@ export const useAppStore = create<AppState>((set, get) => {
     settings: loadSettings(),
 
     commandPaletteOpen: false,
+    textFallbackOpen: false,
     sidebarOpen: true,
     systemPanelOpen: true,
 
@@ -488,6 +493,7 @@ export const useAppStore = create<AppState>((set, get) => {
     // ── UI ──────────────────────────────────────────────────────────
 
     setCommandPaletteOpen: (open: boolean) => set({ commandPaletteOpen: open }),
+    setTextFallbackOpen: (open: boolean) => set({ textFallbackOpen: open }),
     toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
     setSidebarOpen: (open: boolean) => set({ sidebarOpen: open }),
     toggleSystemPanel: () => set((s) => ({ systemPanelOpen: !s.systemPanelOpen })),

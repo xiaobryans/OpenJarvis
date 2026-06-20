@@ -56,6 +56,10 @@ logger = logging.getLogger(__name__)
 
 _RECORD_MAX_S: float = 120.0   # emergency cap — same as existing default
 _STT_TIMEOUT_S: float = 30.0
+# When Deepgram streaming drives endpointing (noise-robust UtteranceEnd), the
+# energy-VAD silence window is raised to this backstop so the VAD only fires if
+# Deepgram stalls — avoids premature energy-VAD cutoff in noisy rooms.
+_DG_VAD_BACKSTOP_MS: float = 4000.0
 _ROUTE_TIMEOUT_S: float = 60.0
 _TTS_TIMEOUT_S: float = 30.0
 
@@ -90,17 +94,35 @@ _STARTABLE_PHASES = {TurnPhase.IDLE, TurnPhase.ERROR, TurnPhase.CANCELLED}
 
 
 class _DGStreamPartial:
-    """Minimal display-only Deepgram streaming client for live partials.
+    """Deepgram streaming client for live partial transcripts + endpointing.
 
-    Runs TWO daemon threads (sender + receiver).  Any failure degrades
-    gracefully to no-partials — does NOT affect the canonical VAD + batch
-    STT pipeline.  Uses websockets.sync (available via deepgram-sdk dep).
+    Two roles, both display/control only — the canonical batch STT path
+    remains the source of truth for the final transcript:
+      1. on_partial(text)   — interim/partial transcripts for live caption
+      2. on_endpoint(reason) — fired on Deepgram UtteranceEnd / speech_final,
+         used to end recording naturally (noise-robust, word-gap based)
+
+    Runs two daemon threads (sender + receiver).  Any failure degrades
+    gracefully — the energy-VAD endpoint + batch STT still complete the turn.
+    Uses websockets.sync (installed transitively via deepgram-sdk).
+
+    NOTE: Deepgram requires utterance_end_ms >= 1000. Values below 1000 are
+    rejected with HTTP 400 (this was the original "no live transcript" bug).
     """
 
+    # interim_results=true → partial transcripts (live "You: ..." caption).
+    # endpointing=N → speech_final after ~N ms of (neural-VAD) trailing
+    #   silence. This is the PRIMARY natural endpoint: fast, in Bryan's
+    #   700-1200ms target, and noise-robust (Deepgram's neural VAD ignores
+    #   non-speech room noise, unlike energy VAD).
+    # utterance_end_ms=1000 → UtteranceEnd backup (word-gap based; MUST be
+    #   >= 1000 or Deepgram rejects the connection with HTTP 400 — this was
+    #   the original "no live transcript" bug, where 800 disabled everything).
     _DG_WSS = (
         "wss://api.deepgram.com/v1/listen"
         "?model=nova-2&interim_results=true&encoding=linear16"
-        "&sample_rate={sample_rate}&channels=1&utterance_end_ms=800"
+        "&sample_rate={sample_rate}&channels=1"
+        "&utterance_end_ms=1000&endpointing={endpointing_ms}"
     )
 
     def __init__(
@@ -108,27 +130,42 @@ class _DGStreamPartial:
         api_key: str,
         sample_rate: int,
         on_partial: "Callable[[str], None]",
+        on_endpoint: "Optional[Callable[[str], None]]" = None,
+        endpointing_ms: int = 700,
     ) -> None:
         self._api_key = api_key
         self._sample_rate = sample_rate
         self._on_partial = on_partial
+        self._on_endpoint = on_endpoint
+        self._endpointing_ms = max(int(endpointing_ms), 100)
         self._audio_q: "queue.Queue[Optional[bytes]]" = queue.Queue(maxsize=500)
         self._stop = threading.Event()
         self._ws = None
         self._ok = False
+        # Diagnostics (sprint-required, non-secret)
+        self.connected: bool = False
+        self.chunks_sent: int = 0
+        self.events_received: int = 0
+        self.last_error: Optional[str] = None
+        self._endpoint_fired: bool = False
 
     def start(self) -> bool:
         try:
             import websockets.sync.client as _ws_sync  # type: ignore[import]
-            url = self._DG_WSS.format(sample_rate=self._sample_rate)
+            url = self._DG_WSS.format(
+                sample_rate=self._sample_rate,
+                endpointing_ms=self._endpointing_ms,
+            )
             self._ws = _ws_sync.connect(
                 url,
                 additional_headers={"Authorization": f"Token {self._api_key}"},
                 open_timeout=5,
             )
             self._ok = True
+            self.connected = True
         except Exception as exc:
-            logger.debug("DGStreamPartial: WebSocket connect failed: %s", exc)
+            self.last_error = f"connect: {type(exc).__name__}: {exc}"
+            logger.warning("DGStreamPartial: WebSocket connect failed: %s", self.last_error)
             return False
 
         threading.Thread(
@@ -137,6 +174,7 @@ class _DGStreamPartial:
         threading.Thread(
             target=self._run_receiver, daemon=True, name="dg-partial-receiver"
         ).start()
+        logger.info("DGStreamPartial: connected — live partials + endpointing active")
         return True
 
     def send_chunk(self, pcm_bytes: bytes) -> None:
@@ -175,10 +213,23 @@ class _DGStreamPartial:
                     break
                 try:
                     self._ws.send(chunk)
-                except Exception:
+                    self.chunks_sent += 1
+                except Exception as exc:
+                    self.last_error = f"send: {type(exc).__name__}: {exc}"
                     break
         except Exception as exc:
+            self.last_error = f"sender: {type(exc).__name__}: {exc}"
             logger.debug("DGStreamPartial sender: %s", exc)
+
+    def _fire_endpoint(self, reason: str) -> None:
+        if self._endpoint_fired:
+            return
+        self._endpoint_fired = True
+        if self._on_endpoint is not None:
+            try:
+                self._on_endpoint(reason)
+            except Exception:
+                pass
 
     def _run_receiver(self) -> None:
         import json as _json
@@ -188,20 +239,35 @@ class _DGStreamPartial:
                     msg = self._ws.recv(timeout=2.0)
                 except TimeoutError:
                     continue
-                except Exception:
+                except Exception as exc:
+                    # ConnectionClosedOK is expected on normal stop
+                    if "ConnectionClosed" not in type(exc).__name__:
+                        self.last_error = f"recv: {type(exc).__name__}: {exc}"
                     break
+                self.events_received += 1
                 try:
                     data = _json.loads(msg)
-                    alts = (
-                        data.get("channel", {}).get("alternatives", [])
-                    )
+                    msg_type = data.get("type", "")
+
+                    # UtteranceEnd → word-gap backup endpoint (~1000ms).
+                    if msg_type == "UtteranceEnd":
+                        self._fire_endpoint("deepgram_utterance_end")
+                        continue
+
+                    alts = data.get("channel", {}).get("alternatives", [])
                     if alts:
                         text = alts[0].get("transcript", "").strip()
                         if text:
                             self._on_partial(text)
+                        # speech_final → PRIMARY natural endpoint (~endpointing
+                        # ms of neural-VAD trailing silence after real speech).
+                        # Noise-robust; fires only after recognized words.
+                        if data.get("speech_final") and text:
+                            self._fire_endpoint("deepgram_speech_final")
                 except Exception:
                     pass
         except Exception as exc:
+            self.last_error = f"receiver: {type(exc).__name__}: {exc}"
             logger.debug("DGStreamPartial receiver: %s", exc)
 
 
@@ -256,6 +322,12 @@ class VoiceTurnEngine:
         self._last_transcript: str = ""
         self._last_response: str = ""
         self._last_error: Optional[str] = None
+
+        # Deepgram partial-streaming diagnostics + endpoint tracking
+        self._dg_endpoint_reason: Optional[str] = None
+        self._partial_sse_count: int = 0
+        self._partial_diag: Dict[str, Any] = {}
+        self._last_partial_diag: Dict[str, Any] = {}
 
     # ------------------------------------------------------------------
     # Public API
@@ -344,6 +416,7 @@ class VoiceTurnEngine:
                 "last_response": self._last_response,
                 "last_error": self._last_error,
                 "last_vad": self._last_vad,
+                "partial_diag": self._last_partial_diag,
             }
 
     def subscribe(self) -> "queue.Queue[Dict]":
@@ -526,11 +599,24 @@ class VoiceTurnEngine:
                     "background_noise_detected": chunk.get("background_noise_detected"),
                 })
 
-        # Deepgram streaming partial transcripts (display-only).
-        # Runs in daemon threads; degrades gracefully on any failure.
+        # Deepgram streaming: live partial transcripts + noise-robust endpoint.
+        # Runs in daemon threads; degrades gracefully on any failure (the
+        # energy-VAD endpoint + batch STT still complete the turn).
         _dg_partial: Optional[_DGStreamPartial] = None
         import os as _os
         _dg_key = _os.environ.get("DEEPGRAM_API_KEY", "")
+        # Reset per-turn diagnostics + endpoint tracking.
+        self._dg_endpoint_reason = None
+        self._partial_sse_count = 0
+        self._partial_diag = {
+            "deepgram_partial_enabled": True,
+            "deepgram_partial_key_present": bool(_dg_key),
+            "deepgram_partial_connected": False,
+            "deepgram_partial_audio_chunks_sent": 0,
+            "deepgram_partial_events_received": 0,
+            "deepgram_partial_last_error": None,
+            "partial_transcript_sse_count": 0,
+        }
         if _dg_key:
             _last_partial: Dict[str, str] = {}
 
@@ -539,28 +625,54 @@ class VoiceTurnEngine:
                     return
                 if text != _last_partial.get("text"):
                     _last_partial["text"] = text
+                    self._partial_sse_count += 1
                     self._emit({"type": "partial_transcript", "text": text})
                     logger.debug("DG partial: %r", text)
+
+            def _on_endpoint(reason: str) -> None:
+                # Deepgram detected end-of-utterance (word-gap / trailing
+                # silence). This is far more noise-robust than energy VAD.
+                if not self._is_turn_live(turn_id):
+                    return
+                if self._dg_endpoint_reason is None:
+                    self._dg_endpoint_reason = reason
+                    logger.info("Deepgram endpoint: %s — finalizing turn", reason)
+                    self._recording_abort.set()
 
             _dg_partial = _DGStreamPartial(
                 api_key=_dg_key,
                 sample_rate=16000,
                 on_partial=_on_partial,
+                on_endpoint=_on_endpoint,
+                endpointing_ms=int(_env_float("JARVIS_VOICE_DG_ENDPOINTING_MS", 700.0)),
             )
             if not _dg_partial.start():
+                self._partial_diag["deepgram_partial_last_error"] = _dg_partial.last_error
                 _dg_partial = None  # failed to connect — no partials this turn
+            else:
+                self._partial_diag["deepgram_partial_connected"] = True
         else:
+            self._partial_diag["deepgram_partial_enabled"] = False
             logger.debug("DGStreamPartial skipped: DEEPGRAM_API_KEY not set")
 
         def _on_audio_chunk(pcm_bytes: bytes) -> None:
             if _dg_partial is not None:
                 _dg_partial.send_chunk(pcm_bytes)
 
+        # When Deepgram drives endpointing, the energy VAD becomes a backstop
+        # (kept high so it only fires if Deepgram stalls). When Deepgram is
+        # unavailable, the energy VAD is primary at its normal short window.
+        _effective_silence_stop_ms = (
+            max(self._silence_stop_ms, _DG_VAD_BACKSTOP_MS)
+            if _dg_partial is not None
+            else self._silence_stop_ms
+        )
+
         rec_start = time.monotonic()
         try:
             audio, stop_reason = record_command_audio_vad(
                 min_seconds=_DEFAULT_MIN_RECORD_SECONDS,
-                silence_stop_ms=self._silence_stop_ms,
+                silence_stop_ms=_effective_silence_stop_ms,
                 max_seconds=_RECORD_MAX_S,
                 sample_rate=16000,
                 silence_rms_threshold=self._silence_rms_threshold,
@@ -572,6 +684,8 @@ class VoiceTurnEngine:
             )
         except Exception as exc:
             logger.error("Recording exception in turn %d: %s", turn_id, exc)
+            if _dg_partial is not None:
+                _dg_partial.stop()
             if self._is_turn_live(turn_id):
                 self._last_error = f"recording_failed: {exc}"
                 self._emit({"type": "error", "reason": self._last_error})
@@ -579,21 +693,37 @@ class VoiceTurnEngine:
                 self._finalize(turn_id)
             return None, False
 
-        # Stop streaming partial transcripts (recording is done)
+        # Stop streaming partial transcripts (recording is done) + capture diag
         if _dg_partial is not None:
+            self._partial_diag["deepgram_partial_audio_chunks_sent"] = _dg_partial.chunks_sent
+            self._partial_diag["deepgram_partial_events_received"] = _dg_partial.events_received
+            self._partial_diag["deepgram_partial_last_error"] = _dg_partial.last_error
             _dg_partial.stop()
+        self._partial_diag["partial_transcript_sse_count"] = self._partial_sse_count
+
+        # Resolve the true endpoint reason: Deepgram endpoint wins over the
+        # generic "manually_ended" the VAD reports when its abort_event fires.
+        _endpoint_reason = stop_reason
+        if stop_reason == "manually_ended" and self._dg_endpoint_reason:
+            _endpoint_reason = self._dg_endpoint_reason
 
         vad_diag = {
             "stop_reason": stop_reason,
+            "endpoint_reason": _endpoint_reason,
             "endpoint_mode": last_chunk_diag.get("endpoint_mode", "absolute"),
             "duration_s": round(time.monotonic() - rec_start, 2),
-            "silence_stop_ms": self._silence_stop_ms,
+            "silence_stop_ms": _effective_silence_stop_ms,
+            "vad_silence_ms": last_chunk_diag.get("silence_elapsed_ms"),
+            "vad_noise_floor": last_chunk_diag.get("noise_floor"),
+            "vad_speech_detected": last_chunk_diag.get("speech_detected", False),
+            "deepgram_endpoint": self._dg_endpoint_reason is not None,
             "background_noise_detected": last_chunk_diag.get("background_noise_detected", False),
             "speech_detected": last_chunk_diag.get("speech_detected", False),
             "speech_ema": last_chunk_diag.get("speech_ema"),
             "ambient_ema": last_chunk_diag.get("ambient_ema"),
             **calib_data,
         }
+        self._last_partial_diag = dict(self._partial_diag)
         self._last_vad = vad_diag
         self._emit({"type": "vad", **vad_diag})
 
