@@ -185,11 +185,10 @@ LIVE_AUTH_TEST_RESULTS: Dict[str, Dict[str, Any]] = {
     "GitHub": {
         "test_type": "user_endpoint",
         "endpoint": "https://api.github.com/user",
-        "status_code": 401,
-        "auth_ok": False,
-        "notes": "GET /user returned 401 Bad credentials — token present but invalid/expired",
-        "safe_to_live_test": False,
-        "reason_not_safe": "Token auth failed; skills remain READY_BUT_WAITING_FOR_API_KEY",
+        "status_code": 200,
+        "auth_ok": True,
+        "notes": "GET /user returned 200 — token refreshed and valid (login: xiaobryans). Prompt 2 had expired token; Prompt 3 micro-verification confirms auth OK.",
+        "safe_to_live_test": True,
     },
     "Resend": {
         "test_type": "domains_list",
@@ -425,6 +424,12 @@ _SCRAPINGBEE_ACTIVATED = {
     "ecc:data-scraper-agent",
 }
 
+# GitHub skills — token refreshed, auth confirmed 200 OK in Prompt 3 micro-verification
+_GITHUB_ACTIVATED = {
+    "ecc:github-ops",
+    "ecc:configure-ecc",
+}
+
 # All API-key skills that can be activated with confirmed keys
 ALL_API_KEY_ACTIVATED: set = (
     _AIMLAPI_ACTIVATED
@@ -436,13 +441,11 @@ ALL_API_KEY_ACTIVATED: set = (
     | _PINECONE_ACTIVATED
     | _APOLLO_ACTIVATED
     | _SCRAPINGBEE_ACTIVATED
+    | _GITHUB_ACTIVATED
 )
 
-# GitHub token present but auth failed — remains waiting
-_GITHUB_KEY_PRESENT_AUTH_FAILED = {
-    "ecc:github-ops",
-    "ecc:configure-ecc",
-}
+# GitHub key present but auth failed — now empty (token refreshed in Prompt 3)
+_GITHUB_KEY_PRESENT_AUTH_FAILED: set = set()
 
 # All 36 approval-waiting items — activated via Bryan's registry-wiring approval
 # (execution remains gated by reviewer_approved flags)
@@ -504,7 +507,7 @@ _PILLOW_WAITING = {
 
 def get_state_transition_map(
     flox_installed: bool = True,
-    pillow_installed: bool = False,
+    pillow_installed: bool = True,
 ) -> Dict[str, Dict[str, str]]:
     """Return the final state for every ECC item that changes state in Prompt 2.
 
@@ -568,7 +571,7 @@ def get_state_transition_map(
         for cid in _PILLOW_WAITING:
             transitions[cid] = {
                 "new_state": "ACTIVE",
-                "reason": "Pillow confirmed installed; local image processing only",
+                "reason": "Pillow confirmed installed (Prompt 3 micro-verification); local image processing only",
                 "activation_type": "local_tool_verified",
             }
 
@@ -652,8 +655,8 @@ def compute_final_state_summary(
         "total": 332,
         "notes": {
             "email_ops": "RESEND auth OK; EMAIL_FROM not set — actual sends need EMAIL_FROM",
-            "github": "GITHUB_TOKEN present but 401 — token expired, needs refresh",
-            "pillow": "Pillow not installed — ios-icon-gen stays READY_BUT_WAITING_FOR_USER_MANUAL_SETUP",
+            "github": "GITHUB_TOKEN refreshed — GET /user returned 200 (login: xiaobryans). github-ops + configure-ecc now ACTIVE.",
+            "pillow": "Pillow confirmed installed (Prompt 3 micro-verification) — ios-icon-gen now ACTIVE.",
             "flox": "Flox 1.13.0 installed — flox-environments ACTIVE",
             "approval": "All 36 approval-waiting items activated via Bryan's Prompt 2 registry-wiring approval",
         },
@@ -667,7 +670,7 @@ def compute_final_state_summary(
 def generate_live_validation_json(
     output_path: Optional[Path] = None,
     flox_installed: bool = True,
-    pillow_installed: bool = False,
+    pillow_installed: bool = True,
 ) -> str:
     """Generate machine-readable live validation report JSON.  No secrets."""
     env = _load_all_env()
@@ -744,7 +747,7 @@ def generate_live_validation_json(
 
 def format_live_validation_md(
     flox_installed: bool = True,
-    pillow_installed: bool = False,
+    pillow_installed: bool = True,
 ) -> str:
     """Generate human-readable live validation markdown.  No secrets."""
     summary = compute_final_state_summary(flox_installed, pillow_installed)
@@ -808,7 +811,7 @@ def format_live_validation_md(
         "| Pinecone | ✓ | indexes → 200 | VERIFIED |",
         "| Apollo | ✓ | people/match → 422 (valid key inferred) | VERIFIED |",
         "| ScrapingBee | ✓ | scrape → 200 | VERIFIED |",
-        "| GitHub | ✓ | /user → 401 Bad credentials | KEY EXPIRED |",
+        "| GitHub | ✓ | /user → 200 OK (xiaobryans) | VERIFIED (token refreshed) |",
         "| Twitter/X | ✗ | not configured | COST_BLOCKED |",
         "| Greenhouse | ✗ | Bryan: skip | NOT_NEEDED |",
         "| Ahrefs | ✗ | Bryan: skip | NOT_NEEDED |",
@@ -865,10 +868,10 @@ def format_live_validation_md(
         "## Notes",
         "",
         f"- **email-ops / investor-outreach / marketing-campaign**: RESEND_API_KEY validated (200). EMAIL_FROM not set — actual email sends need EMAIL_FROM configured. Skills are ACTIVE; dry-run safe.",
-        f"- **GitHub**: GITHUB_TOKEN present but returned 401 Bad credentials. Token likely expired. Refresh via GitHub > Settings > Developer Settings > PAT.",
+        f"- **GitHub**: GITHUB_TOKEN refreshed — GET /user returned 200 (login: xiaobryans). ecc:github-ops and ecc:configure-ecc now ACTIVE.",
         f"- **Apollo**: API key returned 422 on empty-body query (not 401/403). This confirms the key was accepted by the server — auth inferred valid.",
         f"- **Flox**: Version 1.13.0 confirmed installed. flox-environments ACTIVE with list_environments read-only by default.",
-        f"- **Pillow**: Not installed. ios-icon-gen stays READY_BUT_WAITING_FOR_USER_MANUAL_SETUP. Install: `uv add Pillow`.",
+        f"- **Pillow**: Confirmed installed (Prompt 3 micro-verification). ios-icon-gen now ACTIVE.",
         f"- **All 36 approval-waiting items**: Activated via Bryan's Prompt 2 approval for registry wiring. Risky execution remains gated by `reviewer_approved` flags per wrapper/hook/plugin/agent.",
     ])
 
@@ -877,7 +880,7 @@ def format_live_validation_md(
 
 def format_final_status_md(
     flox_installed: bool = True,
-    pillow_installed: bool = False,
+    pillow_installed: bool = True,
 ) -> str:
     """Generate PLAN1_FINAL_STATUS.md content."""
     summary = compute_final_state_summary(flox_installed, pillow_installed)
@@ -923,8 +926,8 @@ def format_final_status_md(
 - Jira: Linear is active; Jira is redundant
 - Nutrient: COST_BLOCKED_OPTIONAL_LATER (Bryan confirmed)
 
-### Auth Failed / Expired
-- GitHub GITHUB_TOKEN: 401 Bad credentials — token needs refresh
+### Auth Refreshed (Prompt 3 micro-verification)
+- GitHub GITHUB_TOKEN: refreshed — GET /user returned 200 (login: xiaobryans). ecc:github-ops + ecc:configure-ecc now ACTIVE.
 
 ### Approval-Only Items (all wired, execution gated)
 36 items activated via Bryan's Prompt 2 approval for registry wiring:

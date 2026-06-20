@@ -585,23 +585,17 @@ class TestRedundancyManagement:
         ids = [c.candidate_id for c in reg.list_all()]
         assert len(ids) == len(set(ids))
 
-    def test_external_api_skills_state_after_prompt2(self) -> None:
-        """Skills needing external APIs are active only if key was verified in Prompt 2."""
+    def test_external_api_skills_state_after_prompt3(self) -> None:
+        """Skills needing external APIs are active after key verification."""
         catalog = ECCCatalog()
-        # Exa and Fal (via AIMLAPI) are now ACTIVE after Prompt 2 key verification
-        active_with_key = ["ecc:exa-search", "ecc:fal-ai-media"]
+        # Exa, Fal (via AIMLAPI), and GitHub are all ACTIVE after Prompt 3 token refresh
+        active_with_key = ["ecc:exa-search", "ecc:fal-ai-media", "ecc:github-ops"]
         for cid in active_with_key:
             entry = catalog.get(cid)
             if entry:
                 assert entry["state"] == "active", (
-                    f"{cid} should be ACTIVE — API key verified in Prompt 2"
+                    f"{cid} should be ACTIVE — API key verified (Prompt 2 or 3)"
                 )
-        # GitHub ops is still waiting (token expired)
-        github = catalog.get("ecc:github-ops")
-        if github:
-            assert github["plan1_state"] == "READY_BUT_WAITING_FOR_API_KEY", (
-                f"ecc:github-ops should wait for key (token expired); got {github['plan1_state']}"
-            )
 
 
 # ---------------------------------------------------------------------------

@@ -127,6 +127,10 @@ ACTIVE_COUNT_BY_CATEGORY: Dict[str, int] = {
     # +36 approval activated (hooks, plugins, agents, wrappers, db-migration, mcp-servers)
     # +1 Flox activated (flox-environments)
     "PROMPT2_TOTAL": 316,  # = 255 + 61
+    # Prompt-3 micro-verification additions:
+    # +2 GitHub activated (token refreshed — github-ops, configure-ecc)
+    # +1 Pillow activated (ios-icon-gen)
+    "PROMPT3_TOTAL": 319,  # = 316 + 3
 }
 
 # Adapted skills (SkillManifest objects in adapted_skills.py)
@@ -1254,8 +1258,10 @@ def _build_static_catalog() -> Dict[str, Dict[str, Any]]:
                 "Activate later by providing the required provider key."
             )
 
-    # GitHub key present but auth failed — keep READY_BUT_WAITING_FOR_API_KEY with clear note
-    for cid in _GITHUB_KEY_PRESENT_AUTH_FAILED:
+    # GitHub token now refreshed — _GITHUB_KEY_PRESENT_AUTH_FAILED is empty set;
+    # github-ops and configure-ecc are included in ALL_API_KEY_ACTIVATED above.
+    # This loop is a no-op but kept for documentation clarity.
+    for cid in _GITHUB_KEY_PRESENT_AUTH_FAILED:  # empty after Prompt 3 token refresh
         if cid in catalog:
             catalog[cid]["plan1_state"] = "READY_BUT_WAITING_FOR_API_KEY"
             catalog[cid]["state"] = "installed_disabled"
@@ -1278,15 +1284,16 @@ def _build_static_catalog() -> Dict[str, Dict[str, Any]]:
                 "Environment creation requires Bryan approval via FloxEnvWrapper."
             )
 
-    # Pillow-waiting items — Pillow not installed, stays in READY_BUT_WAITING_FOR_USER_MANUAL_SETUP
+    # Pillow-activated items — Pillow confirmed installed in Prompt 3 micro-verification
     for cid in _PILLOW_WAITING:
         if cid in catalog:
-            catalog[cid]["plan1_state"] = "READY_BUT_WAITING_FOR_USER_MANUAL_SETUP"
-            catalog[cid]["state"] = "installed_disabled"
+            catalog[cid]["plan1_state"] = "ACTIVE"
+            catalog[cid]["state"] = "active"
+            catalog[cid]["preflight_passed"] = True
+            catalog[cid]["reviewer_approved"] = True
             catalog[cid]["reason"] = (
-                "READY_BUT_WAITING_FOR_USER_MANUAL_SETUP: Pillow not installed in Prompt 2 check. "
-                "Install: `uv add Pillow` then re-run Plan 1 certification. "
-                "No API key or approval needed — purely local image processing."
+                "ACTIVE: Pillow confirmed installed in Prompt 3 micro-verification. "
+                "Local image processing only — no API key or approval needed."
             )
 
     return catalog
@@ -1476,8 +1483,8 @@ class ECCCatalog:
             "active_count_decomposition": {
                 "by_category": actual_active_by_cat,
                 "total": actual_total_active,
-                "expected_total": ACTIVE_COUNT_BY_CATEGORY.get("PROMPT2_TOTAL", ACTIVE_COUNT_BY_CATEGORY["TOTAL"]),
-                "matches_expected": actual_total_active == ACTIVE_COUNT_BY_CATEGORY.get("PROMPT2_TOTAL", ACTIVE_COUNT_BY_CATEGORY["TOTAL"]),
+                "expected_total": ACTIVE_COUNT_BY_CATEGORY.get("PROMPT3_TOTAL", ACTIVE_COUNT_BY_CATEGORY.get("PROMPT2_TOTAL", ACTIVE_COUNT_BY_CATEGORY["TOTAL"])),
+                "matches_expected": actual_total_active == ACTIVE_COUNT_BY_CATEGORY.get("PROMPT3_TOTAL", ACTIVE_COUNT_BY_CATEGORY.get("PROMPT2_TOTAL", ACTIVE_COUNT_BY_CATEGORY["TOTAL"])),
                 "pre_prompt2_baseline": ACTIVE_COUNT_BY_CATEGORY["TOTAL"],
                 "decomposition": f"{actual_active_by_cat} = {actual_total_active}",
             },

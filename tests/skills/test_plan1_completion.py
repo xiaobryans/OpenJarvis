@@ -156,14 +156,14 @@ class TestApiKeySkillsCompleteness:
         )
 
     def test_catalog_api_key_state_count(self, plan1_summary: Dict[str, Any]) -> None:
-        # After Prompt 2 live validation: 35 skills were activated (keys confirmed).
-        # Only 2 remain READY_BUT_WAITING_FOR_API_KEY: github-ops, configure-ecc (token expired).
+        # After Prompt 3 micro-verification: GitHub token refreshed (200 OK) → github-ops + configure-ecc ACTIVE.
+        # Pillow installed → ios-icon-gen ACTIVE. 0 items remain READY_BUT_WAITING_FOR_API_KEY.
         count = plan1_summary["plan1_state_counts"].get(
             Plan1State.READY_BUT_WAITING_FOR_API_KEY, 0
         )
-        assert count == 2, (
-            f"Post-Prompt-2 catalog shows {count} READY_BUT_WAITING_FOR_API_KEY, "
-            f"expected 2 (github-ops, configure-ecc — token expired)"
+        assert count == 0, (
+            f"Post-Prompt-3 catalog shows {count} READY_BUT_WAITING_FOR_API_KEY, "
+            f"expected 0 (GitHub token refreshed; all API-key skills activated)"
         )
 
     def test_every_api_key_skill_has_required_fields(self) -> None:
@@ -344,14 +344,15 @@ class TestInstalledDisabledExactBlockers:
 # ---------------------------------------------------------------------------
 
 class TestActiveCount:
-    """Prove active count is 316 after Prompt 2 live validation."""
+    """Prove active count is 319 after Prompt 3 micro-verification (GitHub refresh + Pillow)."""
 
-    EXPECTED_ACTIVE_COUNT = 316   # Prompt 2: 255 baseline + 61 newly activated
+    EXPECTED_ACTIVE_COUNT = 319   # Prompt 3: 316 + 2 GitHub + 1 Pillow
+    EXPECTED_PROMPT2_COUNT = 316  # Prompt 2 total
     EXPECTED_PRE_PROMPT2_COUNT = 255  # Pre-Prompt-2 baseline
 
     def test_active_count_from_summary(self, plan1_summary: Dict[str, Any]) -> None:
         assert plan1_summary["active_count"] == self.EXPECTED_ACTIVE_COUNT, (
-            f"Active count: expected {self.EXPECTED_ACTIVE_COUNT}, "
+            f"Active count: expected {self.EXPECTED_ACTIVE_COUNT} (Prompt 3), "
             f"got {plan1_summary['active_count']}"
         )
 
@@ -369,10 +370,17 @@ class TestActiveCount:
         )
 
     def test_prompt2_total_documented(self) -> None:
-        """Prompt-2 total must be documented in ACTIVE_COUNT_BY_CATEGORY."""
+        """Prompt-2 total (316) must be documented in ACTIVE_COUNT_BY_CATEGORY."""
         prompt2_total = ACTIVE_COUNT_BY_CATEGORY.get("PROMPT2_TOTAL", 0)
-        assert prompt2_total == self.EXPECTED_ACTIVE_COUNT, (
-            f"ACTIVE_COUNT_BY_CATEGORY PROMPT2_TOTAL: expected {self.EXPECTED_ACTIVE_COUNT}, got {prompt2_total}"
+        assert prompt2_total == self.EXPECTED_PROMPT2_COUNT, (
+            f"ACTIVE_COUNT_BY_CATEGORY PROMPT2_TOTAL: expected {self.EXPECTED_PROMPT2_COUNT}, got {prompt2_total}"
+        )
+
+    def test_prompt3_total_documented(self) -> None:
+        """Prompt-3 total (319) must be documented in ACTIVE_COUNT_BY_CATEGORY."""
+        prompt3_total = ACTIVE_COUNT_BY_CATEGORY.get("PROMPT3_TOTAL", 0)
+        assert prompt3_total == self.EXPECTED_ACTIVE_COUNT, (
+            f"ACTIVE_COUNT_BY_CATEGORY PROMPT3_TOTAL: expected {self.EXPECTED_ACTIVE_COUNT}, got {prompt3_total}"
         )
 
 

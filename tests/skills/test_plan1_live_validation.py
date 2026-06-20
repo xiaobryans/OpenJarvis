@@ -59,11 +59,11 @@ from openjarvis.skills.ecc_catalog import _build_static_catalog
 # Constants (match live validation module)
 # ---------------------------------------------------------------------------
 
-EXPECTED_ACTIVE = 316
-EXPECTED_API_KEY_WAITING = 2       # github-ops, configure-ecc (token expired)
+EXPECTED_ACTIVE = 319              # Prompt 3: 316 + 2 GitHub + 1 Pillow
+EXPECTED_API_KEY_WAITING = 0       # GitHub token refreshed; all API-key skills ACTIVE
 EXPECTED_NOT_NEEDED = 4            # agent-payment-x402, team-builder, seo, jira-integration
 EXPECTED_COST_BLOCKED = 7          # social media, stripe, google, nutrient
-EXPECTED_USER_MANUAL_SETUP = 1     # ios-icon-gen (Pillow not installed)
+EXPECTED_USER_MANUAL_SETUP = 0     # ios-icon-gen ACTIVE after Pillow installed
 EXPECTED_UNAUTOMATABLE = 2         # eval-harness, windows-desktop-e2e
 EXPECTED_TOTAL = 332
 
@@ -276,12 +276,12 @@ class TestApiKeyActivation:
         assert transitions["ecc:data-scraper-agent"]["new_state"] == "ACTIVE"
 
     def test_total_api_key_activated_count(self):
-        """Total API-key activated skills must be 24."""
+        """Total API-key activated skills must be 26 (24 from Prompt 2 + 2 GitHub from Prompt 3)."""
         count = sum(
             1 for v in get_state_transition_map().values()
             if v["activation_type"] == "api_key_live_validated"
         )
-        assert count == 24, f"Expected 24 API-key activated, got {count}"
+        assert count == 26, f"Expected 26 API-key activated (Prompt 3 includes GitHub), got {count}"
 
 
 # ---------------------------------------------------------------------------
@@ -358,21 +358,24 @@ class TestNotNeededAndCostBlocked:
 # ---------------------------------------------------------------------------
 
 class TestFailedAuthHandling:
-    """Verify failed auth keeps skill in precise waiting state."""
+    """Verify failed auth handling — GitHub token was refreshed in Prompt 3."""
 
-    def test_github_token_expired_stays_waiting(self):
-        """GitHub token auth failed — github-ops, configure-ecc stay READY_BUT_WAITING."""
+    def test_github_token_refreshed_now_active(self):
+        """GitHub token refreshed (Prompt 3) — github-ops and configure-ecc are now ACTIVE."""
         transitions = get_state_transition_map()
         for cid in ["ecc:github-ops", "ecc:configure-ecc"]:
-            assert transitions[cid]["new_state"] == "READY_BUT_WAITING_FOR_API_KEY"
-            assert "401" in transitions[cid]["reason"] or "expired" in transitions[cid]["reason"]
+            assert transitions[cid]["new_state"] == "ACTIVE", (
+                f"{cid} should be ACTIVE after GitHub token refresh; got {transitions[cid]['new_state']}"
+            )
+            assert transitions[cid]["activation_type"] == "api_key_live_validated"
 
-    def test_github_failing_count_is_2(self):
+    def test_github_failing_count_is_zero(self):
+        """No skills remain in auth_failed state after Prompt 3 token refresh."""
         count = sum(
             1 for v in get_state_transition_map().values()
             if v["activation_type"] == "auth_failed"
         )
-        assert count == 2
+        assert count == 0, f"Expected 0 auth_failed items (GitHub refreshed); got {count}"
 
 
 # ---------------------------------------------------------------------------
@@ -574,38 +577,39 @@ class TestFinalStateSummary:
 
     def test_final_state_counts_reconcile_to_332(self):
         """All state counts must sum to 332."""
-        summary = compute_final_state_summary(flox_installed=True, pillow_installed=False)
+        summary = compute_final_state_summary(flox_installed=True, pillow_installed=True)
         assert summary["total"] == 332
 
     def test_active_count_is_316(self):
-        summary = compute_final_state_summary(flox_installed=True, pillow_installed=False)
+        summary = compute_final_state_summary(flox_installed=True, pillow_installed=True)
         assert summary["ACTIVE"] == EXPECTED_ACTIVE, (
             f"Expected {EXPECTED_ACTIVE} ACTIVE, got {summary['ACTIVE']}"
         )
 
     def test_api_key_waiting_is_2(self):
-        summary = compute_final_state_summary(flox_installed=True, pillow_installed=False)
+        summary = compute_final_state_summary(flox_installed=True, pillow_installed=True)
         assert summary["READY_BUT_WAITING_FOR_API_KEY"] == EXPECTED_API_KEY_WAITING
 
     def test_not_needed_is_4(self):
-        summary = compute_final_state_summary(flox_installed=True, pillow_installed=False)
+        summary = compute_final_state_summary(flox_installed=True, pillow_installed=True)
         assert summary["NOT_NEEDED_FOR_NOW"] == EXPECTED_NOT_NEEDED
 
     def test_cost_blocked_is_7(self):
-        summary = compute_final_state_summary(flox_installed=True, pillow_installed=False)
+        summary = compute_final_state_summary(flox_installed=True, pillow_installed=True)
         assert summary["COST_BLOCKED_OPTIONAL_LATER"] == EXPECTED_COST_BLOCKED
 
-    def test_user_manual_setup_is_1(self):
-        summary = compute_final_state_summary(flox_installed=True, pillow_installed=False)
+    def test_user_manual_setup_is_0(self):
+        """No items in user-manual-setup state after Pillow installed."""
+        summary = compute_final_state_summary(flox_installed=True, pillow_installed=True)
         assert summary["READY_BUT_WAITING_FOR_USER_MANUAL_SETUP"] == EXPECTED_USER_MANUAL_SETUP
 
     def test_unautomatable_is_2(self):
-        summary = compute_final_state_summary(flox_installed=True, pillow_installed=False)
+        summary = compute_final_state_summary(flox_installed=True, pillow_installed=True)
         assert summary["UNAUTOMATABLE_EVEN_WITH_APPROVAL"] == EXPECTED_UNAUTOMATABLE
 
     def test_approval_waiting_is_zero(self):
         """All approval-waiting items must be resolved in Prompt 2."""
-        summary = compute_final_state_summary(flox_installed=True, pillow_installed=False)
+        summary = compute_final_state_summary(flox_installed=True, pillow_installed=True)
         assert summary.get("READY_BUT_WAITING_FOR_APPROVAL", 0) == 0
 
     def test_catalog_state_counts_match_summary(self):
@@ -720,10 +724,12 @@ class TestLiveAuthTestResults:
     def test_scrapingbee_auth_passed(self):
         assert LIVE_AUTH_TEST_RESULTS["ScrapingBee"]["auth_ok"] is True
 
-    def test_github_auth_failed(self):
-        """GitHub token returned 401 — must be recorded as failed."""
-        assert LIVE_AUTH_TEST_RESULTS["GitHub"]["auth_ok"] is False
-        assert LIVE_AUTH_TEST_RESULTS["GitHub"]["status_code"] == 401
+    def test_github_auth_now_passes(self):
+        """GitHub token refreshed in Prompt 3 — auth_ok must be True, status 200."""
+        assert LIVE_AUTH_TEST_RESULTS["GitHub"]["auth_ok"] is True, (
+            "GitHub auth should be True after token refresh in Prompt 3"
+        )
+        assert LIVE_AUTH_TEST_RESULTS["GitHub"]["status_code"] == 200
 
     def test_twitter_not_configured(self):
         assert LIVE_AUTH_TEST_RESULTS["Twitter"]["auth_ok"] is False

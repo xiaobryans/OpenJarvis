@@ -289,15 +289,17 @@ class TestActiveCountConsistency:
 
     Pre-Prompt-2 baseline: 244 skills + 3 contexts + 8 commands = 255.
     Prompt 2 additions: +24 API-key + +36 approval + +1 Flox = +61.
-    New total: 316.
+    Prompt 2 total: 316.
+    Prompt 3 micro-verification: +2 GitHub (token refreshed) + +1 Pillow = +3.
+    Prompt 3 total: 319.
     """
 
-    def test_active_total_is_316(self) -> None:
-        """Catalog active count is 316 after Prompt 2 live validation."""
+    def test_active_total_is_319(self) -> None:
+        """Catalog active count is 319 after Prompt 3 micro-verification."""
         catalog = ECCCatalog()
         summary = catalog.get_status_summary()
-        assert summary["active_count"] == 316, (
-            f"Expected 316 active items (Prompt 2 baseline), got {summary['active_count']}"
+        assert summary["active_count"] == 319, (
+            f"Expected 319 active items (Prompt 3 total), got {summary['active_count']}"
         )
 
     def test_pre_prompt2_baseline_documented(self) -> None:
@@ -310,6 +312,12 @@ class TestActiveCountConsistency:
         """Prompt-2 total (316) is documented in ACTIVE_COUNT_BY_CATEGORY['PROMPT2_TOTAL']."""
         assert ACTIVE_COUNT_BY_CATEGORY.get("PROMPT2_TOTAL", 0) == 316, (
             f"PROMPT2_TOTAL must be 316, got {ACTIVE_COUNT_BY_CATEGORY.get('PROMPT2_TOTAL', 0)}"
+        )
+
+    def test_prompt3_total_documented(self) -> None:
+        """Prompt-3 total (319) is documented in ACTIVE_COUNT_BY_CATEGORY['PROMPT3_TOTAL']."""
+        assert ACTIVE_COUNT_BY_CATEGORY.get("PROMPT3_TOTAL", 0) == 319, (
+            f"PROMPT3_TOTAL must be 319, got {ACTIVE_COUNT_BY_CATEGORY.get('PROMPT3_TOTAL', 0)}"
         )
 
     def test_active_decomposition_baseline_categories(self) -> None:

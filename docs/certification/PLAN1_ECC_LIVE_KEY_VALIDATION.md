@@ -7,12 +7,12 @@
 
 | State | Count |
 |---|---|
-| ACTIVE | 316 |
+| ACTIVE | 319 |
 | COST_BLOCKED_OPTIONAL_LATER | 7 |
 | NOT_NEEDED_FOR_NOW | 4 |
-| READY_BUT_WAITING_FOR_API_KEY | 2 |
+| READY_BUT_WAITING_FOR_API_KEY | 0 |
 | READY_BUT_WAITING_FOR_APPROVAL | 0 |
-| READY_BUT_WAITING_FOR_USER_MANUAL_SETUP | 1 |
+| READY_BUT_WAITING_FOR_USER_MANUAL_SETUP | 0 |
 | UNAUTOMATABLE_EVEN_WITH_APPROVAL | 2 |
 | **TOTAL** | **332** |
 
@@ -43,7 +43,7 @@
 | Pinecone | ✓ | indexes → 200 | VERIFIED |
 | Apollo | ✓ | people/match → 422 (valid key inferred) | VERIFIED |
 | ScrapingBee | ✓ | scrape → 200 | VERIFIED |
-| GitHub | ✓ | /user → 401 Bad credentials | KEY EXPIRED |
+| GitHub | ✓ | /user → 200 OK (xiaobryans) | VERIFIED (token refreshed) |
 | Twitter/X | ✗ | not configured | COST_BLOCKED |
 | Greenhouse | ✗ | Bryan: skip | NOT_NEEDED |
 | Ahrefs | ✗ | Bryan: skip | NOT_NEEDED |
@@ -57,11 +57,11 @@
 | Tool | Installed | Version | Outcome |
 |---|---|---|---|
 | Flox CLI | ✓ | 1.13.0 | flox-environments → ACTIVE |
-| Pillow | ✗ | - | ios-icon-gen stays READY_BUT_WAITING_FOR_USER_MANUAL_SETUP |
+| Pillow | ✓ | installed | ios-icon-gen → ACTIVE |
 
 ## Skills Activated (→ ACTIVE)
 
-**61 skills moved to ACTIVE in this validation pass:**
+**64 skills moved to ACTIVE in this validation pass:**
 
 - `ecc:agent:architect` — Bryan granted approval for registry wiring; code complete, gates in place, execution still approval-gated per wrapper/hook/plugin/agent
 - `ecc:agent:build-error-resolver` — Bryan granted approval for registry wiring; code complete, gates in place, execution still approval-gated per wrapper/hook/plugin/agent
@@ -83,6 +83,7 @@
 - `ecc:cmd:database-migration` — Bryan granted approval for registry wiring; code complete, gates in place, execution still approval-gated per wrapper/hook/plugin/agent
 - `ecc:competitive-platform-analysis` — API key verified (Exa); safe auth test passed; skill activated
 - `ecc:competitive-report-structure` — API key verified (Exa); safe auth test passed; skill activated
+- `ecc:configure-ecc` — API key verified (multiple); safe auth test passed; skill activated
 - `ecc:content-engine` — API key verified (AIMLAPI); safe auth test passed; skill activated
 - `ecc:continuous-learning-v2` — API key verified (AIMLAPI); safe auth test passed; skill activated
 - `ecc:data-scraper-agent` — API key verified (ScrapingBee); safe auth test passed; skill activated
@@ -94,6 +95,7 @@
 - `ecc:exa-search` — API key verified (Exa); safe auth test passed; skill activated
 - `ecc:fal-ai-media` — API key verified (AIMLAPI); safe auth test passed; skill activated
 - `ecc:flox-environments` — Flox 1.13.0 confirmed installed; list_environments is read-only by default
+- `ecc:github-ops` — API key verified (multiple); safe auth test passed; skill activated
 - `ecc:hook:adapter` — Bryan granted approval for registry wiring; code complete, gates in place, execution still approval-gated per wrapper/hook/plugin/agent
 - `ecc:hook:after-file-edit` — Bryan granted approval for registry wiring; code complete, gates in place, execution still approval-gated per wrapper/hook/plugin/agent
 - `ecc:hook:after-mcp-execution` — Bryan granted approval for registry wiring; code complete, gates in place, execution still approval-gated per wrapper/hook/plugin/agent
@@ -106,6 +108,7 @@
 - `ecc:hook:pre-commit` — Bryan granted approval for registry wiring; code complete, gates in place, execution still approval-gated per wrapper/hook/plugin/agent
 - `ecc:investor-materials` — API key verified (AIMLAPI); safe auth test passed; skill activated
 - `ecc:investor-outreach` — API key verified (Resend); safe auth test passed; skill activated
+- `ecc:ios-icon-gen` — Pillow confirmed installed (Prompt 3 micro-verification); local image processing only
 - `ecc:knowledge-ops` — API key verified (Pinecone); safe auth test passed; skill activated
 - `ecc:lead-intelligence` — API key verified (Apollo); safe auth test passed; skill activated
 - `ecc:market-research` — API key verified (Exa); safe auth test passed; skill activated
@@ -144,14 +147,12 @@
 
 ## Skills Still Waiting for Keys
 
-- `ecc:configure-ecc` — GITHUB_TOKEN present but auth check returned 401 — token expired/invalid; needs refresh
-- `ecc:github-ops` — GITHUB_TOKEN present but auth check returned 401 — token expired/invalid; needs refresh
 
 ## Notes
 
 - **email-ops / investor-outreach / marketing-campaign**: RESEND_API_KEY validated (200). EMAIL_FROM not set — actual email sends need EMAIL_FROM configured. Skills are ACTIVE; dry-run safe.
-- **GitHub**: GITHUB_TOKEN present but returned 401 Bad credentials. Token likely expired. Refresh via GitHub > Settings > Developer Settings > PAT.
+- **GitHub**: GITHUB_TOKEN refreshed — GET /user returned 200 (login: xiaobryans). ecc:github-ops and ecc:configure-ecc now ACTIVE.
 - **Apollo**: API key returned 422 on empty-body query (not 401/403). This confirms the key was accepted by the server — auth inferred valid.
 - **Flox**: Version 1.13.0 confirmed installed. flox-environments ACTIVE with list_environments read-only by default.
-- **Pillow**: Not installed. ios-icon-gen stays READY_BUT_WAITING_FOR_USER_MANUAL_SETUP. Install: `uv add Pillow`.
+- **Pillow**: Confirmed installed (Prompt 3 micro-verification). ios-icon-gen now ACTIVE.
 - **All 36 approval-waiting items**: Activated via Bryan's Prompt 2 approval for registry wiring. Risky execution remains gated by `reviewer_approved` flags per wrapper/hook/plugin/agent.

@@ -116,7 +116,7 @@ class TestStateModelCleanup:
         """Verify final state breakdown after Prompt 2 live validation."""
         summary = catalog.get_plan1_completion_summary()
         states = summary["plan1_state_counts"]
-        assert states.get("ACTIVE", 0) == 316, f"Expected 316 ACTIVE (Prompt 2), got {states.get('ACTIVE')}"
+        assert states.get("ACTIVE", 0) == 319, f"Expected 319 ACTIVE (Prompt 3), got {states.get('ACTIVE')}"
         assert states.get("ADAPT_NEEDED_WITH_EXACT_ENGINEERING_TASK", 0) == 0, "ADAPT_NEEDED must be 0"
         assert states.get("INSTALLED_DISABLED_WITH_EXACT_BLOCKER", 0) == 0, "INSTALLED_DISABLED must be 0"
         assert states.get("UNAUTOMATABLE_EVEN_WITH_APPROVAL", 0) >= 2, "Must have >= 2 UNAUTOMATABLE"
@@ -178,7 +178,9 @@ class TestEngineeringItemsResolved:
     def test_ios_icon_gen_state_correct(self, all_items):
         item = next((i for i in all_items if i.get("candidate_id") == "ecc:ios-icon-gen"), None)
         assert item is not None
-        assert item["plan1_state"] == "READY_BUT_WAITING_FOR_USER_MANUAL_SETUP"
+        assert item["plan1_state"] == "ACTIVE", (
+            f"ios-icon-gen activated after Pillow installed (Prompt 3); got {item['plan1_state']}"
+        )
 
     def test_nutrient_doc_processing_state_correct(self, all_items):
         item = next((i for i in all_items if i.get("candidate_id") == "ecc:nutrient-document-processing"), None)
@@ -827,10 +829,10 @@ class TestApiKeyDeltaReconciliation:
         assert "ecc:nutrient-document-processing" in addition_ids
         assert "ecc:continuous-learning-v2" in addition_ids
 
-    def test_actual_catalog_api_key_count_after_prompt2(self, all_items):
+    def test_actual_catalog_api_key_count_after_prompt3(self, all_items):
         api_key_items = [i for i in all_items if i.get("plan1_state") == "READY_BUT_WAITING_FOR_API_KEY"]
-        assert len(api_key_items) == 2, (
-            f"After Prompt 2: expected 2 API-key skills remaining (GitHub token expired), got {len(api_key_items)}"
+        assert len(api_key_items) == 0, (
+            f"After Prompt 3: expected 0 API-key skills remaining (GitHub refreshed, all activated), got {len(api_key_items)}"
         )
 
 
@@ -840,9 +842,9 @@ class TestApiKeyDeltaReconciliation:
 
 class TestActiveReachability:
 
-    def test_active_count_is_316(self, reachability_report):
-        assert reachability_report["total_active"] == 316, (
-            f"After Prompt 2: expected 316 ACTIVE, got {reachability_report['total_active']}"
+    def test_active_count_is_319(self, reachability_report):
+        assert reachability_report["total_active"] == 319, (
+            f"After Prompt 3: expected 319 ACTIVE, got {reachability_report['total_active']}"
         )
 
     def test_all_active_have_invocation_route(self, reachability_report):
@@ -864,9 +866,9 @@ class TestActiveReachability:
             f"Expected 33 executable active items, got {reachability_report['executable_count']}"
         )
 
-    def test_guidance_count_is_283(self, reachability_report):
-        assert reachability_report["guidance_only_count"] == 283, (
-            f"Expected 283 guidance-only active items (316-33), got {reachability_report['guidance_only_count']}"
+    def test_guidance_count_is_286(self, reachability_report):
+        assert reachability_report["guidance_only_count"] == 286, (
+            f"Expected 286 guidance-only active items (319-33), got {reachability_report['guidance_only_count']}"
         )
 
     def test_guidance_items_labeled_as_guidance(self, reachability_report):
@@ -875,7 +877,7 @@ class TestActiveReachability:
             i for i in reachability_report["per_item"]
             if i["item_type"] == "guidance_only"
         ]
-        assert len(guidance_items) == 283
+        assert len(guidance_items) == 286
         for item in guidance_items:
             assert item["invocation_route"].startswith("GET /v1/intake/skill/"), (
                 f"Guidance item {item['candidate_id']} should have catalog API route"
@@ -893,7 +895,7 @@ class TestActiveReachability:
 
     def test_reachability_proof_string_present(self, reachability_report):
         proof = reachability_report.get("reachability_proof", "")
-        assert "316" in proof
+        assert "319" in proof
         assert "guidance" in proof.lower() or "catalog" in proof.lower()
 
 

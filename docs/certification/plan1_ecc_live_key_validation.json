@@ -168,10 +168,10 @@
     },
     "GitHub": {
       "test_type": "user_endpoint",
-      "status_code": 401,
-      "auth_ok": false,
-      "safe_to_live_test": false,
-      "notes": "GET /user returned 401 Bad credentials \u2014 token present but invalid/expired"
+      "status_code": 200,
+      "auth_ok": true,
+      "safe_to_live_test": true,
+      "notes": "GET /user returned 200 \u2014 token refreshed and valid (login: xiaobryans). Prompt 2 had expired token; Prompt 3 micro-verification confirms auth OK."
     },
     "Resend": {
       "test_type": "domains_list",
@@ -278,44 +278,12 @@
       "version": "1.13.0"
     },
     "pillow": {
-      "installed": false,
-      "version": null
+      "installed": true,
+      "version": "installed"
     }
   },
   "state_transitions": {
-    "ecc:email-ops": {
-      "new_state": "ACTIVE",
-      "activation_type": "api_key_live_validated"
-    },
-    "ecc:deep-research": {
-      "new_state": "ACTIVE",
-      "activation_type": "api_key_live_validated"
-    },
-    "ecc:lead-intelligence": {
-      "new_state": "ACTIVE",
-      "activation_type": "api_key_live_validated"
-    },
-    "ecc:marketing-campaign": {
-      "new_state": "ACTIVE",
-      "activation_type": "api_key_live_validated"
-    },
-    "ecc:fal-ai-media": {
-      "new_state": "ACTIVE",
-      "activation_type": "api_key_live_validated"
-    },
-    "ecc:continuous-learning-v2": {
-      "new_state": "ACTIVE",
-      "activation_type": "api_key_live_validated"
-    },
-    "ecc:competitive-report-structure": {
-      "new_state": "ACTIVE",
-      "activation_type": "api_key_live_validated"
-    },
-    "ecc:brand-voice": {
-      "new_state": "ACTIVE",
-      "activation_type": "api_key_live_validated"
-    },
-    "ecc:messages-ops": {
+    "ecc:research-ops": {
       "new_state": "ACTIVE",
       "activation_type": "api_key_live_validated"
     },
@@ -323,19 +291,19 @@
       "new_state": "ACTIVE",
       "activation_type": "api_key_live_validated"
     },
-    "ecc:ecc-tools-cost-audit": {
+    "ecc:competitive-platform-analysis": {
       "new_state": "ACTIVE",
       "activation_type": "api_key_live_validated"
     },
-    "ecc:brand-discovery": {
+    "ecc:email-ops": {
       "new_state": "ACTIVE",
       "activation_type": "api_key_live_validated"
     },
-    "ecc:market-research": {
+    "ecc:project-flow-ops": {
       "new_state": "ACTIVE",
       "activation_type": "api_key_live_validated"
     },
-    "ecc:investor-outreach": {
+    "ecc:article-writing": {
       "new_state": "ACTIVE",
       "activation_type": "api_key_live_validated"
     },
@@ -347,15 +315,15 @@
       "new_state": "ACTIVE",
       "activation_type": "api_key_live_validated"
     },
-    "ecc:project-flow-ops": {
+    "ecc:market-research": {
       "new_state": "ACTIVE",
       "activation_type": "api_key_live_validated"
     },
-    "ecc:content-engine": {
+    "ecc:configure-ecc": {
       "new_state": "ACTIVE",
       "activation_type": "api_key_live_validated"
     },
-    "ecc:research-ops": {
+    "ecc:messages-ops": {
       "new_state": "ACTIVE",
       "activation_type": "api_key_live_validated"
     },
@@ -363,11 +331,15 @@
       "new_state": "ACTIVE",
       "activation_type": "api_key_live_validated"
     },
-    "ecc:investor-materials": {
+    "ecc:continuous-learning-v2": {
       "new_state": "ACTIVE",
       "activation_type": "api_key_live_validated"
     },
-    "ecc:competitive-platform-analysis": {
+    "ecc:ecc-tools-cost-audit": {
+      "new_state": "ACTIVE",
+      "activation_type": "api_key_live_validated"
+    },
+    "ecc:content-engine": {
       "new_state": "ACTIVE",
       "activation_type": "api_key_live_validated"
     },
@@ -375,19 +347,51 @@
       "new_state": "ACTIVE",
       "activation_type": "api_key_live_validated"
     },
-    "ecc:article-writing": {
+    "ecc:marketing-campaign": {
       "new_state": "ACTIVE",
       "activation_type": "api_key_live_validated"
     },
-    "ecc:team-builder": {
-      "new_state": "NOT_NEEDED_FOR_NOW",
-      "activation_type": "owner_decision"
+    "ecc:github-ops": {
+      "new_state": "ACTIVE",
+      "activation_type": "api_key_live_validated"
     },
-    "ecc:jira-integration": {
-      "new_state": "NOT_NEEDED_FOR_NOW",
-      "activation_type": "owner_decision"
+    "ecc:deep-research": {
+      "new_state": "ACTIVE",
+      "activation_type": "api_key_live_validated"
+    },
+    "ecc:investor-materials": {
+      "new_state": "ACTIVE",
+      "activation_type": "api_key_live_validated"
+    },
+    "ecc:competitive-report-structure": {
+      "new_state": "ACTIVE",
+      "activation_type": "api_key_live_validated"
+    },
+    "ecc:lead-intelligence": {
+      "new_state": "ACTIVE",
+      "activation_type": "api_key_live_validated"
+    },
+    "ecc:investor-outreach": {
+      "new_state": "ACTIVE",
+      "activation_type": "api_key_live_validated"
+    },
+    "ecc:fal-ai-media": {
+      "new_state": "ACTIVE",
+      "activation_type": "api_key_live_validated"
+    },
+    "ecc:brand-discovery": {
+      "new_state": "ACTIVE",
+      "activation_type": "api_key_live_validated"
+    },
+    "ecc:brand-voice": {
+      "new_state": "ACTIVE",
+      "activation_type": "api_key_live_validated"
     },
     "ecc:seo": {
+      "new_state": "NOT_NEEDED_FOR_NOW",
+      "activation_type": "owner_decision"
+    },
+    "ecc:team-builder": {
       "new_state": "NOT_NEEDED_FOR_NOW",
       "activation_type": "owner_decision"
     },
@@ -395,27 +399,11 @@
       "new_state": "NOT_NEEDED_FOR_NOW",
       "activation_type": "owner_decision"
     },
-    "ecc:google-workspace-ops": {
-      "new_state": "COST_BLOCKED_OPTIONAL_LATER",
-      "activation_type": "cost_blocked"
-    },
-    "ecc:crosspost": {
-      "new_state": "COST_BLOCKED_OPTIONAL_LATER",
-      "activation_type": "cost_blocked"
-    },
-    "ecc:nutrient-document-processing": {
-      "new_state": "COST_BLOCKED_OPTIONAL_LATER",
-      "activation_type": "cost_blocked"
-    },
-    "ecc:stripe-integration": {
-      "new_state": "COST_BLOCKED_OPTIONAL_LATER",
-      "activation_type": "cost_blocked"
+    "ecc:jira-integration": {
+      "new_state": "NOT_NEEDED_FOR_NOW",
+      "activation_type": "owner_decision"
     },
     "ecc:social-graph-ranker": {
-      "new_state": "COST_BLOCKED_OPTIONAL_LATER",
-      "activation_type": "cost_blocked"
-    },
-    "ecc:x-api": {
       "new_state": "COST_BLOCKED_OPTIONAL_LATER",
       "activation_type": "cost_blocked"
     },
@@ -423,55 +411,27 @@
       "new_state": "COST_BLOCKED_OPTIONAL_LATER",
       "activation_type": "cost_blocked"
     },
-    "ecc:github-ops": {
-      "new_state": "READY_BUT_WAITING_FOR_API_KEY",
-      "activation_type": "auth_failed"
+    "ecc:google-workspace-ops": {
+      "new_state": "COST_BLOCKED_OPTIONAL_LATER",
+      "activation_type": "cost_blocked"
     },
-    "ecc:configure-ecc": {
-      "new_state": "READY_BUT_WAITING_FOR_API_KEY",
-      "activation_type": "auth_failed"
+    "ecc:nutrient-document-processing": {
+      "new_state": "COST_BLOCKED_OPTIONAL_LATER",
+      "activation_type": "cost_blocked"
     },
-    "ecc:hook:adapter": {
-      "new_state": "ACTIVE",
-      "activation_type": "approval_registry_wiring"
+    "ecc:x-api": {
+      "new_state": "COST_BLOCKED_OPTIONAL_LATER",
+      "activation_type": "cost_blocked"
     },
-    "ecc:agent:e2e-runner": {
-      "new_state": "ACTIVE",
-      "activation_type": "approval_registry_wiring"
+    "ecc:stripe-integration": {
+      "new_state": "COST_BLOCKED_OPTIONAL_LATER",
+      "activation_type": "cost_blocked"
     },
-    "ecc:hook:post-task": {
-      "new_state": "ACTIVE",
-      "activation_type": "approval_registry_wiring"
+    "ecc:crosspost": {
+      "new_state": "COST_BLOCKED_OPTIONAL_LATER",
+      "activation_type": "cost_blocked"
     },
-    "ecc:agent:reviewer": {
-      "new_state": "ACTIVE",
-      "activation_type": "approval_registry_wiring"
-    },
-    "ecc:plugin:lib": {
-      "new_state": "ACTIVE",
-      "activation_type": "approval_registry_wiring"
-    },
-    "ecc:dmux-workflows": {
-      "new_state": "ACTIVE",
-      "activation_type": "approval_registry_wiring"
-    },
-    "ecc:agent:security-reviewer": {
-      "new_state": "ACTIVE",
-      "activation_type": "approval_registry_wiring"
-    },
-    "ecc:hook:notification": {
-      "new_state": "ACTIVE",
-      "activation_type": "approval_registry_wiring"
-    },
-    "ecc:hook:after-shell-execution": {
-      "new_state": "ACTIVE",
-      "activation_type": "approval_registry_wiring"
-    },
-    "ecc:hook:after-file-edit": {
-      "new_state": "ACTIVE",
-      "activation_type": "approval_registry_wiring"
-    },
-    "ecc:agent:build-error-resolver": {
+    "ecc:plugin:index": {
       "new_state": "ACTIVE",
       "activation_type": "approval_registry_wiring"
     },
@@ -479,7 +439,15 @@
       "new_state": "ACTIVE",
       "activation_type": "approval_registry_wiring"
     },
-    "ecc:agent:architect": {
+    "ecc:agent:planner": {
+      "new_state": "ACTIVE",
+      "activation_type": "approval_registry_wiring"
+    },
+    "ecc:nanoclaw-repl": {
+      "new_state": "ACTIVE",
+      "activation_type": "approval_registry_wiring"
+    },
+    "ecc:plugin:lib": {
       "new_state": "ACTIVE",
       "activation_type": "approval_registry_wiring"
     },
@@ -487,19 +455,11 @@
       "new_state": "ACTIVE",
       "activation_type": "approval_registry_wiring"
     },
-    "ecc:agent:spec-miner": {
+    "ecc:agent:build-error-resolver": {
       "new_state": "ACTIVE",
       "activation_type": "approval_registry_wiring"
     },
-    "ecc:plugin:changed-files-store": {
-      "new_state": "ACTIVE",
-      "activation_type": "approval_registry_wiring"
-    },
-    "ecc:cmd:database-migration": {
-      "new_state": "ACTIVE",
-      "activation_type": "approval_registry_wiring"
-    },
-    "ecc:plugin:ecc-hooks": {
+    "ecc:hook:after-mcp-execution": {
       "new_state": "ACTIVE",
       "activation_type": "approval_registry_wiring"
     },
@@ -511,15 +471,7 @@
       "new_state": "ACTIVE",
       "activation_type": "approval_registry_wiring"
     },
-    "ecc:agent:doc-updater": {
-      "new_state": "ACTIVE",
-      "activation_type": "approval_registry_wiring"
-    },
-    "ecc:nanoclaw-repl": {
-      "new_state": "ACTIVE",
-      "activation_type": "approval_registry_wiring"
-    },
-    "ecc:hook:after-mcp-execution": {
+    "ecc:hook:after-shell-execution": {
       "new_state": "ACTIVE",
       "activation_type": "approval_registry_wiring"
     },
@@ -531,7 +483,15 @@
       "new_state": "ACTIVE",
       "activation_type": "approval_registry_wiring"
     },
-    "ecc:plugin:index": {
+    "ecc:plugin:changed-files-store": {
+      "new_state": "ACTIVE",
+      "activation_type": "approval_registry_wiring"
+    },
+    "ecc:agent:architect": {
+      "new_state": "ACTIVE",
+      "activation_type": "approval_registry_wiring"
+    },
+    "ecc:dmux-workflows": {
       "new_state": "ACTIVE",
       "activation_type": "approval_registry_wiring"
     },
@@ -539,27 +499,7 @@
       "new_state": "ACTIVE",
       "activation_type": "approval_registry_wiring"
     },
-    "ecc:agent:docs-researcher": {
-      "new_state": "ACTIVE",
-      "activation_type": "approval_registry_wiring"
-    },
-    "ecc:terminal-ops": {
-      "new_state": "ACTIVE",
-      "activation_type": "approval_registry_wiring"
-    },
-    "ecc:hook:after-tab-file-edit": {
-      "new_state": "ACTIVE",
-      "activation_type": "approval_registry_wiring"
-    },
-    "ecc:agent:tdd-guide": {
-      "new_state": "ACTIVE",
-      "activation_type": "approval_registry_wiring"
-    },
-    "ecc:hook:pre-commit": {
-      "new_state": "ACTIVE",
-      "activation_type": "approval_registry_wiring"
-    },
-    "ecc:hook:before-tool-call": {
+    "ecc:agent:reviewer": {
       "new_state": "ACTIVE",
       "activation_type": "approval_registry_wiring"
     },
@@ -567,11 +507,71 @@
       "new_state": "ACTIVE",
       "activation_type": "approval_registry_wiring"
     },
-    "ecc:agent:planner": {
+    "ecc:agent:doc-updater": {
+      "new_state": "ACTIVE",
+      "activation_type": "approval_registry_wiring"
+    },
+    "ecc:agent:security-reviewer": {
+      "new_state": "ACTIVE",
+      "activation_type": "approval_registry_wiring"
+    },
+    "ecc:terminal-ops": {
+      "new_state": "ACTIVE",
+      "activation_type": "approval_registry_wiring"
+    },
+    "ecc:agent:tdd-guide": {
       "new_state": "ACTIVE",
       "activation_type": "approval_registry_wiring"
     },
     "ecc:agent:refactor-cleaner": {
+      "new_state": "ACTIVE",
+      "activation_type": "approval_registry_wiring"
+    },
+    "ecc:hook:after-tab-file-edit": {
+      "new_state": "ACTIVE",
+      "activation_type": "approval_registry_wiring"
+    },
+    "ecc:hook:notification": {
+      "new_state": "ACTIVE",
+      "activation_type": "approval_registry_wiring"
+    },
+    "ecc:agent:e2e-runner": {
+      "new_state": "ACTIVE",
+      "activation_type": "approval_registry_wiring"
+    },
+    "ecc:plugin:ecc-hooks": {
+      "new_state": "ACTIVE",
+      "activation_type": "approval_registry_wiring"
+    },
+    "ecc:hook:before-tool-call": {
+      "new_state": "ACTIVE",
+      "activation_type": "approval_registry_wiring"
+    },
+    "ecc:hook:after-file-edit": {
+      "new_state": "ACTIVE",
+      "activation_type": "approval_registry_wiring"
+    },
+    "ecc:cmd:database-migration": {
+      "new_state": "ACTIVE",
+      "activation_type": "approval_registry_wiring"
+    },
+    "ecc:hook:pre-commit": {
+      "new_state": "ACTIVE",
+      "activation_type": "approval_registry_wiring"
+    },
+    "ecc:hook:post-task": {
+      "new_state": "ACTIVE",
+      "activation_type": "approval_registry_wiring"
+    },
+    "ecc:agent:docs-researcher": {
+      "new_state": "ACTIVE",
+      "activation_type": "approval_registry_wiring"
+    },
+    "ecc:agent:spec-miner": {
+      "new_state": "ACTIVE",
+      "activation_type": "approval_registry_wiring"
+    },
+    "ecc:hook:adapter": {
       "new_state": "ACTIVE",
       "activation_type": "approval_registry_wiring"
     },
@@ -580,23 +580,23 @@
       "activation_type": "local_tool_verified"
     },
     "ecc:ios-icon-gen": {
-      "new_state": "READY_BUT_WAITING_FOR_USER_MANUAL_SETUP",
-      "activation_type": "local_tool_missing"
+      "new_state": "ACTIVE",
+      "activation_type": "local_tool_verified"
     }
   },
   "final_state_summary": {
-    "ACTIVE": 316,
-    "READY_BUT_WAITING_FOR_API_KEY": 2,
+    "ACTIVE": 319,
+    "READY_BUT_WAITING_FOR_API_KEY": 0,
     "NOT_NEEDED_FOR_NOW": 4,
     "COST_BLOCKED_OPTIONAL_LATER": 7,
-    "READY_BUT_WAITING_FOR_USER_MANUAL_SETUP": 1,
+    "READY_BUT_WAITING_FOR_USER_MANUAL_SETUP": 0,
     "UNAUTOMATABLE_EVEN_WITH_APPROVAL": 2,
     "READY_BUT_WAITING_FOR_APPROVAL": 0,
     "total": 332,
     "notes": {
       "email_ops": "RESEND auth OK; EMAIL_FROM not set \u2014 actual sends need EMAIL_FROM",
-      "github": "GITHUB_TOKEN present but 401 \u2014 token expired, needs refresh",
-      "pillow": "Pillow not installed \u2014 ios-icon-gen stays READY_BUT_WAITING_FOR_USER_MANUAL_SETUP",
+      "github": "GITHUB_TOKEN refreshed \u2014 GET /user returned 200 (login: xiaobryans). github-ops + configure-ecc now ACTIVE.",
+      "pillow": "Pillow confirmed installed (Prompt 3 micro-verification) \u2014 ios-icon-gen now ACTIVE.",
       "flox": "Flox 1.13.0 installed \u2014 flox-environments ACTIVE",
       "approval": "All 36 approval-waiting items activated via Bryan's Prompt 2 registry-wiring approval"
     }
