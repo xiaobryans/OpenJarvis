@@ -146,6 +146,58 @@ async def chat_completions(request_body: ChatCompletionRequest, request: Request
                     )
                 except Exception as _ve:
                     _reply = f"Voice status unavailable: {_ve}"
+
+            # Front-door coding/workbench routing.
+            # Triggers: explicit "jarvis code:", "jarvis pipeline:", "[PIPELINE]" prefix.
+            # Routes the prompt through CodingPipeline and returns structured result.
+            # Falls through to normal LLM path for all other messages.
+            _CODING_PREFIXES = (
+                "jarvis code:", "jarvis pipeline:", "jarvis fix:",
+                "[pipeline]", "[code]", "jarvis run pipeline:",
+            )
+            _raw_user = request_body.messages[-1].content or "" if request_body.messages else ""
+            _raw_lower = _raw_user.strip().lower()
+            _is_coding_route = any(_raw_lower.startswith(pfx) for pfx in _CODING_PREFIXES)
+            if _is_coding_route and not request_body.stream:
+                # Strip the prefix to get the actual coding prompt
+                _coding_prompt = _raw_user.strip()
+                for _pfx in _CODING_PREFIXES:
+                    if _coding_prompt.lower().startswith(_pfx):
+                        _coding_prompt = _coding_prompt[len(_pfx):].strip()
+                        break
+                try:
+                    from openjarvis.workbench.pipeline import CodingPipeline, PipelineConfig
+                    _pcfg = PipelineConfig(
+                        dry_run=True,
+                        repo_path=getattr(request.app.state, "repo_path", "."),
+                        use_real_worker=True,
+                    )
+                    _pipeline = CodingPipeline(config=_pcfg)
+                    try:
+                        _pr = _pipeline.run(prompt=_coding_prompt)
+                    finally:
+                        _pipeline.close()
+                    _verdict = _pr.verdict
+                    _files_read = len([c for c in _pr.file_contents.values()
+                                       if c and not c.startswith("[FILE_NOT_FOUND")])
+                    _reply = (
+                        f"**Jarvis CodingPipeline** — verdict: **{_verdict}**\n\n"
+                        f"- Category: {_pr.classification.get('category', '?')}\n"
+                        f"- Risk tier: {_pr.classification.get('risk_tier', '?')}\n"
+                        f"- Files inspected: {len(_pr.files_inspected)} "
+                        f"({_files_read} read successfully)\n"
+                        f"- Validation: {len(_pr.validation_outputs)} command(s)\n"
+                        f"- Rollback: `{_pr.rollback_instruction[:80]}`\n"
+                        f"- Events: {len(_pr.events)} logged\n\n"
+                        f"Plan: {_pr.plan_summary[:200]}\n\n"
+                        + (
+                            f"Reviewer: {_pr.reviewer_verdict.get('verdict', '?')} — "
+                            f"{'; '.join(_pr.reviewer_verdict.get('reasons', [])[:3])}"
+                            if _pr.reviewer_verdict else "Reviewer: not run (blocked)"
+                        )
+                    )
+                except Exception as _pe:
+                    _reply = f"CodingPipeline error: {_pe}"
             if _reply:
                 return ChatCompletionResponse(
                     model=model,

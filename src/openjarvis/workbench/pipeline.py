@@ -207,6 +207,7 @@ class PipelineConfig:
     reviewer_id: str = "jarvis-reviewer-v1"
     validation_timeout_s: int = 30
     db_path: Optional[str] = None
+    use_real_worker: bool = True  # Read real files + run git diff (not mock-only)
 
 
 @dataclass
@@ -220,6 +221,7 @@ class PipelineResult:
     classification: Dict[str, Any]
     plan_summary: str
     files_inspected: List[str]
+    file_contents: Dict[str, str]  # path → first N lines of actual content
     files_changed: List[str]
     patch_diff: str
     validation_outputs: List[Dict[str, Any]]
@@ -240,6 +242,7 @@ class PipelineResult:
             "classification": self.classification,
             "plan_summary": self.plan_summary,
             "files_inspected": self.files_inspected,
+            "file_contents": self.file_contents,
             "files_changed": self.files_changed,
             "patch_diff": self.patch_diff,
             "validation_outputs": self.validation_outputs,
@@ -326,6 +329,7 @@ class CodingPipeline:
                 classification=classification,
                 plan_summary="",
                 files_inspected=[],
+                file_contents={},
                 files_changed=[],
                 patch_diff="",
                 validation_outputs=[],
@@ -338,21 +342,11 @@ class CodingPipeline:
                 checkpoint_id=None,
             )
 
-        # ── Step 3: Plan (manager produces structured plan) ──────────────
-        plan_summary = self._build_plan(
-            prompt=prompt,
-            classification=classification,
-            files=files_to_inspect or [],
-        )
-        events.append(f"plan: {plan_summary[:80]}")
-        self._event_log.push(
-            session_id=session_id,
-            task_id=task_id,
-            event_type=EVENT_PLAN_CREATED,
-            title="Plan produced",
-            detail=plan_summary[:240],
-            tone="info",
-        )
+        # ── Step 3: Identify necessary files (real worker or explicit list) ──
+        inspect_target = list(files_to_inspect or [])
+        if not inspect_target and self._cfg.use_real_worker:
+            inspect_target = self._identify_necessary_files(prompt)
+            events.append(f"worker_identify: {len(inspect_target)} file(s) identified")
 
         # ── Step 4: Route to model tier ───────────────────────────────────
         decision = self._router.route(
@@ -370,8 +364,23 @@ class CodingPipeline:
             f"model={decision.assigned_model} reason={decision.reason[:60]}"
         )
 
-        # ── Step 5: Worker — inspect files (bounded) ──────────────────────
-        inspect_target = files_to_inspect or []
+        # ── Step 5: Plan (manager produces structured plan) ──────────────
+        plan_summary = self._build_plan(
+            prompt=prompt,
+            classification=classification,
+            files=inspect_target,
+        )
+        events.append(f"plan: {plan_summary[:80]}")
+        self._event_log.push(
+            session_id=session_id,
+            task_id=task_id,
+            event_type=EVENT_PLAN_CREATED,
+            title="Plan produced",
+            detail=plan_summary[:240],
+            tone="info",
+        )
+
+        # ── Step 5a: Worker — inspect files (bounded) ────────────────────
         if len(inspect_target) > self._cfg.max_inspect_files:
             events.append(
                 f"BLOCKED: {len(inspect_target)} files > "
@@ -393,6 +402,7 @@ class CodingPipeline:
                 classification=classification,
                 plan_summary=plan_summary,
                 files_inspected=[],
+                file_contents={},
                 files_changed=[],
                 patch_diff="",
                 validation_outputs=[],
@@ -413,6 +423,31 @@ class CodingPipeline:
             detail=f"inspecting {len(inspect_target)} file(s)",
             tone="info",
         )
+
+        # ── Step 5b: Real file inspection ─────────────────────────────────
+        file_contents: Dict[str, str] = {}
+        if self._cfg.use_real_worker and inspect_target:
+            file_contents = inspect_files(
+                inspect_target,
+                repo_path=self._cfg.repo_path,
+                max_lines_per_file=80,
+            )
+            real_reads = [p for p, c in file_contents.items() if not c.startswith("[FILE_NOT_FOUND]") and not c.startswith("[READ_ERROR")]
+            events.append(f"worker_read: {len(real_reads)}/{len(inspect_target)} file(s) read successfully")
+            self._event_log.push(
+                session_id=session_id,
+                task_id=task_id,
+                event_type=EVENT_SUBTASK_DONE,
+                title=f"File inspection: {len(real_reads)} file(s) read",
+                detail=f"paths={inspect_target[:5]}",
+                tone="info",
+            )
+
+        # ── Step 5c: Real git diff ────────────────────────────────────────
+        real_git_diff = self._get_git_diff(self._cfg.repo_path)
+        if real_git_diff and not patch_diff:
+            patch_diff = real_git_diff
+            events.append(f"worker_diff: git diff produced {len(real_git_diff)} chars")
 
         # ── Step 6: Loop-guarded validation ──────────────────────────────
         loop = BoundedRepairLoop(max_attempts=self._cfg.max_loop_attempts)
@@ -564,6 +599,7 @@ class CodingPipeline:
             classification=classification,
             plan_summary=plan_summary,
             files_inspected=inspect_target,
+            file_contents=file_contents,
             files_changed=actual_changed,
             patch_diff=actual_patch,
             validation_outputs=validation_outputs,
@@ -575,6 +611,59 @@ class CodingPipeline:
             duration_s=time.time() - t0,
             checkpoint_id=checkpoint_id if final_verdict == PIPELINE_PASS else None,
         )
+
+    def _identify_necessary_files(self, prompt: str) -> List[str]:
+        """Use CodingManager heuristics to identify necessary files from prompt.
+
+        Falls back to empty list if CodingManager is unavailable.
+        Capped to max_inspect_files — no broad scans.
+        """
+        try:
+            from openjarvis.workbench.coding_manager import _extract_explicit_files
+            explicit = _extract_explicit_files(prompt)
+            if explicit:
+                return explicit[:self._cfg.max_inspect_files]
+        except Exception:
+            pass
+
+        # Fallback: extract .py/.ts/.js file mentions from prompt text
+        import re
+        files: List[str] = []
+        for m in re.finditer(r'[\w./\-]+\.(?:py|ts|js|tsx|jsx|json|yaml|yml|toml|md)', prompt):
+            candidate = m.group(0).strip("./ ")
+            if candidate and "/" not in candidate or not candidate.startswith("/"):
+                files.append(candidate)
+        return files[:self._cfg.max_inspect_files]
+
+    def _get_git_diff(self, repo_path: str) -> str:
+        """Run git diff --cached && git diff to get actual working-tree diff.
+
+        Returns empty string if git is unavailable or no diff.
+        """
+        try:
+            r = subprocess.run(
+                ["git", "diff", "--stat", "HEAD"],
+                cwd=repo_path,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            staged = r.stdout.strip()
+            r2 = subprocess.run(
+                ["git", "diff", "HEAD", "--", "*.py", "*.ts", "*.js"],
+                cwd=repo_path,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            full_diff = r2.stdout.strip()
+            if full_diff:
+                return full_diff[:4096]
+            if staged:
+                return f"[git diff --stat HEAD]\n{staged}"
+            return ""
+        except Exception:
+            return ""
 
     def _build_plan(
         self,

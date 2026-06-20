@@ -44,6 +44,38 @@ reliability requirement**. Agents must use a **direct-source-first** workflow:
 
 ---
 
+## Python/Local-First Automation Rule (Permanent)
+
+**All agents, coding assistants, certification harnesses, and reviewers must use
+Python, shell scripts, or local automation for every task that can be mechanically
+tested, verified, inspected, captured, summarized, or certified without model reasoning.**
+
+This applies to — and models must NOT be used for:
+
+- `pytest` / unit / integration validation
+- API response checks
+- `git status / diff / rev-parse / log` checks
+- Command execution and output capture
+- App health checks / packaged-app launch checks
+- Synthetic audio/STT/TTS checks
+- Log / trace / audit inspection
+- Certification matrix / report generation
+- Evidence bundle creation
+- Mechanical PASS/HOLD/BLOCKED/FAIL pre-checks
+
+**Models should be used only for:**
+designing checks, code generation/patching, architecture reasoning, ambiguous
+failure analysis, safety/security/product judgment, reviewer/verifier judgment,
+UX judgment, and manual physical proof that cannot be automated.
+
+**Enforcement:** Any agent that uses model calls for work a local script can do is
+violating the Cost-Control Law. Certification harnesses must have a local-first
+pre-check pass before any model review step.
+
+**Machine-readable:** `openjarvis.governance.constitution.PYTHON_LOCAL_FIRST_RULE`
+
+---
+
 ## Governance Constitution
 
 The full governance doctrine is in `src/openjarvis/governance/constitution.py`
