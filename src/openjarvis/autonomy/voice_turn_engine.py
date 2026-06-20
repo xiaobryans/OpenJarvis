@@ -100,22 +100,19 @@ class VoiceTurnEngine:
         self,
         silence_stop_ms: Optional[float] = None,
         silence_rms_threshold: Optional[float] = None,
-        language: str = "en",
     ) -> None:
         self._lock = threading.Lock()
         self._phase = TurnPhase.IDLE
         self._turn_counter = 0
         self._active_turn_id: Optional[int] = None
 
-        # Tunable defaults — read from env via existing helpers.
-        # Default 1000ms for voice-first fast endpointing (matches voice_conversation.py).
+        # Tunable defaults — read from env via existing helpers
         self._silence_stop_ms: float = silence_stop_ms or _env_float(
-            "JARVIS_VOICE_SILENCE_STOP_MS", 1000.0
+            "JARVIS_VOICE_SILENCE_STOP_MS", 4000.0
         )
         self._silence_rms_threshold: float = silence_rms_threshold or _env_float(
             "JARVIS_VOICE_SILENCE_RMS", 300.0
         )
-        self._language: str = language
 
         # Signals
         self._cancel_event = threading.Event()
@@ -135,16 +132,6 @@ class VoiceTurnEngine:
         self._last_transcript: str = ""
         self._last_response: str = ""
         self._last_error: Optional[str] = None
-
-        # Wake word listener (optional — started by enable_wake_word())
-        self._wake_bridge: Optional[Any] = None
-        self._wake_active: bool = False
-        self._wake_failure_reason: Optional[str] = None
-        # Cooldown: ignore wake events within 3s of any turn completing
-        self._last_turn_end_ts: float = 0.0
-
-        # Auto-start wake word if venv is ready
-        self._auto_start_wake_word()
 
     # ------------------------------------------------------------------
     # Public API
@@ -233,63 +220,7 @@ class VoiceTurnEngine:
                 "last_response": self._last_response,
                 "last_error": self._last_error,
                 "last_vad": self._last_vad,
-                "wake_active": self._wake_active,
-                "wake_failure_reason": self._wake_failure_reason,
             }
-
-    # ------------------------------------------------------------------
-    # Wake word integration (optional background listener)
-    # ------------------------------------------------------------------
-
-    def _auto_start_wake_word(self) -> None:
-        """Try to start wake word in background thread — non-fatal if unavailable."""
-        t = threading.Thread(target=self._try_enable_wake_word, daemon=True, name="wake-init")
-        t.start()
-
-    def _try_enable_wake_word(self) -> None:
-        try:
-            from openjarvis.autonomy.wakeword_bridge import WakeWordBridge
-            bridge = WakeWordBridge()
-            if not bridge.is_available():
-                with self._lock:
-                    self._wake_failure_reason = "wake_worker_venv not available"
-                return
-            bridge.register_callback(self._on_wake_event)
-            result = bridge.start(auto_restart=True)
-            if result.get("ok"):
-                with self._lock:
-                    self._wake_bridge = bridge
-                    self._wake_active = True
-                    self._wake_failure_reason = None
-                logger.info("VoiceTurnEngine: wake word listener started")
-                self._emit({"type": "wake_word_ready", "active": True})
-            else:
-                reason = result.get("error", "unknown")
-                with self._lock:
-                    self._wake_failure_reason = reason
-                logger.warning("VoiceTurnEngine: wake word failed to start: %s", reason)
-        except Exception as exc:
-            with self._lock:
-                self._wake_failure_reason = str(exc)
-            logger.warning("VoiceTurnEngine: wake word init error: %s", exc)
-
-    _WAKE_COOLDOWN_S: float = 3.0  # seconds after turn end before wake can trigger again
-
-    def _on_wake_event(self, event: Any) -> None:
-        """Called by WakeWordBridge when wake phrase detected."""
-        with self._lock:
-            if self._phase not in _STARTABLE_PHASES:
-                logger.debug("Wake event ignored — turn in progress (phase=%s)", self._phase.value)
-                return
-            elapsed = time.monotonic() - self._last_turn_end_ts
-            if elapsed < self._WAKE_COOLDOWN_S:
-                logger.debug(
-                    "Wake event ignored — cooldown (%.1fs remaining)", self._WAKE_COOLDOWN_S - elapsed
-                )
-                return
-        logger.info("Wake word detected — auto-starting turn")
-        self._emit({"type": "wake_detected"})
-        self.start_turn(language=self._language)
 
     def subscribe(self) -> "queue.Queue[Dict]":
         """Return a new subscriber queue. Caller is responsible for draining it.
@@ -351,8 +282,6 @@ class VoiceTurnEngine:
                 self._active_turn_id = None
                 if self._phase not in (TurnPhase.IDLE, TurnPhase.ERROR, TurnPhase.CANCELLED):
                     self._phase = TurnPhase.IDLE
-            # Record cooldown timestamp so wake word can't instantly restart
-            self._last_turn_end_ts = time.monotonic()
         self._emit({"type": "turn_done", "turn_id": turn_id, "final_phase": self._phase.value})
         logger.info(
             "VoiceTurnEngine: turn %d finalised (phase=%s)", turn_id, self._phase.value
@@ -473,33 +402,6 @@ class VoiceTurnEngine:
                     "background_noise_detected": chunk.get("background_noise_detected"),
                 })
 
-        # ── Deepgram live streaming for partial transcripts ──────────────
-        # Try to open a Deepgram WebSocket before recording so audio chunks
-        # stream to Deepgram in real-time → interim results → partial_transcript SSE.
-        import os as _os
-        _dg_api_key = _os.environ.get("DEEPGRAM_API_KEY", "")
-        _live_session = None
-        _live_final: Optional[str] = None
-        if _dg_api_key:
-            try:
-                from openjarvis.speech.deepgram_live import DeepgramLiveSession
-                _live_session = DeepgramLiveSession(
-                    _dg_api_key,
-                    language=self._language,
-                    on_partial=lambda t: self._emit({"type": "partial_transcript", "text": t}) if self._is_turn_live(turn_id) else None,
-                    on_final=lambda t: None,   # collected via finish()
-                )
-                _live_session.start()
-                if not _live_session.ok:
-                    _live_session = None
-            except Exception as _exc:
-                logger.debug("deepgram_live unavailable for turn %d: %s", turn_id, _exc)
-                _live_session = None
-
-        def _on_chunk_live(chunk_bytes: bytes) -> None:
-            if _live_session is not None:
-                _live_session.send_chunk(chunk_bytes)
-
         rec_start = time.monotonic()
         try:
             audio, stop_reason = record_command_audio_vad(
@@ -512,7 +414,6 @@ class VoiceTurnEngine:
                 abort_event=self._recording_abort,
                 on_calibrated=_on_calibrated,
                 on_vad_chunk=_on_vad_chunk,
-                on_chunk=_on_chunk_live if _live_session else None,
             )
         except Exception as exc:
             logger.error("Recording exception in turn %d: %s", turn_id, exc)
@@ -537,16 +438,6 @@ class VoiceTurnEngine:
         self._last_vad = vad_diag
         self._emit({"type": "vad", **vad_diag})
 
-        # Finalize live Deepgram session and collect streaming transcript
-        if _live_session is not None:
-            self._emit({"type": "partial_transcript", "text": "Finalizing…"})
-            _live_final = _live_session.finish(timeout=4.0)
-            logger.debug("deepgram_live final transcript: %r", _live_final)
-        else:
-            _live_final = None
-        # Store for _stage_stt to use as primary transcript
-        self._last_live_transcript = _live_final  # type: ignore[attr-defined]
-
         # Check if cancelled during recording
         if self._cancel_event.is_set() or not self._is_turn_live(turn_id):
             self._set_phase(TurnPhase.CANCELLED)
@@ -558,15 +449,6 @@ class VoiceTurnEngine:
     def _stage_stt(self, turn_id: int, audio: bytes, language: str) -> Optional[str]:
         """Run STT with timeout. Returns transcript text or None on error/cancel."""
         self._set_phase(TurnPhase.TRANSCRIBING)
-
-        # If live Deepgram streaming already produced a transcript, use it directly.
-        live_text: Optional[str] = getattr(self, "_last_live_transcript", None)
-        self._last_live_transcript = None  # type: ignore[attr-defined]
-        if live_text:
-            logger.info("Using live Deepgram transcript: %r…", live_text[:60])
-            # Emit transcript event so UI updates immediately
-            self._emit({"type": "partial_transcript", "text": ""})  # clear partial
-            return live_text
 
         from openjarvis.autonomy.voice_conversation import (
             evaluate_voice_transcript,
@@ -720,102 +602,6 @@ class VoiceTurnEngine:
                 playback=self._tts_playback,
                 cancel_check=lambda: cancel.is_set(),
             )
-
-        # ── Phrase-based barge-in (Deepgram live, speaker-safe) ──────────
-        # Streams mic audio to a parallel Deepgram WebSocket during TTS.
-        # Cancels on stop-keyword transcript — ignores speaker echo because
-        # Deepgram transcribes TTS content (not "stop/cancel"), not just energy.
-        # Falls back to energy-based when DEEPGRAM_API_KEY is absent.
-        import os as _barge_os
-        import re as _barge_re
-        _STOP_RE = _barge_re.compile(
-            r'\b(stop|cancel|wait|never mind|nevermind|pause|enough|quiet)\b',
-            _barge_re.IGNORECASE,
-        )
-
-        def _barge_in_monitor() -> None:
-            _api_key = _barge_os.environ.get("DEEPGRAM_API_KEY", "")
-            if _api_key:
-                _phrase_barge_in(_api_key)
-            # No energy fallback — speaker echo causes false positives midway through TTS.
-            # UI Stop button remains available regardless.
-
-        def _phrase_barge_in(_api_key: str) -> None:
-            """Deepgram streaming phrase detection — speaker-safe barge-in."""
-            try:
-                import sounddevice as sd
-                from openjarvis.speech.deepgram_live import DeepgramLiveSession
-
-                def _on_text(text: str) -> None:
-                    if _STOP_RE.search(text) and not cancel.is_set():
-                        logger.info("Phrase barge-in: %r — cancelling TTS", text)
-                        cancel.set()
-                        self._tts_playback.cancel()
-                        self._emit({"type": "barge_in", "phrase": text, "method": "phrase"})
-
-                _session = DeepgramLiveSession(
-                    _api_key,
-                    language=self._language,
-                    on_partial=_on_text,
-                    on_final=_on_text,
-                )
-                _session.start()
-                if not _session.ok:
-                    _energy_barge_in()   # fallback
-                    return
-
-                _SAMPLE_RATE = 16000
-                _CHUNK_SAMPLES = 1600   # 100 ms
-                import time as _barge_time
-                _barge_time.sleep(0.5)  # warm-up — let TTS ramp up before listening
-
-                try:
-                    with sd.InputStream(
-                        samplerate=_SAMPLE_RATE,
-                        channels=1,
-                        dtype="int16",
-                        blocksize=_CHUNK_SAMPLES,
-                    ) as _mic:
-                        while not cancel.is_set():
-                            chunk_data, _ = _mic.read(_CHUNK_SAMPLES)
-                            _session.send_chunk(chunk_data.tobytes())
-                finally:
-                    _session.close()
-            except Exception as _exc:
-                logger.debug("phrase barge-in error (non-fatal): %s", _exc)
-
-        def _energy_barge_in() -> None:
-            """Energy-based fallback — works with headphones; may false-positive on speakers."""
-            try:
-                import numpy as np
-                import sounddevice as sd
-                _BARGE_IN_RMS: float = float(
-                    _barge_os.environ.get("JARVIS_BARGE_IN_RMS", "1500")
-                )
-                _SAMPLE_RATE = 16000
-                _CHUNK_SAMPLES = 1280  # 80 ms
-                import time as _barge_time
-                _barge_time.sleep(0.6)
-                with sd.InputStream(
-                    samplerate=_SAMPLE_RATE,
-                    channels=1,
-                    dtype="int16",
-                    blocksize=_CHUNK_SAMPLES,
-                ) as _mic:
-                    while not cancel.is_set():
-                        chunk_data, _ = _mic.read(_CHUNK_SAMPLES)
-                        rms = float(np.sqrt(np.mean(chunk_data.flatten().astype(np.float64) ** 2)))
-                        if rms > _BARGE_IN_RMS:
-                            logger.info("Energy barge-in (rms=%.0f) — cancelling TTS", rms)
-                            cancel.set()
-                            self._tts_playback.cancel()
-                            self._emit({"type": "barge_in", "rms": round(rms, 1), "method": "energy"})
-                            break
-            except Exception as _exc:
-                logger.debug("energy barge-in error (non-fatal): %s", _exc)
-
-        _barge_thread = threading.Thread(target=_barge_in_monitor, daemon=True, name="barge-in")
-        _barge_thread.start()
 
         try:
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:

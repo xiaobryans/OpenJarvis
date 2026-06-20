@@ -1,344 +1,178 @@
-/**
- * ChatArea — voice-first canvas for Plan 2F.
- *
- * Default: transparent canvas that lets the JarvisOrb show through.
- * Shows:
- *   • "Speak or ⌘K" hint when idle
- *   • Live voice captions (transcript + reply) at bottom while voice active
- *   • Speak / Stop buttons for voice control without requiring Cmd+K
- *   • Message history visible when Cmd+K is open (via UniversalComposer)
- * No chat list by default — messages are accessed via Cmd+K panel.
- */
-
-import { useEffect, useRef, useState, useCallback } from 'react';
-import { Mic, MicOff, Square, Command } from 'lucide-react';
+import { useRef, useEffect, useState, useCallback } from 'react';
+import { useNavigate } from 'react-router';
+import { MessageBubble } from './MessageBubble';
+import { InputArea } from './InputArea';
+import { StreamingDots } from './StreamingDots';
 import { useAppStore } from '../../lib/store';
-import { getBase, authHeaders } from '../../lib/api';
+import { Sparkles, PanelRightOpen, PanelRightClose, Database, MessageSquare, X } from 'lucide-react';
+import { listConnectors } from '../../lib/connectors-api';
 
-// ---------------------------------------------------------------------------
-// Live caption overlay — shows transcript + Jarvis reply at the bottom
-// ---------------------------------------------------------------------------
-
-function VoiceCaptionOverlay() {
-  const { transcript, response, phase } = useAppStore((s) => s.voiceCaptionState);
-  const setComposerOpen = useAppStore((s) => s.setComposerOpen);
-
-  const isActive = phase !== 'idle' && phase !== 'error' && phase !== 'cancelled';
-  const hasCaption = isActive && (transcript || response);
-
-  if (!hasCaption) return null;
-
-  return (
-    <div
-      className="fixed bottom-0 left-0 right-0 flex flex-col items-center gap-2 px-6 pb-8 pointer-events-none"
-      style={{ zIndex: 50 }}
-    >
-      {/* Phase label */}
-      <div
-        className="text-[10px] tracking-[0.14em] uppercase font-medium"
-        style={{ color: 'var(--p2-teal)', fontFamily: 'var(--font-hud)', opacity: 0.8 }}
-      >
-        {phase === 'recording' ? 'Listening' :
-         phase === 'waiting_for_silence' ? 'Detecting silence…' :
-         phase === 'transcribing' ? 'Transcribing' :
-         phase === 'thinking' ? 'Thinking' :
-         phase === 'speaking' ? 'Speaking' : phase}
-      </div>
-
-      {/* Caption card */}
-      <div
-        className="rounded-2xl px-5 py-3.5 text-center pointer-events-auto max-w-[min(560px,90vw)]"
-        style={{
-          background: 'rgba(0,0,0,0.72)',
-          backdropFilter: 'blur(20px)',
-          WebkitBackdropFilter: 'blur(20px)',
-          border: '1px solid rgba(255,255,255,0.08)',
-        }}
-      >
-        {/* Bryan's transcript */}
-        {transcript && (
-          <p className="text-sm mb-1" style={{ color: 'rgba(255,255,255,0.7)' }}>
-            <span style={{ color: 'var(--p2-teal-dim)', fontWeight: 500 }}>You: </span>
-            {transcript}
-          </p>
-        )}
-        {/* Jarvis reply */}
-        {response && (
-          <p className="text-sm" style={{ color: 'rgba(255,255,255,0.95)' }}>
-            <span style={{ color: 'var(--p2-teal)', fontWeight: 500 }}>Jarvis: </span>
-            {response}
-          </p>
-        )}
-      </div>
-
-      {/* View full in Cmd+K hint */}
-      <button
-        className="text-[10px] pointer-events-auto cursor-pointer"
-        style={{ color: 'rgba(255,255,255,0.3)' }}
-        onClick={() => setComposerOpen(true)}
-      >
-        ⌘K to view full transcript
-      </button>
-    </div>
-  );
+function getGreeting(): string {
+  const hour = new Date().getHours();
+  if (hour < 12) return 'Good morning';
+  if (hour < 18) return 'Good afternoon';
+  return 'Good evening';
 }
-
-// ---------------------------------------------------------------------------
-// Idle voice-first hint — shown when no caption and voice not active
-// ---------------------------------------------------------------------------
-
-function VoiceHint({ onOpenComposer }: { onOpenComposer: () => void }) {
-  const { phase } = useAppStore((s) => s.voiceCaptionState);
-  const isActive = phase !== 'idle' && phase !== 'error' && phase !== 'cancelled';
-  if (isActive) return null;
-
-  return (
-    <div
-      className="fixed bottom-0 left-0 right-0 flex items-center justify-center pb-8 gap-3 pointer-events-none"
-      style={{ zIndex: 50 }}
-    >
-      <span
-        className="text-[11px] tracking-[0.08em] pointer-events-auto"
-        style={{ color: 'rgba(255,255,255,0.22)', fontFamily: 'var(--font-hud)' }}
-      >
-        SPEAK NATURALLY · OR
-      </span>
-      <button
-        onClick={onOpenComposer}
-        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs pointer-events-auto cursor-pointer transition-all"
-        style={{
-          background: 'rgba(255,255,255,0.06)',
-          border: '1px solid rgba(255,255,255,0.12)',
-          color: 'rgba(255,255,255,0.45)',
-        }}
-      >
-        <Command size={11} />
-        <span>⌘K</span>
-      </button>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Voice status / control strip — shown at bottom right for quick access
-// ---------------------------------------------------------------------------
-
-function VoiceControlStrip() {
-  const { phase } = useAppStore((s) => s.voiceCaptionState);
-  const setComposerOpen = useAppStore((s) => s.setComposerOpen);
-  const [wakeActive, setWakeActive] = useState(false);
-  const [tapBusy, setTapBusy] = useState(false);
-  const [tapError, setTapError] = useState<string | null>(null);
-  const tapCooldownRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const isActive = phase !== 'idle' && phase !== 'error' && phase !== 'cancelled';
-  const isSpeaking = phase === 'speaking';
-
-  // Poll wake-word diagnostics every 5s so UI reflects actual wake state
-  useEffect(() => {
-    const check = () => {
-      fetch(`${getBase()}/v1/voice/diagnostics`, { headers: authHeaders() })
-        .then((r) => r.json())
-        .then((d) => setWakeActive(Boolean(d?.wake_phrase_active)))
-        .catch(() => {});
-    };
-    check();
-    const id = setInterval(check, 5000);
-    return () => clearInterval(id);
-  }, []);
-
-  // Cancel voice turn via backend API (no Cmd+K needed)
-  const handleCancel = useCallback(async () => {
-    try {
-      await fetch(`${getBase()}/v1/voice/turn/cancel`, {
-        method: 'POST',
-        headers: authHeaders(),
-      });
-    } catch {}
-  }, []);
-
-  // Tap to speak: start a voice turn without Cmd+K
-  // Debounced + error feedback — prevents race conditions and silent failures.
-  const handleTapSpeak = useCallback(async () => {
-    if (tapBusy || isActive) return;
-    // Prevent double-tap within 1.5s
-    if (tapCooldownRef.current) return;
-    setTapBusy(true);
-    setTapError(null);
-    tapCooldownRef.current = setTimeout(() => { tapCooldownRef.current = null; }, 1500);
-    try {
-      const resp = await fetch(`${getBase()}/v1/voice/turn/start`, {
-        method: 'POST',
-        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ language: 'en' }),
-      });
-      const data = await resp.json().catch(() => ({}));
-      if (!resp.ok || data.ok === false) {
-        const reason = data.error_code || data.error || `HTTP ${resp.status}`;
-        setTapError(reason);
-        setTimeout(() => setTapError(null), 4000);
-      }
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : 'network error';
-      setTapError(msg);
-      setTimeout(() => setTapError(null), 4000);
-    } finally {
-      setTapBusy(false);
-    }
-  }, [tapBusy, isActive]);
-
-  return (
-    <div
-      className="fixed bottom-6 right-6 flex flex-col items-end gap-2"
-      style={{ zIndex: 60, pointerEvents: 'none' }}
-    >
-      {/* Stop button during speaking — calls backend cancel, no Cmd+K needed */}
-      {isSpeaking && (
-        <button
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium cursor-pointer transition-all"
-          style={{
-            background: 'rgba(244,63,94,0.15)',
-            border: '1px solid rgba(244,63,94,0.4)',
-            color: 'rgba(244,63,94,0.9)',
-            backdropFilter: 'blur(12px)',
-            pointerEvents: 'auto',
-          }}
-          onClick={handleCancel}
-          title="Stop Jarvis speaking"
-        >
-          <Square size={13} />
-          Stop speaking
-        </button>
-      )}
-
-      {/* Tap to speak — visible when idle and no wake word */}
-      {!isActive && !wakeActive && (
-        <>
-          {tapError && (
-            <div
-              className="px-3 py-1.5 rounded-lg text-xs max-w-[200px] text-right"
-              style={{
-                background: 'rgba(244,63,94,0.15)',
-                border: '1px solid rgba(244,63,94,0.3)',
-                color: 'rgba(244,63,94,0.9)',
-                pointerEvents: 'none',
-              }}
-            >
-              {tapError}
-            </div>
-          )}
-          <button
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium cursor-pointer transition-all"
-            style={{
-              background: tapBusy ? 'rgba(34,211,238,0.2)' : tapError ? 'rgba(244,63,94,0.1)' : 'rgba(34,211,238,0.1)',
-              border: tapError ? '1px solid rgba(244,63,94,0.3)' : '1px solid rgba(34,211,238,0.3)',
-              color: tapError ? 'rgba(244,63,94,0.9)' : 'rgba(34,211,238,0.85)',
-              backdropFilter: 'blur(12px)',
-              pointerEvents: 'auto',
-              opacity: tapBusy ? 0.6 : 1,
-            }}
-            onClick={handleTapSpeak}
-            title={tapBusy ? 'Starting voice turn…' : tapError ? `Error: ${tapError}` : 'Tap to speak — start voice turn'}
-            disabled={tapBusy}
-          >
-            <Mic size={13} />
-            {tapBusy ? 'Starting…' : tapError ? 'Try again' : 'Tap to speak'}
-          </button>
-        </>
-      )}
-
-      {/* Active mic status indicator */}
-      {isActive && (
-        <button
-          className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs cursor-pointer transition-all"
-          style={{
-            background: 'rgba(34,211,238,0.12)',
-            border: '1px solid rgba(34,211,238,0.3)',
-            color: 'var(--p2-teal)',
-            backdropFilter: 'blur(12px)',
-            pointerEvents: 'auto',
-          }}
-          onClick={() => setComposerOpen(true)}
-          title="Open ⌘K voice controls"
-        >
-          <Mic size={12} />
-          <span style={{ fontFamily: 'var(--font-hud)', letterSpacing: '0.04em' }}>
-            {phase === 'recording' ? 'listening' :
-             phase === 'waiting_for_silence' ? 'endpointing' :
-             phase === 'transcribing' ? 'transcribing' :
-             phase === 'thinking' ? 'thinking' :
-             phase === 'speaking' ? 'speaking' : phase}
-          </span>
-        </button>
-      )}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Main component — intentionally minimal, lets orb show through
-// ---------------------------------------------------------------------------
 
 export function ChatArea() {
-  const setComposerOpen = useAppStore((s) => s.setComposerOpen);
   const messages = useAppStore((s) => s.messages);
-  const latestRef = useRef<HTMLDivElement>(null);
+  const streamState = useAppStore((s) => s.streamState);
+  const systemPanelOpen = useAppStore((s) => s.systemPanelOpen);
+  const toggleSystemPanel = useAppStore((s) => s.toggleSystemPanel);
+  const navigate = useNavigate();
+  const listRef = useRef<HTMLDivElement>(null);
+  const shouldAutoScroll = useRef(true);
 
-  // Auto-open composer briefly when there are new messages to acknowledge
-  // (voice turns push messages; user may want to review them)
-  const prevMsgCount = useRef(messages.length);
+  // Check if any data sources are connected
+  const [hasConnectedSources, setHasConnectedSources] = useState<boolean | null>(null);
+  const [bannerDismissed, setBannerDismissed] = useState(false);
+
   useEffect(() => {
-    prevMsgCount.current = messages.length;
-  }, [messages.length]);
+    listConnectors()
+      .then((list) => setHasConnectedSources(list.some((c) => c.connected)))
+      .catch(() => setHasConnectedSources(null));
+  }, []);
 
-  const openComposer = () => setComposerOpen(true);
+  useEffect(() => {
+    if (shouldAutoScroll.current && listRef.current) {
+      listRef.current.scrollTop = listRef.current.scrollHeight;
+    }
+  }, [messages, streamState.content]);
+
+  const handleScroll = () => {
+    if (!listRef.current) return;
+    const { scrollTop, scrollHeight, clientHeight } = listRef.current;
+    shouldAutoScroll.current = scrollHeight - scrollTop - clientHeight < 100;
+  };
+
+  const isEmpty = messages.length === 0 && !streamState.isStreaming;
+
+  const PanelIcon = systemPanelOpen ? PanelRightClose : PanelRightOpen;
 
   return (
-    <>
-      {/* Transparent canvas — orb from Layout shows through */}
-      <div
-        className="flex flex-col h-full"
-        style={{ background: 'transparent', position: 'relative' }}
-      >
-        {/* Latest message peek — compact, shown when there's conversation history */}
-        {messages.length > 0 && (
-          <div
-            ref={latestRef}
-            className="absolute top-4 left-1/2 -translate-x-1/2 max-w-[min(480px,88vw)] w-full px-4"
-            style={{ zIndex: 10 }}
+    <div className="flex flex-col h-full">
+      {/* Toggle bar */}
+      <div className="flex items-center justify-end px-3 py-1.5 shrink-0">
+        <button
+          onClick={toggleSystemPanel}
+          className="p-1.5 rounded-md transition-colors cursor-pointer"
+          style={{ color: 'var(--color-text-tertiary)' }}
+          title={`${systemPanelOpen ? 'Hide' : 'Show'} system panel (${navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'}+I)`}
+        >
+          <PanelIcon size={16} />
+        </button>
+      </div>
+
+      {/* Data sources banner */}
+      {hasConnectedSources === false && !bannerDismissed && (
+        <div
+          className="mx-4 mb-2 flex items-center gap-3 px-4 py-3 rounded-lg text-sm shrink-0"
+          style={{
+            background: 'var(--color-accent-subtle)',
+            border: '1px solid var(--color-border)',
+          }}
+        >
+          <Database size={16} style={{ color: 'var(--color-accent)', flexShrink: 0 }} />
+          <span style={{ color: 'var(--color-text-secondary)', flex: 1 }}>
+            Connect your data sources (Gmail, iMessage, Slack, etc.) to get personalized answers.
+          </span>
+          <button
+            onClick={() => navigate('/data-sources')}
+            className="px-3 py-1 rounded text-xs font-medium cursor-pointer"
+            style={{ background: 'var(--color-accent)', color: 'var(--color-on-accent)', border: 'none' }}
           >
-            <button
-              onClick={openComposer}
-              className="w-full text-left px-4 py-3 rounded-xl text-xs cursor-pointer transition-all"
-              style={{
-                background: 'rgba(0,0,0,0.55)',
-                backdropFilter: 'blur(20px)',
-                WebkitBackdropFilter: 'blur(20px)',
-                border: '1px solid rgba(255,255,255,0.08)',
-                color: 'rgba(255,255,255,0.65)',
-              }}
+            Connect
+          </button>
+          <button
+            onClick={() => setBannerDismissed(true)}
+            className="p-1 rounded cursor-pointer"
+            style={{ color: 'var(--color-text-tertiary)', background: 'transparent', border: 'none' }}
+          >
+            <X size={14} />
+          </button>
+        </div>
+      )}
+      <div
+        ref={listRef}
+        onScroll={handleScroll}
+        className="flex-1 overflow-y-auto"
+      >
+        {isEmpty ? (
+          <div className="flex flex-col items-center justify-center h-full px-4">
+            <div
+              className="w-12 h-12 rounded-2xl flex items-center justify-center mb-4"
+              style={{ background: 'var(--color-accent-subtle)', color: 'var(--color-accent)' }}
             >
-              <span style={{ color: 'rgba(255,255,255,0.35)', marginRight: 8 }}>
-                {messages.length} message{messages.length !== 1 ? 's' : ''} ·
-              </span>
-              {(() => {
-                const last = messages[messages.length - 1];
-                const preview = last?.content?.slice(0, 80) ?? '';
-                return preview.length < last?.content?.length ? preview + '…' : preview;
-              })()}
-              <span style={{ color: 'var(--p2-teal)', marginLeft: 8, opacity: 0.7 }}>⌘K to view</span>
-            </button>
+              <Sparkles size={24} />
+            </div>
+            <h2 className="text-xl font-semibold mb-2" style={{ color: 'var(--color-text)' }}>
+              {getGreeting()}
+            </h2>
+            <p className="text-sm text-center max-w-sm mb-6" style={{ color: 'var(--color-text-secondary)' }}>
+              Ask anything. Your AI runs locally — private, fast, and always available.
+            </p>
+
+            {/* Quick action hints */}
+            <div className="flex gap-3">
+              <button
+                onClick={() => navigate('/data-sources')}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs cursor-pointer transition-colors"
+                style={{
+                  background: 'var(--color-bg-secondary)',
+                  border: '1px solid var(--color-border)',
+                  color: 'var(--color-text-secondary)',
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'var(--color-accent)')}
+                onMouseLeave={(e) => (e.currentTarget.style.borderColor = 'var(--color-border)')}
+              >
+                <Database size={14} style={{ color: 'var(--color-accent)' }} />
+                Connect Data Sources
+              </button>
+              <button
+                onClick={() => { navigate('/data-sources'); setTimeout(() => window.dispatchEvent(new CustomEvent('switch-tab', { detail: 'messaging' })), 100); }}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs cursor-pointer transition-colors"
+                style={{
+                  background: 'var(--color-bg-secondary)',
+                  border: '1px solid var(--color-border)',
+                  color: 'var(--color-text-secondary)',
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'var(--color-accent)')}
+                onMouseLeave={(e) => (e.currentTarget.style.borderColor = 'var(--color-border)')}
+              >
+                <MessageSquare size={14} style={{ color: 'var(--color-accent)' }} />
+                Set Up Messaging Channels
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="max-w-[var(--chat-max-width)] mx-auto px-4 py-6">
+            {messages.map((msg, i) => {
+              const isLastAssistant =
+                i === messages.length - 1 && msg.role === 'assistant';
+              return (
+                <MessageBubble
+                  key={msg.id}
+                  message={msg}
+                  isLive={isLastAssistant && streamState.isStreaming}
+                />
+              );
+            })}
+            {(() => {
+              if (!streamState.isStreaming || streamState.content !== '') return null;
+              // For research messages the ResearchTimeline handles its own
+              // pre-content loading state — suppress the generic dots.
+              const last = messages[messages.length - 1];
+              if (last?.role === 'assistant' && last.isResearch) return null;
+              return (
+                <div className="flex justify-start mb-4">
+                  <StreamingDots phase={streamState.phase} />
+                </div>
+              );
+            })()}
           </div>
         )}
       </div>
-
-      {/* Live voice captions — bottom subtitle overlay */}
-      <VoiceCaptionOverlay />
-
-      {/* Idle hint — "speak naturally or ⌘K" */}
-      <VoiceHint onOpenComposer={openComposer} />
-
-      {/* Voice status strip — bottom right */}
-      <VoiceControlStrip />
-    </>
+      <InputArea />
+    </div>
   );
 }

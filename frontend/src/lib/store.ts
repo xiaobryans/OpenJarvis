@@ -15,13 +15,6 @@ import type {
   TokenUsage,
 } from '../types';
 import type { ManagedAgent } from './api';
-import type {
-  UIMode,
-  RegistryItem,
-  RegistryItemInit,
-  Plan2Event,
-} from './plan2';
-import { makeRegistryItem } from './plan2';
 
 export interface CachedConnector {
   connector_id: string;
@@ -141,16 +134,13 @@ interface AppState {
   // Settings
   settings: Settings;
 
-  // Command palette (model selector)
+  // Command palette
   commandPaletteOpen: boolean;
 
-  // Universal Composer (Plan 2 Cmd+K front door)
-  composerOpen: boolean;
-
-  // Sidebar (legacy — slim rail in Plan 2)
+  // Sidebar
   sidebarOpen: boolean;
 
-  // System panel / diagnostics drawer
+  // System panel
   systemPanelOpen: boolean;
 
   // Opt-in sharing
@@ -205,36 +195,10 @@ interface AppState {
 
   // Actions: UI
   setCommandPaletteOpen: (open: boolean) => void;
-  setComposerOpen: (open: boolean) => void;
-  toggleComposer: () => void;
   toggleSidebar: () => void;
   setSidebarOpen: (open: boolean) => void;
   toggleSystemPanel: () => void;
   setSystemPanelOpen: (open: boolean) => void;
-
-  // ── Plan 2 Mode A/B ──────────────────────────────────────────────
-  uiMode: UIMode;
-  setUIMode: (mode: UIMode) => void;
-
-  // ── Plan 2 Registry ──────────────────────────────────────────────
-  plan2Registry: RegistryItem[];
-  registerItem: (init: RegistryItemInit) => void;
-  updateRegistryItem: (id: string, patch: Partial<RegistryItem>) => void;
-  unregisterItem: (id: string) => void;
-  clearRegistryByType: (type: RegistryItem['type']) => void;
-
-  // ── Plan 2 Event queue (capped ring buffer, last 50 events) ──────
-  plan2Events: Plan2Event[];
-  emitPlan2Event: (event: Omit<Plan2Event, 'ts'>) => void;
-  clearPlan2Events: () => void;
-
-  // ── Pending approvals count (polled by ApprovalBell, exposed here) ──
-  pendingApprovalsCount: number;
-  setPendingApprovalsCount: (n: number) => void;
-
-  // ── Voice caption state — live transcript + response from active turn ──
-  voiceCaptionState: { transcript: string; response: string; phase: string };
-  setVoiceCaptionState: (s: Partial<{ transcript: string; response: string; phase: string }>) => void;
 
   // Data sources (cached between visits to avoid empty-state flicker)
   cachedConnectors: CachedConnector[] | null;
@@ -294,9 +258,8 @@ export const useAppStore = create<AppState>((set, get) => {
     settings: loadSettings(),
 
     commandPaletteOpen: false,
-    composerOpen: false,
-    sidebarOpen: false,
-    systemPanelOpen: false,
+    sidebarOpen: true,
+    systemPanelOpen: true,
 
     optInEnabled: localStorage.getItem(OPTIN_KEY) === 'true',
     optInDisplayName: localStorage.getItem(OPTIN_NAME_KEY) || '',
@@ -525,60 +488,10 @@ export const useAppStore = create<AppState>((set, get) => {
     // ── UI ──────────────────────────────────────────────────────────
 
     setCommandPaletteOpen: (open: boolean) => set({ commandPaletteOpen: open }),
-    setComposerOpen: (open: boolean) => set({ composerOpen: open }),
-    toggleComposer: () => set((s) => ({ composerOpen: !s.composerOpen })),
     toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
     setSidebarOpen: (open: boolean) => set({ sidebarOpen: open }),
     toggleSystemPanel: () => set((s) => ({ systemPanelOpen: !s.systemPanelOpen })),
     setSystemPanelOpen: (open: boolean) => set({ systemPanelOpen: open }),
-
-    // Plan 2 Mode
-    uiMode: 'A',
-    setUIMode: (mode) => set({ uiMode: mode }),
-
-    // Plan 2 Registry
-    plan2Registry: [],
-    registerItem: (init) =>
-      set((s) => {
-        const existing = s.plan2Registry.find((r) => r.id === init.id);
-        if (existing) {
-          return {
-            plan2Registry: s.plan2Registry.map((r) =>
-              r.id === init.id ? { ...r, ...makeRegistryItem(init) } : r,
-            ),
-          };
-        }
-        return { plan2Registry: [...s.plan2Registry, makeRegistryItem(init)] };
-      }),
-    updateRegistryItem: (id, patch) =>
-      set((s) => ({
-        plan2Registry: s.plan2Registry.map((r) =>
-          r.id === id ? { ...r, ...patch, updatedAt: new Date().toISOString() } : r,
-        ),
-      })),
-    unregisterItem: (id) =>
-      set((s) => ({ plan2Registry: s.plan2Registry.filter((r) => r.id !== id) })),
-    clearRegistryByType: (type) =>
-      set((s) => ({ plan2Registry: s.plan2Registry.filter((r) => r.type !== type) })),
-
-    // Plan 2 Events (ring buffer, max 50)
-    plan2Events: [],
-    emitPlan2Event: (event) =>
-      set((s) => {
-        const full: Plan2Event = { ...event, ts: Date.now() };
-        const next = [...s.plan2Events, full];
-        return { plan2Events: next.length > 50 ? next.slice(next.length - 50) : next };
-      }),
-    clearPlan2Events: () => set({ plan2Events: [] }),
-
-    // Pending approvals count
-    pendingApprovalsCount: 0,
-    setPendingApprovalsCount: (n) => set({ pendingApprovalsCount: n }),
-
-    voiceCaptionState: { transcript: '', response: '', phase: 'idle' },
-    setVoiceCaptionState: (s) => set((prev) => ({
-      voiceCaptionState: { ...prev.voiceCaptionState, ...s },
-    })),
 
     // ── Agents ─────────────────────────────────────────────────────
 

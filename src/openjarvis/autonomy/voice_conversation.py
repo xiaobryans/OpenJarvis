@@ -133,7 +133,7 @@ def _env_float(key: str, default: float) -> float:
 # ---------------------------------------------------------------------------
 
 _DEFAULT_MIN_RECORD_SECONDS: float = 1.0
-_DEFAULT_SILENCE_STOP_MS: float = 1000.0
+_DEFAULT_SILENCE_STOP_MS: float = 4000.0
 _DEFAULT_MAX_RECORD_SECONDS: float = 120.0
 # Raised from 150 → 300: typical laptop fan/HVAC ambient is 100-250 RMS (int16).
 # A threshold of 300 ensures ambient noise is always classified as silence while
@@ -229,7 +229,6 @@ def record_command_audio_vad(
     abort_event: Optional[threading.Event] = None,
     on_calibrated: Optional[Callable[[float, float], None]] = None,
     on_vad_chunk: Optional[Callable[[dict], None]] = None,
-    on_chunk: Optional[Callable[[bytes], None]] = None,
 ) -> Tuple[bytes, str]:
     """Record with adaptive VAD-based silence endpointing.
 
@@ -336,11 +335,6 @@ def record_command_audio_vad(
                 break
             data, _overflowed = stream.read(chunk_samples)
             all_chunks.append(data.copy())
-            if on_chunk is not None:
-                try:
-                    on_chunk(data.tobytes())
-                except Exception:
-                    pass
             chunk_flat = data.flatten().astype(np.float64)
             rms = float(np.sqrt(np.mean(chunk_flat ** 2)))
 
@@ -392,11 +386,6 @@ def record_command_audio_vad(
 
             data, _overflowed = stream.read(chunk_samples)
             all_chunks.append(data.copy())
-            if on_chunk is not None:
-                try:
-                    on_chunk(data.tobytes())
-                except Exception:
-                    pass
 
             chunk_flat = data.flatten().astype(np.float64)
             rms = float(np.sqrt(np.mean(chunk_flat ** 2)))

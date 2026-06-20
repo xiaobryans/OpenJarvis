@@ -66,104 +66,6 @@
     --font-hud: 'IBM Plex Mono', 'SF Mono', 'JetBrains Mono', ui-monospace, monospace;
 
     color-scheme: light;
-
-    /* ── Plan 2 design tokens (light overrides) ───────────────────── */
-    /* These supplement the existing palette. Dark theme redefines below. */
-
-    /* Core Plan 2 palette (restrained, premium) */
-    --p2-bg:              #f5f5f7;
-    --p2-surface:         #ffffff;
-    --p2-surface-2:       #f0f0f2;
-    --p2-rail:            rgba(248,248,250,0.88);
-    --p2-border:          rgba(0,0,0,0.07);
-
-    /* Primary: teal-cyan */
-    --p2-teal:            #0891b2;
-    --p2-teal-dim:        rgba(8,145,178,0.12);
-    --p2-teal-glow:       rgba(8,145,178,0.20);
-
-    /* Secondary: indigo-violet */
-    --p2-indigo:          #6366f1;
-    --p2-indigo-dim:      rgba(99,102,241,0.10);
-    --p2-indigo-glow:     rgba(99,102,241,0.18);
-
-    /* State: amber (listening / approval) */
-    --p2-amber:           #f59e0b;
-    --p2-amber-dim:       rgba(245,158,11,0.10);
-    --p2-amber-glow:      rgba(245,158,11,0.20);
-
-    /* State: coral-red (error) */
-    --p2-coral:           #f43f5e;
-    --p2-coral-dim:       rgba(244,63,94,0.10);
-    --p2-coral-glow:      rgba(244,63,94,0.18);
-
-    /* State: mint (success) */
-    --p2-mint:            #10b981;
-    --p2-mint-dim:        rgba(16,185,129,0.10);
-    --p2-mint-glow:       rgba(16,185,129,0.18);
-
-    /* Mood color tokens — used by AmbientCore + components */
-    --p2-mood-idle:       var(--p2-teal-glow);
-    --p2-mood-listening:  var(--p2-amber-glow);
-    --p2-mood-processing: var(--p2-indigo-glow);
-    --p2-mood-speaking:   var(--p2-mint-glow);
-    --p2-mood-error:      var(--p2-coral-glow);
-    --p2-mood-approval:   var(--p2-amber-glow);
-
-    /* Spacing scale */
-    --p2-space-1:  4px;
-    --p2-space-2:  8px;
-    --p2-space-3:  12px;
-    --p2-space-4:  16px;
-    --p2-space-5:  24px;
-    --p2-space-6:  32px;
-    --p2-space-7:  48px;
-    --p2-space-8:  64px;
-
-    /* Radius scale */
-    --p2-radius-xs: 4px;
-    --p2-radius-sm: 8px;
-    --p2-radius-md: 12px;
-    --p2-radius-lg: 16px;
-    --p2-radius-xl: 24px;
-    --p2-radius-pill: 9999px;
-
-    /* Elevation (box-shadow) */
-    --p2-elev-0:  none;
-    --p2-elev-1:  0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
-    --p2-elev-2:  0 4px 12px rgba(0,0,0,0.08), 0 2px 4px rgba(0,0,0,0.04);
-    --p2-elev-3:  0 10px 32px rgba(0,0,0,0.12), 0 4px 8px rgba(0,0,0,0.06);
-    --p2-elev-4:  0 24px 64px rgba(0,0,0,0.20), 0 8px 16px rgba(0,0,0,0.08);
-
-    /* Glow (drop-shadow for active elements) */
-    --p2-glow-teal:   0 0 20px rgba(8,145,178,0.30);
-    --p2-glow-indigo: 0 0 20px rgba(99,102,241,0.28);
-    --p2-glow-amber:  0 0 20px rgba(245,158,11,0.28);
-    --p2-glow-coral:  0 0 20px rgba(244,63,94,0.26);
-    --p2-glow-mint:   0 0 20px rgba(16,185,129,0.26);
-
-    /* Motion / easing */
-    --p2-ease-spring:  cubic-bezier(0.34, 1.56, 0.64, 1);
-    --p2-ease-smooth:  cubic-bezier(0.25, 0.46, 0.45, 0.94);
-    --p2-ease-sharp:   cubic-bezier(0.4, 0, 0.2, 1);
-    --p2-ease-out:     cubic-bezier(0, 0, 0.2, 1);
-    --p2-dur-fast:     120ms;
-    --p2-dur-base:     220ms;
-    --p2-dur-slow:     360ms;
-    --p2-dur-ambient:  2400ms;
-
-    /* Mode A/B ambient intensity (overridden by JS via inline style) */
-    --p2-ambient-intensity: 0.0;
-
-    /* Agent accent palette (index 0-7 round-robin) */
-    --p2-agent-0: #0891b2;
-    --p2-agent-1: #6366f1;
-    --p2-agent-2: #10b981;
-    --p2-agent-3: #f59e0b;
-    --p2-agent-4: #f43f5e;
-    --p2-agent-5: #8b5cf6;
-    --p2-agent-6: #06b6d4;
-    --p2-agent-7: #84cc16;
   }
 
   .dark {
@@ -211,57 +113,6 @@
     --shadow-lg: 0 18px 40px -12px rgb(0 0 0 / 0.7), 0 0 0 1px rgba(79, 209, 255, 0.06);
 
     color-scheme: dark;
-
-    /* ── Plan 2 design tokens (dark overrides) ────────────────────── */
-    --p2-bg:              #08080a;
-    --p2-surface:         #0d0d10;
-    --p2-surface-2:       #121216;
-    --p2-rail:            rgba(10,10,13,0.80);
-    --p2-border:          rgba(255,255,255,0.07);
-
-    /* Brighter in dark for better contrast */
-    --p2-teal:            #22d3ee;
-    --p2-teal-dim:        rgba(34,211,238,0.10);
-    --p2-teal-glow:       rgba(34,211,238,0.18);
-
-    --p2-indigo:          #818cf8;
-    --p2-indigo-dim:      rgba(129,140,248,0.10);
-    --p2-indigo-glow:     rgba(129,140,248,0.16);
-
-    --p2-amber:           #fbbf24;
-    --p2-amber-dim:       rgba(251,191,36,0.10);
-    --p2-amber-glow:      rgba(251,191,36,0.18);
-
-    --p2-coral:           #fb7185;
-    --p2-coral-dim:       rgba(251,113,133,0.10);
-    --p2-coral-glow:      rgba(251,113,133,0.16);
-
-    --p2-mint:            #34d399;
-    --p2-mint-dim:        rgba(52,211,153,0.10);
-    --p2-mint-glow:       rgba(52,211,153,0.16);
-
-    /* Elevation deeper in dark */
-    --p2-elev-1:  0 1px 4px rgba(0,0,0,0.30), 0 1px 2px rgba(0,0,0,0.20);
-    --p2-elev-2:  0 4px 16px rgba(0,0,0,0.40), 0 2px 6px rgba(0,0,0,0.20);
-    --p2-elev-3:  0 12px 40px rgba(0,0,0,0.50), 0 4px 10px rgba(0,0,0,0.24);
-    --p2-elev-4:  0 28px 72px rgba(0,0,0,0.60), 0 8px 20px rgba(0,0,0,0.28);
-
-    /* Glow more vivid in dark */
-    --p2-glow-teal:   0 0 24px rgba(34,211,238,0.28);
-    --p2-glow-indigo: 0 0 24px rgba(129,140,248,0.26);
-    --p2-glow-amber:  0 0 24px rgba(251,191,36,0.26);
-    --p2-glow-coral:  0 0 24px rgba(251,113,133,0.24);
-    --p2-glow-mint:   0 0 24px rgba(52,211,153,0.24);
-
-    /* Agent accents (vivid in dark) */
-    --p2-agent-0: #22d3ee;
-    --p2-agent-1: #818cf8;
-    --p2-agent-2: #34d399;
-    --p2-agent-3: #fbbf24;
-    --p2-agent-4: #fb7185;
-    --p2-agent-5: #a78bfa;
-    --p2-agent-6: #38bdf8;
-    --p2-agent-7: #a3e635;
   }
 
   @media (prefers-color-scheme: dark) {
@@ -877,102 +728,6 @@
   animation: openjarvis-sync-bump 400ms ease-out;
 }
 
-/* ── Plan 2 animations ────────────────────────────────────────── */
-
-/* Ambient core: soft radial pulse for idle mood */
-@keyframes p2-ambient-idle {
-  0%, 100% { opacity: 0.55; transform: scale(1.00) scaleX(1.00); }
-  50%       { opacity: 0.85; transform: scale(1.06) scaleX(1.04); }
-}
-
-/* Ambient core: ripple for listening/approval mood */
-@keyframes p2-ambient-listen {
-  0%   { opacity: 0.40; transform: scale(0.90); }
-  35%  { opacity: 0.90; transform: scale(1.10); }
-  100% { opacity: 0.40; transform: scale(0.90); }
-}
-
-/* Ambient core: fast throb for processing */
-@keyframes p2-ambient-process {
-  0%, 100% { opacity: 0.55; transform: scale(1.00); }
-  50%       { opacity: 0.95; transform: scale(1.12); }
-}
-
-/* Mode A → B fade-in work surface */
-@keyframes p2-mode-b-in {
-  from { opacity: 0; transform: translateY(4px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-
-/* Smooth mode transition class */
-.p2-mode-transition {
-  transition:
-    opacity var(--p2-dur-slow) var(--p2-ease-smooth),
-    background var(--p2-dur-slow) var(--p2-ease-smooth);
-}
-
-/* Mode A: dim non-essential chrome */
-[data-ui-mode="A"] .p2-chrome-secondary {
-  opacity: 0.55;
-  transition: opacity var(--p2-dur-slow) var(--p2-ease-smooth);
-}
-[data-ui-mode="B"] .p2-chrome-secondary {
-  opacity: 1;
-  transition: opacity var(--p2-dur-base) var(--p2-ease-smooth);
-}
-
-/* Ambient core mood classes */
-.p2-ambient-idle     { animation: p2-ambient-idle    var(--p2-dur-ambient) var(--p2-ease-smooth) infinite; }
-.p2-ambient-listen   { animation: p2-ambient-listen  1600ms var(--p2-ease-smooth) infinite; }
-.p2-ambient-process  { animation: p2-ambient-process 900ms  var(--p2-ease-smooth) infinite; }
-.p2-ambient-speaking { animation: p2-ambient-process 700ms  var(--p2-ease-smooth) infinite; }
-.p2-ambient-error    { animation: p2-ambient-listen  1000ms var(--p2-ease-sharp) infinite; }
-
-/* Status dot pulse */
-@keyframes p2-status-pulse {
-  0%, 100% { transform: scale(1.0); opacity: 1; }
-  50%       { transform: scale(1.4); opacity: 0.7; }
-}
-.p2-status-pulse {
-  animation: p2-status-pulse 1600ms var(--p2-ease-smooth) infinite;
-}
-
-/* ── Jarvis Orb breathing keyframes ────────────────────────────────────── */
-/* Idle: slow, gentle inhale/exhale */
-@keyframes orb-breathe-idle {
-  0%, 100% {
-    transform: translate(-50%, -50%) scale(1.000);
-    filter: brightness(1.00);
-  }
-  50% {
-    transform: translate(-50%, -50%) scale(1.055);
-    filter: brightness(1.12);
-  }
-}
-
-/* Listening: quicker pulse, amber mood */
-@keyframes orb-breathe-listen {
-  0%   { transform: translate(-50%, -50%) scale(0.94); filter: brightness(0.90); }
-  40%  { transform: translate(-50%, -50%) scale(1.07); filter: brightness(1.20); }
-  100% { transform: translate(-50%, -50%) scale(0.94); filter: brightness(0.90); }
-}
-
-/* Processing / speaking: rapid throb */
-@keyframes orb-breathe-process {
-  0%, 100% { transform: translate(-50%, -50%) scale(1.00); filter: brightness(1.00); }
-  50%       { transform: translate(-50%, -50%) scale(1.09); filter: brightness(1.28); }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .jarvis-orb { animation: none !important; }
-}
-
-/* Agent orbit dot glow pulse — box-shadow + scale on inner div (no position conflict) */
-@keyframes agent-glow-pulse {
-  0%, 100% { transform: scale(1.0); opacity: 0.85; }
-  50%       { transform: scale(1.7); opacity: 1.0; }
-}
-
 /* Deep Research inline citation pills — small rounded chips that flow
    with the surrounding text and link out to the cited email. */
 .research-citation {
@@ -998,4 +753,68 @@
   color: var(--color-on-accent, #ffffff);
   background: var(--color-accent);
   text-decoration: none;
+}
+/* =============================================================== */
+/* Plan 2R voice-first orb + mic animations (additive, baseline-safe) */
+/* =============================================================== */
+
+@keyframes orb-breath {
+  0%, 100% { transform: scale(0.96); opacity: 0.85; }
+  50%      { transform: scale(1.04); opacity: 1.00; }
+}
+
+@keyframes orb-pulse-fast {
+  0%, 100% { transform: scale(0.94); opacity: 0.80; }
+  50%      { transform: scale(1.10); opacity: 1.00; }
+}
+
+@keyframes orb-pulse-med {
+  0%, 100% { transform: scale(0.95); opacity: 0.85; }
+  50%      { transform: scale(1.08); opacity: 1.00; }
+}
+
+@keyframes orb-spin {
+  0%   { transform: rotate(0deg)   scale(0.98); opacity: 0.90; }
+  50%  { transform: rotate(180deg) scale(1.04); opacity: 1.00; }
+  100% { transform: rotate(360deg) scale(0.98); opacity: 0.90; }
+}
+
+@keyframes orb-wave {
+  0%   { transform: scale(0.96) translateY(0px); opacity: 0.92; }
+  30%  { transform: scale(1.06) translateY(-2px); opacity: 1.00; }
+  60%  { transform: scale(0.98) translateY(1px);  opacity: 0.94; }
+  100% { transform: scale(0.96) translateY(0px); opacity: 0.92; }
+}
+
+@keyframes orb-shimmer {
+  0%, 100% { transform: translate(0px, 0px) scale(1.00); opacity: 0.70; }
+  50%      { transform: translate(2px, -2px) scale(1.10); opacity: 1.00; }
+}
+
+@keyframes agent-dot-pulse-kf {
+  0%, 100% { transform: scale(1.00); opacity: 0.90; }
+  50%      { transform: scale(1.35); opacity: 1.00; }
+}
+
+.agent-dot-pulse {
+  animation: agent-dot-pulse-kf 1600ms ease-in-out infinite;
+}
+
+@keyframes mic-ring-listening-kf {
+  0%   { box-shadow: 0 0 32px rgba(255,110,100,0.45), 0 0 0 0 rgba(255,110,100,0.45); }
+  70%  { box-shadow: 0 0 32px rgba(255,110,100,0.45), 0 0 0 22px rgba(255,110,100,0.0); }
+  100% { box-shadow: 0 0 32px rgba(255,110,100,0.45), 0 0 0 0 rgba(255,110,100,0.0); }
+}
+
+.mic-ring-listening {
+  animation: mic-ring-listening-kf 1500ms ease-out infinite;
+}
+
+/* Respect reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .agent-dot-pulse,
+  .mic-ring-listening,
+  [class*="orb-"] {
+    animation: none !important;
+  }
 }

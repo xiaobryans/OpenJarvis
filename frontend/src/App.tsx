@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { Routes, Route } from 'react-router';
 import { Layout } from './components/Layout';
 import { ChatPage } from './pages/ChatPage';
+import { JarvisHomePage } from './components/Jarvis/JarvisHomePage';
 import { DashboardPage } from './pages/DashboardPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { GetStartedPage } from './pages/GetStartedPage';
@@ -11,15 +12,14 @@ import { LogsPage } from './pages/LogsPage';
 import { MissionControlPage } from './pages/MissionControlPage';
 import { WorkbenchPage } from './pages/WorkbenchPage';
 import { CommandPalette } from './components/CommandPalette';
-import { UniversalComposer } from './components/UniversalComposer';
 import { SetupScreen } from './components/SetupScreen';
 import { Toaster } from './components/ui/sonner';
 import { useAppStore } from './lib/store';
-import { fetchModels, fetchServerInfo, fetchSavings, submitSavings, isTauri, fetchPendingApprovals } from './lib/api';
+import { fetchModels, fetchServerInfo, fetchSavings, submitSavings, isTauri } from './lib/api';
 import { OptInModal } from './components/OptInModal';
 import { UpdateChecker } from './components/Desktop/UpdateChecker';
+import { VoiceOverlay } from './components/VoiceOverlay';
 import { track, hashId } from './lib/analytics';
-import { useSyncAgentsToRegistry } from './hooks/usePlan2Adapter';
 
 export default function App() {
   const [setupDone, setSetupDone] = useState(!isTauri());
@@ -42,8 +42,6 @@ export default function App() {
   const settings = useAppStore((s) => s.settings);
   const commandPaletteOpen = useAppStore((s) => s.commandPaletteOpen);
   const setCommandPaletteOpen = useAppStore((s) => s.setCommandPaletteOpen);
-  const composerOpen = useAppStore((s) => s.composerOpen);
-  const setComposerOpen = useAppStore((s) => s.setComposerOpen);
   const optInEnabled = useAppStore((s) => s.optInEnabled);
   const optInDisplayName = useAppStore((s) => s.optInDisplayName);
   const optInEmail = useAppStore((s) => s.optInEmail);
@@ -164,41 +162,14 @@ export default function App() {
   }, []);
 
   const toggleSystemPanel = useAppStore((s) => s.toggleSystemPanel);
-  const setPendingApprovalsCount = useAppStore((s) => s.setPendingApprovalsCount);
-
-  // Plan 2: sync managed agents into the registry
-  useSyncAgentsToRegistry();
-
-  // Plan 2: poll pending approvals count and expose to store (feeds mode A/B trigger)
-  useEffect(() => {
-    const refresh = () =>
-      fetchPendingApprovals()
-        .then((list) => setPendingApprovalsCount(list.length))
-        .catch(() => {});
-    refresh();
-    const interval = setInterval(refresh, 15000);
-    return () => clearInterval(interval);
-  }, [setPendingApprovalsCount]);
 
   // Global keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Cmd+K — open Universal Composer (primary interaction)
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         e.preventDefault();
-        // If model palette is open, close it; else toggle composer
-        if (commandPaletteOpen) {
-          setCommandPaletteOpen(false);
-        } else {
-          setComposerOpen(!composerOpen);
-        }
+        setCommandPaletteOpen(!commandPaletteOpen);
       }
-      // Esc — close composer or model palette
-      if (e.key === 'Escape') {
-        if (composerOpen) { setComposerOpen(false); return; }
-        if (commandPaletteOpen) { setCommandPaletteOpen(false); return; }
-      }
-      // Cmd+I — toggle diagnostics panel
       if ((e.metaKey || e.ctrlKey) && e.key === 'i') {
         e.preventDefault();
         toggleSystemPanel();
@@ -206,7 +177,7 @@ export default function App() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [commandPaletteOpen, composerOpen, setCommandPaletteOpen, setComposerOpen, toggleSystemPanel]);
+  }, [commandPaletteOpen, setCommandPaletteOpen, toggleSystemPanel]);
 
 
   if (!setupDone) {
@@ -218,7 +189,8 @@ export default function App() {
       <UpdateChecker />
       <Routes>
         <Route element={<Layout />}>
-          <Route index element={<ChatPage />} />
+          <Route index element={<JarvisHomePage />} />
+          <Route path="chat" element={<ChatPage />} />
           <Route path="dashboard" element={<DashboardPage />} />
           <Route path="settings" element={<SettingsPage />} />
           <Route path="get-started" element={<GetStartedPage />} />
@@ -230,13 +202,11 @@ export default function App() {
         </Route>
       </Routes>
       <Toaster position="bottom-right" />
-      {/* Plan 2: Universal Composer is the primary Cmd+K front door */}
-      <UniversalComposer />
-      {/* Model selector palette — opened from within composer or directly */}
       {commandPaletteOpen && <CommandPalette />}
       {optInModalOpen && (
         <OptInModal onClose={() => setOptInModalOpen(false)} />
       )}
+      <VoiceOverlay />
     </>
   );
 }
