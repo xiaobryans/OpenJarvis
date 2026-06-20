@@ -72,7 +72,7 @@ function AgentDot({ item, index, total }: { item: RegistryItem; index: number; t
         top: '50%',
         left: '50%',
         transform: `translate(calc(-50% + ${x}vmin), calc(-50% + ${y}vmin))`,
-        zIndex: 2,
+        zIndex: 16,   // above orb (15) so dots are visible on top
         pointerEvents: 'none',
       }}
     >
@@ -113,7 +113,7 @@ function AgentLabel({ item, index, total }: { item: RegistryItem; index: number;
         color: item.status === 'working' ? 'var(--p2-teal)' : 'rgba(255,255,255,0.3)',
         textAlign: 'center',
         whiteSpace: 'nowrap',
-        zIndex: 2,
+        zIndex: 16,
         pointerEvents: 'none',
         transition: 'color 500ms ease',
         maxWidth: '70px',
@@ -141,7 +141,31 @@ export function AgentOrbitLayer({ uiMode }: AgentOrbitLayerProps) {
   const scale = uiMode === 'B' ? 0.6 : 1.0;
   const opacity = uiMode === 'B' ? 0.3 : 0.9;
 
-  if (agents.length === 0) return null;
+  if (agents.length === 0) {
+    // Honest empty state: small system-ready indicator below the orb
+    if (uiMode === 'B') return null; // don't show in work surface
+    return (
+      <div
+        style={{
+          position: 'fixed',
+          top: '50%',
+          left: '50%',
+          transform: 'translate(-50%, calc(-50% + 125px))',
+          zIndex: 16,
+          pointerEvents: 'none',
+          fontSize: '9px',
+          fontFamily: 'var(--font-hud)',
+          letterSpacing: '0.1em',
+          color: 'rgba(255,255,255,0.2)',
+          textAlign: 'center',
+          textTransform: 'uppercase',
+          opacity: 0.8,
+        }}
+      >
+        no active agents
+      </div>
+    );
+  }
 
   return (
     <div

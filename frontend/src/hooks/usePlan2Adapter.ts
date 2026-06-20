@@ -32,18 +32,9 @@ import {
 export function usePlan2ModeSync() {
   const composerOpen = useAppStore((s) => s.composerOpen);
   const isStreaming = useAppStore((s) => s.streamState.isStreaming);
-  const messages = useAppStore((s) => s.messages);
   const pendingApprovalsCount = useAppStore((s) => s.pendingApprovalsCount);
   const managedAgents = useAppStore((s) => s.managedAgents);
   const setUIMode = useAppStore((s) => s.setUIMode);
-
-  const { voiceEnabled, phase: voicePhase } = useVoiceTurn();
-
-  const voiceActive =
-    voiceEnabled &&
-    voicePhase !== 'idle' &&
-    voicePhase !== 'cancelled' &&
-    voicePhase !== 'error';
 
   const hasActiveAgent = managedAgents.some(
     (a) => a.status === 'running' || a.status === 'paused',
@@ -51,10 +42,10 @@ export function usePlan2ModeSync() {
 
   useEffect(() => {
     const triggers = new Set<ModeBTrigger>();
+    // Voice-first OS: messages alone do NOT trigger Mode B.
+    // Mode B only activates when the composer/work surface is explicitly open.
     if (composerOpen) triggers.add('composerOpen');
     if (isStreaming) triggers.add('isStreaming');
-    if (messages.length > 0) triggers.add('hasMessages');
-    if (voiceActive) triggers.add('voiceActive');
     if (hasActiveAgent) triggers.add('hasActiveAgent');
     if (pendingApprovalsCount > 0) triggers.add('hasPendingApproval');
 
@@ -63,8 +54,6 @@ export function usePlan2ModeSync() {
   }, [
     composerOpen,
     isStreaming,
-    messages.length,
-    voiceActive,
     hasActiveAgent,
     pendingApprovalsCount,
     setUIMode,

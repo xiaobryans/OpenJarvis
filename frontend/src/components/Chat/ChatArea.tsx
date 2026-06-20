@@ -128,15 +128,22 @@ function VoiceControlStrip() {
   const setComposerOpen = useAppStore((s) => s.setComposerOpen);
   const [wakeActive, setWakeActive] = useState(false);
   const [tapBusy, setTapBusy] = useState(false);
+  const [tapError, setTapError] = useState<string | null>(null);
+  const tapCooldownRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isActive = phase !== 'idle' && phase !== 'error' && phase !== 'cancelled';
   const isSpeaking = phase === 'speaking';
 
-  // Check wake-word diagnostics once on mount
+  // Poll wake-word diagnostics every 5s so UI reflects actual wake state
   useEffect(() => {
-    fetch(`${getBase()}/v1/voice/diagnostics`, { headers: authHeaders() })
-      .then((r) => r.json())
-      .then((d) => setWakeActive(Boolean(d?.wake_phrase_active)))
-      .catch(() => {});
+    const check = () => {
+      fetch(`${getBase()}/v1/voice/diagnostics`, { headers: authHeaders() })
+        .then((r) => r.json())
+        .then((d) => setWakeActive(Boolean(d?.wake_phrase_active)))
+        .catch(() => {});
+    };
+    check();
+    const id = setInterval(check, 5000);
+    return () => clearInterval(id);
   }, []);
 
   // Cancel voice turn via backend API (no Cmd+K needed)
@@ -150,17 +157,33 @@ function VoiceControlStrip() {
   }, []);
 
   // Tap to speak: start a voice turn without Cmd+K
+  // Debounced + error feedback — prevents race conditions and silent failures.
   const handleTapSpeak = useCallback(async () => {
     if (tapBusy || isActive) return;
+    // Prevent double-tap within 1.5s
+    if (tapCooldownRef.current) return;
     setTapBusy(true);
+    setTapError(null);
+    tapCooldownRef.current = setTimeout(() => { tapCooldownRef.current = null; }, 1500);
     try {
-      await fetch(`${getBase()}/v1/voice/turn/start`, {
+      const resp = await fetch(`${getBase()}/v1/voice/turn/start`, {
         method: 'POST',
         headers: { ...authHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify({ language: 'en' }),
       });
-    } catch {}
-    setTapBusy(false);
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok || data.ok === false) {
+        const reason = data.error_code || data.error || `HTTP ${resp.status}`;
+        setTapError(reason);
+        setTimeout(() => setTapError(null), 4000);
+      }
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'network error';
+      setTapError(msg);
+      setTimeout(() => setTapError(null), 4000);
+    } finally {
+      setTapBusy(false);
+    }
   }, [tapBusy, isActive]);
 
   return (
@@ -189,23 +212,38 @@ function VoiceControlStrip() {
 
       {/* Tap to speak — visible when idle and no wake word */}
       {!isActive && !wakeActive && (
-        <button
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium cursor-pointer transition-all"
-          style={{
-            background: tapBusy ? 'rgba(34,211,238,0.2)' : 'rgba(34,211,238,0.1)',
-            border: '1px solid rgba(34,211,238,0.3)',
-            color: 'rgba(34,211,238,0.85)',
-            backdropFilter: 'blur(12px)',
-            pointerEvents: 'auto',
-            opacity: tapBusy ? 0.6 : 1,
-          }}
-          onClick={handleTapSpeak}
-          title="Tap to speak — start voice turn"
-          disabled={tapBusy}
-        >
-          <Mic size={13} />
-          {tapBusy ? 'Starting…' : 'Tap to speak'}
-        </button>
+        <>
+          {tapError && (
+            <div
+              className="px-3 py-1.5 rounded-lg text-xs max-w-[200px] text-right"
+              style={{
+                background: 'rgba(244,63,94,0.15)',
+                border: '1px solid rgba(244,63,94,0.3)',
+                color: 'rgba(244,63,94,0.9)',
+                pointerEvents: 'none',
+              }}
+            >
+              {tapError}
+            </div>
+          )}
+          <button
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium cursor-pointer transition-all"
+            style={{
+              background: tapBusy ? 'rgba(34,211,238,0.2)' : tapError ? 'rgba(244,63,94,0.1)' : 'rgba(34,211,238,0.1)',
+              border: tapError ? '1px solid rgba(244,63,94,0.3)' : '1px solid rgba(34,211,238,0.3)',
+              color: tapError ? 'rgba(244,63,94,0.9)' : 'rgba(34,211,238,0.85)',
+              backdropFilter: 'blur(12px)',
+              pointerEvents: 'auto',
+              opacity: tapBusy ? 0.6 : 1,
+            }}
+            onClick={handleTapSpeak}
+            title={tapBusy ? 'Starting voice turn…' : tapError ? `Error: ${tapError}` : 'Tap to speak — start voice turn'}
+            disabled={tapBusy}
+          >
+            <Mic size={13} />
+            {tapBusy ? 'Starting…' : tapError ? 'Try again' : 'Tap to speak'}
+          </button>
+        </>
       )}
 
       {/* Active mic status indicator */}

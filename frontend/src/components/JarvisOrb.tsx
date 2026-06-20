@@ -103,12 +103,13 @@ const MOOD_PALETTE = {
 export function JarvisOrb({ mood, uiMode, intensity = 1 }: JarvisOrbProps) {
   const p = MOOD_PALETTE[mood] ?? MOOD_PALETTE.idle;
 
-  // Mode A: large, centered, prominent. Mode B: small, top-center, subtle.
+  // Mode A: large, centered, prominent. Mode B: small, near-top, dimmer but still visible.
   const isModeA = uiMode === 'A';
-  const size     = isModeA ? 200 : 56;
-  const opacity  = isModeA ? intensity * 0.92 : intensity * 0.18;
-  const top      = isModeA ? '50%' : '-20px';
-  const ytrans   = isModeA ? '-50%' : '0';
+  const size     = isModeA ? 200 : 64;
+  const opacity  = isModeA ? intensity * 0.92 : intensity * 0.45;
+  // Mode A: vertically centered on screen. Mode B: 35% from top (below top bar, visible).
+  const top      = isModeA ? '50%' : '35%';
+  const ytrans   = isModeA ? '-50%' : '-50%';
 
   const orbStyle = useMemo(() => ({
     position: 'fixed' as const,
@@ -118,7 +119,7 @@ export function JarvisOrb({ mood, uiMode, intensity = 1 }: JarvisOrbProps) {
     width: `${size}px`,
     height: `${size}px`,
     borderRadius: '50%',
-    zIndex: 1,
+    zIndex: 15,    // above layout content (z=10), below top bar (z=100)
     pointerEvents: 'none' as const,
     opacity,
     // 3D sphere gradient: specular at top-left, bright teal zone, dark rim

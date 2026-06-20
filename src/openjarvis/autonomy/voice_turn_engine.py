@@ -139,6 +139,8 @@ class VoiceTurnEngine:
         self._wake_bridge: Optional[Any] = None
         self._wake_active: bool = False
         self._wake_failure_reason: Optional[str] = None
+        # Cooldown: ignore wake events within 3s of any turn completing
+        self._last_turn_end_ts: float = 0.0
 
         # Auto-start wake word if venv is ready
         self._auto_start_wake_word()
@@ -270,11 +272,19 @@ class VoiceTurnEngine:
                 self._wake_failure_reason = str(exc)
             logger.warning("VoiceTurnEngine: wake word init error: %s", exc)
 
+    _WAKE_COOLDOWN_S: float = 3.0  # seconds after turn end before wake can trigger again
+
     def _on_wake_event(self, event: Any) -> None:
         """Called by WakeWordBridge when wake phrase detected."""
         with self._lock:
             if self._phase not in _STARTABLE_PHASES:
                 logger.debug("Wake event ignored — turn in progress (phase=%s)", self._phase.value)
+                return
+            elapsed = time.monotonic() - self._last_turn_end_ts
+            if elapsed < self._WAKE_COOLDOWN_S:
+                logger.debug(
+                    "Wake event ignored — cooldown (%.1fs remaining)", self._WAKE_COOLDOWN_S - elapsed
+                )
                 return
         logger.info("Wake word detected — auto-starting turn")
         self._emit({"type": "wake_detected"})
@@ -340,6 +350,8 @@ class VoiceTurnEngine:
                 self._active_turn_id = None
                 if self._phase not in (TurnPhase.IDLE, TurnPhase.ERROR, TurnPhase.CANCELLED):
                     self._phase = TurnPhase.IDLE
+            # Record cooldown timestamp so wake word can't instantly restart
+            self._last_turn_end_ts = time.monotonic()
         self._emit({"type": "turn_done", "turn_id": turn_id, "final_phase": self._phase.value})
         logger.info(
             "VoiceTurnEngine: turn %d finalised (phase=%s)", turn_id, self._phase.value
@@ -724,8 +736,8 @@ class VoiceTurnEngine:
             _api_key = _barge_os.environ.get("DEEPGRAM_API_KEY", "")
             if _api_key:
                 _phrase_barge_in(_api_key)
-            else:
-                _energy_barge_in()
+            # No energy fallback — speaker echo causes false positives midway through TTS.
+            # UI Stop button remains available regardless.
 
         def _phrase_barge_in(_api_key: str) -> None:
             """Deepgram streaming phrase detection — speaker-safe barge-in."""
