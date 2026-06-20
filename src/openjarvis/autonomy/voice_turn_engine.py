@@ -364,6 +364,29 @@ class VoiceTurnEngine:
             calib_data["noise_floor_rms"] = round(noise_floor, 1)
             calib_data["effective_threshold"] = round(eff_thresh, 1)
 
+        def _on_vad_chunk(chunk: Dict) -> None:
+            """Emit live VAD diagnostics as SSE vad_progress events.
+
+            Throttled: only emitted when silence is accumulating (silence_consecutive >= 1)
+            or on every 5th chunk during speech, to avoid flooding the SSE stream.
+            """
+            if not self._is_turn_live(turn_id):
+                return
+            sc = chunk.get("silence_consecutive", 0)
+            loud_streak = chunk.get("loud_streak", 0)
+            # Only emit when silence is actively accumulating or every 5th speech chunk
+            if sc > 0 or (loud_streak % 5 == 0):
+                self._emit({
+                    "type": "vad_progress",
+                    "rms": chunk.get("rms"),
+                    "threshold": chunk.get("threshold"),
+                    "noise_floor": chunk.get("noise_floor"),
+                    "silence_elapsed_ms": chunk.get("silence_elapsed_ms"),
+                    "silence_consecutive": sc,
+                    "silence_chunks_needed": chunk.get("silence_chunks_needed"),
+                    "speech_detected": chunk.get("speech_detected"),
+                })
+
         rec_start = time.monotonic()
         try:
             audio, stop_reason = record_command_audio_vad(
@@ -375,6 +398,7 @@ class VoiceTurnEngine:
                 on_state=_on_state,
                 abort_event=self._recording_abort,
                 on_calibrated=_on_calibrated,
+                on_vad_chunk=_on_vad_chunk,
             )
         except Exception as exc:
             logger.error("Recording exception in turn %d: %s", turn_id, exc)
@@ -469,10 +493,27 @@ class VoiceTurnEngine:
         return text
 
     def _stage_route(self, turn_id: int, text: str) -> Optional[str]:
-        """Route through Jarvis engine with safety gates and timeout."""
+        """Route through Jarvis engine with safety gates and timeout.
+
+        Runtime/status queries (voice provider, Deepgram, fallback, etc.) are
+        intercepted BEFORE the LLM and answered directly from real runtime state.
+        """
         self._set_phase(TurnPhase.THINKING)
 
-        from openjarvis.autonomy.voice_conversation import query_jarvis_text
+        from openjarvis.autonomy.voice_conversation import (
+            handle_voice_runtime_query,
+            query_jarvis_text,
+        )
+
+        # Intercept voice/provider/status queries before the LLM so the user
+        # gets accurate runtime state instead of a generic model-generated answer.
+        runtime_answer = handle_voice_runtime_query(text)
+        if runtime_answer is not None:
+            logger.info(
+                "Turn %d: runtime query intercepted — skipping LLM: %r", turn_id, text[:60]
+            )
+            self._emit({"type": "route", "intercepted": True, "reason": "voice_runtime_query"})
+            return runtime_answer
 
         cancel = self._cancel_event
         route_info: Dict = {}

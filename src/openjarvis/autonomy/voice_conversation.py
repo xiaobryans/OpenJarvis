@@ -146,7 +146,11 @@ _VAD_CHUNK_MS: int = 100  # analyse audio in 100 ms windows
 # Adaptive noise-floor calibration — first N chunks are used to measure
 # ambient noise before applying the speech/silence threshold.
 _NOISE_CALIB_CHUNKS: int = 5          # 500 ms calibration window
-_NOISE_CALIB_MULTIPLIER: float = 2.5  # effective_threshold ≥ noise_floor × this
+_NOISE_CALIB_MULTIPLIER: float = 1.8  # effective_threshold ≥ noise_floor × this
+# Consecutive loud chunks required before silence_consecutive resets.
+# Value 1 = original behaviour (any single 100ms transient resets silence).
+# Value 2 = transient resistance: a lone keyboard click / breath doesn't reset.
+_VAD_TRANSIENT_LOUD_CHUNKS: int = 2
 
 
 def record_command_audio(
@@ -194,6 +198,7 @@ def record_command_audio_vad(
     on_state: Optional[Callable[[str], None]] = None,
     abort_event: Optional[threading.Event] = None,
     on_calibrated: Optional[Callable[[float, float], None]] = None,
+    on_vad_chunk: Optional[Callable[[dict], None]] = None,
 ) -> Tuple[bytes, str]:
     """Record with adaptive VAD-based silence endpointing.
 
@@ -233,6 +238,10 @@ def record_command_audio_vad(
     on_calibrated:
         Optional callback fired after calibration with
         ``(noise_floor_rms, effective_threshold)``.
+    on_vad_chunk:
+        Optional callback fired every audio chunk with a dict containing
+        ``rms``, ``threshold``, ``silence_consecutive``, ``silence_chunks_needed``,
+        and ``silence_elapsed_ms``.  Use for live UI diagnostics.
 
     Returns
     -------
@@ -263,6 +272,9 @@ def record_command_audio_vad(
     stop_reason: str = "max_duration"
     noise_floor_rms: float = 0.0
     effective_threshold: float = silence_rms_threshold
+    # Consecutive chunks above threshold — only reset silence counter after
+    # _VAD_TRANSIENT_LOUD_CHUNKS in a row (transient resistance).
+    _loud_streak: int = 0
 
     stream = sd.InputStream(
         samplerate=sample_rate,
@@ -290,13 +302,18 @@ def record_command_audio_vad(
             chunk_flat = data.flatten().astype(np.float64)
             rms = float(np.sqrt(np.mean(chunk_flat ** 2)))
 
-            # Use STATIC threshold for speech detection during calibration
+            # Use STATIC threshold for speech detection during calibration.
+            # Apply the same transient resistance used in the main loop so
+            # the loud-streak counter is warm when Phase 2 starts.
             if rms >= silence_rms_threshold:
                 speech_detected = True
-                silence_consecutive = 0
+                _loud_streak += 1
+                if _loud_streak >= _VAD_TRANSIENT_LOUD_CHUNKS:
+                    silence_consecutive = 0
                 if on_state is not None:
                     on_state("recording")
             else:
+                _loud_streak = 0
                 silence_consecutive += 1
                 calib_quiet_rmss.append(rms)   # quiet chunk → noise floor data
 
@@ -335,11 +352,22 @@ def record_command_audio_vad(
 
             if rms >= effective_threshold:
                 speech_detected = True
-                silence_consecutive = 0
-                if on_state is not None:
+                _loud_streak += 1
+                # Only reset silence counter after sustained speech (>= N consecutive
+                # loud chunks). Single 100ms transients (keyboard click, breath) do
+                # NOT reset the counter, preventing spurious silence-gate resets.
+                if _loud_streak >= _VAD_TRANSIENT_LOUD_CHUNKS:
+                    silence_consecutive = 0
+                if _loud_streak == 1 and on_state is not None:
+                    on_state("recording")  # emit state on first loud chunk (immediate feedback)
+                elif _loud_streak >= _VAD_TRANSIENT_LOUD_CHUNKS and on_state is not None:
                     on_state("recording")
-                logger.debug("VAD chunk %d: rms=%.0f >= thresh=%.0f → speech", chunk_idx, rms, effective_threshold)
+                logger.debug(
+                    "VAD chunk %d: rms=%.0f >= thresh=%.0f → loud_streak=%d",
+                    chunk_idx, rms, effective_threshold, _loud_streak,
+                )
             else:
+                _loud_streak = 0
                 silence_consecutive += 1
                 logger.debug(
                     "VAD chunk %d: rms=%.0f < thresh=%.0f → silence %d/%d",
@@ -347,6 +375,22 @@ def record_command_audio_vad(
                 )
                 if speech_detected and silence_consecutive >= 3 and on_state is not None:
                     on_state("waiting_for_silence")
+
+            # Emit live VAD diagnostics for UI/SSE consumers
+            if on_vad_chunk is not None:
+                try:
+                    on_vad_chunk({
+                        "rms": round(rms, 1),
+                        "threshold": round(effective_threshold, 1),
+                        "noise_floor": round(noise_floor_rms, 1),
+                        "silence_consecutive": silence_consecutive,
+                        "silence_chunks_needed": silence_chunks_needed,
+                        "silence_elapsed_ms": silence_consecutive * _VAD_CHUNK_MS,
+                        "loud_streak": _loud_streak,
+                        "speech_detected": speech_detected,
+                    })
+                except Exception:
+                    pass  # diagnostic callback must never abort the recording loop
 
             # Only endpoint after min_seconds elapsed AND speech was heard
             if chunk_idx >= min_chunks and speech_detected:
