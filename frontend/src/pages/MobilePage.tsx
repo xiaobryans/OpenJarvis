@@ -20,6 +20,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
+import { MobileAuthorityCockpit } from '../components/Authority/MobileAuthorityCockpit';
 
 // ---------------------------------------------------------------------------
 // Backend + Auth management
@@ -1001,7 +1002,7 @@ export function MobilePage() {
               { label: 'Telegram', status: 'BLOCKED — token', color: 'var(--color-warn, #f59e0b)' },
               { label: 'Voice (US13)', status: 'PARKED', color: 'var(--color-text-muted, #666)' },
               { label: 'Apple Signing', status: 'ENROLLMENT PENDING', color: '#f97316' },
-              { label: 'Plan 8', status: 'NOT STARTED', color: 'var(--color-text-muted, #666)' },
+              { label: 'Plan 8 Authority', status: 'ACTIVE (Backend)', color: 'var(--color-success, #22c55e)' },
               { label: 'Final Cutover', status: 'NOT STARTED', color: 'var(--color-text-muted, #666)' },
             ].map(({ label, status, color }) => (
               <div key={label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '5px 0', borderBottom: '1px solid color-mix(in srgb, var(--color-border, #333) 25%, transparent)', gap: 8 }}>
@@ -1012,6 +1013,9 @@ export function MobilePage() {
               </div>
             ))}
           </Card>
+
+          {/* Plan 8B — Mobile Authority Cockpit */}
+          <MobileAuthorityCockpit backendUrl={backendUrl} apiKey={apiKey} />
 
           {/* Footer */}
           {lastRefresh && (

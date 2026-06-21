@@ -12,6 +12,7 @@ import { LogsPage } from './pages/LogsPage';
 import { MissionControlPage } from './pages/MissionControlPage';
 import { MobilePage } from './pages/MobilePage';
 import { WorkbenchPage } from './pages/WorkbenchPage';
+import { AuthorityPage } from './pages/AuthorityPage';
 import { CommandPalette } from './components/CommandPalette';
 import { TextFallbackPanel } from './components/TextFallbackPanel';
 import { SetupScreen } from './components/SetupScreen';
@@ -203,6 +204,7 @@ export default function App() {
           <Route path="logs" element={<LogsPage />} />
           <Route path="mission-control" element={<MissionControlPage />} />
           <Route path="workbench" element={<WorkbenchPage />} />
+          <Route path="authority" element={<AuthorityPage />} />
           <Route path="mobile" element={<MobilePage />} />
         </Route>
       </Routes>

@@ -20,6 +20,7 @@ import {
   Cloud,
   Target,
   Code2,
+  ShieldCheck,
 } from 'lucide-react';
 import { ConversationList } from './ConversationList';
 import { useAppStore } from '../../lib/store';
@@ -60,6 +61,7 @@ export function Sidebar() {
   const navItems = [
     { path: '/', icon: MessageSquare, label: 'Chat', badge: null },
     { path: '/mission-control', icon: Target, label: 'Cockpit', badge: null },
+    { path: '/authority', icon: ShieldCheck, label: 'Authority', badge: null },
     { path: '/dashboard', icon: BarChart3, label: 'Dashboard', badge: null },
     { path: '/workbench', icon: Code2, label: 'Workbench', badge: null },
     { path: '/data-sources', icon: Database, label: 'Connectors', badge: '4 blocked' },
