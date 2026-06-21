@@ -1,26 +1,56 @@
 /**
  * MobilePage — Plan 4 mobile-safe Jarvis dashboard.
  *
- * Single-column, touch-friendly view that aggregates:
- *   - Backend health
- *   - Memory OS status
- *   - Continuity (cross-device) status
- *   - Pending approvals
- *   - Active task state
+ * Single-column, touch-friendly view with configurable backend targeting:
+ *   - Local mode:  targets same origin (MacBook Jarvis server)
+ *   - Remote mode: targets AWS ECS Fargate always-on backend
  *
- * Designed to work in any mobile browser (no native app required).
- * This page is part of the PWA (VitePWA, display: standalone).
+ * Backend is stored in localStorage key "jarvis_mobile_backend_url".
+ * The remote backend exposes CORS headers, so direct fetch works.
  *
  * API endpoints consumed:
  *   GET /health                       — backend reachability
  *   GET /v1/system/health             — memory_os sub-key
  *   GET /v1/memory/status             — semantic search, cloud sync, distillation
  *   GET /v1/mobile/continuity/status  — cross-device backend state
- *   GET /v1/approvals/pending         — pending approval queue
+ *   GET /v1/approvals/pending         — pending approval queue (local only)
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { apiFetch, fetchPendingApprovals, type PendingApproval } from '../lib/api';
+import { fetchPendingApprovals, type PendingApproval } from '../lib/api';
+
+// ---------------------------------------------------------------------------
+// Backend URL management
+// ---------------------------------------------------------------------------
+
+const LS_KEY = 'jarvis_mobile_backend_url';
+const AWS_BACKEND = 'http://52.221.255.60:3091';
+
+function getStoredBackend(): string {
+  try {
+    return localStorage.getItem(LS_KEY) ?? '';
+  } catch {
+    return '';
+  }
+}
+
+function storeBackend(url: string): void {
+  try {
+    if (url) {
+      localStorage.setItem(LS_KEY, url);
+    } else {
+      localStorage.removeItem(LS_KEY);
+    }
+  } catch {
+    // ignore
+  }
+}
+
+async function backendFetch(backendUrl: string, path: string): Promise<Response> {
+  const base = backendUrl.replace(/\/$/, '');
+  const url = base ? `${base}${path}` : path;
+  return fetch(url, { headers: { Accept: 'application/json' } });
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -28,6 +58,9 @@ import { apiFetch, fetchPendingApprovals, type PendingApproval } from '../lib/ap
 
 interface HealthStatus {
   reachable: boolean;
+  status?: string;
+  version?: string;
+  uptime_seconds?: number;
   memory_os?: {
     sprint?: string;
     total_entries?: number;
@@ -35,6 +68,10 @@ interface HealthStatus {
     cloud_sync_available?: boolean;
     cloud_sync_backend?: string;
     ai_distillation_available?: boolean;
+  };
+  runtime?: {
+    deployment?: string;
+    macbook_off_capable?: boolean;
   };
 }
 
@@ -46,7 +83,8 @@ interface MemoryStatus {
 }
 
 interface ContinuityBackend {
-  backend_name: string;
+  name?: string;
+  backend_name?: string;
   availability: string;
   macbook_off_capable: boolean;
   notes?: string;
@@ -58,10 +96,16 @@ interface ContinuityStatus {
   cross_device_ready?: boolean;
   active_task_description?: string;
   active_task_status?: string;
+  // Plan 4 AWS fields
+  runtime_macbook_off_capable?: boolean;
+  runtime_deployment?: string;
+  runtime_always_on_status?: string;
+  state_sync_macbook_off_capable?: boolean;
+  mobile_client_available?: boolean;
 }
 
 // ---------------------------------------------------------------------------
-// Helpers
+// UI helpers
 // ---------------------------------------------------------------------------
 
 const STATUS_COLOR: Record<string, string> = {
@@ -144,6 +188,9 @@ function Row({ label, value, dot }: { label: string; value: string; dot?: string
           gap: '6px',
           fontSize: '12px',
           fontFamily: 'monospace',
+          textAlign: 'right',
+          maxWidth: '60%',
+          wordBreak: 'break-all',
         }}
       >
         {dot && <Dot color={dot} />}
@@ -158,6 +205,7 @@ function Row({ label, value, dot }: { label: string; value: string; dot?: string
 // ---------------------------------------------------------------------------
 
 export function MobilePage() {
+  const [backendUrl, setBackendUrl] = useState<string>(getStoredBackend);
   const [health, setHealth] = useState<HealthStatus | null>(null);
   const [memory, setMemory] = useState<MemoryStatus | null>(null);
   const [continuity, setContinuity] = useState<ContinuityStatus | null>(null);
@@ -167,14 +215,20 @@ export function MobilePage() {
   const [refreshing, setRefreshing] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const fetchAll = async () => {
+  const isRemote = backendUrl.trim() !== '';
+  const targetLabel = isRemote
+    ? `AWS (${backendUrl.replace(/^https?:\/\//, '').split(':')[0]})`
+    : 'Local (MacBook)';
+
+  const fetchAll = async (url?: string) => {
+    const base = url ?? backendUrl;
     setRefreshing(true);
+
     try {
-      // Health
-      const healthRes = await apiFetch('/v1/system/health');
-      if (healthRes.ok) {
-        const hData = await healthRes.json();
-        setHealth({ reachable: true, ...hData });
+      const res = await backendFetch(base, '/v1/system/health');
+      if (res.ok) {
+        const data = await res.json();
+        setHealth({ reachable: true, ...data });
       } else {
         setHealth({ reachable: false });
       }
@@ -183,25 +237,28 @@ export function MobilePage() {
     }
 
     try {
-      // Memory status
-      const memRes = await apiFetch('/v1/memory/status');
-      if (memRes.ok) setMemory(await memRes.json());
+      const res = await backendFetch(base, '/v1/memory/status');
+      if (res.ok) setMemory(await res.json());
     } catch {
       // non-fatal
     }
 
     try {
-      // Continuity status
-      const contRes = await apiFetch('/v1/mobile/continuity/status');
-      if (contRes.ok) setContinuity(await contRes.json());
+      const res = await backendFetch(base, '/v1/mobile/continuity/status');
+      if (res.ok) setContinuity(await res.json());
     } catch {
       // non-fatal
     }
 
-    try {
-      const pending = await fetchPendingApprovals();
-      setApprovals(pending);
-    } catch {
+    // Approvals: local only (write operation context — no remote support yet)
+    if (!base) {
+      try {
+        const pending = await fetchPendingApprovals();
+        setApprovals(pending);
+      } catch {
+        setApprovals([]);
+      }
+    } else {
       setApprovals([]);
     }
 
@@ -216,7 +273,17 @@ export function MobilePage() {
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [backendUrl]);
+
+  const switchBackend = (url: string) => {
+    storeBackend(url);
+    setBackendUrl(url);
+    setLoading(true);
+    setHealth(null);
+    setMemory(null);
+    setContinuity(null);
+  };
 
   const isReachable = health?.reachable ?? false;
   const memOS = health?.memory_os;
@@ -238,7 +305,7 @@ export function MobilePage() {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          marginBottom: '20px',
+          marginBottom: '16px',
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -260,7 +327,7 @@ export function MobilePage() {
           </span>
         </div>
         <button
-          onClick={fetchAll}
+          onClick={() => fetchAll()}
           disabled={refreshing}
           style={{
             fontSize: '12px',
@@ -277,9 +344,100 @@ export function MobilePage() {
         </button>
       </div>
 
+      {/* Backend selector */}
+      <div
+        style={{
+          display: 'flex',
+          gap: '6px',
+          marginBottom: '16px',
+          padding: '10px',
+          background: 'color-mix(in srgb, var(--color-surface, #1a1a1c) 80%, transparent)',
+          border: '1px solid color-mix(in srgb, var(--color-border, #333) 50%, transparent)',
+          borderRadius: '10px',
+        }}
+      >
+        <button
+          onClick={() => switchBackend('')}
+          style={{
+            flex: 1,
+            padding: '7px 0',
+            fontSize: '12px',
+            fontWeight: !isRemote ? 600 : 400,
+            borderRadius: '6px',
+            border: 'none',
+            cursor: 'pointer',
+            background: !isRemote
+              ? 'color-mix(in srgb, var(--color-accent, #4fd1ff) 18%, transparent)'
+              : 'transparent',
+            color: !isRemote ? 'var(--color-accent, #4fd1ff)' : 'var(--color-text-muted, #888)',
+            transition: 'all 0.15s',
+          }}
+        >
+          Local
+        </button>
+        <button
+          onClick={() => switchBackend(AWS_BACKEND)}
+          style={{
+            flex: 1,
+            padding: '7px 0',
+            fontSize: '12px',
+            fontWeight: isRemote ? 600 : 400,
+            borderRadius: '6px',
+            border: 'none',
+            cursor: 'pointer',
+            background: isRemote
+              ? 'color-mix(in srgb, #f59e0b 18%, transparent)'
+              : 'transparent',
+            color: isRemote ? '#f59e0b' : 'var(--color-text-muted, #888)',
+            transition: 'all 0.15s',
+          }}
+        >
+          AWS Always-On
+        </button>
+      </div>
+
+      {/* Backend target badge */}
+      <div
+        style={{
+          fontSize: '11px',
+          color: 'var(--color-text-muted, #888)',
+          marginBottom: '14px',
+          fontFamily: 'monospace',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '6px',
+        }}
+      >
+        <span>Target:</span>
+        <span style={{ color: isRemote ? '#f59e0b' : 'var(--color-text, #eee)' }}>
+          {isRemote ? backendUrl : 'same origin'}
+        </span>
+        {isRemote && (
+          <span
+            style={{
+              fontSize: '10px',
+              background: 'color-mix(in srgb, #f59e0b 12%, transparent)',
+              color: '#f59e0b',
+              border: '1px solid color-mix(in srgb, #f59e0b 25%, transparent)',
+              borderRadius: '3px',
+              padding: '1px 5px',
+            }}
+          >
+            ALWAYS-ON
+          </span>
+        )}
+      </div>
+
       {loading ? (
-        <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--color-text-muted, #888)', fontSize: '14px' }}>
-          Loading…
+        <div
+          style={{
+            textAlign: 'center',
+            padding: '40px 0',
+            color: 'var(--color-text-muted, #888)',
+            fontSize: '14px',
+          }}
+        >
+          Connecting to {targetLabel}…
         </div>
       ) : (
         <>
@@ -297,6 +455,18 @@ export function MobilePage() {
               value={isReachable ? 'Reachable' : 'Unreachable'}
               dot={isReachable ? STATUS_COLOR.ok : STATUS_COLOR.error}
             />
+            <Row label="Target" value={targetLabel} />
+            {health?.version && <Row label="Version" value={health.version} />}
+            {health?.uptime_seconds !== undefined && (
+              <Row label="Uptime" value={`${Math.round(health.uptime_seconds)}s`} />
+            )}
+            {health?.runtime && (
+              <Row
+                label="MacBook-off"
+                value={health.runtime.macbook_off_capable ? 'Yes (AWS)' : 'No (local only)'}
+                dot={health.runtime.macbook_off_capable ? STATUS_COLOR.ok : STATUS_COLOR.warn}
+              />
+            )}
             {memOS && (
               <>
                 <Row label="Memory entries" value={String(memOS.total_entries ?? '—')} />
@@ -320,17 +490,15 @@ export function MobilePage() {
                 label="Total entries"
                 value={String(memory.memory_os?.total_entries ?? '—')}
               />
-              <Row
-                label="Distilled"
-                value={String(memory.memory_os?.total_distilled ?? '—')}
-              />
-              <Row
-                label="Ranker"
-                value={memory.semantic_search?.active_ranker ?? '—'}
-              />
+              <Row label="Distilled" value={String(memory.memory_os?.total_distilled ?? '—')} />
+              <Row label="Ranker" value={memory.semantic_search?.active_ranker ?? '—'} />
               <Row
                 label="Cloud sync"
-                value={memory.cloud_sync?.available ? `${memory.cloud_sync.backend ?? 'S3'} ✓` : 'Local only'}
+                value={
+                  memory.cloud_sync?.available
+                    ? `${memory.cloud_sync.backend ?? 'S3'} ✓`
+                    : 'Local only'
+                }
                 dot={memory.cloud_sync?.available ? STATUS_COLOR.ok : STATUS_COLOR.warn}
               />
               <Row
@@ -352,20 +520,26 @@ export function MobilePage() {
                       color: 'var(--color-text, #eee)',
                       marginBottom: '8px',
                       padding: '8px',
-                      background: 'color-mix(in srgb, var(--color-accent, #4fd1ff) 5%, transparent)',
+                      background:
+                        'color-mix(in srgb, var(--color-accent, #4fd1ff) 5%, transparent)',
                       borderRadius: '6px',
-                      border: '1px solid color-mix(in srgb, var(--color-accent, #4fd1ff) 15%, transparent)',
+                      border:
+                        '1px solid color-mix(in srgb, var(--color-accent, #4fd1ff) 15%, transparent)',
                     }}
                   >
                     {continuity.active_task_description}
                   </div>
-                  <Row
-                    label="Task status"
-                    value={continuity.active_task_status ?? '—'}
-                  />
+                  <Row label="Task status" value={continuity.active_task_status ?? '—'} />
                 </>
               ) : (
-                <div style={{ fontSize: '13px', color: 'var(--color-text-muted, #888)', padding: '4px 0' }}>
+                <div
+                  style={{
+                    fontSize: '13px',
+                    color: 'var(--color-text-muted, #888)',
+                    padding: '4px 0',
+                    marginBottom: '4px',
+                  }}
+                >
                   No active task
                 </div>
               )}
@@ -374,60 +548,109 @@ export function MobilePage() {
                 value={continuity.cross_device_ready ? 'Yes (Gist)' : 'No'}
                 dot={continuity.cross_device_ready ? STATUS_COLOR.ok : STATUS_COLOR.warn}
               />
-              {continuity.backends?.map((b) => (
-                <Row
-                  key={b.backend_name}
-                  label={b.backend_name}
-                  value={b.availability.replace('BackendAvailability.', '')}
-                  dot={b.availability.includes('available') ? STATUS_COLOR.ok : STATUS_COLOR.warn}
-                />
-              ))}
+              <Row
+                label="Runtime (MacBook-off)"
+                value={
+                  continuity.runtime_macbook_off_capable
+                    ? `Yes — ${continuity.runtime_deployment ?? 'cloud'}`
+                    : 'No — localhost only'
+                }
+                dot={
+                  continuity.runtime_macbook_off_capable ? STATUS_COLOR.ok : STATUS_COLOR.warn
+                }
+              />
+              <Row
+                label="State sync (MacBook-off)"
+                value={continuity.state_sync_macbook_off_capable ? 'Yes (Gist + S3)' : 'Partial'}
+                dot={continuity.state_sync_macbook_off_capable ? STATUS_COLOR.ok : STATUS_COLOR.warn}
+              />
+              {continuity.backends?.map((b) => {
+                const name = b.name ?? b.backend_name ?? 'backend';
+                const avail = b.availability.replace('BackendAvailability.', '');
+                return (
+                  <Row
+                    key={name}
+                    label={name}
+                    value={avail}
+                    dot={
+                      b.availability.includes('available') ? STATUS_COLOR.ok : STATUS_COLOR.warn
+                    }
+                  />
+                );
+              })}
+              {continuity.runtime_always_on_status && (
+                <div
+                  style={{
+                    fontSize: '11px',
+                    color: 'var(--color-text-muted, #888)',
+                    marginTop: '8px',
+                    padding: '6px 8px',
+                    background:
+                      'color-mix(in srgb, var(--color-border, #333) 20%, transparent)',
+                    borderRadius: '6px',
+                    lineHeight: '1.4',
+                  }}
+                >
+                  {continuity.runtime_always_on_status}
+                </div>
+              )}
             </Card>
           )}
 
-          {/* Approvals */}
-          <Card
-            title={`Pending Approvals${approvals.length > 0 ? ` (${approvals.length})` : ''}`}
-            borderColor={
-              approvals.length > 0
-                ? 'color-mix(in srgb, var(--color-warn, #f59e0b) 30%, transparent)'
-                : undefined
-            }
-          >
-            {approvals.length === 0 ? (
-              <div style={{ fontSize: '13px', color: 'var(--color-text-muted, #888)' }}>
-                No pending approvals
-              </div>
-            ) : (
-              approvals.map((a) => (
-                <div
-                  key={a.id}
-                  style={{
-                    padding: '8px',
-                    marginBottom: '6px',
-                    background: 'color-mix(in srgb, var(--color-warn, #f59e0b) 6%, transparent)',
-                    border: '1px solid color-mix(in srgb, var(--color-warn, #f59e0b) 20%, transparent)',
-                    borderRadius: '8px',
-                    fontSize: '13px',
-                  }}
-                >
-                  <div style={{ fontWeight: 500, marginBottom: '2px' }}>{a.action_type}</div>
-                  <div style={{ color: 'var(--color-text-muted, #aaa)', fontSize: '12px' }}>
-                    {a.description}
-                  </div>
+          {/* Approvals (local only) */}
+          {!isRemote && (
+            <Card
+              title={`Pending Approvals${approvals.length > 0 ? ` (${approvals.length})` : ''}`}
+              borderColor={
+                approvals.length > 0
+                  ? 'color-mix(in srgb, var(--color-warn, #f59e0b) 30%, transparent)'
+                  : undefined
+              }
+            >
+              {approvals.length === 0 ? (
+                <div style={{ fontSize: '13px', color: 'var(--color-text-muted, #888)' }}>
+                  No pending approvals
+                </div>
+              ) : (
+                approvals.map((a) => (
                   <div
+                    key={a.id}
                     style={{
-                      fontSize: '11px',
-                      color: 'var(--color-text-muted, #888)',
-                      marginTop: '4px',
+                      padding: '8px',
+                      marginBottom: '6px',
+                      background:
+                        'color-mix(in srgb, var(--color-warn, #f59e0b) 6%, transparent)',
+                      border:
+                        '1px solid color-mix(in srgb, var(--color-warn, #f59e0b) 20%, transparent)',
+                      borderRadius: '8px',
+                      fontSize: '13px',
                     }}
                   >
-                    Tier: {a.tier} · {new Date(a.created_at).toLocaleTimeString()}
+                    <div style={{ fontWeight: 500, marginBottom: '2px' }}>{a.action_type}</div>
+                    <div style={{ color: 'var(--color-text-muted, #aaa)', fontSize: '12px' }}>
+                      {a.description}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: '11px',
+                        color: 'var(--color-text-muted, #888)',
+                        marginTop: '4px',
+                      }}
+                    >
+                      Tier: {a.tier} · {new Date(a.created_at).toLocaleTimeString()}
+                    </div>
                   </div>
-                </div>
-              ))
-            )}
-          </Card>
+                ))
+              )}
+            </Card>
+          )}
+          {isRemote && (
+            <Card title="Pending Approvals">
+              <div style={{ fontSize: '13px', color: 'var(--color-text-muted, #888)' }}>
+                Approvals not available in remote mode — switch to Local.
+              </div>
+            </Card>
+          )}
 
           {/* Footer */}
           {lastRefresh && (
