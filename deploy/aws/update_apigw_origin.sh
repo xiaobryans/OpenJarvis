@@ -1,72 +1,84 @@
 #!/usr/bin/env bash
-# update_apigw_origin.sh — Update API Gateway HTTP API origin when ECS task IP changes.
+# update_apigw_origin.sh — Re-register ECS task private IP in NLB target group
+#                          after an ECS task restart.
 #
-# Run this after an ECS task restart to re-point the HTTPS API Gateway
-# to the new ECS task public IP.
+# Architecture (post-private-closure):
+#   Client → HTTPS → API Gateway → VPC Link → NLB (internal) → ECS:8000 (private IP only)
+#   Direct public HTTP to ECS is blocked by security group (port 8000/3091 not open to 0.0.0.0/0).
+#
+# When to run:
+#   After every ECS task restart (ECS Fargate assigns a new private IP on restart).
+#   The NLB target group must be updated to point at the new private IP.
+#   API Gateway integration URI (NLB listener ARN) does NOT change — no API Gateway update needed.
 #
 # Usage:
-#   ./update_apigw_origin.sh [new_ip]
+#   ./update_apigw_origin.sh [new_private_ip]
 #
-# Without argument: auto-discovers current ECS task IP.
+# Without argument: auto-discovers current ECS task private IP.
 
 set -euo pipefail
 
 PROFILE="${AWS_PROFILE:-openclaw-admin}"
 REGION="ap-southeast-1"
-API_ID="2r8dnzlz1h"
-API_PORT="8000"
 CLUSTER="omnix-workbench-071179620006-ap-southeast-1-cluster"
 SERVICE="omnix-workbench-jarvis-full-service"
+TARGET_GROUP_ARN="arn:aws:elasticloadbalancing:ap-southeast-1:071179620006:targetgroup/jarvis-full-tg/9e7c0e318a81ce4b"
+ECS_PORT="8000"
 
+# --- Discover new private IP ---
 if [[ $# -ge 1 ]]; then
-  NEW_IP="$1"
+  NEW_PRIVATE_IP="$1"
 else
-  echo "Discovering current ECS task IP..."
+  echo "Discovering current ECS task private IP..."
   TASK_ARN=$(aws ecs list-tasks \
     --cluster "$CLUSTER" --service-name "$SERVICE" \
     --profile "$PROFILE" --region "$REGION" \
     --query 'taskArns[0]' --output text 2>/dev/null)
-  ENI=$(aws ecs describe-tasks \
+
+  if [[ -z "$TASK_ARN" || "$TASK_ARN" == "None" ]]; then
+    echo "ERROR: No running task found for service $SERVICE"
+    exit 1
+  fi
+
+  NEW_PRIVATE_IP=$(aws ecs describe-tasks \
     --cluster "$CLUSTER" --tasks "$TASK_ARN" \
     --profile "$PROFILE" --region "$REGION" \
-    --query 'tasks[0].attachments[0].details[?name==`networkInterfaceId`].value' \
+    --query 'tasks[0].attachments[0].details[?name==`privateIPv4Address`].value' \
     --output text 2>/dev/null)
-  NEW_IP=$(aws ec2 describe-network-interfaces \
-    --network-interface-ids "$ENI" \
-    --profile "$PROFILE" --region "$REGION" \
-    --query 'NetworkInterfaces[0].Association.PublicIp' \
-    --output text 2>/dev/null)
-  echo "Discovered IP: $NEW_IP"
+  echo "Discovered private IP: $NEW_PRIVATE_IP"
 fi
 
-NEW_PROXY_URI="http://${NEW_IP}:${API_PORT}/{proxy}"
-NEW_ROOT_URI="http://${NEW_IP}:${API_PORT}/"
-
-echo "Updating API Gateway $API_ID integrations to $NEW_IP..."
-
-# Get integration IDs
-INT_IDS=$(aws apigatewayv2 get-integrations \
-  --api-id "$API_ID" \
+# --- Deregister all old targets ---
+OLD_TARGETS=$(aws elbv2 describe-target-health \
+  --target-group-arn "$TARGET_GROUP_ARN" \
   --profile "$PROFILE" --region "$REGION" \
-  --query 'Items[*].[IntegrationId,IntegrationUri]' \
+  --query 'TargetHealthDescriptions[*].[Target.Id,Target.Port]' \
   --output text 2>/dev/null)
 
-while IFS=$'\t' read -r INT_ID INT_URI; do
-  if [[ "$INT_URI" == *"/{proxy}"* ]]; then
-    aws apigatewayv2 update-integration \
-      --api-id "$API_ID" --integration-id "$INT_ID" \
-      --integration-uri "$NEW_PROXY_URI" \
-      --profile "$PROFILE" --region "$REGION" > /dev/null
-    echo "  Updated proxy integration $INT_ID → $NEW_PROXY_URI"
-  elif [[ "$INT_URI" == *"/"* ]]; then
-    aws apigatewayv2 update-integration \
-      --api-id "$API_ID" --integration-id "$INT_ID" \
-      --integration-uri "$NEW_ROOT_URI" \
-      --profile "$PROFILE" --region "$REGION" > /dev/null
-    echo "  Updated root integration $INT_ID → $NEW_ROOT_URI"
-  fi
-done <<< "$INT_IDS"
+if [[ -n "$OLD_TARGETS" ]]; then
+  while IFS=$'\t' read -r OLD_IP OLD_PORT; do
+    if [[ -n "$OLD_IP" ]]; then
+      echo "Deregistering old target: $OLD_IP:$OLD_PORT"
+      aws elbv2 deregister-targets \
+        --target-group-arn "$TARGET_GROUP_ARN" \
+        --targets "Id=${OLD_IP},Port=${OLD_PORT}" \
+        --profile "$PROFILE" --region "$REGION" > /dev/null
+    fi
+  done <<< "$OLD_TARGETS"
+fi
+
+# --- Register new private IP ---
+echo "Registering new target: $NEW_PRIVATE_IP:$ECS_PORT"
+aws elbv2 register-targets \
+  --target-group-arn "$TARGET_GROUP_ARN" \
+  --targets "Id=${NEW_PRIVATE_IP},Port=${ECS_PORT}" \
+  --profile "$PROFILE" --region "$REGION"
 
 echo ""
-echo "Done. HTTPS endpoint: https://${API_ID}.execute-api.${REGION}.amazonaws.com"
-echo "Test: curl -sf https://${API_ID}.execute-api.${REGION}.amazonaws.com/health | python3 -m json.tool"
+echo "NLB target updated → $NEW_PRIVATE_IP:$ECS_PORT"
+echo "API Gateway VPC Link integration unchanged (NLB listener ARN is stable)."
+echo ""
+echo "Test (HTTPS — API Gateway only path):"
+echo "  curl -s https://2r8dnzlz1h.execute-api.ap-southeast-1.amazonaws.com/health"
+echo ""
+echo "Allow ~30s for NLB health check to pass after registering new target."
