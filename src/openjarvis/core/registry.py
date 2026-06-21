@@ -35,6 +35,20 @@ class RegistryBase(Generic[T]):
         def decorator(entry: T) -> T:
             entries = cls._entries()
             if key in entries:
+                existing = entries[key]
+                # Idempotent re-registration: Python's ``-m`` runner first
+                # imports the package (triggering __init__.py auto-imports
+                # that register the connector), then re-executes the
+                # connector module as __main__, hitting the decorator a
+                # second time with a different class *object* but the same
+                # class name.  Allow it when both registrations carry the
+                # same __qualname__ — that's the same logical class.
+                # Genuinely different classes registered under the same key
+                # still raise so real conflicts are never silently hidden.
+                existing_qn = getattr(existing, "__qualname__", None)
+                new_qn = getattr(entry, "__qualname__", None)
+                if existing_qn is not None and existing_qn == new_qn:
+                    return entry
                 raise ValueError(f"{cls.__name__} already has an entry for '{key}'")
             entries[key] = entry
             return entry

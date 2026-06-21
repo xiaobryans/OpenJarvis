@@ -1,8 +1,27 @@
 # MOBILE_ACCESS_HANDOFF.md
 
-**Branch:** `localhost-get-tool`  
-**Produced:** 2026-06-21  
+**Branch:** `localhost-get-tool`
+**Updated:** 2026-06-22 (NO-GAP sprint)
 **Purpose:** Complete handoff guide for mobile access to Jarvis.
+
+## Confirmed Live State (2026-06-22)
+
+| Item | Status |
+|------|--------|
+| MacBook LAN IP | `192.168.1.16` |
+| Backend health | `{"status":"ok","version":"1.0.2","git_commit":"e80a2a0f"}` |
+| `/mobile` route | 200 OK, 11KB HTML, mobile viewport, Jarvis branding |
+| `/app` route | 200 OK |
+| API key | Generated, stored in `~/.openjarvis/config.toml` |
+| PWA manifest | `manifest.webmanifest` present in static build |
+
+**Start command for LAN access:**
+```bash
+cd /Users/user/OpenJarvis
+python3 -m openjarvis.cli serve --host 0.0.0.0 --port 8000
+```
+
+**iPhone URL:** `http://192.168.1.16:8000/mobile`
 
 ---
 

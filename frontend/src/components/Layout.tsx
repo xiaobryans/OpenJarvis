@@ -66,8 +66,8 @@ export function Layout() {
       <ConnectorStatusBar />
 
       <div className="flex flex-1 min-h-0 relative z-10">
-        <Sidebar />
-        {sidebarOpen && (
+        {!isVoiceHome && <Sidebar />}
+        {!isVoiceHome && sidebarOpen && (
           <div
             className="fixed inset-0 z-20 bg-black/40 md:hidden"
             onClick={() => useAppStore.getState().setSidebarOpen(false)}

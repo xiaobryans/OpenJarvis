@@ -150,12 +150,21 @@ def get_client_credentials(
         if tokens and tokens.get("client_id") and tokens.get("client_secret"):
             return tokens["client_id"], tokens["client_secret"]
 
-    # Check environment variables
-    prefix = f"OPENJARVIS_{provider.name.upper()}"
-    env_id = os.environ.get(f"{prefix}_CLIENT_ID", "")
-    env_secret = os.environ.get(f"{prefix}_CLIENT_SECRET", "")
-    if env_id and env_secret:
-        return env_id, env_secret
+    # Check environment variables — primary name then common fallbacks.
+    # Bryan's .env uses Google_CLIENT_ID / Google_CLIENT_SECRET, so the
+    # fallback chain covers both OPENJARVIS_GOOGLE_* and Google_* styles.
+    provider_upper = provider.name.upper()
+    candidate_pairs = [
+        (f"OPENJARVIS_{provider_upper}_CLIENT_ID", f"OPENJARVIS_{provider_upper}_CLIENT_SECRET"),
+        (f"{provider_upper}_CLIENT_ID", f"{provider_upper}_CLIENT_SECRET"),
+        (f"{provider.name.capitalize()}_CLIENT_ID", f"{provider.name.capitalize()}_CLIENT_SECRET"),
+        (f"{provider_upper}_OAUTH_CLIENT_ID", f"{provider_upper}_OAUTH_CLIENT_SECRET"),
+    ]
+    for id_key, secret_key in candidate_pairs:
+        env_id = os.environ.get(id_key, "")
+        env_secret = os.environ.get(secret_key, "")
+        if env_id and env_secret:
+            return env_id, env_secret
 
     return None
 

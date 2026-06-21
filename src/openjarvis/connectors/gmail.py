@@ -651,3 +651,51 @@ class GmailConnector(BaseConnector):
                 category="communication",
             ),
         ]
+
+
+def _load_env() -> None:
+    """Load project .env into os.environ if missing (never overrides)."""
+    import os
+    from pathlib import Path
+
+    env_file = Path(__file__).parent.parent.parent.parent / ".env"
+    if not env_file.is_file():
+        return
+    for line in env_file.read_text(encoding="utf-8", errors="replace").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, val = line.partition("=")
+        key = key.strip()
+        val = val.strip().strip('"').strip("'")
+        if key and key.isidentifier() and key not in os.environ:
+            os.environ[key] = val
+
+
+if __name__ == "__main__":
+    import sys
+
+    _load_env()
+    from openjarvis.connectors.oauth import run_connector_oauth
+
+    args = sys.argv[1:]
+    cmd = args[0] if args else "oauth-setup"
+
+    if cmd == "oauth-setup":
+        print("Starting Gmail OAuth setup…")
+        try:
+            run_connector_oauth("gmail")
+            print("Gmail OAuth complete. Token saved.")
+        except Exception as exc:  # noqa: BLE001
+            print(f"Gmail OAuth setup failed: {exc}", file=sys.stderr)
+            sys.exit(1)
+    elif cmd == "status":
+        connector = GmailConnector()
+        print(f"Gmail connected: {connector.is_connected()}")
+    else:
+        print(f"Unknown command: {cmd!r}", file=sys.stderr)
+        print(
+            "Usage: python3 -m openjarvis.connectors.gmail [oauth-setup|status]",
+            file=sys.stderr,
+        )
+        sys.exit(1)

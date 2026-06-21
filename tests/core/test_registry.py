@@ -109,3 +109,65 @@ def test_miner_registry_cleared_between_tests():
     from openjarvis.core.registry import MinerRegistry
     # If autouse clear works, no entry from prior tests remains
     assert MinerRegistry.contains("stub-pearl") is False
+
+
+# ---------------------------------------------------------------------------
+# Idempotent re-registration tests (covers the ``-m`` double-import fix)
+# ---------------------------------------------------------------------------
+
+
+def test_idempotent_reregister_same_qualname():
+    """Re-registering the same class name under the same key must be a no-op."""
+    from openjarvis.core.registry import ConnectorRegistry
+
+    ConnectorRegistry.clear()
+
+    @ConnectorRegistry.register("test-idem")
+    class _MyConnector:
+        pass
+
+    # Simulate the ``-m`` double-import: a second class object with the
+    # same __qualname__ (Python creates a fresh class object on re-exec).
+    @ConnectorRegistry.register("test-idem")
+    class _MyConnector:  # noqa: F811 — intentional redefinition for test
+        pass
+
+    assert ConnectorRegistry.contains("test-idem")
+
+
+def test_duplicate_different_class_still_raises():
+    """Different classes registered under the same key must still raise."""
+    from openjarvis.core.registry import ConnectorRegistry
+
+    ConnectorRegistry.clear()
+
+    @ConnectorRegistry.register("test-conflict")
+    class _FirstConnector:
+        pass
+
+    with pytest.raises(ValueError, match="already has an entry"):
+
+        @ConnectorRegistry.register("test-conflict")
+        class _SecondConnector:
+            pass
+
+
+def test_registry_module_dash_m_no_crash():
+    """Importing connectors.gmail does not crash due to duplicate registration."""
+    from openjarvis.core.registry import ConnectorRegistry
+
+    # Clear so we start from a known state.
+    ConnectorRegistry.clear()
+
+    # First import registers the connector.
+    import importlib
+    import sys
+
+    # Remove cached module so the import runs module-level code again.
+    sys.modules.pop("openjarvis.connectors.gmail", None)
+    importlib.import_module("openjarvis.connectors.gmail")
+
+    # Second import of the same module must be a no-op (cached in sys.modules).
+    importlib.import_module("openjarvis.connectors.gmail")
+
+    assert ConnectorRegistry.contains("gmail")

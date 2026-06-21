@@ -3,6 +3,7 @@ import { Routes, Route } from 'react-router';
 import { Layout } from './components/Layout';
 import { ChatPage } from './pages/ChatPage';
 import { JarvisHomePage } from './components/Jarvis/JarvisHomePage';
+import { JarvisCockpitPage } from './pages/JarvisCockpitPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { GetStartedPage } from './pages/GetStartedPage';
@@ -194,7 +195,8 @@ export default function App() {
       <UpdateChecker />
       <Routes>
         <Route element={<Layout />}>
-          <Route index element={<JarvisHomePage />} />
+          <Route index element={<JarvisCockpitPage />} />
+          <Route path="classic" element={<JarvisHomePage />} />
           <Route path="chat" element={<ChatPage />} />
           <Route path="dashboard" element={<DashboardPage />} />
           <Route path="settings" element={<SettingsPage />} />
