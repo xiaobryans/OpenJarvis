@@ -199,47 +199,42 @@ export function Sidebar() {
           </div>
 
           {/* Cloud status badge */}
-          <div
-            className="mx-2 mb-1 px-2 py-1.5 rounded-lg flex items-center gap-2 text-xs shrink-0"
-            style={{
-              background: nodeStatus === 'online'
-                ? 'color-mix(in srgb, var(--color-success, #22c55e) 8%, var(--color-bg-secondary))'
-                : nodeStatus === 'offline'
-                ? 'color-mix(in srgb, var(--color-error, #ef4444) 8%, var(--color-bg-secondary))'
-                : 'var(--color-bg-secondary)',
-              border: '1px solid var(--color-border)',
-            }}
-          >
-            <Cloud
-              size={12}
-              style={{
-                color: nodeStatus === 'online'
-                  ? 'var(--color-success, #22c55e)'
-                  : nodeStatus === 'offline'
-                  ? 'var(--color-error, #ef4444)'
-                  : 'var(--color-text-tertiary)',
-                flexShrink: 0,
-              }}
-            />
-            <div className="flex-1 min-w-0">
-              <div className="font-medium truncate" style={{ color: 'var(--color-text)' }}>
-                Mission Control
+          {(() => {
+            // "desktop app only" is an informational state, not an error
+            const isWebMode = error?.includes('desktop app');
+            const isOnline = nodeStatus === 'online';
+            const isError = nodeStatus === 'offline' && !isWebMode;
+            const badgeBg = isOnline
+              ? 'color-mix(in srgb, var(--color-success, #22c55e) 8%, var(--color-bg-secondary))'
+              : isError
+              ? 'color-mix(in srgb, var(--color-error, #ef4444) 8%, var(--color-bg-secondary))'
+              : 'var(--color-bg-secondary)';
+            const iconColor = isOnline
+              ? 'var(--color-success, #22c55e)'
+              : isError
+              ? 'var(--color-error, #ef4444)'
+              : 'var(--color-text-tertiary)';
+            return (
+              <div
+                className="mx-2 mb-1 px-2 py-1.5 rounded-lg flex items-center gap-2 text-xs shrink-0"
+                style={{ background: badgeBg, border: '1px solid var(--color-border)' }}
+              >
+                <Cloud size={12} style={{ color: iconColor, flexShrink: 0 }} />
+                <div className="flex-1 min-w-0">
+                  <div className="font-medium truncate" style={{ color: 'var(--color-text)' }}>
+                    Cloud Node
+                  </div>
+                  <div className="truncate" style={{ color: isOnline ? 'var(--color-success, #22c55e)' : isError ? 'var(--color-error, #ef4444)' : 'var(--color-text-tertiary)' }}>
+                    {isOnline
+                      ? `Cloud Active · ${bundle?.hostname ?? 'openclaw-mobile'} · ${bundle?.tailscale_ip ?? '100.118.81.37'}`
+                      : isWebMode
+                      ? 'Desktop app only'
+                      : error || 'Cloud Unreachable'}
+                  </div>
+                </div>
               </div>
-              <div className="truncate" style={{
-                color: nodeStatus === 'online'
-                  ? 'var(--color-success, #22c55e)'
-                  : nodeStatus === 'offline'
-                  ? 'var(--color-error, #ef4444)'
-                  : 'var(--color-text-tertiary)',
-              }}>
-                {nodeStatus === 'online'
-                  ? `Cloud Active · ${bundle?.hostname ?? 'openclaw-mobile'} · ${bundle?.tailscale_ip ?? '100.118.81.37'}`
-                  : nodeStatus === 'offline'
-                  ? error || 'Cloud Unreachable'
-                  : 'Checking…'}
-              </div>
-            </div>
-          </div>
+            );
+          })()}
 
           {/* Bottom nav */}
           <nav className="px-2 pb-3 pt-2 flex flex-col gap-0.5" style={{ borderTop: '1px solid var(--color-border)' }}>

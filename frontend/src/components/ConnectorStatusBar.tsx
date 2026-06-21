@@ -8,7 +8,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router';
-import { listConnectors } from '../lib/connectors-api';
+import { apiFetch } from '../lib/api';
 
 type ChipStatus = 'live' | 'blocked' | 'parked' | 'pending' | 'checking';
 
@@ -112,15 +112,23 @@ export function ConnectorStatusBar() {
   const [githubTooltip, setGithubTooltip] = useState('GitHub — checking…');
 
   const checkGitHub = useCallback(async () => {
+    // GitHub live status comes from the /v1/tools registry — the gh CLI keyring connector
+    // registers github.connector_status with is_available=true when configured.
+    // There is no 'github' entry in /v1/connectors (that endpoint covers OAuth connectors).
     try {
-      const connectors = await listConnectors();
-      const gh = connectors.find(c => c.connector_id === 'github');
-      if (gh?.connected) {
+      const resp = await apiFetch('/v1/tools');
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const data = await resp.json() as { tools?: Array<{ tool_id: string; is_available: boolean; blocker?: string }> };
+      const ghTool = (data.tools ?? []).find(t => t.tool_id === 'github.connector_status');
+      if (ghTool?.is_available) {
         setGithubStatus('live');
-        setGithubTooltip('GitHub LIVE — gh CLI keyring authenticated.');
+        setGithubTooltip('GitHub LIVE — gh CLI keyring authenticated; github.connector_status available.');
+      } else if (ghTool) {
+        setGithubStatus('blocked');
+        setGithubTooltip(`GitHub — tool registered but unavailable: ${ghTool.blocker || 'no blocker detail'}`);
       } else {
         setGithubStatus('blocked');
-        setGithubTooltip('GitHub — not connected. Set up via Data Sources.');
+        setGithubTooltip('GitHub — tool not registered. Backend may be offline.');
       }
     } catch {
       setGithubStatus('blocked');

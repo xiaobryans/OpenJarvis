@@ -34,6 +34,24 @@ export function useCloudStatus(): CloudStatus {
   const [error, setError] = useState<string | null>(null);
 
   const poll = useCallback(async () => {
+    // Tauri invoke is only available inside the packaged desktop app.
+    // Tauri v1 exposes __TAURI_IPC__, Tauri v2 exposes __TAURI_INTERNALS__.
+    // In web/hosted mode both are undefined — skip the call cleanly.
+    const isTauriApp =
+      typeof window !== 'undefined' &&
+      (// eslint-disable-next-line @typescript-eslint/no-explicit-any
+       typeof (window as any).__TAURI_INTERNALS__ !== 'undefined' ||
+       // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       typeof (window as any).__TAURI_IPC__ !== 'undefined');
+
+    if (!isTauriApp) {
+      setNodeStatus('offline');
+      setBundle(null);
+      setError('Cloud node only available in the desktop app.');
+      setLastChecked(new Date().toLocaleTimeString());
+      return;
+    }
+
     setNodeStatus('checking');
     setError(null);
     try {
@@ -45,7 +63,13 @@ export function useCloudStatus(): CloudStatus {
     } catch (e) {
       setNodeStatus('offline');
       setBundle(null);
-      setError(String(e));
+      // Sanitize: never show raw JS TypeError messages to the user
+      const msg = String(e);
+      setError(
+        msg.startsWith('TypeError') || msg.startsWith('ReferenceError')
+          ? 'Cloud node unreachable'
+          : msg,
+      );
     }
     setLastChecked(new Date().toLocaleTimeString());
   }, [cloudUrl]);
