@@ -73,7 +73,20 @@ class TestMobilePageAuthAndPayload:
 
 
 class TestConversationalRoutingGuard:
-    """Ensure 'Say X' conversational prompts don't hit CodingPipeline."""
+    """Ensure conversational prompts don't hit CodingPipeline."""
+
+    def test_cloud_jarvis_test_ok_is_not_coding_intent(self):
+        """Exact phrase from Bryan's iPhone proof — must NOT route to CodingPipeline.
+
+        Root cause: 'test' is in both _CODING_VERBS and _CODING_OBJECTS.
+        A single ambiguous word must not trigger pipeline routing.
+        """
+        from openjarvis.workbench.pipeline import detect_coding_intent
+
+        assert not detect_coding_intent("Cloud Jarvis test ok"), (
+            "'Cloud Jarvis test ok' must not route to CodingPipeline "
+            "(single ambiguous word 'test' is not sufficient coding intent signal)"
+        )
 
     def test_say_command_is_not_coding_intent(self):
         from openjarvis.workbench.pipeline import detect_coding_intent
@@ -99,6 +112,12 @@ class TestConversationalRoutingGuard:
         assert not detect_coding_intent("are you running in cloud mode?")
         assert not detect_coding_intent("is this the cloud runtime?")
 
+    def test_summarize_mobile_mode_is_not_coding_intent(self):
+        from openjarvis.workbench.pipeline import detect_coding_intent
+
+        assert not detect_coding_intent("Summarize what you can do in mobile mode.")
+        assert not detect_coding_intent("What runtime are you using?")
+
     def test_coding_requests_still_route_correctly(self):
         """Coding requests must still be classified correctly after the guard."""
         from openjarvis.workbench.pipeline import detect_coding_intent
@@ -107,3 +126,5 @@ class TestConversationalRoutingGuard:
         assert detect_coding_intent("patch the failing test")
         assert detect_coding_intent("continue the current sprint")
         assert detect_coding_intent("implement the new auth route")
+        assert detect_coding_intent("test the auth endpoint")
+        assert detect_coding_intent("build and push the docker image")

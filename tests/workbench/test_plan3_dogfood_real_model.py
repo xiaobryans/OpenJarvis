@@ -413,6 +413,16 @@ class TestFrontDoorRoutingRealModel:
 
         assert not detect_coding_intent("what is the weather like today")
 
+    def test_detect_coding_intent_does_not_match_cloud_jarvis_test_ok(self):
+        """'Cloud Jarvis test ok' must NOT route to CodingPipeline.
+
+        Root cause: single ambiguous word 'test' (member of both _CODING_VERBS
+        and _CODING_OBJECTS) must not be sufficient signal by itself.
+        """
+        from openjarvis.workbench.pipeline import detect_coding_intent
+
+        assert not detect_coding_intent("Cloud Jarvis test ok")
+
     def test_detect_coding_intent_does_not_match_say_command(self):
         """'Say X' conversational prompt must NOT route to CodingPipeline (cloud daily-driver)."""
         from openjarvis.workbench.pipeline import detect_coding_intent

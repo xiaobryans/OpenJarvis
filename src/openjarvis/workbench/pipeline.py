@@ -160,9 +160,23 @@ def detect_coding_intent(message: str) -> bool:
     if has_file and has_verb:
         return True
 
-    # Strong: action verb + coding object
+    # Strong: action verb + coding object.
+    # Guard: words that are members of BOTH _CODING_VERBS and _CODING_OBJECTS (e.g. "test",
+    # "build", "fix", "patch", "lint") are ambiguous — a single ambiguous word like "test"
+    # should not fire CodingPipeline on conversational messages like "Cloud Jarvis test ok".
+    # Require that either (a) at least one verb is NOT also an object (unambiguous imperative),
+    # or (b) there is at least one ADDITIONAL coding object beyond the ambiguous verb-object word.
     if has_verb and has_object:
-        return True
+        _verb_hits = words & _CODING_VERBS
+        _obj_hits = words & _CODING_OBJECTS
+        _pure_verbs = _verb_hits - _CODING_OBJECTS  # unambiguous: verb-only words (add, create, …)
+        if _pure_verbs:
+            return True
+        # All verb hits are also coding objects (ambiguous: test, build, fix, patch, lint)
+        _extra_objects = _obj_hits - _verb_hits  # objects beyond the ambiguous word
+        if _extra_objects:
+            return True
+        # Single ambiguous word (e.g. only "test") — not enough signal; fall through
 
     # Continue/resume sprint or workflow
     if _re.search(r'\b(continue|resume)\b.{0,30}\b(sprint|workflow|task|coding)\b', lower):
