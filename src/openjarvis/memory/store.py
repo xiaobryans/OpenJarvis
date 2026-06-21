@@ -557,6 +557,25 @@ class JarvisMemory:
             for r in rows
         ]
 
+    def list_expired(self, *, now: Optional[float] = None) -> List[MemoryEntry]:
+        """Return all entries whose expires_at is set and in the past.
+
+        Parameters
+        ----------
+        now     Timestamp to use as 'now'. Defaults to current time.
+                Accepts an override for deterministic testing.
+        """
+        ts = now if now is not None else time.time()
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM memory_entries "
+                "WHERE expires_at IS NOT NULL AND expires_at <= ? "
+                "AND status != 'deleted' "
+                "ORDER BY expires_at ASC",
+                (ts,),
+            ).fetchall()
+        return [self._row_to_entry(r) for r in rows]
+
     def get(self, entry_id: str) -> Optional[MemoryEntry]:
         with self._connect() as conn:
             row = conn.execute(

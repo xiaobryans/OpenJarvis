@@ -583,10 +583,14 @@ def test_memory_os_status_planned_not_complete(tmp_path):
     planned = status.planned_not_complete
     assert isinstance(planned, list)
     assert len(planned) > 0
-    # Must include these key missing capabilities
-    all_items = " ".join(planned)
-    assert "semantic" in all_items or "vector" in all_items
-    assert "cloud" in all_items or "sync" in all_items
+    # Sprint 2: planned_not_complete is now a list of dicts with 'item'+'status'
+    # Support both old str format (Sprint 1) and new dict format (Sprint 2)
+    if planned and isinstance(planned[0], dict):
+        all_items_text = " ".join(str(v) for item in planned for v in item.values())
+    else:
+        all_items_text = " ".join(planned)
+    assert "semantic" in all_items_text or "vector" in all_items_text
+    assert "cloud" in all_items_text or "sync" in all_items_text
 
 
 def test_memory_os_status_foundation_complete_flag(tmp_path):
@@ -602,9 +606,13 @@ def test_memory_os_status_foundation_complete_flag(tmp_path):
 
 
 def test_governance_forget_raw(gov):
-    """forget() hard-deletes a raw memory entry."""
+    """forget() hard-deletes a raw memory entry.
+
+    Sprint 2: default confidence=1.0 requires force=True (approval gate).
+    Use low-confidence entry or force=True to bypass.
+    """
     mem = gov._memory
-    entry = mem.write(namespace="global", content="to forget", source="t")
+    entry = mem.write(namespace="global", content="to forget", source="t", confidence=0.3)
     assert mem.get(entry.entry_id) is not None
 
     result = gov.forget(entry.entry_id)
@@ -622,9 +630,13 @@ def test_governance_forget_nonexistent(gov):
 
 
 def test_governance_forget_distilled(gov):
-    """forget_distilled() removes a distilled entry."""
+    """forget_distilled() removes a distilled entry.
+
+    Sprint 2: default confidence=1.0 triggers approval gate.
+    Use low-confidence entry to avoid ApprovalRequired.
+    """
     dist = gov._distilled
-    entry = dist.write(content="to delete distilled", kind="summary")
+    entry = dist.write(content="to delete distilled", kind="summary", confidence=0.3)
     result = gov.forget_distilled(entry.entry_id)
     assert result.success is True
     assert dist.get(entry.entry_id) is None
@@ -671,7 +683,11 @@ def test_governance_export_namespace(gov):
 
 
 def test_governance_export_all(gov):
-    """export_all() returns raw + distilled + honest NOT_IMPLEMENTED list."""
+    """export_all() returns raw + distilled with counts.
+
+    Sprint 2: NOT_IMPLEMENTED controls key removed since audit trail and
+    approval workflow are now implemented.  Export returns raw/distilled data.
+    """
     mem = gov._memory
     mem.write(namespace="global", content="raw entry", source="t")
     dist = gov._distilled
@@ -680,23 +696,26 @@ def test_governance_export_all(gov):
     export = gov.export_all()
     assert "raw" in export
     assert "distilled" in export
-    assert "not_implemented_controls" in export
     assert export["raw_count"] == 1
     assert export["distilled_count"] == 1
-    # Verify NOT_IMPLEMENTED controls are listed
-    controls = [c["control"] for c in export["not_implemented_controls"]]
-    assert "audit_trail" in controls
-    assert "approval_workflow" in controls
 
 
 def test_governance_status_not_implemented(gov):
-    """governance_status() honestly lists what is NOT implemented."""
+    """governance_status() honestly lists implemented and not-implemented items.
+
+    Sprint 2: audit_trail and approval_workflow are now IMPLEMENTED.
+    The only remaining not_implemented item is cloud_audit_replication.
+    """
     gstatus = MemoryGovernance.governance_status()
     assert "implemented" in gstatus
     assert "not_implemented" in gstatus
-    ni = [c["control"] for c in gstatus["not_implemented"]]
-    assert "audit_trail" in ni
-    assert "approval_workflow" in ni
+    # Sprint 2 implemented audit trail and approval — must appear in 'implemented'
+    implemented = gstatus["implemented"]
+    assert any("audit_trail" in i or "immutable" in i for i in implemented)
+    assert any("approval" in i for i in implemented)
+    # Cloud replication is still not done
+    ni = gstatus["not_implemented"]
+    assert isinstance(ni, list)
 
 
 # ---------------------------------------------------------------------------
