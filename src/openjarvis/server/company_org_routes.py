@@ -666,6 +666,16 @@ def get_mobile_page() -> Any:
   </div>
 
   <div class="card">
+    <h2>API Key</h2>
+    <p style="font-size:0.8rem; color:var(--muted); margin-bottom:0.5rem;">
+      Required for cloud mode. Saved in browser localStorage — never sent anywhere else.
+    </p>
+    <input type="password" id="api-key-input" placeholder="Bearer token (OPENJARVIS_API_KEY)">
+    <button onclick="saveApiKey()">Save Key</button>
+    <span id="key-status" style="font-size:0.75rem; color:var(--muted); margin-left:0.5rem;"></span>
+  </div>
+
+  <div class="card">
     <h2>Text Input (Fallback — Always Available)</h2>
     <p style="font-size:0.8rem; color:var(--muted); margin-bottom:0.5rem;">
       Mic failure / no permission / noise → use text input below.
@@ -751,19 +761,52 @@ async function loadMacbookOffStatus() {
   }
 }
 
+function getApiKey() {
+  return localStorage.getItem('jarvis_api_key') || '';
+}
+
+function saveApiKey() {
+  const k = document.getElementById('api-key-input').value.trim();
+  if (k) {
+    localStorage.setItem('jarvis_api_key', k);
+    document.getElementById('key-status').textContent = 'Saved ✓';
+    document.getElementById('api-key-input').value = '';
+  } else {
+    document.getElementById('key-status').textContent = 'Enter a key first';
+  }
+}
+
+function loadApiKeyStatus() {
+  const k = getApiKey();
+  document.getElementById('key-status').textContent = k ? 'Key loaded ✓' : 'No key — local mode only';
+}
+
 async function submitText() {
   const text = document.getElementById('text-input').value.trim();
   if (!text) return;
+  const apiKey = getApiKey();
   const out = document.getElementById('status-output');
-  out.textContent = 'Sending...';
+  out.textContent = 'Sending…';
+  const headers = {'Content-Type': 'application/json'};
+  if (apiKey) headers['Authorization'] = 'Bearer ' + apiKey;
   try {
-    const r = await fetch('/v1/company-org/task', {
+    const r = await fetch('/v1/chat/completions', {
       method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({task_description: text, role_id: 'manager-coding'})
+      headers: headers,
+      body: JSON.stringify({
+        model: 'default',
+        messages: [{ role: 'user', content: text }],
+        stream: false
+      })
     });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      out.textContent = 'Error ' + r.status + ': ' + (err.detail || JSON.stringify(err));
+      return;
+    }
     const d = await r.json();
-    out.textContent = JSON.stringify(d, null, 2);
+    const reply = d?.choices?.[0]?.message?.content ?? d?.error ?? JSON.stringify(d);
+    out.textContent = reply.slice(0, 800);
   } catch(e) { out.textContent = 'Error: ' + e.message; }
 }
 
@@ -851,6 +894,7 @@ async function triggerRemote() {
 }
 
 loadMacbookOffStatus();
+loadApiKeyStatus();
 </script>
 </body>
 </html>"""

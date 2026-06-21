@@ -413,6 +413,22 @@ class TestFrontDoorRoutingRealModel:
 
         assert not detect_coding_intent("what is the weather like today")
 
+    def test_detect_coding_intent_does_not_match_say_command(self):
+        """'Say X' conversational prompt must NOT route to CodingPipeline (cloud daily-driver)."""
+        from openjarvis.workbench.pipeline import detect_coding_intent
+
+        assert not detect_coding_intent(
+            "Say cloud Jarvis test OK and tell me what runtime you are using."
+        )
+
+    def test_detect_coding_intent_does_not_match_greeting(self):
+        from openjarvis.workbench.pipeline import detect_coding_intent
+
+        assert not detect_coding_intent("Hi, how are you doing today?")
+        assert not detect_coding_intent("Hello Jarvis")
+        assert not detect_coding_intent("are you running in cloud mode?")
+        assert not detect_coding_intent("is this the cloud runtime?")
+
     @ollama_mark
     def test_create_worker_is_real_model_when_ollama_running(self):
         """create_worker() must return a real model worker when Ollama is up."""

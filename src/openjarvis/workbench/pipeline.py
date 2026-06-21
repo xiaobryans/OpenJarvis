@@ -111,6 +111,11 @@ _CONCEPTUAL_STARTERS = (
     "why is", "why are", "why does", "why do",
     "explain", "tell me", "describe", "can you explain",
     "what's the difference", "when should", "where is",
+    # Conversational/instructional starters — not coding commands
+    "say ", "say,", "please say",
+    "hi ", "hello ", "hey ",
+    "who are you", "who is", "introduce yourself",
+    "are you ", "is this ", "is jarvis",
 )
 
 

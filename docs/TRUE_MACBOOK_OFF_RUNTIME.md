@@ -2,7 +2,7 @@
 
 **Branch:** `localhost-get-tool`
 **Created:** 2026-06-22
-**Status:** `TRUE_MACBOOK_OFF_RUNTIME_DESIGN_ACCEPT_PENDING_REVIEW`
+**Status:** `LIMITED_ACCEPT_PENDING_REVIEW` — cloud backend live; mobile auth + routing fixed locally; ECS redeploy required for full cloud-mobile daily driver proof
 
 ---
 
@@ -164,8 +164,10 @@ The ECS Fargate full runtime is already deployed, already answering requests, an
    ```
    - No LAN required
    - MacBook can be off
+   - Enter your ECS API key in the "API Key" card
+   - Type "Say cloud Jarvis test OK and tell me what runtime you are using." → should get normal AI reply (not CodingPipeline)
 
-3. **Optional: rebuild ECS image** to include latest code (sprints 7C–8B + memory_routes fix):
+3. **Rebuild ECS image (REQUIRED for full cloud-mobile fix)** — current ECS is Plan 4-era code; auth + routing fixes are in HEAD `localhost-get-tool` but not yet deployed:
    ```bash
    # Requires Bryan approval — do not run without authorization
    docker build -f deploy/aws/Dockerfile.full -t jarvis-full .
@@ -188,6 +190,21 @@ Added `_runtime_mode()` helper and `runtime_mode` + `cloud_url` fields to `/v1/m
 - `runtime_mode: "cloud"` when running on ECS
 - `runtime_mode: "local_lan"` when running on MacBook
 - `cloud_url`: reports the configured `JARVIS_CLOUD_URL` env var if set, for mobile clients to discover the cloud backend
+
+### Cloud Mobile Auth + Chat Routing (Sprint 8C)
+Fixed three blockers found during Bryan's manual cloud proof:
+
+1. **Mobile `/mobile` page `submitText()`**: Was POSTing to `/v1/company-org/task` (wrong endpoint, no auth, no model). Fixed to POST to `/v1/chat/completions` with:
+   - `Authorization: Bearer <api_key>` from localStorage
+   - `model: "default"` in payload
+   - `messages: [{role:"user", content:...}]` OpenAI-compatible shape
+   - Display of assistant response text (not raw JSON blob)
+
+2. **API key input on mobile page**: Added password input + `saveApiKey()` + localStorage persistence. Key is never sent anywhere except the Authorization header. Key presence shown on page load.
+
+3. **CodingPipeline false-positive routing**: "Say X and tell me Y" conversational prompts were classified as coding intent because `"test"` is both a `_CODING_VERB` and `_CODING_OBJECT`. Fixed by adding `"say "`, `"say,"`, `"please say"`, greeting starters, and identity/runtime-check phrases to `_CONCEPTUAL_STARTERS` in `pipeline.py`.
+
+**Cloud deploy still required** for ECS to serve the fixed code. Current ECS image is Plan 4-era and does not include this fix. Bryan must approve ECS rebuild/push.
 
 ### Docs
 - This file: `docs/TRUE_MACBOOK_OFF_RUNTIME.md`
