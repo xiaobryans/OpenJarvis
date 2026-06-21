@@ -125,4 +125,16 @@ This sprint closed all remaining non-parked blockers before final hostile/lazy-u
 
 ## Packaged App Rust Bridge Status
 
-**UNVERIFIED** — Tauri's bundled Python env is separate from the `uv` env. `uv run` path has `RUST_AVAILABLE=True`; packaged app Rust bridge requires a separate physical test.
+**CLASSIFIED — uv-server Rust memory active; standalone packaged-backend Rust bridge unverified.**
+
+- The `/Applications/OpenJarvis.app` bundle contains only `openjarvis-desktop` (Tauri binary) + `icon.icns`. No embedded Python sidecar, no bundled Python runtime.
+- The Tauri UI connects to the uv-served backend via localhost HTTP (`http://127.0.0.1:8000`).
+- Rust memory is active through the `uv run` server path (`RUST_AVAILABLE=True` confirmed).
+- There is no separate bundled Python/Rust runtime in the `.app` bundle — the packaged app depends on the uv backend being running.
+- **Implication for daily driver:** Start `uv run python -m openjarvis.cli serve --host 0.0.0.0 --port 8000` first, then open the app. Rust memory active through that path.
+
+## Stabilization Cleanup (2026-06-22)
+
+- `docs/MOBILE_ACCESS_HANDOFF.md` — fixed two remaining stale `python3` server commands (line 146 authority restart, line 157 recovery restart) to `uv run`
+- `BRYAN_MANUAL_ACTIONS_REQUIRED.md` — updated header to reflect completed certification, fixed `python3` connector verification commands to `uv run python`, updated stale footer
+- `docs/certification/LATEST_CURSOR_HANDOFF_REPORT.md` — packaged app Rust bridge classified; stabilization cleanup recorded

@@ -143,7 +143,7 @@ In the React app, navigate to `/get-started` or `/settings` to configure the mob
 3. **Voice not available** — US13 is `PARKED / UNSAFE`. Text input fallback available.
 4. **No native mobile app** — mobile access is PWA/browser-only. No TestFlight, no App Store, no native iOS/Android app.
 5. **LAN-only limitation** — without AWS deployment, MacBook must be on same network.
-6. **Authority routes: fresh server restart** — if the Jarvis server has been running since before Plan 8B was deployed, a restart is required: `python3 -m openjarvis.cli serve` (kill and restart).
+6. **Authority routes: fresh server restart** — if the Jarvis server has been running since before Plan 8B was deployed, a restart is required: `uv run python -m openjarvis.cli serve --host 0.0.0.0 --port 8000` (kill and restart).
 7. **macOS Screen/System Audio permission prompt** — on first launch, macOS may prompt for screen recording / system audio access. Accept once; prompt recurs at most every 5 minutes per sprint cache.
 
 ---
@@ -154,7 +154,7 @@ If mobile cannot reach backend:
 1. Verify MacBook is on and Jarvis server is running (`ps aux | grep jarvis`).
 2. Verify same Wi-Fi network.
 3. Check LAN IP hasn't changed: `ipconfig getifaddr en0`.
-4. Restart server: `cd /Users/user/OpenJarvis && python3 -m openjarvis.cli serve`.
+4. Restart server: `cd /Users/user/OpenJarvis && uv run python -m openjarvis.cli serve --host 0.0.0.0 --port 8000`.
 5. Hard-refresh mobile browser (Safari: hold-refresh icon; Chrome: settings → refresh).
 
 If React SPA shows blank screen:

@@ -1,13 +1,27 @@
 # BRYAN MANUAL ACTIONS REQUIRED
 
 **Branch:** `localhost-get-tool`
-**Updated:** 2026-06-22 (Pre-Final Blocker Closure Sprint)
+**Updated:** 2026-06-22 (Stabilization Cleanup — post FINAL_CUTOVER_CERTIFICATION_ACCEPT_PENDING_REVIEW)
 
 These are actions only Bryan can take. Sorted by priority.
 
 ---
 
-## REQUIRED BEFORE FINAL CUTOVER CERTIFICATION
+## COMPLETED — Final Cutover Certification Accepted
+
+Text/mobile daily-driver cutover: **FINAL_CUTOVER_CERTIFICATION_ACCEPT_PENDING_REVIEW**
+
+**Daily restart command:**
+```bash
+cd /Users/user/OpenJarvis
+uv run python -m openjarvis.cli serve --host 0.0.0.0 --port 8000
+```
+
+**iPhone URL:** `http://$(ipconfig getifaddr en0):8000/mobile`
+
+---
+
+## OPTIONAL REMAINING MANUAL ITEMS
 
 ### 1. Verify MacBook-off continuity status on iPhone
 
@@ -48,7 +62,7 @@ gh auth status
 
 ```bash
 cd /Users/user/OpenJarvis
-python3 -c "
+uv run python -c "
 from openjarvis.connectors.gmail import GmailConnector
 c = GmailConnector()
 print('Gmail is_connected:', c.is_connected())
@@ -60,7 +74,7 @@ Expected: `Gmail is_connected: True`
 
 ```bash
 cd /Users/user/OpenJarvis
-python3 -c "
+uv run python -c "
 from openjarvis.connectors.gcalendar import GCalendarConnector
 c = GCalendarConnector()
 print('Calendar is_connected:', c.is_connected())
@@ -98,4 +112,4 @@ curl -s http://127.0.0.1:8000/v1/connectors | python3 -m json.tool
 
 ---
 
-*Next step after manual verification: run final hostile/lazy-user cutover certification.*
+*Certification complete. Next step: accept FINAL_CUTOVER_CERTIFICATION_ACCEPT_PENDING_REVIEW verdict and begin daily-driver use.*
