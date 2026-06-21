@@ -509,6 +509,13 @@ class AgentExecutor:
         agent_ctx = AgentContext()
         memory_results = []
 
+        # Compute retrieval query once — shared by knowledge-base and Memory OS blocks
+        _mem_query = ""
+        if pending:
+            _mem_query = " ".join(m["content"] for m in pending)
+        elif instruction:
+            _mem_query = instruction
+
         if (
             self._system
             and getattr(self._system, "memory_backend", None)
@@ -527,12 +534,8 @@ class AgentExecutor:
                     min_score=sys_cfg.memory.context_min_score,
                     max_context_tokens=sys_cfg.memory.context_max_tokens,
                 )
-                # Use pending user messages as query, fall back to instruction
-                query = ""
-                if pending:
-                    query = " ".join(m["content"] for m in pending)
-                elif instruction:
-                    query = instruction
+                # Use shared query variable
+                query = _mem_query
 
                 if query:
                     results = self._system.memory_backend.retrieve(
@@ -552,6 +555,41 @@ class AgentExecutor:
                         )
             except Exception:
                 pass  # Don't break agent tick if memory retrieval fails
+
+        # Memory OS (JarvisMemory) context injection — long-term personal context
+        # This is separate from the vector/BM25 knowledge base above.
+        # Injects relevant raw memory entries (decisions, preferences, observations)
+        # when context_from_memory is enabled.  Gracefully skipped on any error.
+        if (
+            self._system
+            and getattr(self._system, "config", None)
+            and self._system.config.agent.context_from_memory
+            and _mem_query
+        ):
+            try:
+                from openjarvis.memory.context import MemoryContextBuilder
+
+                project_id = getattr(
+                    self._system.config, "project_id", ""
+                ) or ""
+
+                mem_ctx = MemoryContextBuilder()
+                injected = mem_ctx.build_context(
+                    _mem_query,
+                    project_id=project_id,
+                    context_from_memory=True,
+                    max_items=4,
+                    max_chars=1200,
+                )
+                if injected.context_text:
+                    input_text = injected.context_text + "\n\n" + input_text
+                    logger.debug(
+                        "Memory OS injected %d entries for agent %s",
+                        injected.entries_used,
+                        agent["name"],
+                    )
+            except Exception:
+                pass  # Never break agent tick for memory injection failure
 
         agent_ctx.memory_results = memory_results
         self._set_activity(agent["id"], "Generating response...")
