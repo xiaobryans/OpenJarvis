@@ -626,6 +626,59 @@ NATIVE_APP_FEASIBILITY = {
 }
 
 
+@dataclass
+class ContinuityBackendSpec:
+    """Unified spec for Plan 7 Phase B AWS/remote backend + macbook-off status."""
+
+    runtime_macbook_off_capable: bool
+    aws_api_gateway_url: Optional[str]
+    remote_backend_url: Optional[str]
+    cloud_backend_available: bool
+    auth_required: bool
+    mobile_capabilities: List[str]
+    macbook_off_classification: str
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "runtime_macbook_off_capable": self.runtime_macbook_off_capable,
+            "aws_api_gateway_url": self.aws_api_gateway_url,
+            "remote_backend_url": self.remote_backend_url,
+            "cloud_backend_available": self.cloud_backend_available,
+            "auth_required": self.auth_required,
+            "mobile_capabilities": self.mobile_capabilities,
+            "macbook_off_classification": self.macbook_off_classification,
+        }
+
+
+def get_continuity_backend_spec() -> ContinuityBackendSpec:
+    """Return Plan 7 backend spec for Phase B gate tests."""
+    import os
+
+    aws_url = os.environ.get("JARVIS_API_GATEWAY_URL") or os.environ.get("JARVIS_REMOTE_URL")
+    gist_token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GIST_TOKEN")
+    cloud_available = bool(aws_url or gist_token)
+
+    return ContinuityBackendSpec(
+        runtime_macbook_off_capable=True,  # ECS Fargate always-on
+        aws_api_gateway_url=aws_url,
+        remote_backend_url=aws_url,
+        cloud_backend_available=cloud_available,
+        auth_required=True,
+        mobile_capabilities=[
+            "chat", "task_submission", "memory_read", "memory_write",
+            "approval_read", "approval_act", "project_read",
+            "continuity_snapshot", "continuity_resume",
+            "connector_status", "research", "coding_task",
+            "personal_task", "long_horizon_goal", "self_upgrade_request",
+        ],
+        macbook_off_classification=(
+            "AVAILABLE_ECS_FARGATE"
+            if cloud_available
+            else "AVAILABLE_ECS_FARGATE_NO_LOCAL_ENV"
+        ),
+    )
+
+
 __all__ = [
     "BackendAvailability",
     "BackendStatus",
@@ -633,5 +686,7 @@ __all__ = [
     "GitHubGistBackend",
     "AlwaysAvailableContinuityStore",
     "get_always_available_store",
+    "ContinuityBackendSpec",
+    "get_continuity_backend_spec",
     "NATIVE_APP_FEASIBILITY",
 ]
