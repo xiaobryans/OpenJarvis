@@ -72,40 +72,25 @@ class TestMemoryStatusEndpoint:
             # Should have a field indicating active ranker
             assert "active_ranker" in ss or "vector_search" in ss or "openai_key_available" in ss
 
-    def test_semantic_search_honest_without_key(self, test_client):
-        """Without OPENAI_API_KEY, semantic search must not claim OpenAI is active."""
-        saved = os.environ.pop("OPENAI_API_KEY", None)
-        try:
-            # Re-import to clear cached key state
-            import importlib
-            import openjarvis.memory.retrieval as ret_mod
-            importlib.reload(ret_mod)
+    def test_semantic_search_honest_without_key(self):
+        """Without OPENAI_API_KEY, semantic search must report tfidf fallback.
 
-            resp = test_client.get("/v1/memory/status")
-            data = resp.json()
-            ss = data["semantic_search"]
+        Uses monkeypatch via patch to avoid importlib.reload() which pollutes
+        class identity for isinstance() checks in subsequent test modules.
+        """
+        import openjarvis.memory.retrieval as ret_mod
+        with patch.object(ret_mod, "_openai_key_available", return_value=False):
+            ss = ret_mod.SemanticSearchStatus.to_dict()
             if "active_ranker" in ss:
                 assert ss["active_ranker"] != "openai_embeddings"
-        finally:
-            if saved:
-                os.environ["OPENAI_API_KEY"] = saved
-            # reload again to restore
-            import importlib
-            import openjarvis.memory.retrieval as ret_mod
-            importlib.reload(ret_mod)
+            assert ss.get("vector_search", "") != "ACTIVE_OPENAI_EMBEDDINGS"
 
-    def test_semantic_search_active_when_key_present(self, test_client):
+    def test_semantic_search_active_when_key_present(self):
         """With OPENAI_API_KEY set, active_ranker should report openai."""
-        with patch.dict(os.environ, {"OPENAI_API_KEY": "sk-test-key-xxxx"}):
-            import importlib
-            import openjarvis.memory.retrieval as ret_mod
-            importlib.reload(ret_mod)
-
-            resp = test_client.get("/v1/memory/status")
-            data = resp.json()
-            ss = data["semantic_search"]
+        import openjarvis.memory.retrieval as ret_mod
+        with patch.object(ret_mod, "_openai_key_available", return_value=True):
+            ss = ret_mod.SemanticSearchStatus.to_dict()
             if "active_ranker" in ss:
-                # With key present, should report openai
                 assert "openai" in ss["active_ranker"].lower() or "tfidf" in ss["active_ranker"].lower()
 
     def test_ai_distillation_has_status_or_engine_field(self, test_client):

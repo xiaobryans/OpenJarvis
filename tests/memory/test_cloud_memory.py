@@ -82,6 +82,9 @@ class TestFallbackBehavior:
             "JARVIS_MEMORY_S3_BUCKET": "",
             "SUPABASE_URL": "",
             "SUPABASE_SERVICE_ROLE_KEY": "",
+            "OMNIX_WORKBENCH_MEMORY_BUCKET": "",
+            "OMNIX_WORKBENCH_AWS_PROFILE": "",
+            "OMNIX_WORKBENCH_AWS_REGION": "",
         }):
             status = check_cloud_memory_status(db_path=tmp_path / "m.db")
         assert status.active_backend == "local_sqlite"
@@ -95,6 +98,9 @@ class TestFallbackBehavior:
             "JARVIS_MEMORY_S3_BUCKET": "",
             "SUPABASE_URL": "",
             "SUPABASE_SERVICE_ROLE_KEY": "",
+            "OMNIX_WORKBENCH_MEMORY_BUCKET": "",
+            "OMNIX_WORKBENCH_AWS_PROFILE": "",
+            "OMNIX_WORKBENCH_AWS_REGION": "",
         }):
             status = check_cloud_memory_status(db_path=tmp_path / "m.db")
         assert "s3_aws" in status.summary or "local_only" in status.summary
@@ -117,6 +123,9 @@ class TestCloudMemoryGateway:
             "JARVIS_MEMORY_S3_BUCKET": "",
             "SUPABASE_URL": "",
             "SUPABASE_SERVICE_ROLE_KEY": "",
+            "OMNIX_WORKBENCH_MEMORY_BUCKET": "",
+            "OMNIX_WORKBENCH_AWS_PROFILE": "",
+            "OMNIX_WORKBENCH_AWS_REGION": "",
         }):
             gw = CloudMemoryGateway(db_path=tmp_path / "m.db")
         assert gw.is_cloud_available() is False

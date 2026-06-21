@@ -173,12 +173,50 @@ def _check_s3_aws() -> BackendReadiness:
         )
 
 
+def _load_omnix_workbench_vars_from_env_file() -> None:
+    """Load ONLY OMNIX_WORKBENCH_* vars from .env without polluting other env vars.
+
+    _load_openjarvis_env() doesn't load OMNIX_WORKBENCH_* vars.
+    JarvisMemoryS3Sync._load_env_from_file() loads ALL vars (side effect).
+    This function loads only the specific keys needed for the S3 check.
+    """
+    from pathlib import Path as _Path
+    _OMNIX_KEYS = frozenset({
+        "OMNIX_WORKBENCH_AWS_PROFILE",
+        "OMNIX_WORKBENCH_AWS_REGION",
+        "OMNIX_WORKBENCH_MEMORY_BUCKET",
+        "OMNIX_WORKBENCH_ARTIFACT_BUCKET",
+        "OMNIX_WORKBENCH_STATE_TABLE",
+    })
+    for env_file in [".env", ".env.local"]:
+        try:
+            p = _Path(env_file)
+            if not p.exists():
+                continue
+            for line in p.read_text().splitlines():
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                k, _, v = line.partition("=")
+                k = k.strip()
+                if k in _OMNIX_KEYS and k not in os.environ:
+                    os.environ[k] = v.strip()
+        except Exception:
+            pass
+
+
 def _check_omnix_s3() -> BackendReadiness:
     """Check OMNIX workbench S3 config as cloud memory backend.
 
     Reuses OMNIX_WORKBENCH_MEMORY_BUCKET + AWS_PROFILE credentials
     that are already configured for the project.
+
+    NOTE: _load_openjarvis_env() does not load OMNIX_WORKBENCH_* vars.
+    We use a targeted loader that reads only OMNIX_WORKBENCH_* keys from
+    .env without side-effecting other env vars (e.g. OPENAI_API_KEY).
     """
+    _load_omnix_workbench_vars_from_env_file()
+
     profile_present = _credential_present("OMNIX_WORKBENCH_AWS_PROFILE")
     bucket_present = _credential_present("OMNIX_WORKBENCH_MEMORY_BUCKET")
     region_present = _credential_present("OMNIX_WORKBENCH_AWS_REGION")
@@ -202,24 +240,31 @@ def _check_omnix_s3() -> BackendReadiness:
             ],
         )
 
-    # Credentials present — attempt a non-destructive connectivity check
+    # Credentials present — attempt a non-destructive connectivity check.
+    # Use boto3 directly to avoid calling JarvisMemoryS3Sync.get_status()
+    # which calls _load_env_from_file() (side-effect: loads ALL .env vars
+    # including OPENAI_API_KEY, breaking tests that assert on API key absence).
+    bucket = os.environ.get("OMNIX_WORKBENCH_MEMORY_BUCKET", "")
+    profile = os.environ.get("OMNIX_WORKBENCH_AWS_PROFILE", "")
+    region = os.environ.get("OMNIX_WORKBENCH_AWS_REGION", "ap-southeast-1")
     try:
-        from openjarvis.memory.cloud_sync import JarvisMemoryS3Sync
-        sync = JarvisMemoryS3Sync()
-        status = sync.get_status()
-        if status.available:
-            return BackendReadiness(
-                backend="omnix_s3",
-                status=CloudMemoryBackendStatus.DAILY_DRIVER_ACCEPT,
-                available=True,
-                credential_env_vars=[
-                    "OMNIX_WORKBENCH_MEMORY_BUCKET",
-                    "OMNIX_WORKBENCH_AWS_PROFILE",
-                    "OMNIX_WORKBENCH_AWS_REGION",
-                ],
-                credential_present=True,
-                notes=f"S3 cloud memory operational. {status.detail}",
-            )
+        import boto3  # type: ignore[import]
+        session = boto3.Session(profile_name=profile or None)
+        s3 = session.client("s3", region_name=region)
+        s3.head_bucket(Bucket=bucket)
+        return BackendReadiness(
+            backend="omnix_s3",
+            status=CloudMemoryBackendStatus.DAILY_DRIVER_ACCEPT,
+            available=True,
+            credential_env_vars=[
+                "OMNIX_WORKBENCH_MEMORY_BUCKET",
+                "OMNIX_WORKBENCH_AWS_PROFILE",
+                "OMNIX_WORKBENCH_AWS_REGION",
+            ],
+            credential_present=True,
+            notes=f"S3 cloud memory operational. bucket={bucket} region={region}",
+        )
+    except ImportError:
         return BackendReadiness(
             backend="omnix_s3",
             status=CloudMemoryBackendStatus.BLOCKED_CREDENTIALS,
@@ -230,8 +275,8 @@ def _check_omnix_s3() -> BackendReadiness:
                 "OMNIX_WORKBENCH_AWS_REGION",
             ],
             credential_present=True,
-            notes=f"S3 reachability check failed: {status.last_error}",
-            clearing_steps=["Verify AWS profile has s3:ListObjects permission on bucket"],
+            notes="boto3 not installed",
+            clearing_steps=["pip install boto3"],
         )
     except Exception as exc:
         return BackendReadiness(
@@ -245,7 +290,7 @@ def _check_omnix_s3() -> BackendReadiness:
             ],
             credential_present=True,
             notes=f"S3 check raised {type(exc).__name__}",
-            clearing_steps=["Check AWS credentials and bucket permissions"],
+            clearing_steps=["Verify AWS profile has s3:ListObjects permission on bucket"],
         )
 
 
