@@ -327,6 +327,17 @@ async def mobile_status(project_id: str = "omnix") -> Dict[str, Any]:
 async def continuity_status() -> Dict[str, Any]:
     """Return continuity backend readiness.
 
+    IMPORTANT: Two distinct capabilities are reported separately:
+
+    1. state_sync_macbook_off_capable — saved state (memory, tasks, approvals) can
+       be retrieved from GitHub Gist even when the MacBook is off.  REAL when
+       GITHUB_TOKEN is configured with gist scope.
+
+    2. runtime_macbook_off_capable — the Jarvis API server is reachable when the
+       MacBook is off. BLOCKED for local dev: no cloud runtime is deployed.
+       Requires deploying the FastAPI backend to a cloud host (Fly.io, Railway,
+       EC2, etc.) to be real.
+
     GitHub Gist backend is available when GITHUB_TOKEN is set (gist scope required).
     Local-only when token is absent.
     """
@@ -337,6 +348,7 @@ async def continuity_status() -> Dict[str, Any]:
         )
         local = LocalFileBackend().get_status()
         gist = GitHubGistBackend().get_status()
+        gist_configured = bool(gist.env_vars_present)
         return {
             "backends": [
                 {
@@ -354,11 +366,18 @@ async def continuity_status() -> Dict[str, Any]:
                 },
             ],
             "active_backend": (
-                gist.backend_name if gist.macbook_off_capable and gist.env_vars_present
+                gist.backend_name if gist.macbook_off_capable and gist_configured
                 else local.backend_name
             ),
-            "cross_device_ready": (
-                gist.macbook_off_capable and bool(gist.env_vars_present)
+            "cross_device_ready": gist.macbook_off_capable and gist_configured,
+            # --- Honest capability split ---
+            "state_sync_macbook_off_capable": gist_configured,
+            "runtime_macbook_off_capable": False,
+            "runtime_deployment": "localhost_only",
+            "runtime_always_on_status": (
+                "BLOCKED — no cloud runtime deployed. "
+                "Jarvis API server must be running on the MacBook. "
+                "Deploy to Fly.io/Railway/EC2 to enable true MacBook-off runtime."
             ),
         }
     except Exception as exc:

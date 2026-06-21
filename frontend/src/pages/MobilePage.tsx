@@ -1,0 +1,449 @@
+/**
+ * MobilePage — Plan 4 mobile-safe Jarvis dashboard.
+ *
+ * Single-column, touch-friendly view that aggregates:
+ *   - Backend health
+ *   - Memory OS status
+ *   - Continuity (cross-device) status
+ *   - Pending approvals
+ *   - Active task state
+ *
+ * Designed to work in any mobile browser (no native app required).
+ * This page is part of the PWA (VitePWA, display: standalone).
+ *
+ * API endpoints consumed:
+ *   GET /health                       — backend reachability
+ *   GET /v1/system/health             — memory_os sub-key
+ *   GET /v1/memory/status             — semantic search, cloud sync, distillation
+ *   GET /v1/mobile/continuity/status  — cross-device backend state
+ *   GET /v1/approvals/pending         — pending approval queue
+ */
+
+import { useEffect, useRef, useState } from 'react';
+import { apiFetch, fetchPendingApprovals, type PendingApproval } from '../lib/api';
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+interface HealthStatus {
+  reachable: boolean;
+  memory_os?: {
+    sprint?: string;
+    total_entries?: number;
+    vector_search?: string;
+    cloud_sync_available?: boolean;
+    cloud_sync_backend?: string;
+    ai_distillation_available?: boolean;
+  };
+}
+
+interface MemoryStatus {
+  memory_os?: { sprint?: string; total_entries?: number; total_distilled?: number };
+  semantic_search?: { vector_search?: string; active_ranker?: string };
+  cloud_sync?: { available?: boolean; backend?: string; last_error?: string | null };
+  ai_distillation?: { ai_available?: boolean };
+}
+
+interface ContinuityBackend {
+  backend_name: string;
+  availability: string;
+  macbook_off_capable: boolean;
+  notes?: string;
+}
+
+interface ContinuityStatus {
+  backends?: ContinuityBackend[];
+  active_backend?: string;
+  cross_device_ready?: boolean;
+  active_task_description?: string;
+  active_task_status?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+const STATUS_COLOR: Record<string, string> = {
+  ok: 'var(--color-success, #22c55e)',
+  error: 'var(--color-error, #ef4444)',
+  warn: 'var(--color-warn, #f59e0b)',
+  info: 'var(--color-accent, #4fd1ff)',
+};
+
+function Dot({ color }: { color: string }) {
+  return (
+    <span
+      style={{
+        display: 'inline-block',
+        width: '8px',
+        height: '8px',
+        borderRadius: '50%',
+        background: color,
+        flexShrink: 0,
+      }}
+    />
+  );
+}
+
+function Card({
+  title,
+  children,
+  borderColor,
+}: {
+  title: string;
+  children: React.ReactNode;
+  borderColor?: string;
+}) {
+  return (
+    <section
+      style={{
+        background: 'color-mix(in srgb, var(--color-surface, #1a1a1c) 90%, transparent)',
+        border: `1px solid ${borderColor ?? 'color-mix(in srgb, var(--color-border, #333) 60%, transparent)'}`,
+        borderRadius: '12px',
+        padding: '16px',
+        marginBottom: '12px',
+      }}
+    >
+      <h2
+        style={{
+          fontSize: '11px',
+          fontWeight: 600,
+          letterSpacing: '0.08em',
+          textTransform: 'uppercase',
+          color: 'var(--color-text-muted, #888)',
+          marginBottom: '10px',
+        }}
+      >
+        {title}
+      </h2>
+      {children}
+    </section>
+  );
+}
+
+function Row({ label, value, dot }: { label: string; value: string; dot?: string }) {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: '8px',
+        padding: '4px 0',
+        fontSize: '13px',
+        borderBottom: '1px solid color-mix(in srgb, var(--color-border, #333) 30%, transparent)',
+      }}
+    >
+      <span style={{ color: 'var(--color-text-muted, #aaa)' }}>{label}</span>
+      <span
+        style={{
+          color: 'var(--color-text, #eee)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '6px',
+          fontSize: '12px',
+          fontFamily: 'monospace',
+        }}
+      >
+        {dot && <Dot color={dot} />}
+        {value}
+      </span>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Main component
+// ---------------------------------------------------------------------------
+
+export function MobilePage() {
+  const [health, setHealth] = useState<HealthStatus | null>(null);
+  const [memory, setMemory] = useState<MemoryStatus | null>(null);
+  const [continuity, setContinuity] = useState<ContinuityStatus | null>(null);
+  const [approvals, setApprovals] = useState<PendingApproval[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const fetchAll = async () => {
+    setRefreshing(true);
+    try {
+      // Health
+      const healthRes = await apiFetch('/v1/system/health');
+      if (healthRes.ok) {
+        const hData = await healthRes.json();
+        setHealth({ reachable: true, ...hData });
+      } else {
+        setHealth({ reachable: false });
+      }
+    } catch {
+      setHealth({ reachable: false });
+    }
+
+    try {
+      // Memory status
+      const memRes = await apiFetch('/v1/memory/status');
+      if (memRes.ok) setMemory(await memRes.json());
+    } catch {
+      // non-fatal
+    }
+
+    try {
+      // Continuity status
+      const contRes = await apiFetch('/v1/mobile/continuity/status');
+      if (contRes.ok) setContinuity(await contRes.json());
+    } catch {
+      // non-fatal
+    }
+
+    try {
+      const pending = await fetchPendingApprovals();
+      setApprovals(pending);
+    } catch {
+      setApprovals([]);
+    }
+
+    setLastRefresh(new Date());
+    setLoading(false);
+    setRefreshing(false);
+  };
+
+  useEffect(() => {
+    fetchAll();
+    intervalRef.current = setInterval(fetchAll, 30000);
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+  }, []);
+
+  const isReachable = health?.reachable ?? false;
+  const memOS = health?.memory_os;
+
+  return (
+    <div
+      style={{
+        maxWidth: '480px',
+        margin: '0 auto',
+        padding: '16px 12px 32px',
+        minHeight: '100%',
+        color: 'var(--color-text, #eee)',
+        fontFamily: 'var(--font-sans, system-ui, sans-serif)',
+      }}
+    >
+      {/* Header */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          marginBottom: '20px',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <Dot color={isReachable ? STATUS_COLOR.ok : STATUS_COLOR.error} />
+          <span style={{ fontSize: '18px', fontWeight: 700, letterSpacing: '-0.01em' }}>
+            Jarvis
+          </span>
+          <span
+            style={{
+              fontSize: '11px',
+              background: 'color-mix(in srgb, var(--color-accent, #4fd1ff) 12%, transparent)',
+              color: 'var(--color-accent, #4fd1ff)',
+              border: '1px solid color-mix(in srgb, var(--color-accent, #4fd1ff) 30%, transparent)',
+              borderRadius: '4px',
+              padding: '1px 6px',
+            }}
+          >
+            mobile
+          </span>
+        </div>
+        <button
+          onClick={fetchAll}
+          disabled={refreshing}
+          style={{
+            fontSize: '12px',
+            padding: '6px 12px',
+            background: 'color-mix(in srgb, var(--color-accent, #4fd1ff) 10%, transparent)',
+            color: 'var(--color-accent, #4fd1ff)',
+            border: '1px solid color-mix(in srgb, var(--color-accent, #4fd1ff) 25%, transparent)',
+            borderRadius: '6px',
+            cursor: refreshing ? 'not-allowed' : 'pointer',
+            opacity: refreshing ? 0.6 : 1,
+          }}
+        >
+          {refreshing ? '…' : 'Refresh'}
+        </button>
+      </div>
+
+      {loading ? (
+        <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--color-text-muted, #888)', fontSize: '14px' }}>
+          Loading…
+        </div>
+      ) : (
+        <>
+          {/* Backend Health */}
+          <Card
+            title="Backend"
+            borderColor={
+              isReachable
+                ? 'color-mix(in srgb, var(--color-success, #22c55e) 25%, transparent)'
+                : 'color-mix(in srgb, var(--color-error, #ef4444) 25%, transparent)'
+            }
+          >
+            <Row
+              label="Status"
+              value={isReachable ? 'Reachable' : 'Unreachable'}
+              dot={isReachable ? STATUS_COLOR.ok : STATUS_COLOR.error}
+            />
+            {memOS && (
+              <>
+                <Row label="Memory entries" value={String(memOS.total_entries ?? '—')} />
+                <Row
+                  label="Cloud sync"
+                  value={memOS.cloud_sync_available ? (memOS.cloud_sync_backend ?? 'S3') : 'Local only'}
+                  dot={memOS.cloud_sync_available ? STATUS_COLOR.ok : STATUS_COLOR.warn}
+                />
+                <Row
+                  label="Vector search"
+                  value={memOS.vector_search?.replace('ACTIVE_', '').replace('BLOCKED_', '⚠ ') ?? '—'}
+                />
+              </>
+            )}
+          </Card>
+
+          {/* Memory OS */}
+          {memory && (
+            <Card title="Memory OS">
+              <Row
+                label="Total entries"
+                value={String(memory.memory_os?.total_entries ?? '—')}
+              />
+              <Row
+                label="Distilled"
+                value={String(memory.memory_os?.total_distilled ?? '—')}
+              />
+              <Row
+                label="Ranker"
+                value={memory.semantic_search?.active_ranker ?? '—'}
+              />
+              <Row
+                label="Cloud sync"
+                value={memory.cloud_sync?.available ? `${memory.cloud_sync.backend ?? 'S3'} ✓` : 'Local only'}
+                dot={memory.cloud_sync?.available ? STATUS_COLOR.ok : STATUS_COLOR.warn}
+              />
+              <Row
+                label="AI distillation"
+                value={memory.ai_distillation?.ai_available ? 'Available' : 'Unavailable'}
+                dot={memory.ai_distillation?.ai_available ? STATUS_COLOR.ok : STATUS_COLOR.warn}
+              />
+            </Card>
+          )}
+
+          {/* Continuity */}
+          {continuity && (
+            <Card title="Cross-Device Continuity">
+              {continuity.active_task_description ? (
+                <>
+                  <div
+                    style={{
+                      fontSize: '13px',
+                      color: 'var(--color-text, #eee)',
+                      marginBottom: '8px',
+                      padding: '8px',
+                      background: 'color-mix(in srgb, var(--color-accent, #4fd1ff) 5%, transparent)',
+                      borderRadius: '6px',
+                      border: '1px solid color-mix(in srgb, var(--color-accent, #4fd1ff) 15%, transparent)',
+                    }}
+                  >
+                    {continuity.active_task_description}
+                  </div>
+                  <Row
+                    label="Task status"
+                    value={continuity.active_task_status ?? '—'}
+                  />
+                </>
+              ) : (
+                <div style={{ fontSize: '13px', color: 'var(--color-text-muted, #888)', padding: '4px 0' }}>
+                  No active task
+                </div>
+              )}
+              <Row
+                label="Cross-device ready"
+                value={continuity.cross_device_ready ? 'Yes (Gist)' : 'No'}
+                dot={continuity.cross_device_ready ? STATUS_COLOR.ok : STATUS_COLOR.warn}
+              />
+              {continuity.backends?.map((b) => (
+                <Row
+                  key={b.backend_name}
+                  label={b.backend_name}
+                  value={b.availability.replace('BackendAvailability.', '')}
+                  dot={b.availability.includes('available') ? STATUS_COLOR.ok : STATUS_COLOR.warn}
+                />
+              ))}
+            </Card>
+          )}
+
+          {/* Approvals */}
+          <Card
+            title={`Pending Approvals${approvals.length > 0 ? ` (${approvals.length})` : ''}`}
+            borderColor={
+              approvals.length > 0
+                ? 'color-mix(in srgb, var(--color-warn, #f59e0b) 30%, transparent)'
+                : undefined
+            }
+          >
+            {approvals.length === 0 ? (
+              <div style={{ fontSize: '13px', color: 'var(--color-text-muted, #888)' }}>
+                No pending approvals
+              </div>
+            ) : (
+              approvals.map((a) => (
+                <div
+                  key={a.id}
+                  style={{
+                    padding: '8px',
+                    marginBottom: '6px',
+                    background: 'color-mix(in srgb, var(--color-warn, #f59e0b) 6%, transparent)',
+                    border: '1px solid color-mix(in srgb, var(--color-warn, #f59e0b) 20%, transparent)',
+                    borderRadius: '8px',
+                    fontSize: '13px',
+                  }}
+                >
+                  <div style={{ fontWeight: 500, marginBottom: '2px' }}>{a.action_type}</div>
+                  <div style={{ color: 'var(--color-text-muted, #aaa)', fontSize: '12px' }}>
+                    {a.description}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: '11px',
+                      color: 'var(--color-text-muted, #888)',
+                      marginTop: '4px',
+                    }}
+                  >
+                    Tier: {a.tier} · {new Date(a.created_at).toLocaleTimeString()}
+                  </div>
+                </div>
+              ))
+            )}
+          </Card>
+
+          {/* Footer */}
+          {lastRefresh && (
+            <div
+              style={{
+                textAlign: 'center',
+                fontSize: '11px',
+                color: 'var(--color-text-muted, #666)',
+                paddingTop: '8px',
+              }}
+            >
+              Last updated: {lastRefresh.toLocaleTimeString()} · auto-refreshes every 30s
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}

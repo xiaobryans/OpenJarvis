@@ -10,6 +10,7 @@ import { AgentsPage } from './pages/AgentsPage';
 import { DataSourcesPage } from './pages/DataSourcesPage';
 import { LogsPage } from './pages/LogsPage';
 import { MissionControlPage } from './pages/MissionControlPage';
+import { MobilePage } from './pages/MobilePage';
 import { WorkbenchPage } from './pages/WorkbenchPage';
 import { CommandPalette } from './components/CommandPalette';
 import { TextFallbackPanel } from './components/TextFallbackPanel';
@@ -202,6 +203,7 @@ export default function App() {
           <Route path="logs" element={<LogsPage />} />
           <Route path="mission-control" element={<MissionControlPage />} />
           <Route path="workbench" element={<WorkbenchPage />} />
+          <Route path="mobile" element={<MobilePage />} />
         </Route>
       </Routes>
       <Toaster position="bottom-right" />
