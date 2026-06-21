@@ -247,6 +247,7 @@ def create_connectors_router():
         """
         from openjarvis.autonomy.connector_diagnostics import (
             ConnectorStatus as _CS,
+            get_github_status,
             get_slack_status,
             get_telegram_status,
             get_web_search_status,
@@ -256,6 +257,8 @@ def create_connectors_router():
         _OUTBOUND_SEND = {"slack", "telegram"}
         _READ_ONLY_ACTIONS = ["search", "read", "fetch"]
         _OUTBOUND_ACTIONS = ["send_message", "post", "notify"]
+        # Connectors handled via explicit diagnostics calls (richer status)
+        _EXPLICIT_DIAG = {"slack", "telegram", "web_search", "github"}
 
         results = []
 
@@ -272,6 +275,7 @@ def create_connectors_router():
                 "real_send_allowed": False,
                 "last_error": diag.get("last_error", None),
                 "summary": diag.get("summary", ""),
+                "credential_source": diag.get("credential_source", None),
             }
 
         try:
@@ -289,11 +293,16 @@ def create_connectors_router():
         except Exception as exc:
             results.append({"connector": "web_search", "state": "error", "detail": str(exc)})
 
+        try:
+            results.append(_build_entry("github", get_github_status()))
+        except Exception as exc:
+            results.append({"connector": "github", "state": "error", "detail": str(exc)})
+
         # Add remaining registered connectors with basic status
         try:
             _ensure_connectors_registered()
             for key in sorted(ConnectorRegistry.keys()):
-                if key not in {"slack", "telegram", "web_search"}:
+                if key not in _EXPLICIT_DIAG:
                     try:
                         inst = _get_or_create(key)
                         connected = inst.is_connected()

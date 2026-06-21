@@ -224,28 +224,80 @@ class JarvisMemory:
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_mem_created ON memory_entries(created_at)"
             )
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_mem_status ON memory_entries(status)"
-            )
+            # idx_mem_status requires the 'status' column — guarded with try/except
+            # for backward-compat with old DBs that lack the column.  _migrate_db()
+            # runs next and creates the index after adding the column.
+            try:
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_mem_status ON memory_entries(status)"
+                )
+            except sqlite3.OperationalError:
+                pass  # 'status' column not yet present — added by _migrate_db()
             conn.commit()
         self._migrate_db()
 
     def _migrate_db(self) -> None:
-        """Safe ALTER TABLE migrations for databases created before new columns existed."""
+        """Safe ALTER TABLE migrations for databases created before new columns existed.
+
+        Backup policy:
+          - If any columns are missing AND the table has existing rows, a timestamped
+            backup is created at ``{db_path}.backup_<unix_ts>`` before any ALTER TABLE.
+          - Safe to run multiple times: existing columns are silently skipped.
+          - Preserves all existing data via SQLite ADD COLUMN semantics.
+        """
+        import shutil as _shutil
+        import time as _time
+
         new_columns = [
             ("kind", "TEXT NOT NULL DEFAULT 'event'"),
             ("status", "TEXT NOT NULL DEFAULT 'active'"),
             ("expires_at", "REAL"),
         ]
+
+        # First pass: identify missing columns and whether a backup is needed.
         with self._connect() as conn:
-            for col_name, col_def in new_columns:
+            existing_cols = {
+                row[1]
+                for row in conn.execute("PRAGMA table_info(memory_entries)")
+            }
+            missing = [(c, d) for c, d in new_columns if c not in existing_cols]
+            if not missing:
+                return  # Nothing to migrate.
+            row_count: int = conn.execute(
+                "SELECT COUNT(*) FROM memory_entries"
+            ).fetchone()[0]
+
+        # Create a backup before touching an existing DB with data.
+        if row_count > 0:
+            backup_path = Path(str(self._db_path) + f".backup_{int(_time.time())}")
+            try:
+                _shutil.copy2(str(self._db_path), str(backup_path))
+                logger.info("Memory DB backup created before migration: %s", backup_path)
+            except Exception as exc:
+                logger.warning(
+                    "Memory DB backup failed (migration will proceed anyway): %s", exc
+                )
+
+        # Second pass: apply the missing columns.
+        with self._connect() as conn:
+            for col_name, col_def in missing:
                 try:
                     conn.execute(
                         f"ALTER TABLE memory_entries ADD COLUMN {col_name} {col_def}"
                     )
                     conn.commit()
+                    logger.info("Memory DB migration: added column '%s'", col_name)
                 except sqlite3.OperationalError:
-                    pass  # column already exists — normal for existing databases
+                    pass  # column appeared between check and alter — safe to ignore
+
+            # Ensure idx_mem_status exists now that 'status' column is guaranteed present.
+            try:
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_mem_status ON memory_entries(status)"
+                )
+                conn.commit()
+            except sqlite3.OperationalError:
+                pass
 
     def write(
         self,

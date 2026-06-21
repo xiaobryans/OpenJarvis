@@ -298,10 +298,47 @@ def get_web_search_status() -> Dict[str, Any]:
 
 
 def get_github_status() -> Dict[str, Any]:
-    """Check GitHub connector readiness. Read-only by default. No network calls."""
-    github_token_present = bool(os.environ.get("GITHUB_TOKEN"))
-    git_path = shutil.which("git")
+    """Check GitHub connector readiness. Read-only by default.
 
+    Credential resolution (in priority order, no network calls for status check):
+      1. GITHUB_TOKEN env var
+      2. ~/.openjarvis/connectors/github.json
+      3. gh CLI auth token (OS keyring)
+
+    Returns status=CONFIGURED if any credential source resolves.
+    Never returns secret values.
+    """
+    from pathlib import Path as _Path
+
+    # ---- Credential source detection (no network, no secret in output) ----
+    github_token_env = bool(os.environ.get("GITHUB_TOKEN", "").strip())
+
+    github_json_path = _Path.home() / ".openjarvis" / "connectors" / "github.json"
+    github_json_present = False
+    if github_json_path.exists():
+        try:
+            import json as _json
+            d = _json.loads(github_json_path.read_text(encoding="utf-8"))
+            github_json_present = bool(d.get("token", "").strip())
+        except Exception:
+            pass
+
+    gh_cli_present = False
+    gh_cli_path = shutil.which("gh")
+    if gh_cli_path:
+        try:
+            r_gh = subprocess.run(
+                ["gh", "auth", "token"],
+                capture_output=True, text=True, timeout=5,
+            )
+            gh_cli_present = r_gh.returncode == 0 and bool(r_gh.stdout.strip())
+        except Exception:
+            pass
+
+    token_available = github_token_env or github_json_present or gh_cli_present
+
+    # ---- Git local remote info (read-only) ----
+    git_path = shutil.which("git")
     local_remote: Optional[str] = None
     fork_remote: Optional[str] = None
 
@@ -325,30 +362,47 @@ def get_github_status() -> Dict[str, Any]:
         except Exception:
             pass
 
+    # ---- Credential source label (safe — no token values) ----
+    if github_token_env:
+        credential_source = "GITHUB_TOKEN env var"
+    elif github_json_present:
+        credential_source = "github.json config file"
+    elif gh_cli_present:
+        credential_source = "gh CLI keyring"
+    else:
+        credential_source = "none"
+
     missing: List[str] = []
-    if not github_token_present:
+    if not token_available:
         missing.append(
-            "GITHUB_TOKEN (optional — only needed for private repos or GitHub API)"
+            "GitHub token — set GITHUB_TOKEN, create ~/.openjarvis/connectors/github.json, "
+            "or run: gh auth login"
         )
 
     return {
         "connector": "github",
         "status": (
-            ConnectorStatus.CONFIGURED if git_path
+            ConnectorStatus.CONFIGURED if token_available
             else ConnectorStatus.NOT_CONFIGURED
         ),
         "git_available": git_path is not None,
         "git_path": git_path,
-        "github_token_present": github_token_present,
+        "token_available": token_available,
+        "credential_source": credential_source,
+        "github_token_env": github_token_env,
+        "github_json_present": github_json_present,
+        "gh_cli_present": gh_cli_present,
         "local_remote_origin": local_remote,
         "local_remote_fork": fork_remote,
         "missing_env_vars": missing,
-        "optional_env_vars": [
-            "GITHUB_TOKEN (for private repos or GitHub API access)"
-        ],
         "read_only": True,
         "pr_creation": "draft only, requires explicit approval",
         "merges": "always_blocked",
+        "summary": (
+            f"GitHub connector available via {credential_source}"
+            if token_available
+            else "GitHub connector: no credential configured"
+        ),
     }
 
 
