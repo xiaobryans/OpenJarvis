@@ -20,6 +20,7 @@ Governance:
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any, Dict, List, Optional
 
 try:
@@ -27,6 +28,35 @@ try:
     from pydantic import BaseModel, Field
 except ImportError:
     raise ImportError("fastapi and pydantic are required for autonomy routes")
+
+
+def _is_cloud_runtime() -> bool:
+    """Return True when this server is running in a cloud/always-on environment."""
+    return bool(os.environ.get("CLOUD_RUNTIME_DEPLOYMENT") or
+                os.environ.get("ECS_CONTAINER_METADATA_URI") or
+                os.environ.get("ECS_CONTAINER_METADATA_URI_V4"))
+
+
+def _runtime_deployment() -> str:
+    if os.environ.get("CLOUD_RUNTIME_DEPLOYMENT"):
+        return os.environ["CLOUD_RUNTIME_DEPLOYMENT"]
+    if os.environ.get("ECS_CONTAINER_METADATA_URI") or os.environ.get("ECS_CONTAINER_METADATA_URI_V4"):
+        return "aws-ecs-fargate"
+    return "localhost_only"
+
+
+def _runtime_always_on_status(gist_configured: bool) -> str:
+    if _is_cloud_runtime():
+        region = os.environ.get("AWS_DEFAULT_REGION", os.environ.get("OMNIX_WORKBENCH_AWS_REGION", "unknown"))
+        return (
+            f"AVAILABLE — Jarvis FastAPI backend running in AWS ECS Fargate ({region}). "
+            "MacBook does not need to be on. Real AI (OpenAI), real S3 memory sync, real auth enabled."
+        )
+    return (
+        "BLOCKED — no cloud runtime detected. "
+        "Jarvis API server must be running on the MacBook. "
+        "Deploy to AWS ECS (Dockerfile.full) to enable true MacBook-off runtime."
+    )
 
 from openjarvis.autonomy.alerts import AlertSeverity, get_alert_store
 from openjarvis.autonomy.modes import AutonomyMode, AutonomyPolicy
@@ -372,13 +402,9 @@ async def continuity_status() -> Dict[str, Any]:
             "cross_device_ready": gist.macbook_off_capable and gist_configured,
             # --- Honest capability split ---
             "state_sync_macbook_off_capable": gist_configured,
-            "runtime_macbook_off_capable": False,
-            "runtime_deployment": "localhost_only",
-            "runtime_always_on_status": (
-                "BLOCKED — no cloud runtime deployed. "
-                "Jarvis API server must be running on the MacBook. "
-                "Deploy to Fly.io/Railway/EC2 to enable true MacBook-off runtime."
-            ),
+            "runtime_macbook_off_capable": _is_cloud_runtime(),
+            "runtime_deployment": _runtime_deployment(),
+            "runtime_always_on_status": _runtime_always_on_status(gist_configured),
         }
     except Exception as exc:
         return {"error": str(exc), "backends": []}

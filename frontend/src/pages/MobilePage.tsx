@@ -3,53 +3,59 @@
  *
  * Single-column, touch-friendly view with configurable backend targeting:
  *   - Local mode:  targets same origin (MacBook Jarvis server)
- *   - Remote mode: targets AWS ECS Fargate always-on backend
+ *   - Remote mode: targets AWS ECS Fargate full Jarvis FastAPI (port 8000)
  *
- * Backend is stored in localStorage key "jarvis_mobile_backend_url".
- * The remote backend exposes CORS headers, so direct fetch works.
+ * Auth: Bearer token stored in localStorage (OPENJARVIS_API_KEY).
+ *       Required for all /v1/* routes on both local and remote backends.
  *
- * API endpoints consumed:
- *   GET /health                       — backend reachability
- *   GET /v1/system/health             — memory_os sub-key
- *   GET /v1/memory/status             — semantic search, cloud sync, distillation
- *   GET /v1/mobile/continuity/status  — cross-device backend state
- *   GET /v1/approvals/pending         — pending approval queue (local only)
+ * Real remote flows (Plan 4 proof):
+ *   GET  /health                       — backend reachability (public)
+ *   GET  /v1/system/health             — memory_os sub-key (auth)
+ *   GET  /v1/memory/status             — semantic search, cloud sync, distillation (auth)
+ *   GET  /v1/mobile/continuity/status  — cross-device backend state (auth)
+ *   GET  /v1/approvals/pending         — pending approval queue (auth, works locally + remotely)
+ *   POST /v1/memory                    — write memory entry to cloud (auth)
+ *   POST /v1/chat/completions          — send chat to real LLM (auth, remote)
+ *   POST /v1/tasks                     — create task in cloud (auth, remote via cloud runtime)
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { fetchPendingApprovals, type PendingApproval } from '../lib/api';
 
 // ---------------------------------------------------------------------------
-// Backend URL management
+// Backend + Auth management
 // ---------------------------------------------------------------------------
 
-const LS_KEY = 'jarvis_mobile_backend_url';
-const AWS_BACKEND = 'http://52.221.255.60:3091';
+const LS_BACKEND_KEY = 'jarvis_mobile_backend_url';
+const LS_AUTH_KEY = 'jarvis_mobile_api_key';
+// Full Jarvis FastAPI (port 8000)
+const AWS_BACKEND = 'http://18.139.225.189:8000';
 
 function getStoredBackend(): string {
-  try {
-    return localStorage.getItem(LS_KEY) ?? '';
-  } catch {
-    return '';
-  }
+  try { return localStorage.getItem(LS_BACKEND_KEY) ?? ''; } catch { return ''; }
 }
-
 function storeBackend(url: string): void {
   try {
-    if (url) {
-      localStorage.setItem(LS_KEY, url);
-    } else {
-      localStorage.removeItem(LS_KEY);
-    }
-  } catch {
-    // ignore
-  }
+    if (url) localStorage.setItem(LS_BACKEND_KEY, url);
+    else localStorage.removeItem(LS_BACKEND_KEY);
+  } catch { /* ignore */ }
+}
+function getStoredApiKey(): string {
+  try { return localStorage.getItem(LS_AUTH_KEY) ?? ''; } catch { return ''; }
+}
+function storeApiKey(key: string): void {
+  try {
+    if (key) localStorage.setItem(LS_AUTH_KEY, key);
+    else localStorage.removeItem(LS_AUTH_KEY);
+  } catch { /* ignore */ }
 }
 
-async function backendFetch(backendUrl: string, path: string): Promise<Response> {
+async function backendFetch(backendUrl: string, path: string, apiKey: string, opts?: RequestInit): Promise<Response> {
   const base = backendUrl.replace(/\/$/, '');
   const url = base ? `${base}${path}` : path;
-  return fetch(url, { headers: { Accept: 'application/json' } });
+  const headers: Record<string, string> = { Accept: 'application/json' };
+  if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+  if (opts?.body) headers['Content-Type'] = 'application/json';
+  return fetch(url, { ...opts, headers: { ...headers, ...(opts?.headers as Record<string, string> | undefined) } });
 }
 
 // ---------------------------------------------------------------------------
@@ -79,7 +85,7 @@ interface MemoryStatus {
   memory_os?: { sprint?: string; total_entries?: number; total_distilled?: number };
   semantic_search?: { vector_search?: string; active_ranker?: string };
   cloud_sync?: { available?: boolean; backend?: string; last_error?: string | null };
-  ai_distillation?: { ai_available?: boolean };
+  ai_distillation?: { ai_available?: boolean; ai_model?: string };
 }
 
 interface ContinuityBackend {
@@ -96,12 +102,31 @@ interface ContinuityStatus {
   cross_device_ready?: boolean;
   active_task_description?: string;
   active_task_status?: string;
-  // Plan 4 AWS fields
   runtime_macbook_off_capable?: boolean;
   runtime_deployment?: string;
   runtime_always_on_status?: string;
   state_sync_macbook_off_capable?: boolean;
   mobile_client_available?: boolean;
+}
+
+interface PendingApproval {
+  id: string;
+  action_type: string;
+  description?: string;
+  tier?: number;
+  created_at: string;
+}
+
+interface ChatResult {
+  success: boolean;
+  response?: string;
+  error?: string;
+}
+
+interface TaskResult {
+  success: boolean;
+  id?: string;
+  error?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -206,6 +231,7 @@ function Row({ label, value, dot }: { label: string; value: string; dot?: string
 
 export function MobilePage() {
   const [backendUrl, setBackendUrl] = useState<string>(getStoredBackend);
+  const [apiKey, setApiKey] = useState<string>(getStoredApiKey);
   const [health, setHealth] = useState<HealthStatus | null>(null);
   const [memory, setMemory] = useState<MemoryStatus | null>(null);
   const [continuity, setContinuity] = useState<ContinuityStatus | null>(null);
@@ -213,22 +239,35 @@ export function MobilePage() {
   const [loading, setLoading] = useState(true);
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [authError, setAuthError] = useState(false);
+  const [chatInput, setChatInput] = useState('');
+  const [chatResult, setChatResult] = useState<ChatResult | null>(null);
+  const [chatLoading, setChatLoading] = useState(false);
+  const [taskInput, setTaskInput] = useState('');
+  const [taskResult, setTaskResult] = useState<TaskResult | null>(null);
+  const [taskLoading, setTaskLoading] = useState(false);
+  const [memoryWriteResult, setMemoryWriteResult] = useState<string | null>(null);
+  const [showKeyInput, setShowKeyInput] = useState(false);
+  const [keyDraft, setKeyDraft] = useState('');
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const isRemote = backendUrl.trim() !== '';
   const targetLabel = isRemote
-    ? `AWS (${backendUrl.replace(/^https?:\/\//, '').split(':')[0]})`
+    ? `AWS Full Jarvis (${backendUrl.replace(/^https?:\/\//, '').split(':')[0]}:8000)`
     : 'Local (MacBook)';
 
-  const fetchAll = async (url?: string) => {
+  const fetchAll = async (url?: string, key?: string) => {
     const base = url ?? backendUrl;
+    const token = key ?? apiKey;
     setRefreshing(true);
+    setAuthError(false);
 
+    // Public health first (no auth needed)
     try {
-      const res = await backendFetch(base, '/v1/system/health');
+      const res = await backendFetch(base, '/health', '');
       if (res.ok) {
         const data = await res.json();
-        setHealth({ reachable: true, ...data });
+        setHealth((prev) => ({ ...prev, reachable: true, ...data }));
       } else {
         setHealth({ reachable: false });
       }
@@ -236,31 +275,26 @@ export function MobilePage() {
       setHealth({ reachable: false });
     }
 
+    // Auth-gated routes
     try {
-      const res = await backendFetch(base, '/v1/memory/status');
-      if (res.ok) setMemory(await res.json());
-    } catch {
-      // non-fatal
-    }
+      const res = await backendFetch(base, '/v1/memory/status', token);
+      if (res.status === 401 || res.status === 403) { setAuthError(true); }
+      else if (res.ok) setMemory(await res.json());
+    } catch { /* non-fatal */ }
 
     try {
-      const res = await backendFetch(base, '/v1/mobile/continuity/status');
+      const res = await backendFetch(base, '/v1/mobile/continuity/status', token);
       if (res.ok) setContinuity(await res.json());
-    } catch {
-      // non-fatal
-    }
+    } catch { /* non-fatal */ }
 
-    // Approvals: local only (write operation context — no remote support yet)
-    if (!base) {
-      try {
-        const pending = await fetchPendingApprovals();
-        setApprovals(pending);
-      } catch {
-        setApprovals([]);
+    try {
+      const res = await backendFetch(base, '/v1/approvals/pending', token);
+      if (res.ok) {
+        const d = await res.json();
+        const list: PendingApproval[] = d.actions ?? d.pending ?? [];
+        setApprovals(list);
       }
-    } else {
-      setApprovals([]);
-    }
+    } catch { /* non-fatal */ }
 
     setLastRefresh(new Date());
     setLoading(false);
@@ -270,19 +304,98 @@ export function MobilePage() {
   useEffect(() => {
     fetchAll();
     intervalRef.current = setInterval(fetchAll, 30000);
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-    };
+    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [backendUrl]);
+  }, [backendUrl, apiKey]);
 
   const switchBackend = (url: string) => {
     storeBackend(url);
     setBackendUrl(url);
     setLoading(true);
-    setHealth(null);
-    setMemory(null);
-    setContinuity(null);
+    setHealth(null); setMemory(null); setContinuity(null);
+    setChatResult(null); setTaskResult(null); setMemoryWriteResult(null);
+  };
+
+  const saveApiKey = () => {
+    const k = keyDraft.trim();
+    storeApiKey(k);
+    setApiKey(k);
+    setShowKeyInput(false);
+    setKeyDraft('');
+    fetchAll(undefined, k);
+  };
+
+  const handleChat = async () => {
+    if (!chatInput.trim()) return;
+    setChatLoading(true);
+    setChatResult(null);
+    try {
+      const res = await backendFetch(backendUrl, '/v1/chat/completions', apiKey, {
+        method: 'POST',
+        body: JSON.stringify({
+          model: 'gpt-4o-mini',
+          messages: [{ role: 'user', content: chatInput }],
+          max_tokens: 150,
+        }),
+      });
+      if (res.ok) {
+        const d = await res.json();
+        const content = d.choices?.[0]?.message?.content ?? JSON.stringify(d);
+        setChatResult({ success: true, response: content });
+      } else {
+        const err = await res.json().catch(() => ({}));
+        setChatResult({ success: false, error: `HTTP ${res.status}: ${JSON.stringify(err).slice(0, 100)}` });
+      }
+    } catch (e) {
+      setChatResult({ success: false, error: String(e) });
+    }
+    setChatLoading(false);
+  };
+
+  const handleTask = async () => {
+    if (!taskInput.trim()) return;
+    setTaskLoading(true);
+    setTaskResult(null);
+    try {
+      // Full Jarvis: POST /v1/company-org/task; Cloud runtime: POST /v1/tasks
+      const route = isRemote && !backendUrl.includes(':8000') ? '/v1/tasks' : '/v1/company-org/task';
+      const body = route === '/v1/tasks'
+        ? { description: taskInput }
+        : { task: taskInput, project_id: 'omnix' };
+      const res = await backendFetch(backendUrl, route, apiKey, {
+        method: 'POST',
+        body: JSON.stringify(body),
+      });
+      if (res.ok) {
+        const d = await res.json();
+        const id = d.task_id ?? d.id ?? '?';
+        setTaskResult({ success: true, id });
+      } else {
+        const err = await res.json().catch(() => ({}));
+        setTaskResult({ success: false, error: `HTTP ${res.status}: ${JSON.stringify(err).slice(0, 80)}` });
+      }
+    } catch (e) {
+      setTaskResult({ success: false, error: String(e) });
+    }
+    setTaskLoading(false);
+  };
+
+  const handleMemoryWrite = async () => {
+    try {
+      const content = `Mobile proof: memory write at ${new Date().toISOString()} from ${isRemote ? 'AWS' : 'local'}`;
+      const res = await backendFetch(backendUrl, '/v1/memory', apiKey, {
+        method: 'POST',
+        body: JSON.stringify({ content, namespace: 'mobile_proof' }),
+      });
+      if (res.ok) {
+        const d = await res.json();
+        setMemoryWriteResult(`Stored entry_id: ${d.entry?.entry_id ?? d.id ?? '?'}`);
+      } else {
+        setMemoryWriteResult(`Failed: HTTP ${res.status}`);
+      }
+    } catch (e) {
+      setMemoryWriteResult(`Error: ${String(e).slice(0, 60)}`);
+    }
   };
 
   const isReachable = health?.reachable ?? false;
@@ -396,16 +509,17 @@ export function MobilePage() {
         </button>
       </div>
 
-      {/* Backend target badge */}
+      {/* Backend target badge + auth status */}
       <div
         style={{
           fontSize: '11px',
           color: 'var(--color-text-muted, #888)',
-          marginBottom: '14px',
+          marginBottom: '10px',
           fontFamily: 'monospace',
           display: 'flex',
           alignItems: 'center',
           gap: '6px',
+          flexWrap: 'wrap',
         }}
       >
         <span>Target:</span>
@@ -423,10 +537,85 @@ export function MobilePage() {
               padding: '1px 5px',
             }}
           >
-            ALWAYS-ON
+            FULL JARVIS
           </span>
         )}
+        <span
+          style={{
+            fontSize: '10px',
+            background: apiKey
+              ? 'color-mix(in srgb, #22c55e 12%, transparent)'
+              : 'color-mix(in srgb, #ef4444 12%, transparent)',
+            color: apiKey ? '#22c55e' : '#ef4444',
+            border: `1px solid color-mix(in srgb, ${apiKey ? '#22c55e' : '#ef4444'} 25%, transparent)`,
+            borderRadius: '3px',
+            padding: '1px 5px',
+            cursor: 'pointer',
+          }}
+          onClick={() => setShowKeyInput((x) => !x)}
+        >
+          {apiKey ? 'AUTH ✓' : 'NO AUTH ⚠'}
+        </span>
+        {authError && (
+          <span style={{ color: '#ef4444', fontSize: '10px' }}>401 — check API key</span>
+        )}
       </div>
+
+      {/* API key input */}
+      {showKeyInput && (
+        <div
+          style={{
+            marginBottom: '12px',
+            padding: '10px',
+            background: 'color-mix(in srgb, var(--color-surface, #1a1a1c) 90%, transparent)',
+            border: '1px solid color-mix(in srgb, var(--color-border, #333) 60%, transparent)',
+            borderRadius: '8px',
+          }}
+        >
+          <div style={{ fontSize: '11px', color: 'var(--color-text-muted, #888)', marginBottom: '6px' }}>
+            OPENJARVIS_API_KEY (stored in localStorage)
+          </div>
+          <div style={{ display: 'flex', gap: '6px' }}>
+            <input
+              type="password"
+              placeholder="Enter Bearer token..."
+              value={keyDraft}
+              onChange={(e) => setKeyDraft(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') saveApiKey(); }}
+              style={{
+                flex: 1, padding: '7px', fontSize: '12px', borderRadius: '5px',
+                background: 'var(--color-surface, #1a1a1c)',
+                color: 'var(--color-text, #eee)',
+                border: '1px solid var(--color-border, #333)',
+              }}
+            />
+            <button
+              onClick={saveApiKey}
+              style={{
+                padding: '7px 12px', fontSize: '12px', borderRadius: '5px',
+                background: 'color-mix(in srgb, #22c55e 15%, transparent)',
+                color: '#22c55e', border: '1px solid color-mix(in srgb, #22c55e 30%, transparent)',
+                cursor: 'pointer',
+              }}
+            >
+              Save
+            </button>
+            {apiKey && (
+              <button
+                onClick={() => { storeApiKey(''); setApiKey(''); setShowKeyInput(false); }}
+                style={{
+                  padding: '7px 10px', fontSize: '12px', borderRadius: '5px',
+                  background: 'color-mix(in srgb, #ef4444 12%, transparent)',
+                  color: '#ef4444', border: '1px solid color-mix(in srgb, #ef4444 25%, transparent)',
+                  cursor: 'pointer',
+                }}
+              >
+                Clear
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {loading ? (
         <div
@@ -597,60 +786,171 @@ export function MobilePage() {
             </Card>
           )}
 
-          {/* Approvals (local only) */}
-          {!isRemote && (
-            <Card
-              title={`Pending Approvals${approvals.length > 0 ? ` (${approvals.length})` : ''}`}
-              borderColor={
-                approvals.length > 0
-                  ? 'color-mix(in srgb, var(--color-warn, #f59e0b) 30%, transparent)'
-                  : undefined
-              }
-            >
-              {approvals.length === 0 ? (
-                <div style={{ fontSize: '13px', color: 'var(--color-text-muted, #888)' }}>
-                  No pending approvals
+          {/* Chat (remote: real LLM) */}
+          {isRemote && (
+            <Card title="Chat — Real LLM (gpt-4o-mini via AWS)">
+              <div style={{ display: 'flex', gap: '6px', marginBottom: '8px' }}>
+                <input
+                  placeholder="Message Jarvis..."
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleChat(); }}
+                  style={{
+                    flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px',
+                    background: 'var(--color-surface, #1a1a1c)',
+                    color: 'var(--color-text, #eee)',
+                    border: '1px solid var(--color-border, #333)',
+                  }}
+                />
+                <button
+                  onClick={handleChat}
+                  disabled={chatLoading || !chatInput.trim()}
+                  style={{
+                    padding: '8px 14px', fontSize: '13px', borderRadius: '6px',
+                    background: 'color-mix(in srgb, var(--color-accent, #4fd1ff) 15%, transparent)',
+                    color: 'var(--color-accent, #4fd1ff)',
+                    border: '1px solid color-mix(in srgb, var(--color-accent, #4fd1ff) 30%, transparent)',
+                    cursor: chatLoading ? 'not-allowed' : 'pointer',
+                    opacity: chatLoading ? 0.6 : 1,
+                  }}
+                >
+                  {chatLoading ? '…' : 'Send'}
+                </button>
+              </div>
+              {chatResult && (
+                <div
+                  style={{
+                    padding: '8px', borderRadius: '6px', fontSize: '13px',
+                    background: chatResult.success
+                      ? 'color-mix(in srgb, #22c55e 6%, transparent)'
+                      : 'color-mix(in srgb, #ef4444 6%, transparent)',
+                    border: `1px solid color-mix(in srgb, ${chatResult.success ? '#22c55e' : '#ef4444'} 20%, transparent)`,
+                    color: 'var(--color-text, #eee)',
+                    whiteSpace: 'pre-wrap',
+                  }}
+                >
+                  {chatResult.response ?? chatResult.error}
                 </div>
-              ) : (
-                approvals.map((a) => (
-                  <div
-                    key={a.id}
-                    style={{
-                      padding: '8px',
-                      marginBottom: '6px',
-                      background:
-                        'color-mix(in srgb, var(--color-warn, #f59e0b) 6%, transparent)',
-                      border:
-                        '1px solid color-mix(in srgb, var(--color-warn, #f59e0b) 20%, transparent)',
-                      borderRadius: '8px',
-                      fontSize: '13px',
-                    }}
-                  >
-                    <div style={{ fontWeight: 500, marginBottom: '2px' }}>{a.action_type}</div>
-                    <div style={{ color: 'var(--color-text-muted, #aaa)', fontSize: '12px' }}>
-                      {a.description}
-                    </div>
-                    <div
-                      style={{
-                        fontSize: '11px',
-                        color: 'var(--color-text-muted, #888)',
-                        marginTop: '4px',
-                      }}
-                    >
-                      Tier: {a.tier} · {new Date(a.created_at).toLocaleTimeString()}
-                    </div>
-                  </div>
-                ))
               )}
             </Card>
           )}
-          {isRemote && (
-            <Card title="Pending Approvals">
-              <div style={{ fontSize: '13px', color: 'var(--color-text-muted, #888)' }}>
-                Approvals not available in remote mode — switch to Local.
+
+          {/* Task creation */}
+          <Card title={isRemote ? 'Create Task (AWS Cloud)' : 'Create Task (Local)'}>
+            <div style={{ display: 'flex', gap: '6px', marginBottom: '8px' }}>
+              <input
+                placeholder="Describe task..."
+                value={taskInput}
+                onChange={(e) => setTaskInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleTask(); }}
+                style={{
+                  flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px',
+                  background: 'var(--color-surface, #1a1a1c)',
+                  color: 'var(--color-text, #eee)',
+                  border: '1px solid var(--color-border, #333)',
+                }}
+              />
+              <button
+                onClick={handleTask}
+                disabled={taskLoading || !taskInput.trim()}
+                style={{
+                  padding: '8px 14px', fontSize: '13px', borderRadius: '6px',
+                  background: 'color-mix(in srgb, #22c55e 12%, transparent)',
+                  color: '#22c55e',
+                  border: '1px solid color-mix(in srgb, #22c55e 25%, transparent)',
+                  cursor: taskLoading ? 'not-allowed' : 'pointer',
+                  opacity: taskLoading ? 0.6 : 1,
+                }}
+              >
+                {taskLoading ? '…' : 'Create'}
+              </button>
+            </div>
+            {taskResult && (
+              <div
+                style={{
+                  padding: '6px 8px', borderRadius: '5px', fontSize: '12px',
+                  background: taskResult.success
+                    ? 'color-mix(in srgb, #22c55e 6%, transparent)'
+                    : 'color-mix(in srgb, #ef4444 6%, transparent)',
+                  color: taskResult.success ? '#22c55e' : '#ef4444',
+                  fontFamily: 'monospace',
+                }}
+              >
+                {taskResult.success ? `Created task: ${taskResult.id}` : taskResult.error}
               </div>
-            </Card>
-          )}
+            )}
+          </Card>
+
+          {/* Memory write proof */}
+          <Card title="Memory Write (Plan 4 proof)">
+            <div style={{ display: 'flex', gap: '6px', marginBottom: '6px' }}>
+              <button
+                onClick={handleMemoryWrite}
+                style={{
+                  flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px',
+                  background: 'color-mix(in srgb, var(--color-accent, #4fd1ff) 10%, transparent)',
+                  color: 'var(--color-accent, #4fd1ff)',
+                  border: '1px solid color-mix(in srgb, var(--color-accent, #4fd1ff) 20%, transparent)',
+                  cursor: 'pointer',
+                }}
+              >
+                Write timestamp entry to {isRemote ? 'AWS S3 memory' : 'local memory'}
+              </button>
+            </div>
+            {memoryWriteResult && (
+              <div
+                style={{
+                  padding: '6px 8px', borderRadius: '5px', fontSize: '11px',
+                  background: 'color-mix(in srgb, var(--color-border, #333) 25%, transparent)',
+                  color: 'var(--color-text-muted, #888)',
+                  fontFamily: 'monospace',
+                }}
+              >
+                {memoryWriteResult}
+              </div>
+            )}
+          </Card>
+
+          {/* Approvals (auth-gated, works locally + remotely) */}
+          <Card
+            title={`Pending Approvals${approvals.length > 0 ? ` (${approvals.length})` : ''}`}
+            borderColor={
+              approvals.length > 0
+                ? 'color-mix(in srgb, var(--color-warn, #f59e0b) 30%, transparent)'
+                : undefined
+            }
+          >
+            {!apiKey && (
+              <div style={{ fontSize: '12px', color: '#f59e0b', marginBottom: '6px' }}>
+                ⚠ Set API key to load approvals
+              </div>
+            )}
+            {approvals.length === 0 ? (
+              <div style={{ fontSize: '13px', color: 'var(--color-text-muted, #888)' }}>
+                No pending approvals
+              </div>
+            ) : (
+              approvals.map((a) => (
+                <div
+                  key={a.id}
+                  style={{
+                    padding: '8px', marginBottom: '6px',
+                    background: 'color-mix(in srgb, var(--color-warn, #f59e0b) 6%, transparent)',
+                    border: '1px solid color-mix(in srgb, var(--color-warn, #f59e0b) 20%, transparent)',
+                    borderRadius: '8px', fontSize: '13px',
+                  }}
+                >
+                  <div style={{ fontWeight: 500, marginBottom: '2px' }}>{a.action_type}</div>
+                  <div style={{ color: 'var(--color-text-muted, #aaa)', fontSize: '12px' }}>
+                    {a.description}
+                  </div>
+                  <div style={{ fontSize: '11px', color: 'var(--color-text-muted, #888)', marginTop: '4px' }}>
+                    Tier: {a.tier} · {new Date(a.created_at).toLocaleTimeString()}
+                  </div>
+                </div>
+              ))
+            )}
+          </Card>
 
           {/* Footer */}
           {lastRefresh && (

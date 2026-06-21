@@ -1,0 +1,44 @@
+# Dockerfile.full — Full Jarvis FastAPI backend for AWS ECS Fargate
+# Backend-only (no frontend build). Frontend is served from local instance.
+# Runs: jarvis serve --host 0.0.0.0 --port 8000
+#
+# Build: docker build -f deploy/aws/Dockerfile.full -t jarvis-full .
+# Run:   docker run -p 8000:8000 -e OPENJARVIS_API_KEY=... jarvis-full
+
+FROM python:3.12-slim-bookworm
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    git \
+    sqlite3 \
+    gcc \
+    python3-dev \
+    linux-libc-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY pyproject.toml README.md ./
+COPY src/ src/
+COPY scripts/install scripts/install
+COPY deploy/windows deploy/windows
+
+RUN pip install --no-cache-dir uv && \
+    uv pip install --system ".[server]"
+
+RUN useradd -m -u 1000 jarvis && \
+    mkdir -p /app/data && \
+    chown -R jarvis:jarvis /app/data
+
+USER jarvis
+
+ENV PYTHONUNBUFFERED=1
+ENV JARVIS_DATA_DIR=/app/data
+
+EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+ENTRYPOINT ["jarvis"]
+CMD ["serve", "--host", "0.0.0.0", "--port", "8000"]
