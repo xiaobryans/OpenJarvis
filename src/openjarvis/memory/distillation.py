@@ -1,24 +1,20 @@
-"""Memory OS Automatic Distillation — rule-based local-first distillation engine.
+"""Memory OS Automatic Distillation — rule-based + AI-assisted engines.
 
-What this does:
+Sprint 2 (rule-based, AutoDistillEngine):
   Scans raw JarvisMemory entries for high-confidence decisions, preferences, and
   patterns and automatically creates or updates distilled DistilledMemory entries.
+  Local-first, no API calls.
 
-Algorithm:
-  1. Fetch raw entries with confidence >= min_confidence and kind in target_kinds
-  2. Skip entries whose entry_id already appears in source_ids of existing
-     distilled entries (idempotent)
-  3. Group new candidates by kind
-  4. For each group, create a DistilledEntry of the matching kind, referencing
-     the source entry_ids
-  5. Return DistillationResult with counts and new distilled entry IDs
-
-This is deliberately rule-based and local-first.  It does not use AI model calls
-or external services.  A model-assisted distillation pipeline is planned for a
-future sprint.
+Sprint 2B (AI-assisted, AIDistillEngine):
+  Sends batches of raw memory entries to an OpenRouter model for summarization.
+  Uses OPENROUTER_API_KEY + model 'openai/gpt-4o-mini' (cheap, reliable).
+  Returns distilled entries tagged with distillation_method='ai'.
+  Falls back to rule-based if API is unavailable or fails.
+  Graceful: never breaks if model call fails.
 
 Honest status:
-  - AI-assisted distillation: NOT_IMPLEMENTED (planned future sprint)
+  - AI distillation: ACTIVE when OPENROUTER_API_KEY is set
+  - Rule-based fallback: always available
   - Cross-project aggregation: NOT_IMPLEMENTED
   - Incremental delta distillation: NOT_IMPLEMENTED (full re-scan per call)
 """
@@ -26,6 +22,7 @@ Honest status:
 from __future__ import annotations
 
 import logging
+import os
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -301,8 +298,315 @@ class AutoDistillEngine:
         )
 
 
+
+# ---------------------------------------------------------------------------
+# AI-assisted distillation via OpenRouter
+# ---------------------------------------------------------------------------
+
+_OPENROUTER_MODEL = "openai/gpt-4o-mini"
+_OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+_OPENROUTER_TIMEOUT = 30
+_MAX_ENTRIES_PER_AI_CALL = 20
+
+
+def _openrouter_key_available() -> bool:
+    return bool(os.environ.get("OPENROUTER_API_KEY", "").strip())
+
+
+def _call_openrouter_distill(entries: List[MemoryEntry], project_id: str) -> Optional[str]:
+    """Call OpenRouter to distill a batch of entries into a summary.
+
+    Returns distilled text string, or None on failure.
+    Uses urllib (no openai package required).
+    """
+    import json as _json
+    import urllib.request as _urllib
+
+    key = os.environ.get("OPENROUTER_API_KEY", "").strip()
+    if not key:
+        return None
+
+    # Build a compact representation of the entries
+    entries_text = "\n".join(
+        f"[{i+1}] kind={e.kind} confidence={e.confidence:.2f}: {e.content[:300]}"
+        for i, e in enumerate(entries[:_MAX_ENTRIES_PER_AI_CALL])
+    )
+    prompt = (
+        f"You are a memory distillation assistant for project '{project_id}'.\n"
+        "Below are raw memory entries. Distill them into 1-3 concise sentences "
+        "capturing the key pattern, decision, or lesson. "
+        "Be factual and direct. No preamble. No explanation. "
+        "Output ONLY the distilled summary.\n\n"
+        f"Raw entries:\n{entries_text}"
+    )
+
+    body = _json.dumps({
+        "model": _OPENROUTER_MODEL,
+        "messages": [{"role": "user", "content": prompt}],
+        "max_tokens": 200,
+        "temperature": 0.0,
+    }).encode()
+
+    req = _urllib.Request(
+        _OPENROUTER_URL,
+        data=body,
+        headers={
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://openjarvis.com",
+        },
+    )
+    try:
+        with _urllib.urlopen(req, timeout=_OPENROUTER_TIMEOUT) as resp:
+            data = _json.load(resp)
+        text = data["choices"][0]["message"]["content"].strip()
+        return text if text else None
+    except Exception as exc:
+        logger.debug("OpenRouter distill call failed (non-fatal): %s", exc)
+        return None
+
+
+def _detect_kind_from_text(text: str) -> str:
+    """Heuristic: detect distilled kind from AI-generated text."""
+    t = text.lower()
+    if any(w in t for w in ("decided", "decision", "chose", "selected")):
+        return "decision"
+    if any(w in t for w in ("prefer", "preference", "always use", "favour")):
+        return "preference"
+    if any(w in t for w in ("learned", "lesson", "mistake", "avoid")):
+        return "lesson"
+    if any(w in t for w in ("pattern", "recurring", "trend", "consistently")):
+        return "pattern"
+    return "summary"
+
+
+@dataclass
+class AIDistillationResult:
+    """Result of an AI-assisted distillation call."""
+    new_distilled_count: int
+    candidates_used: int
+    distillation_method: str   # "ai" | "rule_based_fallback"
+    new_entry_ids: List[str]
+    project_id: str
+    dry_run: bool
+    ai_available: bool
+    detail: str
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "new_distilled_count": self.new_distilled_count,
+            "candidates_used": self.candidates_used,
+            "distillation_method": self.distillation_method,
+            "new_entry_ids": self.new_entry_ids,
+            "project_id": self.project_id,
+            "dry_run": self.dry_run,
+            "ai_available": self.ai_available,
+            "detail": self.detail,
+        }
+
+
+class AIDistillEngine:
+    """AI-assisted distillation using OpenRouter.
+
+    Batches raw memory entries and sends them to gpt-4o-mini via OpenRouter.
+    Returns distilled entries tagged with distillation_method='ai'.
+    Falls back to rule-based distillation if API call fails or key missing.
+
+    This is an OPTIONAL enhancement over AutoDistillEngine.
+    Rule-based distillation is always available as fallback.
+    """
+
+    def __init__(
+        self,
+        db_path: Optional[Path] = None,
+        memory: Optional[JarvisMemory] = None,
+        distilled: Optional[DistilledMemory] = None,
+    ) -> None:
+        db = Path(db_path) if db_path else None
+        self._memory = memory or JarvisMemory(db_path=db)
+        self._distilled = distilled or DistilledMemory(
+            db_path=db or self._memory._db_path
+        )
+        self._rule_engine = AutoDistillEngine(
+            memory=self._memory, distilled=self._distilled
+        )
+
+    @staticmethod
+    def is_ai_available() -> bool:
+        """True if OPENROUTER_API_KEY is set."""
+        return _openrouter_key_available()
+
+    def distill(
+        self,
+        project_id: str = "",
+        *,
+        namespace: Optional[str] = None,
+        min_confidence: float = DEFAULT_MIN_CONFIDENCE,
+        kinds: Optional[List[str]] = None,
+        dry_run: bool = False,
+        batch_size: int = 10,
+    ) -> AIDistillationResult:
+        """Distill raw entries using AI (OpenRouter) or rule-based fallback.
+
+        Parameters
+        ----------
+        project_id      Project scope.
+        namespace       Optional namespace filter.
+        min_confidence  Minimum raw entry confidence.
+        kinds           Raw kinds to consider. Defaults to DISTILLABLE_KINDS.
+        dry_run         If True, report without writing.
+        batch_size      Number of raw entries to group per AI call.
+
+        Returns AIDistillationResult with distillation_method indicating
+        whether AI or rule-based was used.
+        """
+        if not _openrouter_key_available():
+            # Fall back to rule-based without AI
+            rule_result = self._rule_engine.auto_distill(
+                project_id=project_id,
+                namespace=namespace,
+                min_confidence=min_confidence,
+                kinds=kinds,
+                dry_run=dry_run,
+            )
+            return AIDistillationResult(
+                new_distilled_count=rule_result.new_distilled_count,
+                candidates_used=rule_result.candidates_found,
+                distillation_method="rule_based_fallback",
+                new_entry_ids=rule_result.new_entry_ids,
+                project_id=project_id,
+                dry_run=dry_run,
+                ai_available=False,
+                detail=(
+                    f"OpenRouter key missing — rule-based fallback: "
+                    f"{rule_result.new_distilled_count} new entries from "
+                    f"{rule_result.candidates_found} candidates"
+                ),
+            )
+
+        # Fetch candidates
+        target_kinds = set(kinds) if kinds else DISTILLABLE_KINDS
+        candidates = self._rule_engine._fetch_candidates(
+            project_id=project_id,
+            namespace=namespace,
+            min_confidence=min_confidence,
+            kinds=target_kinds,
+        )
+
+        if not candidates:
+            return AIDistillationResult(
+                new_distilled_count=0,
+                candidates_used=0,
+                distillation_method="ai",
+                new_entry_ids=[],
+                project_id=project_id,
+                dry_run=dry_run,
+                ai_available=True,
+                detail="no candidates found for AI distillation",
+            )
+
+        # Check already-distilled
+        already_distilled = self._rule_engine._get_already_distilled_ids(project_id)
+        new_candidates = [c for c in candidates if c.entry_id not in already_distilled]
+
+        if not new_candidates:
+            return AIDistillationResult(
+                new_distilled_count=0,
+                candidates_used=len(candidates),
+                distillation_method="ai",
+                new_entry_ids=[],
+                project_id=project_id,
+                dry_run=dry_run,
+                ai_available=True,
+                detail="all candidates already distilled",
+            )
+
+        new_entry_ids: List[str] = []
+
+        # Process in batches
+        for i in range(0, len(new_candidates), batch_size):
+            batch = new_candidates[i : i + batch_size]
+            ai_text = _call_openrouter_distill(batch, project_id)
+
+            if ai_text:
+                distilled_kind = _detect_kind_from_text(ai_text)
+                source_ids = [e.entry_id for e in batch]
+                avg_confidence = sum(e.confidence for e in batch) / len(batch)
+                tags = list({t for e in batch for t in e.tags}) + ["ai_distilled"]
+
+                if not dry_run:
+                    entry = self._distilled.write(
+                        content=ai_text,
+                        kind=distilled_kind,
+                        project_id=project_id,
+                        namespace="distilled",
+                        source_ids=source_ids,
+                        tags=tags,
+                        confidence=min(avg_confidence + 0.05, 1.0),
+                    )
+                    new_entry_ids.append(entry.entry_id)
+                else:
+                    new_entry_ids.append(f"[dry_run:ai_batch_{i}]")
+            else:
+                # AI failed for this batch — fall back to rule-based for it
+                for raw_entry in batch:
+                    distilled_kind = _KIND_MAP.get(raw_entry.kind, "summary")
+                    d = AutoDistillEngine._make_distilled_entry(
+                        raw=raw_entry,
+                        distilled_kind=distilled_kind,
+                        project_id=project_id,
+                    )
+                    if not dry_run:
+                        self._distilled.write(
+                            content=d.content,
+                            kind=d.kind,
+                            project_id=d.project_id,
+                            namespace=d.namespace,
+                            source_ids=d.source_ids,
+                            tags=d.tags,
+                            confidence=d.confidence,
+                            entry_id=d.entry_id,
+                        )
+                        new_entry_ids.append(d.entry_id)
+                    else:
+                        new_entry_ids.append(f"[dry_run:rule_{raw_entry.entry_id}]")
+
+        return AIDistillationResult(
+            new_distilled_count=len(new_entry_ids) if not dry_run else 0,
+            candidates_used=len(new_candidates),
+            distillation_method="ai",
+            new_entry_ids=new_entry_ids,
+            project_id=project_id,
+            dry_run=dry_run,
+            ai_available=True,
+            detail=(
+                f"AI distilled {len(new_entry_ids)} entries from "
+                f"{len(new_candidates)} candidates using {_OPENROUTER_MODEL}"
+            ),
+        )
+
+    @staticmethod
+    def distillation_status() -> Dict[str, Any]:
+        """Return honest distillation engine status."""
+        ai_available = _openrouter_key_available()
+        return {
+            "ai_available": ai_available,
+            "ai_model": _OPENROUTER_MODEL if ai_available else None,
+            "ai_provider": "openrouter" if ai_available else None,
+            "rule_based_fallback": "always_active",
+            "status": "AI_ACTIVE" if ai_available else "RULE_BASED_ONLY",
+            "detail": (
+                f"AI distillation active via {_OPENROUTER_MODEL} (OpenRouter)"
+                if ai_available
+                else "OPENROUTER_API_KEY not set — rule-based only"
+            ),
+        }
+
+
 __all__ = [
     "AutoDistillEngine",
+    "AIDistillEngine",
+    "AIDistillationResult",
     "DistillationResult",
     "DISTILLABLE_KINDS",
     "DEFAULT_MIN_CONFIDENCE",

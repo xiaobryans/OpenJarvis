@@ -6,15 +6,11 @@ All operations are read-only.  No model API calls required.
 Sprint 1 (foundation): raw/archive, distilled, retrieval, context injection,
 governance (forget/edit/export), status, memory injection into executor.
 
-Sprint 2 additions reflected here:
-  - automatic_distillation_from_raw: COMPLETE (AutoDistillEngine)
-  - semantic_vector_search: BLOCKED (TF-IDF fallback active; see SemanticSearchStatus)
-  - cloud_sync: BLOCKED_CREDENTIALS (both S3 and Supabase) — local_only
-  - approval_workflow_for_distilled: COMPLETE (force=True gate in MemoryGovernance)
-  - full_audit_trail_for_governance: COMPLETE (SQLite immutable triggers)
-  - bulk_forget: COMPLETE (bulk_forget with dry_run + safety gates)
-  - expiry_enforcement: COMPLETE (enforce_expiry, deterministic, testable)
-  - cross_device_sync: BLOCKED_NO_CLOUD_SYNC (pending cloud sync sprint)
+Sprint 2: auto-distillation, TF-IDF ranking, approval workflow, immutable audit,
+bulk forget, expiry enforcement.
+
+Sprint 2B: semantic/vector search (OpenAI, when key present), cloud sync
+(OMNIX S3), cloud audit replication, AI-assisted distillation (OpenRouter).
 """
 
 from __future__ import annotations
@@ -31,12 +27,12 @@ _DEFAULT_DB = Path.home() / ".jarvis" / "memory.db"
 
 @dataclass
 class MemoryOSStatus:
-    """Honest status of the Memory OS after Sprint 2.
+    """Honest status of the Memory OS after Sprint 2B.
 
     Fields
     ------
     backend_available           True if SQLite DB is accessible
-    backend_type                Always 'sqlite' for Sprint 1+2
+    backend_type                Always 'sqlite' for primary store
     backend_path                Absolute path to the DB file
     raw_archive_count           Total entries in memory_entries table
     raw_active_count            Entries with status='active'
@@ -46,7 +42,7 @@ class MemoryOSStatus:
     context_injection_enabled   Whether MemoryContextBuilder can inject context
     last_error                  Last exception message if any, else None
     foundation_complete         Honest sprint-level flag
-    completed_items             What was fully implemented in Sprint 1+2
+    completed_items             What was fully implemented in Sprint 1+2+2B
     planned_not_complete        What remains incomplete (honest list)
     """
 
@@ -72,36 +68,25 @@ class MemoryOSStatus:
         "approval_workflow_for_protected_entries",
         "bulk_forget_with_safety_gates",
         "expiry_enforcement_scheduler",
+        # Sprint 2B completions
+        "semantic_vector_search_openai_embeddings",
+        "cloud_sync_omnix_s3_push_pull_merge",
+        "cloud_audit_replication_to_s3",
+        "ai_assisted_distillation_openrouter",
     ])
-    planned_not_complete: List[str] = field(default_factory=lambda: [
+    planned_not_complete: List[Dict[str, str]] = field(default_factory=lambda: [
         {
-            "item": "semantic_vector_search",
-            "status": "BLOCKED_NO_EMBEDDING_MODEL",
-            "active_fallback": "tfidf_ranking",
-            "detail": (
-                "Embedding-based semantic search requires OPENAI_API_KEY or "
-                "local sentence-transformers. Neither configured. "
-                "TF-IDF fallback is active and genuinely useful."
-            ),
-        },
-        {
-            "item": "cloud_sync_cross_device",
+            "item": "supabase_cloud_sync",
             "status": "BLOCKED_CREDENTIALS",
             "detail": (
-                "Cloud memory sync requires AWS_ACCESS_KEY_ID+secret or "
-                "SUPABASE_URL+SUPABASE_SERVICE_ROLE_KEY. "
-                "Neither is configured. Local SQLite only."
+                "Supabase cloud sync requires SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY. "
+                "Not configured. OMNIX S3 sync is active as primary cloud backend."
             ),
         },
         {
-            "item": "cloud_audit_replication",
-            "status": "BLOCKED_NO_CLOUD_SYNC",
-            "detail": "Audit trail is local SQLite only. Cloud replication blocked pending cloud sync sprint.",
-        },
-        {
-            "item": "ai_assisted_distillation",
+            "item": "cross_project_memory_aggregation",
             "status": "NOT_IMPLEMENTED",
-            "detail": "Rule-based local distillation is active. Model-assisted summarization is planned future sprint.",
+            "detail": "Memory is scoped per project_id. Cross-project aggregation planned future sprint.",
         },
     ])
 
@@ -120,7 +105,7 @@ class MemoryOSStatus:
             "foundation_complete": self.foundation_complete,
             "completed_items": self.completed_items,
             "planned_not_complete": self.planned_not_complete,
-            "sprint": "plan4_sprint2_memory_os_completion",
+            "sprint": "plan4_sprint2b_memory_os_blocker_closure",
         }
 
 

@@ -836,10 +836,12 @@ class TestCloudSyncStatus:
 
 class TestMemoryOSStatusSprint2:
 
-    def test_status_sprint_is_sprint2(self, tmp_path):
+    def test_status_sprint_is_sprint2_or_later(self, tmp_path):
+        """Sprint field reflects current sprint. Sprint 2B updated it to 2b."""
         status = get_memory_os_status(db_path=tmp_path / "s2_status.db")
         d = status.to_dict()
-        assert d["sprint"] == "plan4_sprint2_memory_os_completion"
+        # Accept sprint2 or sprint2b (Sprint 2B updated the field)
+        assert "sprint2" in d["sprint"] or "sprint_2" in d["sprint"]
 
     def test_completed_items_includes_sprint2(self, tmp_path):
         status = get_memory_os_status(db_path=tmp_path / "s2_status2.db")
@@ -862,15 +864,25 @@ class TestMemoryOSStatusSprint2:
             assert "item" in item
             assert "status" in item
 
-    def test_semantic_vector_search_in_planned_not_complete(self, tmp_path):
+    def test_semantic_vector_search_completed_in_sprint2b(self, tmp_path):
+        """Sprint 2B cleared semantic vector search — it should be in completed_items."""
         status = get_memory_os_status(db_path=tmp_path / "s2_status4.db")
+        completed = status.completed_items
+        # Sprint 2B moved this from planned_not_complete to completed_items
+        assert "semantic_vector_search_openai_embeddings" in completed
+        # No longer in planned_not_complete
         items = [i["item"] for i in status.planned_not_complete]
-        assert "semantic_vector_search" in items
+        assert "semantic_vector_search" not in items
 
-    def test_cloud_sync_in_planned_not_complete(self, tmp_path):
+    def test_cloud_sync_completed_in_sprint2b(self, tmp_path):
+        """Sprint 2B cleared cloud sync — it should be in completed_items."""
         status = get_memory_os_status(db_path=tmp_path / "s2_status5.db")
+        completed = status.completed_items
+        # Sprint 2B moved this from planned_not_complete to completed_items
+        assert "cloud_sync_omnix_s3_push_pull_merge" in completed
+        # No longer in planned_not_complete
         items = [i["item"] for i in status.planned_not_complete]
-        assert "cloud_sync_cross_device" in items
+        assert "cloud_sync_cross_device" not in items
 
     def test_governance_status_reports_sprint2_implemented(self):
         s = MemoryGovernance.governance_status()

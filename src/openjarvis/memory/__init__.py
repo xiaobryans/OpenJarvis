@@ -6,6 +6,10 @@ injection, Memory OS status, and governance controls.
 Plan 4 Sprint 2: automatic distillation, TF-IDF ranking, honest semantic
 search blocker, approval workflow, immutable audit trail, bulk forget,
 expiry enforcement, and cloud sync status.
+
+Plan 4 Sprint 2B: semantic/vector search (OpenAI embeddings, when key present),
+S3 cloud sync (OMNIX workbench bucket), cloud audit replication, AI-assisted
+distillation (OpenRouter gpt-4o-mini, with rule-based fallback).
 """
 
 from openjarvis.memory.store import JarvisMemory, MemoryEntry, MEMORY_KINDS, MEMORY_STATUSES
@@ -29,11 +33,22 @@ from openjarvis.memory.governance import (
     HIGH_CONFIDENCE_THRESHOLD,
     PROTECTED_KINDS,
 )
-from openjarvis.memory.distillation import AutoDistillEngine, DistillationResult, DISTILLABLE_KINDS
+from openjarvis.memory.distillation import (
+    AutoDistillEngine,
+    AIDistillEngine,
+    AIDistillationResult,
+    DistillationResult,
+    DISTILLABLE_KINDS,
+)
 from openjarvis.memory.cloud_memory import (
     CloudMemoryGateway,
     CloudMemoryStatus,
     check_cloud_memory_status,
+)
+from openjarvis.memory.cloud_sync import (
+    JarvisMemoryS3Sync,
+    CloudSyncResult,
+    CloudSyncStatus,
 )
 
 __all__ = [
@@ -46,7 +61,7 @@ __all__ = [
     "DistilledMemory",
     "DistilledEntry",
     "DISTILLED_KINDS",
-    # retrieval + ranking
+    # retrieval + ranking (Sprint 2B: semantic active when OPENAI_API_KEY set)
     "MemoryRetriever",
     "RetrievalResult",
     "SemanticSearchStatus",
@@ -67,12 +82,18 @@ __all__ = [
     "ExpiryEnforcementResult",
     "HIGH_CONFIDENCE_THRESHOLD",
     "PROTECTED_KINDS",
-    # distillation
+    # distillation (Sprint 2 rule-based + Sprint 2B AI-assisted)
     "AutoDistillEngine",
+    "AIDistillEngine",
+    "AIDistillationResult",
     "DistillationResult",
     "DISTILLABLE_KINDS",
-    # cloud
+    # cloud memory status
     "CloudMemoryGateway",
     "CloudMemoryStatus",
     "check_cloud_memory_status",
+    # cloud sync (Sprint 2B: OMNIX S3 push/pull/merge)
+    "JarvisMemoryS3Sync",
+    "CloudSyncResult",
+    "CloudSyncStatus",
 ]

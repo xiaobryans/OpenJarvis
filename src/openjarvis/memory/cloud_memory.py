@@ -173,6 +173,82 @@ def _check_s3_aws() -> BackendReadiness:
         )
 
 
+def _check_omnix_s3() -> BackendReadiness:
+    """Check OMNIX workbench S3 config as cloud memory backend.
+
+    Reuses OMNIX_WORKBENCH_MEMORY_BUCKET + AWS_PROFILE credentials
+    that are already configured for the project.
+    """
+    profile_present = _credential_present("OMNIX_WORKBENCH_AWS_PROFILE")
+    bucket_present = _credential_present("OMNIX_WORKBENCH_MEMORY_BUCKET")
+    region_present = _credential_present("OMNIX_WORKBENCH_AWS_REGION")
+
+    if not bucket_present:
+        return BackendReadiness(
+            backend="omnix_s3",
+            status=CloudMemoryBackendStatus.BLOCKED_CREDENTIALS,
+            available=False,
+            credential_env_vars=[
+                "OMNIX_WORKBENCH_MEMORY_BUCKET",
+                "OMNIX_WORKBENCH_AWS_PROFILE",
+                "OMNIX_WORKBENCH_AWS_REGION",
+            ],
+            credential_present=False,
+            notes="OMNIX_WORKBENCH_MEMORY_BUCKET not configured.",
+            clearing_steps=[
+                "Set OMNIX_WORKBENCH_MEMORY_BUCKET in .env",
+                "Set OMNIX_WORKBENCH_AWS_PROFILE (AWS named profile)",
+                "Set OMNIX_WORKBENCH_AWS_REGION (e.g. ap-southeast-1)",
+            ],
+        )
+
+    # Credentials present — attempt a non-destructive connectivity check
+    try:
+        from openjarvis.memory.cloud_sync import JarvisMemoryS3Sync
+        sync = JarvisMemoryS3Sync()
+        status = sync.get_status()
+        if status.available:
+            return BackendReadiness(
+                backend="omnix_s3",
+                status=CloudMemoryBackendStatus.DAILY_DRIVER_ACCEPT,
+                available=True,
+                credential_env_vars=[
+                    "OMNIX_WORKBENCH_MEMORY_BUCKET",
+                    "OMNIX_WORKBENCH_AWS_PROFILE",
+                    "OMNIX_WORKBENCH_AWS_REGION",
+                ],
+                credential_present=True,
+                notes=f"S3 cloud memory operational. {status.detail}",
+            )
+        return BackendReadiness(
+            backend="omnix_s3",
+            status=CloudMemoryBackendStatus.BLOCKED_CREDENTIALS,
+            available=False,
+            credential_env_vars=[
+                "OMNIX_WORKBENCH_MEMORY_BUCKET",
+                "OMNIX_WORKBENCH_AWS_PROFILE",
+                "OMNIX_WORKBENCH_AWS_REGION",
+            ],
+            credential_present=True,
+            notes=f"S3 reachability check failed: {status.last_error}",
+            clearing_steps=["Verify AWS profile has s3:ListObjects permission on bucket"],
+        )
+    except Exception as exc:
+        return BackendReadiness(
+            backend="omnix_s3",
+            status=CloudMemoryBackendStatus.BLOCKED_CREDENTIALS,
+            available=False,
+            credential_env_vars=[
+                "OMNIX_WORKBENCH_MEMORY_BUCKET",
+                "OMNIX_WORKBENCH_AWS_PROFILE",
+                "OMNIX_WORKBENCH_AWS_REGION",
+            ],
+            credential_present=True,
+            notes=f"S3 check raised {type(exc).__name__}",
+            clearing_steps=["Check AWS credentials and bucket permissions"],
+        )
+
+
 def _check_supabase() -> BackendReadiness:
     """Check Supabase as optional cloud memory store backend."""
     url_present = _credential_present("SUPABASE_URL")
@@ -230,7 +306,8 @@ def check_cloud_memory_status(db_path: Optional[Path] = None) -> CloudMemoryStat
     local_backend = _check_local(db_path)
 
     cloud_backends = [
-        _check_s3_aws(),
+        _check_omnix_s3(),   # primary: reuses OMNIX project AWS config
+        _check_s3_aws(),     # fallback: standard AWS env vars
         _check_supabase(),
     ]
 

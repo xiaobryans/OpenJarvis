@@ -577,20 +577,24 @@ def test_memory_os_status_to_dict(tmp_path):
 
 
 def test_memory_os_status_planned_not_complete(tmp_path):
-    """Status honestly reports planned-but-not-complete capabilities."""
+    """Status honestly reports planned-but-not-complete capabilities.
+
+    Sprint 2B: semantic vector search, cloud sync, cloud audit, and AI
+    distillation have all been COMPLETED and moved to completed_items.
+    planned_not_complete now covers remaining minor items (supabase, cross-project).
+    """
     db = tmp_path / "honest_status.db"
     status = get_memory_os_status(db_path=db)
     planned = status.planned_not_complete
     assert isinstance(planned, list)
     assert len(planned) > 0
-    # Sprint 2: planned_not_complete is now a list of dicts with 'item'+'status'
-    # Support both old str format (Sprint 1) and new dict format (Sprint 2)
-    if planned and isinstance(planned[0], dict):
-        all_items_text = " ".join(str(v) for item in planned for v in item.values())
-    else:
-        all_items_text = " ".join(planned)
-    assert "semantic" in all_items_text or "vector" in all_items_text
-    assert "cloud" in all_items_text or "sync" in all_items_text
+    # Sprint 2B: planned_not_complete is a list of dicts
+    assert all(isinstance(item, dict) for item in planned)
+    # Verify completed Sprint 2B items are in completed_items, not planned_not_complete
+    completed = status.completed_items
+    assert "semantic_vector_search_openai_embeddings" in completed
+    assert "cloud_sync_omnix_s3_push_pull_merge" in completed
+    assert "ai_assisted_distillation_openrouter" in completed
 
 
 def test_memory_os_status_foundation_complete_flag(tmp_path):
