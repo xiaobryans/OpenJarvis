@@ -643,10 +643,7 @@ def get_mobile_page() -> Any:
     OpenJarvis OS — mobile continuity interface
   </p>
 
-  <div class="warn-box">
-    <strong>MacBook-off continuity:</strong> Requires GITHUB_TOKEN in .env
-    (GitHub Gist backend). Without it, continuity only works while MacBook is on.
-  </div>
+  <div class="warn-box" id="setup-warning" style="display:none;"></div>
 
   <div class="card">
     <h2>Continuity Status</h2>
@@ -727,16 +724,31 @@ def get_mobile_page() -> Any:
 
 <script>
 async function loadMacbookOffStatus() {
+  const badge = document.getElementById('macbook-off-badge');
+  const warn = document.getElementById('setup-warning');
   try {
     const r = await fetch('/v1/continuity/macbook-off-status');
+    if (!r.ok) {
+      badge.textContent = 'Error ' + r.status; badge.className = 'badge badge-hold';
+      return;
+    }
     const d = await r.json();
-    const badge = document.getElementById('macbook-off-badge');
     if (d.macbook_off_continuity === 'AVAILABLE') {
       badge.textContent = 'AVAILABLE'; badge.className = 'badge badge-ok';
+      warn.style.display = 'none';
     } else {
-      badge.textContent = 'BLOCKED — GITHUB_TOKEN needed'; badge.className = 'badge badge-warn';
+      const diag = (d.token_diagnosis && d.token_diagnosis.diagnosis) || '';
+      const action = (d.token_diagnosis && d.token_diagnosis.action) || '';
+      const msg = diag || d.classification || 'BLOCKED';
+      badge.textContent = 'BLOCKED'; badge.className = 'badge badge-warn';
+      if (action) {
+        warn.style.display = '';
+        warn.innerHTML = '<strong>MacBook-off continuity:</strong> ' + action;
+      }
     }
-  } catch(e) { document.getElementById('macbook-off-badge').textContent = 'Error'; }
+  } catch(e) {
+    badge.textContent = 'Unavailable'; badge.className = 'badge badge-hold';
+  }
 }
 
 async function submitText() {

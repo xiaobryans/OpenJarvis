@@ -43,14 +43,29 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 )
         return await call_next(request)
 
-    @staticmethod
-    def _requires_auth(path: str) -> bool:
+    # Read-only status endpoints that the mobile page fetches without an auth
+    # header.  These paths return non-secret status only — no tokens, no
+    # credentials, no write operations.
+    _PUBLIC_PATHS: frozenset[str] = frozenset(
+        {
+            "/v1/continuity/macbook-off-status",
+        }
+    )
+
+    @classmethod
+    def _requires_auth(cls, path: str) -> bool:
         """Protect API routes and operational metrics; leave the UI/health open.
 
         ``/metrics`` exposes request/token counters that should not be readable
         by unauthenticated clients, so it is gated alongside ``/v1`` and
         ``/api``. ``/health`` stays open for liveness probes.
+
+        ``_PUBLIC_PATHS`` lists read-only status endpoints that the mobile PWA
+        calls without an Authorization header (the page itself has no way to
+        supply one when opened in a phone browser).
         """
+        if path in cls._PUBLIC_PATHS:
+            return False
         return (
             path.startswith("/v1/")
             or path.startswith("/api/")

@@ -557,3 +557,124 @@ def test_memory_sync_local_store():
     assert worker.skill_coverage_status == CapabilityStatus.CLEARED_BY_VERIFIED_SUPERSEDED_DESIGN
     # No missing skills
     assert len(worker.missing_skills) == 0
+
+
+# ===========================================================================
+# MacBook-off continuity status — public access + security tests
+# ===========================================================================
+
+def test_macbook_off_status_public_no_auth(client):
+    """GET /v1/continuity/macbook-off-status returns 200 without Authorization."""
+    resp = client.get("/v1/continuity/macbook-off-status")
+    assert resp.status_code == 200
+
+
+def test_macbook_off_status_no_secret_in_response(client):
+    """Response must not contain token values, only status strings."""
+    resp = client.get("/v1/continuity/macbook-off-status")
+    assert resp.status_code == 200
+    data = resp.json()
+    # Top-level keys must be safe status fields
+    assert "macbook_off_continuity" in data
+    assert "token_diagnosis" in data
+    # token_diagnosis must not contain a token value
+    diag = data["token_diagnosis"]
+    assert "present" in diag
+    assert "format_valid" in diag
+    # No raw token value exposed
+    for key, val in diag.items():
+        if isinstance(val, str):
+            assert not val.startswith("ghp_"), f"token value leaked in {key}"
+            assert not val.startswith("github_pat_"), f"token value leaked in {key}"
+
+
+def test_macbook_off_status_blocked_when_token_missing(client, monkeypatch):
+    """When GITHUB_TOKEN is absent, status is BLOCKED_WAITING_FOR_BRYAN_NOW."""
+    import openjarvis.mobile.continuity_backend as _cb
+
+    # Patch the gist backend to appear unconfigured
+    class _FakeGist:
+        configured = False
+        def get_status(self):
+            from unittest.mock import MagicMock
+            m = MagicMock()
+            m.to_dict.return_value = {"backend_name": "github_gist", "macbook_off_capable": False}
+            return m
+        def get_token_diagnosis(self):
+            return {"present": False, "format_valid": False,
+                    "diagnosis": "GITHUB_TOKEN not set",
+                    "action": "Add GITHUB_TOKEN=ghp_... to .env"}
+        def token_format_valid(self):
+            return False
+
+    import openjarvis.mobile.continuity_backend as _cb_mod
+    aa = _cb.AlwaysAvailableContinuityStore.__new__(_cb.AlwaysAvailableContinuityStore)
+    aa._gist = _FakeGist()
+    aa._local = _cb.LocalFileBackend()
+    original = _cb_mod._STORE
+    try:
+        _cb_mod._STORE = aa
+        resp = client.get("/v1/continuity/macbook-off-status")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["macbook_off_continuity"] != "AVAILABLE"
+        assert data["token_diagnosis"]["present"] is False
+    finally:
+        _cb_mod._STORE = original
+
+
+def test_macbook_off_status_available_when_token_present(client, monkeypatch):
+    """When GITHUB_TOKEN is present with valid format, status is AVAILABLE."""
+    import openjarvis.mobile.continuity_backend as _cb
+    import openjarvis.server.company_org_routes as _r
+
+    class _FakeGist:
+        configured = True
+        def get_status(self):
+            from unittest.mock import MagicMock
+            m = MagicMock()
+            m.to_dict.return_value = {"backend_name": "github_gist", "macbook_off_capable": True}
+            return m
+        def get_token_diagnosis(self):
+            return {"present": True, "format_valid": True,
+                    "length": 40, "prefix_type": "classic_pat",
+                    "diagnosis": "Valid format",
+                    "action": "Token format OK"}
+        def token_format_valid(self):
+            return True
+
+    import openjarvis.mobile.continuity_backend as _cb_mod
+    aa = _cb.AlwaysAvailableContinuityStore.__new__(_cb.AlwaysAvailableContinuityStore)
+    aa._gist = _FakeGist()
+    aa._local = _cb.LocalFileBackend()
+    original = _cb_mod._STORE
+    try:
+        _cb_mod._STORE = aa
+        resp = client.get("/v1/continuity/macbook-off-status")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["macbook_off_continuity"] == "AVAILABLE"
+    finally:
+        _cb_mod._STORE = original
+
+
+def test_snapshot_route_still_requires_auth():
+    """POST /v1/continuity/snapshot must NOT be accessible without auth.
+
+    The auth middleware is not wired in the TestClient app; this test uses
+    the middleware directly to confirm the path requires auth.
+    """
+    from openjarvis.server.auth_middleware import AuthMiddleware
+    assert AuthMiddleware._requires_auth("/v1/continuity/snapshot") is True
+    assert AuthMiddleware._requires_auth("/v1/continuity/resume") is True
+    assert AuthMiddleware._requires_auth("/v1/continuity/macbook-off-status") is False
+
+
+def test_public_path_exemption_is_read_only():
+    """Only the read-only status endpoint is in _PUBLIC_PATHS — no write routes."""
+    from openjarvis.server.auth_middleware import AuthMiddleware
+    for path in AuthMiddleware._PUBLIC_PATHS:
+        # All public paths must be GET-style status routes — no write verbs in name
+        assert not any(
+            w in path for w in ("snapshot", "resume", "save", "delete", "write", "create")
+        ), f"Write-capable path in _PUBLIC_PATHS: {path}"
