@@ -50,14 +50,36 @@ async def chat_completions(request_body: ChatCompletionRequest, request: Request
     agent = getattr(request.app.state, "agent", None)
     model = request_body.model
 
-    # Resolve "local" sentinel (and empty/None) to the server's configured
-    # model so callers don't need to know the exact Ollama model name.
-    if not model or model == "local":
+    # Resolve sentinels (None / "" / "local" / "default") to the server's
+    # configured model so callers don't need to know the exact model name.
+    # "default" is used by the cloud mobile page; without this it passes the
+    # literal string to OpenAI/OpenRouter which has no model named "default" → 500.
+    if not model or model in ("local", "default"):
         server_model = getattr(request.app.state, "model", "") or ""
         if server_model:
             model = server_model
         elif agent is not None:
             model = getattr(agent, "_model", model)
+
+    # Inject cloud runtime context when running on ECS/cloud so the LLM
+    # accurately reports its deployment environment. Only injected when the
+    # request has no existing system message (avoids overriding caller intent).
+    import os as _os
+    _cloud_deployment = _os.environ.get("CLOUD_RUNTIME_DEPLOYMENT", "")
+    if _cloud_deployment and request_body.messages:
+        _has_system = any(m.role == "system" for m in request_body.messages)
+        if not _has_system:
+            from openjarvis.server.models import ChatMessage as _ChatMessage
+            _cloud_sys = _ChatMessage(
+                role="system",
+                content=(
+                    f"You are OpenJarvis running on a cloud server "
+                    f"({_cloud_deployment}), not on a local device. "
+                    "When asked about your runtime, state that you are the "
+                    "cloud-hosted OpenJarvis assistant."
+                ),
+            )
+            request_body.messages = [_cloud_sys] + list(request_body.messages)
 
     # Front-door utility shortcut: time/date queries answered from system
     # clock without LLM round-trip. LLMs cannot access the current time, so

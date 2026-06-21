@@ -634,3 +634,99 @@ class TestTraceRecording:
         assert trace.query == "stream please"
         # _make_engine streams "Hello", " ", "world".
         assert trace.result == "Hello world"
+
+
+# ---------------------------------------------------------------------------
+# Model sentinel normalization — regression for cloud mobile "default" → 500
+# ---------------------------------------------------------------------------
+
+
+class TestModelSentinelNormalization:
+    """model:"default" / "local" / None must resolve to server model, never 500.
+
+    Root cause: cloud /mobile page sends model:"default". Without normalization
+    that literal string reaches OpenAI/OpenRouter which rejects it with 500.
+    """
+
+    def test_model_default_resolves_and_returns_200(self):
+        """model:'default' must be normalized server-side and return HTTP 200."""
+        engine = _make_engine(content="cloud reply")
+        app = create_app(engine, "gpt-4o")
+        client = TestClient(app)
+        resp = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "default",
+                "messages": [{"role": "user", "content": "Cloud Jarvis test ok"}],
+            },
+        )
+        assert resp.status_code == 200, (
+            f"model:'default' returned {resp.status_code} — "
+            "normalization to server model is broken"
+        )
+        data = resp.json()
+        assert data["choices"][0]["message"]["content"] == "cloud reply"
+
+    def test_model_local_sentinel_resolves_to_server_model(self):
+        engine = _make_engine()
+        app = create_app(engine, "gpt-4o")
+        client = TestClient(app)
+        resp = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "local",
+                "messages": [{"role": "user", "content": "Hello"}],
+            },
+        )
+        assert resp.status_code == 200
+
+    def test_model_empty_string_resolves_to_server_model(self):
+        """Empty string model is a sentinel that resolves to server model."""
+        engine = _make_engine()
+        app = create_app(engine, "gpt-4o")
+        client = TestClient(app)
+        resp = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "",
+                "messages": [{"role": "user", "content": "Hello"}],
+            },
+        )
+        assert resp.status_code == 200
+
+    def test_explicit_model_not_overridden(self):
+        """An explicit model name must not be normalized to the server default."""
+        engine = _make_engine()
+        app = create_app(engine, "gpt-4o")
+        client = TestClient(app)
+        resp = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "gpt-4o-mini",
+                "messages": [{"role": "user", "content": "Hello"}],
+            },
+        )
+        assert resp.status_code == 200
+        # Engine mock is called; model is passed through unchanged
+        data = resp.json()
+        assert data["object"] == "chat.completion"
+
+    def test_cloud_jarvis_test_ok_is_normal_chat_not_pipeline(self):
+        """Exact iPhone cloud test phrase must return normal chat response."""
+        engine = _make_engine(content="normal assistant reply")
+        app = create_app(engine, "gpt-4o")
+        client = TestClient(app)
+        resp = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "default",
+                "messages": [{"role": "user", "content": "Cloud Jarvis test ok"}],
+            },
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        content = data["choices"][0]["message"]["content"]
+        assert "CodingPipeline" not in content, (
+            "Response must not be a CodingPipeline result"
+        )
+        assert "normal assistant reply" in content
