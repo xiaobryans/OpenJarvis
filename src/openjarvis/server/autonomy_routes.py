@@ -58,6 +58,23 @@ def _runtime_always_on_status(gist_configured: bool) -> str:
         "Deploy to AWS ECS (Dockerfile.full) to enable true MacBook-off runtime."
     )
 
+
+def _runtime_mode() -> str:
+    """Return one of: cloud | local_lan.
+
+    'cloud'     — server is running in a cloud/always-on environment (ECS Fargate).
+    'local_lan' — server is running on the MacBook; MacBook must be on for AI access.
+
+    'continuity_only' and 'unavailable' are client-side states that cannot be
+    reported by a running server instance.
+    """
+    return "cloud" if _is_cloud_runtime() else "local_lan"
+
+
+def _cloud_url() -> Optional[str]:
+    """Return the configured cloud backend URL for mobile client discovery, or None."""
+    return os.environ.get("JARVIS_CLOUD_URL") or None
+
 from openjarvis.autonomy.alerts import AlertSeverity, get_alert_store
 from openjarvis.autonomy.modes import AutonomyMode, AutonomyPolicy
 from openjarvis.autonomy.watchdogs import WatchdogRunner
@@ -405,6 +422,10 @@ async def continuity_status() -> Dict[str, Any]:
             "runtime_macbook_off_capable": _is_cloud_runtime(),
             "runtime_deployment": _runtime_deployment(),
             "runtime_always_on_status": _runtime_always_on_status(gist_configured),
+            # --- Runtime mode (local_lan | cloud) ---
+            # 'continuity_only' and 'unavailable' are client-side states only.
+            "runtime_mode": _runtime_mode(),
+            "cloud_url": _cloud_url(),
         }
     except Exception as exc:
         return {"error": str(exc), "backends": []}
