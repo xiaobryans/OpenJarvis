@@ -27,8 +27,10 @@ import { useEffect, useRef, useState } from 'react';
 
 const LS_BACKEND_KEY = 'jarvis_mobile_backend_url';
 const LS_AUTH_KEY = 'jarvis_mobile_api_key';
-// Full Jarvis FastAPI (port 8000)
-const AWS_BACKEND = 'http://18.139.225.189:8000';
+// Full Jarvis FastAPI — HTTPS via API Gateway (Plan 4 TLS closure)
+// https://2r8dnzlz1h.execute-api.ap-southeast-1.amazonaws.com → proxies to ECS Fargate :8000
+// TLS cert: Amazon RSA 2048 M04, valid until Aug 2026
+const AWS_BACKEND = 'https://2r8dnzlz1h.execute-api.ap-southeast-1.amazonaws.com';
 
 function getStoredBackend(): string {
   try { return localStorage.getItem(LS_BACKEND_KEY) ?? ''; } catch { return ''; }
@@ -253,7 +255,7 @@ export function MobilePage() {
 
   const isRemote = backendUrl.trim() !== '';
   const targetLabel = isRemote
-    ? `AWS Full Jarvis (${backendUrl.replace(/^https?:\/\//, '').split(':')[0]}:8000)`
+    ? `AWS Full Jarvis (HTTPS — ${backendUrl.replace(/^https?:\/\//, '').split('/')[0]})`
     : 'Local (MacBook)';
 
   const fetchAll = async (url?: string, key?: string) => {
@@ -537,7 +539,7 @@ export function MobilePage() {
               padding: '1px 5px',
             }}
           >
-            FULL JARVIS
+            HTTPS ✓
           </span>
         )}
         <span
