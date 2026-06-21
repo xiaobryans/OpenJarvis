@@ -223,23 +223,33 @@ def _ensure_registries_populated() -> None:
         except Exception:
             pass
 
-    # If registries are still empty, reload individual submodules from sys.modules
+    # If registries are still empty, reload individual submodules from sys.modules.
+    # Only reload modules that contribute via @ChannelRegistry.register /
+    # @ToolRegistry.register (core.registry) decorators.  Exclude modules that
+    # use a *separate* registry (jarvis_registry / *_catalog) or are pure
+    # utility modules (slack_ops, credentials) — reloading them creates new
+    # class objects whose identity diverges from already-imported references,
+    # which breaks isinstance() checks and singleton assumptions in tests.
+    _CHANNELS_RELOAD_EXCLUDE_SUFFIXES = ("_stubs", "_ops", "credentials")
     if not ChannelRegistry.keys():
         for mod_name in list(sys.modules):
-            if mod_name.startswith("openjarvis.channels.") and not mod_name.endswith(
-                "_stubs"
+            if mod_name.startswith("openjarvis.channels.") and not any(
+                mod_name.endswith(s) for s in _CHANNELS_RELOAD_EXCLUDE_SUFFIXES
             ):
                 try:
                     importlib.reload(sys.modules[mod_name])
                 except Exception:
                     pass
 
+    # jarvis_registry.ToolRegistry is a separate singleton from core.registry.ToolRegistry.
+    # Reloading jarvis_registry (or catalog modules that write into it) does not
+    # repopulate core.registry.ToolRegistry and creates a new class object,
+    # breaking any code that holds a reference to the original class.
+    _TOOLS_RELOAD_EXCLUDE_SUFFIXES = ("_stubs", "agent_tools", "jarvis_registry", "_catalog")
     if not ToolRegistry.keys():
         for mod_name in list(sys.modules):
-            if (
-                mod_name.startswith("openjarvis.tools.")
-                and not mod_name.endswith("_stubs")
-                and not mod_name.endswith("agent_tools")
+            if mod_name.startswith("openjarvis.tools.") and not any(
+                mod_name.endswith(s) for s in _TOOLS_RELOAD_EXCLUDE_SUFFIXES
             ):
                 try:
                     importlib.reload(sys.modules[mod_name])
