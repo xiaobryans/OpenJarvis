@@ -2,11 +2,12 @@
 
 **Verdict:** `PRE_FINAL_BLOCKER_CLOSURE_ACCEPT_PENDING_REVIEW`
 
-**Branch:** `localhost-get-tool`  
-**HEAD before sprint:** `b2cb3a39` (Plan 8B: Authority Cockpit UI)  
-**HEAD after sprint:** see git log after commit  
-**Produced:** 2026-06-21  
-**Stage:** Pre-Final Blocker Closure + Pending Review Finalization  
+**Branch:** `localhost-get-tool`
+**HEAD before sprint:** `b2cb3a39` (Plan 8B: Authority Cockpit UI)
+**HEAD after first doc commit:** `07a0918a`
+**HEAD after Slack correction pass:** see git log
+**Produced:** 2026-06-21 (Slack correction pass: 2026-06-21)
+**Stage:** Pre-Final Blocker Closure + Pending Review Finalization
 **Final cutover:** NOT STARTED — not claimed here
 
 ---
@@ -15,9 +16,9 @@
 
 | File | Change | Reason |
 |------|--------|--------|
-| `BRYAN_MANUAL_ACTIONS_REQUIRED.md` | NEW | Required by sprint scope item B |
+| `BRYAN_MANUAL_ACTIONS_REQUIRED.md` | NEW → UPDATED | Initial: item B. Updated: Slack correction — bot/channel LIVE_VALIDATED, DM sync classified as optional platform constraint |
 | `docs/MOBILE_ACCESS_HANDOFF.md` | NEW | Required by sprint scope item E |
-| `docs/PRE_FINAL_BLOCKER_CLOSURE_CERTIFICATION.md` | NEW | Required by sprint scope item I |
+| `docs/PRE_FINAL_BLOCKER_CLOSURE_CERTIFICATION.md` | NEW → UPDATED | Slack correction reflected |
 
 No source code changed. Documentation only. No frontend, backend, or test changes.
 
@@ -49,15 +50,16 @@ No plan can be upgraded to `FULLY_ACCEPTED` at this point because:
 
 ## B. Manual Action Checklist Summary
 
-Full details: `BRYAN_MANUAL_ACTIONS_REQUIRED.md`
+Full details: `BRYAN_MANUAL_ACTIONS_REQUIRED.md` (updated 2026-06-21 Slack correction pass)
 
 | # | Action | Blocks Final Cutover? |
 |---|--------|-----------------------|
-| 1 | Slack: obtain `xoxp-` User OAuth Token | Yes |
+| 1 | Slack bot/channel notifications | **NOT BLOCKED — LIVE_VALIDATED** |
+| 1b | Slack DM sync: `xoxp-` token | Only if Bryan needs DM history — optional |
 | 2 | Gmail: complete Google OAuth consent flow | Yes |
 | 3 | Calendar: complete Google OAuth consent flow | Yes |
 | 4 | Apple Developer: enroll + obtain signing cert | No (signing only) |
-| 5 | Telegram: verify `JARVIS_TELEGRAM_CHAT_ID` | No (token live) |
+| 5 | Telegram: verify `JARVIS_TELEGRAM_CHAT_ID` | No (token live, chat_id set) |
 | 6 | Physical mobile phone test + screenshot | Yes |
 | 7 | Voice physical test | No (US13 parked) |
 
@@ -70,8 +72,8 @@ Full details: `BRYAN_MANUAL_ACTIONS_REQUIRED.md`
 | Connector | Status | Evidence | Notes |
 |-----------|--------|----------|-------|
 | **GitHub** | `LIVE_VALIDATED` | `gh api user` → `xiaobryans` confirmed. `gho_` token prefix via `gh auth token`. | Read-only. No write. |
-| **Slack (bot)** | `LIVE_PARTIALLY` | `auth.test` → `ok: True`, team=Jarvis HQ, user=openclaw_jarvis. Token is `xoxb-` bot. | Bot token live for channel sends. Full DM sync requires `xoxp-` user token. `slack_connector.py` rejects bot tokens for sync. |
-| **Slack (user sync)** | `BLOCKED_NEEDS_BRYAN_MANUAL_ACTION` | No `xoxp-` token present. `OPENCLAW_SLACK_BOT_TOKEN` in `.env` is bot-prefixed. | See Item 1 in BRYAN_MANUAL_ACTIONS_REQUIRED.md |
+| **Slack (bot/notifications/channel send)** | `SLACK_BOT_CHANNEL_LIVE_VALIDATED` | `auth.test` → `ok: True`, team=Jarvis HQ, user=openclaw_jarvis, `bot_id: B0BA0S0MTFZ`. `conversations.list (public_channel)` → 5 channels accessible. `get_slack_status()` → `ready_pending_test_approval`. Both token and `JARVIS_SLACK_TEST_CHANNEL_ID` configured. Token type: `xoxb-` bot. | Bot fully live. Notifications/sends ready pending Bryan's send approval. Upgraded from LIVE_PARTIALLY. |
+| **Slack (DM sync)** | `SLACK_DM_SYNC_BLOCKED_PLATFORM_CONSTRAINT` | `conversations.list?types=im` → `missing_scope`. `conversations.list?types=mpim` → `missing_scope`. `~/.openjarvis/connectors/slack.json` does not exist. | Hard Slack platform constraint — bot tokens cannot read human-to-human DMs. xoxp- user token required for DM sync. Optional for cutover (only needed if Bryan wants DM history in Jarvis memory). |
 | **Telegram** | `LIVE_VALIDATED` | `getMe` → `OpenJarvisPersonalBot` confirmed. `JARVIS_TELEGRAM_BOT_TOKEN` set. `JARVIS_TELEGRAM_CHAT_ID` set in `cloud-keys.env`. | Bot live. Outbound sends require chat_id confirmation (Item 5). |
 | **Gmail** | `BLOCKED_NEEDS_OAUTH` | `GOOGLE_OAUTH_CLIENT_ID` set. `GOOGLE_OAUTH_CLIENT_SECRET` is placeholder in `~/.jarvis/cloud-keys.env`. No token files. | See Item 2 in BRYAN_MANUAL_ACTIONS_REQUIRED.md |
 | **Calendar** | `BLOCKED_NEEDS_OAUTH` | Same status as Gmail. | See Item 3 in BRYAN_MANUAL_ACTIONS_REQUIRED.md |
@@ -264,14 +266,28 @@ Output: username = OpenJarvisPersonalBot
 
 **Result:** LIVE_VALIDATED
 
-### 7. Slack Live Test
+### 7. Slack Live Revalidation (2026-06-21 Slack correction pass)
 
 ```
-Command: httpx.get("https://slack.com/api/auth.test", headers={Authorization: Bearer xoxb-...})
-Output: ok=True, team=Jarvis HQ, user=openclaw_jarvis
+Command: httpx.get("https://slack.com/api/auth.test", ...)
+Output: ok=True, team=Jarvis HQ, user=openclaw_jarvis, bot_id=B0BA0S0MTFZ, token_type=bot
+
+Command: get_slack_status() route
+Output: status=ready_pending_test_approval, bot_token_present=True,
+        test_channel_present=True, configured=True, send_status=ready_pending_approval
+
+Command: conversations.list?types=public_channel
+Output: OK, 5 channels visible (e.g. #all-omnix-hq, #social)
+
+Command: conversations.list?types=im
+Output: FAILED: missing_scope (bot cannot read human DMs — platform constraint)
+
+Command: conversations.list?types=mpim
+Output: FAILED: missing_scope (bot cannot read group DMs — platform constraint)
 ```
 
-**Result:** LIVE_PARTIALLY (bot token live; user sync blocked pending xoxp- token)
+**Result:** `SLACK_BOT_CHANNEL_LIVE_VALIDATED` (upgraded from LIVE_PARTIALLY)
+**DM sync:** `SLACK_DM_SYNC_BLOCKED_PLATFORM_CONSTRAINT` — xoxp- user token truly required, optional for cutover
 
 ---
 
@@ -288,11 +304,12 @@ Patterns checked: ghp_, gho_, sk-{20+}, xoxb-{20+}, AKIA{16}
 
 | Blocker | Classification | Bryan Action Required? |
 |---------|---------------|------------------------|
-| Slack `xoxp-` user token | `BLOCKED_NEEDS_BRYAN_MANUAL_ACTION` | Yes — Item 1 |
+| Slack bot/channel notifications | `SLACK_BOT_CHANNEL_LIVE_VALIDATED` — **NOT A BLOCKER** | None |
+| Slack DM sync | `SLACK_DM_SYNC_BLOCKED_PLATFORM_CONSTRAINT` — optional | Only if Bryan wants DM history in Jarvis memory — Item 1b |
 | Gmail OAuth | `BLOCKED_NEEDS_OAUTH` | Yes — Item 2 |
 | Calendar OAuth | `BLOCKED_NEEDS_OAUTH` | Yes — Item 3 |
 | Apple signing enrollment | `BLOCKED_APPLE_ENROLLMENT_PENDING` | Optional — Item 4 |
-| Telegram chat_id verify | `LIVE_PARTIALLY` | Recommended — Item 5 |
+| Telegram chat_id verify | `LIVE_VALIDATED` (token + chat_id set) | Recommended verify — Item 5 |
 | Physical mobile test | `BLOCKED_NEEDS_PHYSICAL_TEST` | Yes — Item 6 |
 | US13 Voice | `PARKED / NOT_REQUIRED_FOR_CUTOVER` | None |
 | macOS permission prompt | `TRACKED_PREFINAL_POLISH_BLOCKER` | None (accepted) |
