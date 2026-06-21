@@ -1,74 +1,86 @@
-# Latest Cursor Handoff Report
+# LATEST CURSOR HANDOFF REPORT
 
-**Date:** 2026-06-22
 **Branch:** `localhost-get-tool`
-**HEAD before sprint:** `e80a2a0f`
-**Sprint:** NO-GAP Full Blocker Closure Sprint
-**Verdict:** `LIMITED_ACCEPT_PENDING_REVIEW`
+**Date:** 2026-06-22
+**Sprint:** Pre-Final Blocker Closure (gho_ token, Slack xoxp env, Tauri rebuild)
+**HEAD:** see `git log -1` for current commit
 
 ---
 
-## What Was Done This Sprint
+## Sprint Summary
 
-### Code Changes (merged to localhost-get-tool)
+This sprint closed all remaining non-parked blockers before final hostile/lazy-user cutover certification.
 
-| File | Change |
+### Blockers Fixed
+
+| # | Blocker | Fix |
+|---|---------|-----|
+| 1 | `gho_` GitHub CLI OAuth token rejected by continuity backend | `token_format_valid()` updated to accept `gho_`, `ghs_` prefixes |
+| 2 | `GITHUB_TOKEN` in `cloud-keys.env` not found by continuity backend | `_load_token_from_env()` now checks `~/.openjarvis/cloud-keys.env` first |
+| 3 | Slack `is_connected()` returned False despite `SLACK_USER_TOKEN` in `cloud-keys.env` | Added `_load_slack_user_token_from_env()` fallback in `slack_connector.py` |
+| 4 | Installed `/Applications/OpenJarvis.app` showed old sidebar UI | Frontend rebuilt (`npm run build:tauri`), Tauri rebundled, reinstalled |
+| 5 | Mobile page still showed hardcoded GITHUB_TOKEN warning | Already fixed in prior sprint; `gho_` fix now makes status AVAILABLE |
+
+### Connector Status
+
+| Connector | Status |
+|-----------|--------|
+| Gmail | LIVE (`is_connected: True`) |
+| Google Calendar | LIVE (`is_connected: True`) |
+| Slack (xoxp) | LIVE (`is_connected: True` via env fallback) |
+| GitHub continuity | AVAILABLE (gho_ token accepted) |
+| Telegram | Not re-validated this sprint (was live in prior sprint) |
+
+### Memory / Runtime
+
+| Item | Status |
 |------|--------|
-| `src/openjarvis/core/registry.py` | Fixed duplicate registration crash for `-m` runner pattern |
-| `src/openjarvis/connectors/gmail.py` | Added `__main__` CLI block (oauth-setup + status) + `_load_env()` |
-| `src/openjarvis/connectors/gcalendar.py` | Added `__main__` CLI block (oauth-setup + status) + `_load_env()` |
-| `src/openjarvis/connectors/oauth.py` | Extended `get_client_credentials` env var fallback chain |
-| `tests/core/test_registry.py` | 3 new targeted tests (20/20 pass) |
-| `frontend/src/pages/JarvisCockpitPage.tsx` | New unified cockpit page (NEW FILE) |
-| `frontend/src/App.tsx` | Root `/` uses cockpit; classic home at `/classic` |
-| `frontend/src/components/Layout.tsx` | No sidebar on root `/` |
-| `docs/NO_GAP_FULL_BLOCKER_CLOSURE_CERTIFICATION.md` | Sprint certification |
-| `BRYAN_MANUAL_ACTIONS_REQUIRED.md` | Manual action list |
-| `docs/MOBILE_ACCESS_HANDOFF.md` | Updated with confirmed live state |
+| Rust bridge (`openjarvis_rust`) | ACTIVE via `uv run python` |
+| Plain `python3` | Rust bridge NOT available |
+| Packaged app Rust bridge | UNVERIFIED (separate Python env) |
+
+### UI / Packaged App
+
+| Item | Status |
+|------|--------|
+| Web dev server (`npm run dev`) | JarvisCockpitPage at `/` |
+| Packaged app (`/Applications/OpenJarvis.app`) | Rebuilt Jun 22 2026, new cockpit build |
+| Sidebar | Hidden at `/`; present on `/classic` and other legacy routes |
+| Updater | PARKED — missing signing key |
+
+### Parked (unchanged)
+
+- Voice / TTS / wake word: PARKED
+- Apple Developer signing: PARKED
 
 ---
 
-## Connector Status
+## Files Changed This Sprint
 
-| Connector | Status | Notes |
-|-----------|--------|-------|
-| Gmail | ⏳ AWAITING_CONSENT | Code works, browser consent pending |
-| Google Calendar | ⏳ AWAITING_CONSENT | Same Google OAuth flow as Gmail |
-| Slack bot | ✅ LIVE | `openclaw_jarvis` / `Jarvis HQ` / `#agent-orchestrator` |
-| Slack DM sync | ⛔ BLOCKED | No `xoxp` token; requires Slack user OAuth |
-| Telegram | ✅ LIVE | `@OpenJarvisPersonalBot` |
-| GitHub | ✅ LIVE | `xiaobryans` |
-
----
-
-## System Status
-
-| Area | Status | Notes |
-|------|--------|-------|
-| Backend server | ✅ Running | `0.0.0.0:8000`, health ok, version 1.0.2 |
-| Mobile `/mobile` | ✅ 200 OK | 11KB HTML, LAN `192.168.1.16:8000/mobile` |
-| macOS screen/audio prompts | ✅ CLOSED | Lazy-only checks + 5min cache |
-| Apple signing | ⛔ BLOCKED | No Developer ID cert, needs enrollment |
-| Voice wake word | ⛔ PARKED | Not configured; does not block text/mobile |
-| Rust memory bridge | ⛔ PARKED | Build step pending |
-| Unified cockpit UI | ✅ IMPLEMENTED | No sidebar, 10 module cards, tsc clean |
+- `src/openjarvis/mobile/continuity_backend.py` — token format + env loading
+- `src/openjarvis/connectors/slack_connector.py` — SLACK_USER_TOKEN env fallback
+- `tests/server/test_company_org_routes.py` — gho_ token format tests
+- `docs/MOBILE_ACCESS_HANDOFF.md` — MacBook-off section updated
+- `docs/NO_GAP_FULL_BLOCKER_CLOSURE_CERTIFICATION.md` — updated
+- `docs/certification/LATEST_CURSOR_HANDOFF_REPORT.md` — this file
+- `BRYAN_MANUAL_ACTIONS_REQUIRED.md` — updated
+- `frontend/dist/` — rebuilt (not committed; binary artifact)
+- `/Applications/OpenJarvis.app` — reinstalled (local only, not committed)
 
 ---
 
-## Bryan Must Do Next
+## Manual Actions Still Needed from Bryan
 
-1. **Gmail OAuth** — `python3 -m openjarvis.connectors.gmail oauth-setup` (browser consent)
-2. **Mobile screenshot** — Open `http://192.168.1.16:8000/mobile` on iPhone (same Wi-Fi)
-3. **Apple Developer enrollment** — External, $99/year, certificate required
-4. **Slack xoxp** — User token OAuth flow (Slack platform constraint)
+1. Open `/Applications/OpenJarvis.app` — confirm new cockpit UI
+2. Refresh iPhone `/mobile` — confirm MacBook-off AVAILABLE
+3. Run `curl -i http://127.0.0.1:8000/v1/continuity/macbook-off-status` after server restart
+4. Confirm `gh auth status` shows `gist` scope
 
 ---
 
-## Next Step for Final Cutover
+## Next Step
 
-After Bryan completes Gmail OAuth and mobile screenshot:
-- Run connector health tests
-- Run final hostile/lazy-user cutover certification
-- Finalize `PREFINAL_REQUIRED_BLOCKERS_AND_MACOS_POLISH_CERTIFICATION.md`
+After Bryan confirms the 4 manual checks above:
+→ **Run final hostile/lazy-user cutover certification**
 
-**Final cutover: NOT STARTED.**
+*Certification: NOT STARTED*

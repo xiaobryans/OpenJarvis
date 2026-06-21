@@ -55,11 +55,17 @@ logger = logging.getLogger(__name__)
 
 
 def _load_token_from_env() -> str:
-    """Load GITHUB_TOKEN from environment or .env file. Never logs the value."""
+    """Load GITHUB_TOKEN from environment or known env files. Never logs the value."""
     tok = os.environ.get("GITHUB_TOKEN", "")
     if tok:
         return tok
-    for env_file in [Path(".env"), Path(".env.local")]:
+    # Search order: cloud-keys (persisted secrets), then project .env files
+    search_files = [
+        Path.home() / ".openjarvis" / "cloud-keys.env",
+        Path(".env"),
+        Path(".env.local"),
+    ]
+    for env_file in search_files:
         try:
             if env_file.exists():
                 for line in env_file.read_text().splitlines():
@@ -193,23 +199,39 @@ class GitHubGistBackend:
         return bool(self._token)
 
     def token_format_valid(self) -> bool:
-        """Return True if token LOOKS like a valid GitHub PAT format.
+        """Return True if token LOOKS like a valid GitHub token format.
 
-        Valid formats:
-          Classic PAT:       ghp_[40 chars]
-          Fine-grained PAT:  github_pat_[long string]
-          Old format:        40 hex chars (legacy)
+        Accepted formats:
+          Classic PAT:          ghp_[36+ chars]   (Personal Access Token)
+          Fine-grained PAT:     github_pat_[50+ chars]
+          GitHub CLI / OAuth:   gho_[36+ chars]   (OAuth token via `gh auth login`)
+          GitHub App install:   ghs_[36+ chars]
+          Old hex format:       40 hex chars (legacy Classic PAT)
 
-        Does NOT validate against GitHub API — just format check.
+        All of these can carry 'gist' scope and are usable for the GitHub
+        Gist continuity backend.  The previous restriction to ghp_ only was
+        too strict — Bryan's `gh auth login` produces a gho_ OAuth token
+        which is fully capable of Gist access when the 'gist' scope is present.
+
+        Does NOT validate against GitHub API — just format/prefix check.
         Never logs or returns the token value.
         """
         tok = self._token
         if not tok:
             return False
+        # Classic PAT (ghp_) — most common user-created token
         if tok.startswith("ghp_") and len(tok) >= 40:
             return True
+        # Fine-grained PAT
         if tok.startswith("github_pat_") and len(tok) >= 50:
             return True
+        # GitHub CLI / OAuth app token (gho_) — produced by `gh auth login`
+        if tok.startswith("gho_") and len(tok) >= 20:
+            return True
+        # GitHub App installation token
+        if tok.startswith("ghs_") and len(tok) >= 20:
+            return True
+        # Legacy 40-char hex Classic PAT
         if len(tok) == 40 and all(c in "abcdefghijklmnopqrstuvwxyz0123456789" for c in tok):
             return True
         return False
@@ -224,25 +246,38 @@ class GitHubGistBackend:
                 "diagnosis": "GITHUB_TOKEN not set",
                 "action": "Add GITHUB_TOKEN=ghp_... to .env with 'gist' scope",
             }
+        prefix_type: str
+        if tok.startswith("ghp_"):
+            prefix_type = "classic_pat"
+        elif tok.startswith("github_pat_"):
+            prefix_type = "fine_grained_pat"
+        elif tok.startswith("gho_"):
+            prefix_type = "github_cli_oauth"
+        elif tok.startswith("ghs_"):
+            prefix_type = "github_app_installation"
+        else:
+            prefix_type = "unknown_format"
+
         return {
             "present": True,
             "format_valid": self.token_format_valid(),
             "length": len(tok),
-            "prefix_type": (
-                "classic_pat" if tok.startswith("ghp_")
-                else "fine_grained_pat" if tok.startswith("github_pat_")
-                else "unknown_format"
-            ),
+            "prefix_type": prefix_type,
             "diagnosis": (
                 "Valid format" if self.token_format_valid()
-                else f"INVALID_TOKEN_FORMAT: length={len(tok)}, expected ghp_[40+] or github_pat_[50+]"
+                else (
+                    f"INVALID_TOKEN_FORMAT: prefix={prefix_type!r}, length={len(tok)}. "
+                    "Expected ghp_[40+] (Classic PAT), github_pat_[50+] (fine-grained PAT), "
+                    "or gho_[20+] (GitHub CLI OAuth via `gh auth login`)."
+                )
             ),
             "action": (
-                "Token format OK — verify 'gist' scope on github.com/settings/tokens"
+                "Token format OK — verify 'gist' scope at github.com/settings/tokens"
                 if self.token_format_valid()
                 else (
-                    "INVALID TOKEN: Create a new Classic PAT at github.com/settings/tokens "
-                    "with 'gist' scope. Token must start with 'ghp_' and be 40+ chars."
+                    "Token format not recognized. Use a Classic PAT (ghp_...) or "
+                    "run `gh auth login` with 'gist' scope and set "
+                    "GITHUB_TOKEN=$(gh auth token) in .env."
                 )
             ),
         }

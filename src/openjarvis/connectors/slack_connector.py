@@ -192,6 +192,27 @@ _USER_TOKEN_PREFIX = "xoxp-"
 _BOT_TOKEN_PREFIX = "xoxb-"
 
 
+def _load_slack_user_token_from_env() -> str:
+    """Load SLACK_USER_TOKEN from env or ~/.openjarvis/cloud-keys.env. Never logs value."""
+    import os
+    from pathlib import Path
+
+    tok = os.environ.get("SLACK_USER_TOKEN", "")
+    if tok:
+        return tok
+    env_file = Path.home() / ".openjarvis" / "cloud-keys.env"
+    try:
+        if env_file.exists():
+            for line in env_file.read_text().splitlines():
+                if line.startswith("SLACK_USER_TOKEN="):
+                    val = line[len("SLACK_USER_TOKEN="):].strip().strip('"').strip("'")
+                    if val:
+                        return val
+    except Exception:
+        pass
+    return ""
+
+
 def _validate_user_token(token: str) -> None:
     """Raise :class:`SlackTokenError` unless *token* looks like a user token.
 
@@ -308,11 +329,12 @@ class SlackConnector(BaseConnector):
     # ------------------------------------------------------------------
 
     def is_connected(self) -> bool:
-        """Return ``True`` if a credentials file with a valid token exists."""
+        """Return ``True`` if a credentials file or SLACK_USER_TOKEN env var provides a token."""
         tokens = load_tokens(self._credentials_path)
-        if tokens is None:
-            return False
-        return bool(tokens)
+        if tokens:
+            return True
+        # Fall back to SLACK_USER_TOKEN from environment / cloud-keys.env
+        return bool(_load_slack_user_token_from_env())
 
     def disconnect(self) -> None:
         """Delete the stored credentials file."""
@@ -387,10 +409,12 @@ class SlackConnector(BaseConnector):
             Not yet used (reserved for pagination resumption).
         """
         tokens = load_tokens(self._credentials_path)
-        if not tokens:
-            return
-
-        token: str = tokens.get("token", tokens.get("access_token", ""))
+        token: str = ""
+        if tokens:
+            token = tokens.get("token", tokens.get("access_token", ""))
+        if not token:
+            # Fall back to SLACK_USER_TOKEN from environment / cloud-keys.env
+            token = _load_slack_user_token_from_env()
         if not token:
             return
 

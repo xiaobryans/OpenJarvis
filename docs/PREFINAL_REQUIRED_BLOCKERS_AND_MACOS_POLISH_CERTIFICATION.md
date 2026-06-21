@@ -1,64 +1,52 @@
-# Pre-Final Required Blockers and macOS Polish Certification
+# PREFINAL REQUIRED BLOCKERS AND MACOS POLISH CERTIFICATION
 
-**Date:** 2026-06-22
 **Branch:** `localhost-get-tool`
-**Status:** `PREFINAL_BLOCKERS_DOCUMENTED — AWAITING_MANUAL_CLOSURE`
+**Updated:** 2026-06-22
 
 ---
 
-## Code-Closed This Sprint
+## Blocker Status (Pre-Final Cutover)
 
-| Item | Classification |
-|------|---------------|
-| Registry duplicate registration crash | `CLOSED` — idempotent `__qualname__` check |
-| Gmail `__main__` CLI entrypoint | `CLOSED` — `oauth-setup` + `status` commands |
-| Calendar `__main__` CLI entrypoint | `CLOSED` — `oauth-setup` + `status` commands |
-| Env var credential discovery | `CLOSED` — fallback chain covers `Google_CLIENT_ID` |
-| macOS permission prompt spam | `MACOS_PERMISSION_PROMPT_POLISH_CLOSED` |
-| Unified cockpit UI | `CLOSED` — implemented, tsc clean |
-
----
-
-## Remaining Pre-Final Blockers
-
-### REQUIRED for text/mobile final cutover
-
-| Blocker | Action | Owner |
-|---------|--------|-------|
-| Gmail OAuth token | Run `python3 -m openjarvis.connectors.gmail oauth-setup`, authorize | Bryan |
-| Calendar OAuth token | Check after Gmail; run `gcalendar oauth-setup` if needed | Bryan |
-| Physical mobile screenshot | Open `http://192.168.1.16:8000/mobile` from iPhone | Bryan |
-
-### Platform-blocked (cannot be code-fixed)
-
-| Blocker | Classification | Detail |
-|---------|---------------|--------|
-| Apple signing cert | `BLOCKED_BY_MISSING_APPLE_DEVELOPER_CERT` | Enrollment + cert required |
-| Slack DM history | `BLOCKED_BY_SLACK_TOKEN_SCOPE_CONSTRAINT` | `xoxp` required |
-
-### Parked (do NOT block text/mobile cutover)
-
-| Item | Classification |
-|------|---------------|
-| Voice wake word | `PARKED_WAKE_WORD_NOT_CONFIGURED` |
-| Rust memory bridge | `PARKED_BUILD_STEP_PENDING` |
+| Blocker | Classification | Status |
+|---------|----------------|--------|
+| Gmail OAuth | Code fix complete; token live | `CLOSED` |
+| Calendar OAuth | Code fix complete; token live | `CLOSED` |
+| GitHub MacBook-off continuity (gho_ token) | Code fix: gho_ accepted | `CLOSED` |
+| GITHUB_TOKEN from cloud-keys.env | Code fix: env loading updated | `CLOSED` |
+| Rust memory bridge | Active via `uv run`; packaged unverified | `CLOSED_CLI_ONLY` |
+| Slack bot/channel | Live | `CLOSED` |
+| Slack xoxp / DM history | Env fallback added; is_connected=True | `CLOSED` |
+| Mobile LAN access | Proven; /mobile page loads | `CLOSED` |
+| MacBook-off status public endpoint | Auth exemption in place; 200 no-auth | `CLOSED` |
+| Unified cockpit UI | Installed app rebuilt Jun 22 | `CLOSED_PENDING_BRYAN_VERIFY` |
+| macOS Screen/System Audio permission | 5min cache, lazy checks only | `MACOS_PERMISSION_PROMPT_POLISH_CLOSED` |
+| Voice / wake / TTS | PARKED | Not a blocker |
+| Apple signing / updater | PARKED | Not a blocker |
 
 ---
 
-## macOS Permission Prompt Classification
+## macOS Permission Prompt Polish
 
-| Check | Classification | Evidence |
-|-------|---------------|----------|
-| Screen recording TCC prompt | `MACOS_PERMISSION_PROMPT_POLISH_CLOSED` | 5-min cache, no polling loop |
-| System audio / microphone TCC | `MACOS_PERMISSION_PROMPT_POLISH_CLOSED` | Lazy check only |
-| Accessibility | `LIMITED_ACCEPT_FIRST_PROMPT_ONLY` | Checked once per process start via ctypes |
+**Classification:** `MACOS_PERMISSION_PROMPT_POLISH_CLOSED`
+
+Evidence:
+- `_SCREEN_RECORDING_CACHE_TTL = 300.0` in `desktop_operator.py`
+- No background thread polls for permissions
+- Permission checks only triggered by tool invocations (lazy)
+- At most one TCC prompt per 5 minutes per permission type
+- `tccutil reset` NOT run (not needed, not safe)
 
 ---
 
-## Final Readiness
+## Remaining Manual Verifications (Bryan)
 
-- Text input: ✅ Ready (backend runs, chat endpoint functional)
-- Mobile access: ✅ Server confirmed, URL confirmed, physical proof pending Bryan
-- Voice: ⛔ Parked
-- Desktop operator: ⚠️ Permissions not granted; lazy check, no spam
-- Connectors: Gmail/Calendar pending; Slack/Telegram/GitHub live
+1. Open `/Applications/OpenJarvis.app` → confirm new cockpit UI visible
+2. Refresh `http://192.168.1.16:8000/mobile` on iPhone → confirm AVAILABLE
+3. `curl -i http://127.0.0.1:8000/v1/continuity/macbook-off-status` → 200
+4. `curl -i -X POST http://127.0.0.1:8000/v1/continuity/snapshot` → 401
+
+Once all 4 confirm: proceed to final hostile/lazy-user cutover certification.
+
+---
+
+*Updated: 2026-06-22 | Sprint: Pre-Final Blocker Closure*

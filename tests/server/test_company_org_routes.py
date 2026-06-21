@@ -581,11 +581,11 @@ def test_macbook_off_status_no_secret_in_response(client):
     diag = data["token_diagnosis"]
     assert "present" in diag
     assert "format_valid" in diag
-    # No raw token value exposed
+    # No raw token value exposed (any GitHub token prefix)
     for key, val in diag.items():
         if isinstance(val, str):
-            assert not val.startswith("ghp_"), f"token value leaked in {key}"
-            assert not val.startswith("github_pat_"), f"token value leaked in {key}"
+            for prefix in ("ghp_", "github_pat_", "gho_", "ghs_"):
+                assert not val.startswith(prefix), f"token value leaked in {key}"
 
 
 def test_macbook_off_status_blocked_when_token_missing(client, monkeypatch):
@@ -678,3 +678,55 @@ def test_public_path_exemption_is_read_only():
         assert not any(
             w in path for w in ("snapshot", "resume", "save", "delete", "write", "create")
         ), f"Write-capable path in _PUBLIC_PATHS: {path}"
+
+
+# ===========================================================================
+# token_format_valid: gho_ / GitHub CLI OAuth token acceptance
+# ===========================================================================
+
+def test_token_format_valid_ghp():
+    """Classic PAT (ghp_) is accepted."""
+    from openjarvis.mobile.continuity_backend import GitHubGistBackend
+    b = GitHubGistBackend.__new__(GitHubGistBackend)
+    b._token = "ghp_" + "A" * 36
+    assert b.token_format_valid() is True
+
+
+def test_token_format_valid_gho():
+    """GitHub CLI OAuth token (gho_) is accepted."""
+    from openjarvis.mobile.continuity_backend import GitHubGistBackend
+    b = GitHubGistBackend.__new__(GitHubGistBackend)
+    b._token = "gho_" + "A" * 36
+    assert b.token_format_valid() is True
+
+
+def test_token_format_valid_github_pat():
+    """Fine-grained PAT (github_pat_) is accepted."""
+    from openjarvis.mobile.continuity_backend import GitHubGistBackend
+    b = GitHubGistBackend.__new__(GitHubGistBackend)
+    b._token = "github_pat_" + "A" * 50
+    assert b.token_format_valid() is True
+
+
+def test_token_format_invalid_random():
+    """Random string is rejected."""
+    from openjarvis.mobile.continuity_backend import GitHubGistBackend
+    b = GitHubGistBackend.__new__(GitHubGistBackend)
+    b._token = "NOTVALID123"
+    assert b.token_format_valid() is False
+
+
+def test_token_diagnosis_gho_prefix_type():
+    """gho_ token diagnosis reports github_cli_oauth prefix type — no token value leaked."""
+    from openjarvis.mobile.continuity_backend import GitHubGistBackend
+    b = GitHubGistBackend.__new__(GitHubGistBackend)
+    b._token = "gho_" + "A" * 36
+    diag = b.get_token_diagnosis()
+    assert diag["prefix_type"] == "github_cli_oauth"
+    assert diag["format_valid"] is True
+    assert diag["present"] is True
+    # No token value in any string field
+    for key, val in diag.items():
+        if isinstance(val, str):
+            for prefix in ("ghp_", "github_pat_", "gho_", "ghs_"):
+                assert not val.startswith(prefix), f"token leaked in {key}"

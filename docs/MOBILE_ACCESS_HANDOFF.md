@@ -218,4 +218,42 @@ For mobile access from a different device, Bryan must set the backend URL in the
 
 ---
 
-*Last updated: 2026-06-21 | Sprint: Pre-Final Blocker Closure*
+---
+
+## MacBook-off Continuity Status (as of 2026-06-22)
+
+| Item | Status | Notes |
+|------|--------|-------|
+| LAN access (MacBook on) | AVAILABLE | Server running at `192.168.1.16:8000` |
+| MacBook-off continuity | AVAILABLE (when `GITHUB_TOKEN` present with valid format) | Backed by GitHub Gist backend |
+| GitHub token accepted formats | `ghp_` (Classic PAT), `github_pat_` (fine-grained), `gho_` (GitHub CLI OAuth via `gh auth login`), `ghs_` (App install) | All can carry `gist` scope |
+| Token source | `~/.openjarvis/cloud-keys.env` (primary), `.env`, `os.environ` | Loaded in priority order |
+| Backend used | GitHub Gist (private gist, Bryan's account) | No cost, free tier |
+| Chat execution | Still requires MacBook server to be running | Gist backend stores state only; LLM calls still need server |
+| PWA install | Free — "Add to Home Screen" in Safari/Chrome | No App Store |
+
+### What GITHUB_TOKEN does for MacBook-off continuity
+
+The GitHub Gist backend stores Jarvis session snapshots (task state, memory, approvals) as a **private GitHub Gist**. When the MacBook is off:
+- The snapshot data persists in the Gist
+- Bryan can read state from any device with the right token
+- Chat/LLM execution still requires the MacBook server (or AWS backend)
+
+### Token requirements
+
+1. Token must be present in `~/.openjarvis/cloud-keys.env`, `.env`, or `os.environ`
+2. Token must start with `ghp_`, `github_pat_`, `gho_`, or `ghs_`
+3. Token must have `gist` scope
+4. GitHub CLI token (`gho_`) from `gh auth login` is accepted — no separate Classic PAT needed
+
+### Recovery if MacBook-off shows BLOCKED
+
+1. Check token: `grep GITHUB_TOKEN ~/.openjarvis/cloud-keys.env` (value hidden)
+2. Check gh CLI: `gh auth status` (shows scopes without printing token)
+3. If token is `gho_` from `gh auth login` — this is now accepted
+4. If token is missing, add: `GITHUB_TOKEN=$(gh auth token)` to `~/.openjarvis/cloud-keys.env`
+5. Restart server and refresh `/mobile`
+
+---
+
+*Last updated: 2026-06-22 | Sprint: Pre-Final Blocker Closure (gho_ token fix, env loading, Slack xoxp, Tauri rebuild)*

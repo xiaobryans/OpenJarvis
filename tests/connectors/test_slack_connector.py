@@ -80,8 +80,10 @@ def connector(tmp_path: Path):
 # ---------------------------------------------------------------------------
 
 
-def test_not_connected_without_credentials(connector) -> None:
-    """is_connected() returns False when no credentials file exists."""
+def test_not_connected_without_credentials(connector, monkeypatch) -> None:
+    """is_connected() returns False when no credentials file exists and no env token."""
+    import openjarvis.connectors.slack_connector as _sc
+    monkeypatch.setattr(_sc, "_load_slack_user_token_from_env", lambda: "")
     assert connector.is_connected() is False
 
 
@@ -338,8 +340,9 @@ def test_sync_includes_dms_and_group_dms(
 # ---------------------------------------------------------------------------
 
 
-def test_disconnect(connector, tmp_path: Path) -> None:
+def test_disconnect(connector, tmp_path: Path, monkeypatch) -> None:
     """disconnect() deletes the credentials file."""
+    import openjarvis.connectors.slack_connector as _sc
     creds_path = Path(connector._credentials_path)
     creds_path.write_text(
         json.dumps({"token": "xoxp-fake-user-token"}), encoding="utf-8"
@@ -349,6 +352,8 @@ def test_disconnect(connector, tmp_path: Path) -> None:
     connector.disconnect()
 
     assert not creds_path.exists()
+    # After disconnect, env fallback is also disabled so we confirm file-less is False
+    monkeypatch.setattr(_sc, "_load_slack_user_token_from_env", lambda: "")
     assert connector.is_connected() is False
 
 

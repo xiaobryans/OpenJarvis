@@ -82,12 +82,18 @@ def test_connector_not_connected_without_creds(
     connector_id: str,
     module_path: str,
     class_name: str,
+    monkeypatch,
 ) -> None:
-    """Token connectors report not connected without credentials."""
+    """Token connectors report not connected without credentials or env tokens."""
     import importlib
 
     mod = importlib.import_module(module_path)
     cls = getattr(mod, class_name)
+
+    # Suppress any env-based token fallbacks so the test is isolated to file-only auth
+    if hasattr(mod, "_load_slack_user_token_from_env"):
+        monkeypatch.setattr(mod, "_load_slack_user_token_from_env", lambda: "")
+
     # Use a temp credentials path that doesn't exist
     try:
         instance = cls(credentials_path="/tmp/nonexistent_creds.json")
