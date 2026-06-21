@@ -294,7 +294,13 @@ class TestVoiceStatusFields:
     def test_voice_readiness_valid_value(self):
         from openjarvis.autonomy.voice_pipeline import get_voice_status
         vs = get_voice_status()
-        assert vs["voice_readiness"] in ("READY", "PARTIAL", "HOLD")
+        # voice_pipeline explicitly never returns "READY" — it uses READY_FOR_LIVE_PROOF
+        # when all deps are configured but the worker hasn't been started yet,
+        # and RUNTIME_STARTED once the worker is running.
+        valid_values = ("READY", "PARTIAL", "HOLD", "READY_FOR_LIVE_PROOF", "RUNTIME_STARTED")
+        assert vs["voice_readiness"] in valid_values, (
+            f"voice_readiness={vs['voice_readiness']!r} not in valid values {valid_values}"
+        )
 
     def test_hotkey_binding_is_cmd_shift_space(self):
         from openjarvis.autonomy.voice_pipeline import get_voice_status

@@ -728,6 +728,25 @@ class AgentExecutor:
                             "max_tokens": max_tokens,
                         },
                     )
+            # Write task trace to JarvisMemory so future planning can retrieve it
+            if result:
+                try:
+                    from openjarvis.memory.store import JarvisMemory as _JarvisMemory
+                    _task_mem = _JarvisMemory()
+                    _preview = (result.content or "")[:400].replace("\n", " ")
+                    _task_mem.write(
+                        namespace="task_traces",
+                        content=(
+                            f"agent:{agent_id} status:success "
+                            f"duration:{duration:.1f}s result:{_preview}"
+                        ),
+                        kind="observation",
+                        source="executor",
+                        agent_id=agent_id,
+                    )
+                except Exception:
+                    pass
+
             self._bus.publish(
                 EventType.AGENT_TICK_END,
                 {
@@ -767,6 +786,24 @@ class AgentExecutor:
             # Write error detail to summary_memory so frontend can display it
             error_msg = str(error)[:2000]
             self._manager.update_summary_memory(agent_id, f"ERROR: {error_msg}")
+
+            # Write failure trace to JarvisMemory for failure learning
+            try:
+                from openjarvis.memory.store import JarvisMemory as _JarvisMemory
+                _task_mem = _JarvisMemory()
+                _task_mem.write(
+                    namespace="task_traces",
+                    content=(
+                        f"agent:{agent_id} status:failure "
+                        f"duration:{duration:.1f}s error:{error_msg[:300]}"
+                    ),
+                    kind="mistake",
+                    source="executor",
+                    agent_id=agent_id,
+                )
+            except Exception:
+                pass
+
             self._bus.publish(
                 EventType.AGENT_TICK_ERROR,
                 {

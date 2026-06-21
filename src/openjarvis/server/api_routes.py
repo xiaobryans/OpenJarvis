@@ -938,6 +938,40 @@ async def system_health() -> dict:
     except Exception as exc:
         result["memory"] = {"status": "error", "detail": str(exc)}
 
+    # Memory OS (Sprint 2B) — semantic search, cloud sync, AI distillation status
+    try:
+        from openjarvis.memory.status import get_memory_os_status
+        from openjarvis.memory.retrieval import SemanticSearchStatus
+        mos = get_memory_os_status()
+        sss = SemanticSearchStatus.to_dict()
+        result["memory_os"] = {
+            "sprint": mos.sprint,
+            "total_entries": mos.total_entries,
+            "total_distilled": mos.total_distilled,
+            "vector_search": sss.get("active_ranker", "tfidf"),
+            "cloud_sync_available": False,
+            "ai_distillation_available": False,
+        }
+        # Cloud sync
+        try:
+            from openjarvis.memory.cloud_sync import JarvisMemoryS3Sync
+            sync_status = JarvisMemoryS3Sync().get_status()
+            result["memory_os"]["cloud_sync_available"] = sync_status.available
+            result["memory_os"]["cloud_sync_backend"] = sync_status.backend
+        except Exception:
+            pass
+        # AI distillation
+        try:
+            from openjarvis.memory.distillation import AIDistillEngine
+            dist_status = AIDistillEngine.distillation_status()
+            result["memory_os"]["ai_distillation_available"] = (
+                dist_status.get("ai_available", False)
+            )
+        except Exception:
+            pass
+    except Exception as exc:
+        result["memory_os"] = {"status": "error", "detail": str(exc)}
+
     # Trust / evidence
     try:
         from openjarvis.doctor.checks import check_trust_layer

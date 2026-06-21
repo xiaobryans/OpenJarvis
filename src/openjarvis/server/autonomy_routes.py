@@ -281,6 +281,25 @@ async def mobile_status(project_id: str = "omnix") -> Dict[str, Any]:
 
     watchdog_ids = WatchdogRunner.list_watchdog_ids()
 
+    # Continuity status
+    continuity_status: Dict[str, Any] = {}
+    try:
+        from openjarvis.mobile.continuity_backend import (
+            LocalFileBackend,
+            GitHubGistBackend,
+        )
+        local_status = LocalFileBackend().get_status()
+        gist_status = GitHubGistBackend().get_status()
+        continuity_status = {
+            "local_backend": local_status.backend_name,
+            "local_macbook_off_capable": local_status.macbook_off_capable,
+            "gist_backend": gist_status.backend_name,
+            "gist_macbook_off_capable": gist_status.macbook_off_capable,
+            "gist_available": gist_status.availability == "available",
+        }
+    except Exception as exc:
+        continuity_status = {"error": str(exc)}
+
     return {
         "project_id": project_id,
         "autonomy_mode": autonomy["mode"],
@@ -298,9 +317,52 @@ async def mobile_status(project_id: str = "omnix") -> Dict[str, Any]:
             "registered": len(watchdog_ids),
             "ids": watchdog_ids,
         },
+        "continuity": continuity_status,
         "mobile_payload_version": "1.0",
         "generated_at": time.time(),
     }
+
+
+@router.get("/v1/mobile/continuity/status")
+async def continuity_status() -> Dict[str, Any]:
+    """Return continuity backend readiness.
+
+    GitHub Gist backend is available when GITHUB_TOKEN is set (gist scope required).
+    Local-only when token is absent.
+    """
+    try:
+        from openjarvis.mobile.continuity_backend import (
+            LocalFileBackend,
+            GitHubGistBackend,
+        )
+        local = LocalFileBackend().get_status()
+        gist = GitHubGistBackend().get_status()
+        return {
+            "backends": [
+                {
+                    "name": local.backend_name,
+                    "availability": local.availability,
+                    "macbook_off_capable": local.macbook_off_capable,
+                    "notes": local.notes,
+                },
+                {
+                    "name": gist.backend_name,
+                    "availability": gist.availability,
+                    "macbook_off_capable": gist.macbook_off_capable,
+                    "setup_steps": gist.setup_steps,
+                    "notes": gist.notes if hasattr(gist, "notes") else "",
+                },
+            ],
+            "active_backend": (
+                gist.backend_name if gist.macbook_off_capable and gist.env_vars_present
+                else local.backend_name
+            ),
+            "cross_device_ready": (
+                gist.macbook_off_capable and bool(gist.env_vars_present)
+            ),
+        }
+    except Exception as exc:
+        return {"error": str(exc), "backends": []}
 
 
 __all__ = ["router"]

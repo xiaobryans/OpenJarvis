@@ -4,6 +4,7 @@ Routes:
   GET  /v1/memory/namespaces  — list all namespaces with entry counts
   POST /v1/memory             — write a memory entry
   GET  /v1/memory/search      — search memory (query, namespace, project_id)
+  GET  /v1/memory/status      — Memory OS full status (Sprint 2B surface)
 
 Governance:
   - No secrets accepted (ValueError → 400)
@@ -82,6 +83,57 @@ async def write_memory(req: MemoryWriteRequest) -> Dict[str, Any]:
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     return {"ok": True, "entry": entry.to_dict()}
+
+
+@router.get("/v1/memory/status")
+async def memory_status() -> Dict[str, Any]:
+    """Return full Memory OS status: semantic search, cloud sync, AI distillation."""
+    result: Dict[str, Any] = {}
+
+    # Core Memory OS status
+    try:
+        from openjarvis.memory.status import get_memory_os_status
+        mos = get_memory_os_status()
+        result["memory_os"] = {
+            "sprint": mos.sprint,
+            "total_entries": mos.total_entries,
+            "total_distilled": mos.total_distilled,
+            "completed_items": mos.completed_items,
+            "planned_not_complete": mos.planned_not_complete,
+        }
+    except Exception as exc:
+        result["memory_os"] = {"status": "error", "detail": str(exc)}
+
+    # Semantic search status
+    try:
+        from openjarvis.memory.retrieval import SemanticSearchStatus
+        sss = SemanticSearchStatus.to_dict()
+        result["semantic_search"] = sss
+    except Exception as exc:
+        result["semantic_search"] = {"status": "error", "detail": str(exc)}
+
+    # Cloud sync status
+    try:
+        from openjarvis.memory.cloud_sync import JarvisMemoryS3Sync
+        sync_status = JarvisMemoryS3Sync().get_status()
+        result["cloud_sync"] = {
+            "available": sync_status.available,
+            "backend": sync_status.backend,
+            "bucket": sync_status.bucket,
+            "last_error": sync_status.last_error,
+        }
+    except Exception as exc:
+        result["cloud_sync"] = {"available": False, "status": "error", "detail": str(exc)}
+
+    # AI distillation status
+    try:
+        from openjarvis.memory.distillation import AIDistillEngine
+        dist_status = AIDistillEngine.distillation_status()
+        result["ai_distillation"] = dist_status
+    except Exception as exc:
+        result["ai_distillation"] = {"status": "error", "detail": str(exc)}
+
+    return result
 
 
 @router.get("/v1/memory/search")

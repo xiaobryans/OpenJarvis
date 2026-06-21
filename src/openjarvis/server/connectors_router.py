@@ -238,6 +238,95 @@ def create_connectors_router():
                 )
         return {"connectors": results}
 
+    @router.get("/status")
+    async def connectors_status():
+        """Return per-connector status with state, missing credentials, approval gates.
+
+        This endpoint never exposes secret values — only env var *names*.
+        Outbound send connectors are always flagged approval_required=True.
+        """
+        from openjarvis.autonomy.connector_diagnostics import (
+            ConnectorStatus as _CS,
+            get_slack_status,
+            get_telegram_status,
+            get_web_search_status,
+        )
+
+        # Outbound send connectors require approval — never auto-send
+        _OUTBOUND_SEND = {"slack", "telegram"}
+        _READ_ONLY_ACTIONS = ["search", "read", "fetch"]
+        _OUTBOUND_ACTIONS = ["send_message", "post", "notify"]
+
+        results = []
+
+        def _build_entry(name: str, diag: Dict[str, Any]) -> Dict[str, Any]:
+            is_outbound = name in _OUTBOUND_SEND
+            return {
+                "connector": name,
+                "state": diag.get("status", _CS.NOT_CONFIGURED),
+                "missing_credentials": diag.get("missing_env_vars", []),
+                "allowed_actions": (
+                    _OUTBOUND_ACTIONS if is_outbound else _READ_ONLY_ACTIONS
+                ),
+                "approval_required": is_outbound,
+                "real_send_allowed": False,
+                "last_error": diag.get("last_error", None),
+                "summary": diag.get("summary", ""),
+            }
+
+        try:
+            results.append(_build_entry("slack", get_slack_status()))
+        except Exception as exc:
+            results.append({"connector": "slack", "state": "error", "detail": str(exc)})
+
+        try:
+            results.append(_build_entry("telegram", get_telegram_status()))
+        except Exception as exc:
+            results.append({"connector": "telegram", "state": "error", "detail": str(exc)})
+
+        try:
+            results.append(_build_entry("web_search", get_web_search_status()))
+        except Exception as exc:
+            results.append({"connector": "web_search", "state": "error", "detail": str(exc)})
+
+        # Add remaining registered connectors with basic status
+        try:
+            _ensure_connectors_registered()
+            for key in sorted(ConnectorRegistry.keys()):
+                if key not in {"slack", "telegram", "web_search"}:
+                    try:
+                        inst = _get_or_create(key)
+                        connected = inst.is_connected()
+                        sync_status = inst.sync_status() if hasattr(inst, "sync_status") else {}
+                        results.append({
+                            "connector": key,
+                            "state": (
+                                _CS.CONFIGURED if connected
+                                else _CS.NOT_CONFIGURED
+                            ),
+                            "missing_credentials": [],
+                            "allowed_actions": _READ_ONLY_ACTIONS,
+                            "approval_required": False,
+                            "real_send_allowed": False,
+                            "last_error": sync_status.get("last_error") if sync_status else None,
+                            "summary": sync_status.get("summary", "") if sync_status else "",
+                        })
+                    except Exception as exc:
+                        results.append({
+                            "connector": key,
+                            "state": _CS.NOT_CONFIGURED,
+                            "missing_credentials": [],
+                            "allowed_actions": [],
+                            "approval_required": False,
+                            "real_send_allowed": False,
+                            "last_error": str(exc),
+                            "summary": "",
+                        })
+        except Exception:
+            pass
+
+        return {"connectors": results, "count": len(results)}
+
     @router.get("/{connector_id}")
     async def connector_detail(connector_id: str):
         """Return detail for a single connector."""
