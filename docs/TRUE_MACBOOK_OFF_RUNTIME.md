@@ -2,7 +2,7 @@
 
 **Branch:** `localhost-get-tool`
 **Created:** 2026-06-22
-**Status:** `LIMITED_ACCEPT_PENDING_REVIEW` — cloud backend live; mobile auth + routing fixed locally; ECS redeploy required for full cloud-mobile daily driver proof
+**Status:** `LIMITED_ACCEPT_PENDING_REVIEW` — cloud backend live with mobile auth + routing fixes deployed; MacBook backend confirmed stopped; Bryan iPhone manual proof required for TRUE_MACBOOK_OFF_RUNTIME_ACCEPT_PENDING_REVIEW
 
 ---
 
@@ -167,11 +167,15 @@ The ECS Fargate full runtime is already deployed, already answering requests, an
    - Enter your ECS API key in the "API Key" card
    - Type "Say cloud Jarvis test OK and tell me what runtime you are using." → should get normal AI reply (not CodingPipeline)
 
-3. **Rebuild ECS image (REQUIRED for full cloud-mobile fix)** — current ECS is Plan 4-era code; auth + routing fixes are in HEAD `localhost-get-tool` but not yet deployed:
+3. **ECS image rebuilt and deployed** — HEAD `79916c87` deployed to ECS as task definition `omnix-workbench-jarvis-full:4`, image `jarvis-full-79916c87` (digest `sha256:956c43d4f1f4f73243de5476f0758e0ce189805151c7ee07ad60f146dd9859ac`). NLB target updated to `10.0.1.31:8000`. Health confirmed HTTP 200 post-deploy with MacBook backend stopped.
+
+**Rollback command if needed:**
    ```bash
-   # Requires Bryan approval — do not run without authorization
-   docker build -f deploy/aws/Dockerfile.full -t jarvis-full .
-   # Push to ECR and update ECS service — Hard Gate: Bryan approval required
+   # ROLLBACK to previous revision if needed:
+   # aws ecs update-service --cluster omnix-workbench-071179620006-ap-southeast-1-cluster \
+   #   --service omnix-workbench-jarvis-full-service \
+   #   --task-definition omnix-workbench-jarvis-full:3 --force-new-deployment
+   # Then re-run deploy/aws/update_apigw_origin.sh after task restarts
    ```
 
 4. **TLS cert renewal**: Current cert valid until Aug 26, 2026. AWS auto-renews API Gateway certs — no action needed.
