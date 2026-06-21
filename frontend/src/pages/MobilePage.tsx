@@ -161,34 +161,54 @@ function Card({
   title,
   children,
   borderColor,
+  glow,
 }: {
   title: string;
   children: React.ReactNode;
   borderColor?: string;
+  glow?: boolean;
 }) {
   return (
     <section
       style={{
         background: 'color-mix(in srgb, var(--color-surface, #1a1a1c) 90%, transparent)',
-        border: `1px solid ${borderColor ?? 'color-mix(in srgb, var(--color-border, #333) 60%, transparent)'}`,
-        borderRadius: '12px',
-        padding: '16px',
-        marginBottom: '12px',
+        backdropFilter: 'blur(16px)',
+        WebkitBackdropFilter: 'blur(16px)',
+        border: `1px solid ${borderColor ?? 'color-mix(in srgb, var(--color-border, #333) 70%, transparent)'}`,
+        borderRadius: '14px',
+        padding: '14px 16px',
+        marginBottom: '10px',
+        boxShadow: glow
+          ? `0 0 24px -6px color-mix(in srgb, var(--color-accent, #22d3ee) 20%, transparent), 0 4px 16px -4px rgba(0,0,0,0.4)`
+          : '0 2px 12px -4px rgba(0,0,0,0.35)',
+        position: 'relative',
+        overflow: 'hidden',
       }}
     >
+      {glow && (
+        <div
+          aria-hidden="true"
+          style={{
+            position: 'absolute', inset: 0, pointerEvents: 'none',
+            background: 'linear-gradient(135deg, color-mix(in srgb, var(--color-accent, #22d3ee) 4%, transparent), transparent 60%)',
+          }}
+        />
+      )}
       <h2
         style={{
-          fontSize: '11px',
-          fontWeight: 600,
-          letterSpacing: '0.08em',
+          fontSize: '10px',
+          fontWeight: 700,
+          letterSpacing: '0.10em',
           textTransform: 'uppercase',
           color: 'var(--color-text-muted, #888)',
           marginBottom: '10px',
+          fontFamily: 'var(--font-hud, monospace)',
+          position: 'relative',
         }}
       >
         {title}
       </h2>
-      {children}
+      <div style={{ position: 'relative' }}>{children}</div>
     </section>
   );
 }
@@ -408,7 +428,7 @@ export function MobilePage() {
       style={{
         maxWidth: '480px',
         margin: '0 auto',
-        padding: '16px 12px 32px',
+        padding: '16px 12px 40px',
         minHeight: '100%',
         color: 'var(--color-text, #eee)',
         fontFamily: 'var(--font-sans, system-ui, sans-serif)',
@@ -420,25 +440,40 @@ export function MobilePage() {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          marginBottom: '16px',
+          marginBottom: '14px',
+          padding: '12px 14px',
+          background: 'color-mix(in srgb, var(--color-surface, #1a1a1c) 85%, transparent)',
+          backdropFilter: 'blur(16px)',
+          WebkitBackdropFilter: 'blur(16px)',
+          border: '1px solid color-mix(in srgb, var(--color-accent, #22d3ee) 18%, var(--color-border, #333))',
+          borderRadius: '14px',
+          boxShadow: '0 0 24px -8px color-mix(in srgb, var(--color-accent, #22d3ee) 18%, transparent)',
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <Dot color={isReachable ? STATUS_COLOR.ok : STATUS_COLOR.error} />
-          <span style={{ fontSize: '18px', fontWeight: 700, letterSpacing: '-0.01em' }}>
-            Jarvis
+          <span
+            style={{
+              width: 9, height: 9, borderRadius: '50%', flexShrink: 0,
+              background: isReachable ? STATUS_COLOR.ok : STATUS_COLOR.error,
+              boxShadow: isReachable ? `0 0 8px ${STATUS_COLOR.ok}` : 'none',
+            }}
+          />
+          <span style={{ fontSize: '16px', fontWeight: 700, letterSpacing: '-0.01em', fontFamily: 'var(--font-display, system-ui)' }}>
+            JARVIS
           </span>
           <span
             style={{
-              fontSize: '11px',
-              background: 'color-mix(in srgb, var(--color-accent, #4fd1ff) 12%, transparent)',
-              color: 'var(--color-accent, #4fd1ff)',
-              border: '1px solid color-mix(in srgb, var(--color-accent, #4fd1ff) 30%, transparent)',
+              fontSize: '10px',
+              background: 'color-mix(in srgb, var(--color-accent, #22d3ee) 12%, transparent)',
+              color: 'var(--color-accent, #22d3ee)',
+              border: '1px solid color-mix(in srgb, var(--color-accent, #22d3ee) 28%, transparent)',
               borderRadius: '4px',
               padding: '1px 6px',
+              fontFamily: 'monospace',
+              letterSpacing: '0.06em',
             }}
           >
-            mobile
+            MOBILE
           </span>
         </div>
         <button
@@ -447,15 +482,16 @@ export function MobilePage() {
           style={{
             fontSize: '12px',
             padding: '6px 12px',
-            background: 'color-mix(in srgb, var(--color-accent, #4fd1ff) 10%, transparent)',
-            color: 'var(--color-accent, #4fd1ff)',
-            border: '1px solid color-mix(in srgb, var(--color-accent, #4fd1ff) 25%, transparent)',
-            borderRadius: '6px',
+            background: 'color-mix(in srgb, var(--color-accent, #22d3ee) 10%, transparent)',
+            color: 'var(--color-accent, #22d3ee)',
+            border: '1px solid color-mix(in srgb, var(--color-accent, #22d3ee) 22%, transparent)',
+            borderRadius: '8px',
             cursor: refreshing ? 'not-allowed' : 'pointer',
             opacity: refreshing ? 0.6 : 1,
+            fontFamily: 'monospace',
           }}
         >
-          {refreshing ? '…' : 'Refresh'}
+          {refreshing ? '…' : '↻'}
         </button>
       </div>
 
@@ -635,10 +671,11 @@ export function MobilePage() {
           {/* Backend Health */}
           <Card
             title="Backend"
+            glow={isReachable}
             borderColor={
               isReachable
-                ? 'color-mix(in srgb, var(--color-success, #22c55e) 25%, transparent)'
-                : 'color-mix(in srgb, var(--color-error, #ef4444) 25%, transparent)'
+                ? 'color-mix(in srgb, var(--color-success, #22c55e) 28%, transparent)'
+                : 'color-mix(in srgb, var(--color-error, #ef4444) 28%, transparent)'
             }
           >
             <Row
@@ -954,6 +991,28 @@ export function MobilePage() {
             )}
           </Card>
 
+          {/* Connector & Gate Status */}
+          <Card title="Connector & Gate Status">
+            {[
+              { label: 'GitHub', status: 'LIVE', color: 'var(--color-success, #22c55e)' },
+              { label: 'Gmail', status: 'BLOCKED — OAuth', color: 'var(--color-warn, #f59e0b)' },
+              { label: 'Calendar', status: 'BLOCKED — OAuth', color: 'var(--color-warn, #f59e0b)' },
+              { label: 'Slack', status: 'BLOCKED — token', color: 'var(--color-warn, #f59e0b)' },
+              { label: 'Telegram', status: 'BLOCKED — token', color: 'var(--color-warn, #f59e0b)' },
+              { label: 'Voice (US13)', status: 'PARKED', color: 'var(--color-text-muted, #666)' },
+              { label: 'Apple Signing', status: 'ENROLLMENT PENDING', color: '#f97316' },
+              { label: 'Plan 8', status: 'NOT STARTED', color: 'var(--color-text-muted, #666)' },
+              { label: 'Final Cutover', status: 'NOT STARTED', color: 'var(--color-text-muted, #666)' },
+            ].map(({ label, status, color }) => (
+              <div key={label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '5px 0', borderBottom: '1px solid color-mix(in srgb, var(--color-border, #333) 25%, transparent)', gap: 8 }}>
+                <span style={{ fontSize: 12, color: 'var(--color-text-muted, #aaa)' }}>{label}</span>
+                <span style={{ fontSize: 10, fontFamily: 'monospace', color, background: `color-mix(in srgb, ${color} 10%, transparent)`, padding: '2px 6px', borderRadius: 4, border: `1px solid color-mix(in srgb, ${color} 22%, transparent)`, whiteSpace: 'nowrap' }}>
+                  {status}
+                </span>
+              </div>
+            ))}
+          </Card>
+
           {/* Footer */}
           {lastRefresh && (
             <div
@@ -962,9 +1021,10 @@ export function MobilePage() {
                 fontSize: '11px',
                 color: 'var(--color-text-muted, #666)',
                 paddingTop: '8px',
+                fontFamily: 'monospace',
               }}
             >
-              Last updated: {lastRefresh.toLocaleTimeString()} · auto-refreshes every 30s
+              {lastRefresh.toLocaleTimeString()} · auto 30s
             </div>
           )}
         </>

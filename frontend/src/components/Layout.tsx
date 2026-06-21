@@ -4,6 +4,7 @@ import { ApprovalBell } from './ApprovalBell';
 import { Sidebar } from './Sidebar/Sidebar';
 import { SystemPulse } from './SystemPulse';
 import { VoiceOverlay } from './VoiceOverlay';
+import { ConnectorStatusBar } from './ConnectorStatusBar';
 import { useAppStore } from '../lib/store';
 import { checkHealth } from '../lib/api';
 
@@ -39,24 +40,30 @@ export function Layout() {
           className="flex items-center gap-3 px-4 py-2 text-sm shrink-0"
           style={{
             background: 'color-mix(in srgb, var(--color-error) 8%, transparent)',
-            borderBottom: '1px solid color-mix(in srgb, var(--color-error) 15%, transparent)',
+            borderBottom: '1px solid color-mix(in srgb, var(--color-error) 18%, transparent)',
             color: 'var(--color-text)',
           }}
         >
           <span
-            className="w-1.5 h-1.5 rounded-full shrink-0"
-            style={{ background: 'var(--color-error)' }}
+            className="w-2 h-2 rounded-full shrink-0"
+            style={{ background: 'var(--color-error)', boxShadow: '0 0 6px var(--color-error)' }}
           />
-          <span>Cannot reach OpenJarvis backend</span>
+          <span className="font-medium">Backend unreachable</span>
+          <span className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+            — start <code className="font-mono">jarvis serve</code> to connect
+          </span>
           <button
             onClick={() => navigate('/settings')}
-            className="text-sm underline cursor-pointer ml-auto shrink-0"
+            className="text-xs underline cursor-pointer ml-auto shrink-0"
             style={{ color: 'var(--color-accent)' }}
           >
             Change URL
           </button>
         </div>
       )}
+
+      {/* Connector status strip — always visible */}
+      <ConnectorStatusBar />
 
       <div className="flex flex-1 min-h-0 relative z-10">
         <Sidebar />

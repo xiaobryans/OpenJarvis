@@ -666,104 +666,87 @@ export function MissionControlPage() {
     <div className="flex-1 overflow-y-auto px-6 py-8">
       <div className="max-w-7xl mx-auto space-y-4">
 
-        {/* ── Header ── */}
-        <div className="flex items-center justify-between flex-wrap gap-3">
-          <div className="flex items-center gap-2">
-            <Target size={18} style={{ color: 'var(--color-accent)' }} />
-            <h1 className="text-lg font-semibold" style={{ color: 'var(--color-text)' }}>
-              Mission Control
-            </h1>
-          </div>
+        {/* ── Cockpit Header ── */}
+        <div className="glass-panel cockpit-scan p-4">
+          <div className="flex items-center justify-between flex-wrap gap-3 mb-3">
+            <div className="flex items-center gap-2.5">
+              <span className="hud-reticle" aria-hidden="true" />
+              <div>
+                <h1 className="text-base font-semibold tracking-wide" style={{ color: 'var(--color-text)', fontFamily: 'var(--font-display)' }}>
+                  JARVIS COCKPIT
+                </h1>
+                <p className="text-[10px] font-mono" style={{ color: 'var(--color-text-tertiary)', letterSpacing: '0.06em' }}>
+                  MISSION CONTROL · PLAN 7C
+                </p>
+              </div>
+            </div>
 
-          {/* Notification status chips */}
-          <div className="flex items-center gap-2 text-xs">
-            {notifyStatus ? (
-              <>
-                <span
-                  className="flex items-center gap-1 px-2 py-1 rounded-full"
-                  style={{
-                    background: notifyStatus.slack.ready
-                      ? 'color-mix(in srgb, var(--color-success, #22c55e) 10%, var(--color-bg-secondary))'
-                      : 'var(--color-bg-secondary)',
-                    border: '1px solid var(--color-border)',
-                    color: notifyStatus.slack.ready
-                      ? 'var(--color-success, #22c55e)'
-                      : 'var(--color-text-tertiary)',
-                  }}
-                >
-                  {notifyStatus.slack.ready ? <Bell size={11} /> : <BellOff size={11} />}
-                  Slack
-                </span>
-                <span
-                  className="flex items-center gap-1 px-2 py-1 rounded-full"
-                  style={{
-                    background: notifyStatus.telegram.ready
-                      ? 'color-mix(in srgb, var(--color-success, #22c55e) 10%, var(--color-bg-secondary))'
-                      : 'var(--color-bg-secondary)',
-                    border: '1px solid var(--color-border)',
-                    color: notifyStatus.telegram.ready
-                      ? 'var(--color-success, #22c55e)'
-                      : 'var(--color-text-tertiary)',
-                  }}
-                >
-                  {notifyStatus.telegram.ready ? <Bell size={11} /> : <BellOff size={11} />}
-                  Telegram
-                </span>
-              </>
-            ) : (
-              <span style={{ color: 'var(--color-text-tertiary)' }}>Checking notifications…</span>
-            )}
-          </div>
-        </div>
-
-        {/* ── System Health Panel ── */}
-        <div
-          className="rounded-xl p-3"
-          style={{ background: 'var(--color-bg-secondary)', border: '1px solid var(--color-border)' }}
-        >
-          <div className="flex items-center gap-2 mb-2 flex-wrap">
-            <CheckCircle2 size={13} style={{ color: 'var(--color-accent)' }} />
-            <span className="text-xs font-semibold" style={{ color: 'var(--color-text-secondary)' }}>System Health</span>
-            <div className="ml-auto flex items-center gap-1.5 flex-wrap">
-              {sysHealth?.certification?.verdict === 'certified' && (
-                <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: '#22c55e22', color: '#22c55e', border: '1px solid #22c55e44' }}>Text/AI cert: accepted</span>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {notifyStatus ? (
+                <>
+                  <span
+                    className="neon-chip"
+                    style={notifyStatus.slack.ready
+                      ? { color: 'var(--color-status-live)', background: 'color-mix(in srgb, var(--color-status-live) 10%, transparent)', border: '1px solid color-mix(in srgb, var(--color-status-live) 28%, transparent)' }
+                      : { color: 'var(--color-status-blocked)', background: 'color-mix(in srgb, var(--color-status-blocked) 10%, transparent)', border: '1px solid color-mix(in srgb, var(--color-status-blocked) 25%, transparent)' }
+                    }
+                  >
+                    {notifyStatus.slack.ready ? <Bell size={10} /> : <BellOff size={10} />}
+                    Slack
+                  </span>
+                  <span
+                    className="neon-chip"
+                    style={notifyStatus.telegram.ready
+                      ? { color: 'var(--color-status-live)', background: 'color-mix(in srgb, var(--color-status-live) 10%, transparent)', border: '1px solid color-mix(in srgb, var(--color-status-live) 28%, transparent)' }
+                      : { color: 'var(--color-status-blocked)', background: 'color-mix(in srgb, var(--color-status-blocked) 10%, transparent)', border: '1px solid color-mix(in srgb, var(--color-status-blocked) 25%, transparent)' }
+                    }
+                  >
+                    {notifyStatus.telegram.ready ? <Bell size={10} /> : <BellOff size={10} />}
+                    Telegram
+                  </span>
+                </>
+              ) : (
+                <span className="text-[10px]" style={{ color: 'var(--color-text-tertiary)' }}>Checking notifications…</span>
               )}
-              <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: '#f9731622', color: '#f97316', border: '1px solid #f9731644' }}>Full no-gap: HOLD</span>
             </div>
           </div>
+
+          {/* System Health Chips */}
           {!sysHealthAttempted ? (
-            <div className="flex justify-center py-3">
-              <Loader2 size={14} className="animate-spin" style={{ color: 'var(--color-text-tertiary)' }} />
+            <div className="flex items-center gap-2 py-1">
+              <Loader2 size={12} className="animate-spin" style={{ color: 'var(--color-accent)' }} />
+              <span className="text-[11px]" style={{ color: 'var(--color-text-tertiary)' }}>Loading system status…</span>
             </div>
           ) : !sysHealth ? (
-            <p className="text-xs py-2" style={{ color: 'var(--color-text-tertiary)' }}>
-              Insufficient data to verify — start <code>jarvis serve</code> to fetch runtime status.
-            </p>
+            <div className="flex items-center gap-2 p-2 rounded-lg text-xs"
+              style={{ background: 'color-mix(in srgb, var(--color-error) 8%, transparent)', border: '1px solid color-mix(in srgb, var(--color-error) 15%, transparent)', color: 'var(--color-error)' }}>
+              <AlertCircle size={13} />
+              Backend offline — start <code className="font-mono">jarvis serve</code> to fetch runtime status.
+            </div>
           ) : (
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-1.5">
               {([
-                { key: 'runtime',    label: 'Runtime',    val: sysHealth.runtime?.status,                                          title: undefined },
-                { key: 'voice',      label: 'Voice',      val: sysHealth.voice?.readiness ?? sysHealth.voice?.status,              title: VOICE_GATE_LABEL },
-                { key: 'connectors', label: 'Slack',      val: sysHealth.connectors?.slack,                                        title: undefined },
-                { key: 'connectors', label: 'Telegram',   val: sysHealth.connectors?.telegram,                                     title: undefined },
-                { key: 'connectors', label: 'Web Search', val: sysHealth.connectors?.web_search,                                   title: undefined },
-                { key: 'queue',      label: 'Queue',      val: sysHealth.queue?.status,                                            title: undefined },
-                { key: 'memory',     label: 'Memory',     val: sysHealth.memory?.status,                                           title: undefined },
-                { key: 'trust',      label: 'Trust',      val: sysHealth.trust?.status,                                            title: undefined },
-                { key: 'alert',      label: 'Alerts',     val: sysHealth.alert?.status,                                            title: undefined },
-                { key: 'degraded',   label: 'Hardening',  val: sysHealth.degraded?.status,                                         title: undefined },
-              ] as { key: string; label: string; val?: string; title?: string }[]).map(({ label, val, title }, i) => {
+                { label: 'Runtime',    val: sysHealth.runtime?.status,                       title: undefined },
+                { label: 'AWS',        val: sysHealth.runtime?.deployment === 'aws_ecs_fargate' ? 'aws' : sysHealth.runtime?.deployment, title: 'AWS ECS Fargate — ACCEPT_PENDING_REVIEW' },
+                { label: 'MacBook-off',val: sysHealth.runtime?.macbook_off_capable ? 'ok' : 'partial', title: 'Always-on runtime: MacBook-off capable' },
+                { label: 'Voice',      val: sysHealth.voice?.readiness ?? sysHealth.voice?.status, title: VOICE_GATE_LABEL },
+                { label: 'Slack',      val: sysHealth.connectors?.slack,                     title: undefined },
+                { label: 'Telegram',   val: sysHealth.connectors?.telegram,                  title: undefined },
+                { label: 'Web Search', val: sysHealth.connectors?.web_search,                title: undefined },
+                { label: 'Queue',      val: sysHealth.queue?.status,                         title: undefined },
+                { label: 'Memory',     val: sysHealth.memory?.status,                        title: undefined },
+                { label: 'Trust',      val: sysHealth.trust?.status,                         title: undefined },
+                { label: 'Hardening',  val: sysHealth.degraded?.status,                      title: undefined },
+              ] as { label: string; val?: string; title?: string }[]).map(({ label, val, title }, i) => {
                 const color = healthChipColor(val);
                 return (
                   <span
                     key={`${label}-${i}`}
-                    className="flex items-center gap-1 px-2 py-1 rounded-full text-xs"
-                    style={{ background: `${color}18`, color, border: `1px solid ${color}44` }}
+                    className="flex items-center gap-1.5 px-2 py-1 rounded-full text-[11px]"
+                    style={{ background: `${color}14`, color, border: `1px solid ${color}38` }}
                     title={title ?? (val ?? 'unknown')}
                   >
-                    <span
-                      style={{ width: 6, height: 6, borderRadius: '50%', background: color, display: 'inline-block', flexShrink: 0 }}
-                    />
+                    <span style={{ width: 5, height: 5, borderRadius: '50%', background: color, display: 'inline-block', flexShrink: 0 }} />
                     {label}
                   </span>
                 );
@@ -772,37 +755,48 @@ export function MissionControlPage() {
           )}
         </div>
 
-        {/* ── No-Gap Readiness Panel ── */}
+        {/* ── Certification / Roadmap Status ── */}
         <div
           className="rounded-xl p-3"
-          style={{ background: 'var(--color-bg-secondary)', border: '1px solid color-mix(in srgb, #f97316 30%, var(--color-border))' }}
+          style={{ background: 'var(--color-bg-secondary)', border: '1px solid color-mix(in srgb, #f97316 25%, var(--color-border))' }}
         >
           <div className="flex items-center gap-2 mb-2 flex-wrap">
-            <AlertCircle size={13} style={{ color: '#f97316' }} />
-            <span className="text-xs font-semibold" style={{ color: 'var(--color-text-secondary)' }}>Full No-Gap Readiness</span>
-            <span className="ml-auto text-xs px-2 py-0.5 rounded-full" style={{ background: '#f9731622', color: '#f97316', border: '1px solid #f9731644' }}>HOLD — 4 sprints required</span>
+            <AlertCircle size={12} style={{ color: '#f97316' }} />
+            <span className="text-[11px] font-semibold tracking-wide" style={{ color: 'var(--color-text-secondary)', fontFamily: 'var(--font-hud)', letterSpacing: '0.05em' }}>
+              CERTIFICATION GATES
+            </span>
+            {sysHealth?.certification?.verdict === 'certified' && (
+              <span className="neon-chip neon-chip-live ml-auto text-[10px]">Text/AI cert: ACCEPTED</span>
+            )}
+            <span className="neon-chip neon-chip-pending" style={{ marginLeft: sysHealth?.certification?.verdict === 'certified' ? 0 : 'auto' }}>Full no-gap: HOLD</span>
           </div>
           <div className="flex flex-wrap gap-1.5 mb-2">
             {NO_GAP_REMAINING_ITEMS.map(item => {
               const isInProgress = item.status === 'in_progress';
-              const color = isInProgress ? '#3b82f6' : 'var(--color-text-tertiary)';
+              const color = isInProgress ? 'var(--color-accent)' : 'var(--color-text-tertiary)';
               return (
                 <span
                   key={item.id}
-                  className="text-[11px] px-2 py-0.5 rounded"
+                  className="text-[10px] px-2 py-0.5 rounded font-mono"
                   style={{
                     color,
                     background: `color-mix(in srgb, ${color} 10%, transparent)`,
-                    border: `1px solid color-mix(in srgb, ${color} 25%, transparent)`,
+                    border: `1px solid color-mix(in srgb, ${color} 22%, transparent)`,
                   }}
                 >
                   {item.label}{isInProgress ? ' ▶' : ''}
                 </span>
               );
             })}
+            <span className="text-[10px] px-2 py-0.5 rounded font-mono" style={{ color: 'var(--color-accent-purple)', background: 'color-mix(in srgb, var(--color-accent-purple) 10%, transparent)', border: '1px solid color-mix(in srgb, var(--color-accent-purple) 22%, transparent)' }}>
+              Plan 8: NOT STARTED
+            </span>
+            <span className="text-[10px] px-2 py-0.5 rounded font-mono" style={{ color: 'var(--color-text-tertiary)', background: 'color-mix(in srgb, var(--color-text-tertiary) 8%, transparent)', border: '1px solid color-mix(in srgb, var(--color-text-tertiary) 20%, transparent)' }}>
+              Apple Signing: ENROLLMENT PENDING
+            </span>
           </div>
           <p className="text-[10px]" style={{ color: 'var(--color-text-tertiary)' }}>
-            Full no-gap certification requires all four sprints to pass. Text/AI platform replacement is accepted separately — it does not satisfy full no-gap. Voice requires a dedicated safety sprint.
+            Full no-gap certification requires all four sprints to pass. Voice requires a dedicated safety sprint. Plan 8 (Trusted Delegation) has not started — begins after Bryan review. Final hostile/lazy-user cutover: not started.
           </p>
         </div>
 
@@ -1117,70 +1111,85 @@ export function MissionControlPage() {
                 <Loader2 size={16} className="animate-spin" style={{ color: 'var(--color-text-tertiary)' }} />
               </div>
             ) : pendingTasks.length === 0 ? (
-              <EmptyState text="No pending approvals" />
+              <div className="py-6 text-center">
+                <CheckCircle2 size={20} className="mx-auto mb-2" style={{ color: 'var(--color-success, #22c55e)' }} />
+                <p className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>No pending approvals</p>
+                <p className="text-[10px] mt-1" style={{ color: 'var(--color-text-tertiary)' }}>
+                  Jarvis will request your approval before sensitive actions.
+                </p>
+              </div>
             ) : (
-              <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+              <div className="space-y-2.5 max-h-64 overflow-y-auto pr-1">
                 {pendingTasks.map(task => {
                   const approving = inflightIds.has(`approve-${task.id}`);
                   const denying = inflightIds.has(`deny-${task.id}`);
                   const busy = approving || denying;
+                  const riskColor = RISK_COLORS[task.risk_level] ?? 'var(--color-text-tertiary)';
                   return (
                     <div
                       key={task.id}
-                      className="flex items-center gap-2 px-3 py-2 rounded-lg"
+                      className="rounded-xl overflow-hidden"
                       style={{
                         background: 'var(--color-bg)',
-                        border: '1px solid color-mix(in srgb, #f59e0b 25%, var(--color-border))',
+                        border: `1px solid color-mix(in srgb, ${riskColor} 22%, var(--color-border))`,
                       }}
                     >
-                      <div className="flex-1 min-w-0">
-                        <div
-                          className="text-xs font-medium truncate"
-                          style={{ color: 'var(--color-text)' }}
-                        >
+                      {/* Risk header strip */}
+                      <div
+                        className="flex items-center gap-2 px-3 py-1.5"
+                        style={{ background: `color-mix(in srgb, ${riskColor} 8%, transparent)`, borderBottom: `1px solid color-mix(in srgb, ${riskColor} 15%, transparent)` }}
+                      >
+                        <AlertCircle size={11} style={{ color: riskColor, flexShrink: 0 }} />
+                        <span className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: riskColor }}>
+                          {task.risk_level} risk
+                        </span>
+                        <span className="text-[10px] ml-auto font-mono" style={{ color: 'var(--color-text-tertiary)' }}>
+                          → {task.assigned_agent_id}
+                        </span>
+                      </div>
+                      {/* Content */}
+                      <div className="px-3 py-2">
+                        <div className="text-xs font-medium mb-1" style={{ color: 'var(--color-text)' }}>
                           {task.title}
                         </div>
-                        <div className="flex items-center gap-1.5 mt-0.5">
-                          <span
-                            className="text-[10px]"
-                            style={{ color: 'var(--color-text-tertiary)' }}
+                        {task.description && (
+                          <div className="text-[10px] mb-2" style={{ color: 'var(--color-text-secondary)' }}>
+                            {task.description}
+                          </div>
+                        )}
+                        {task.summary && (
+                          <div className="text-[10px] mb-2 italic" style={{ color: 'var(--color-text-tertiary)' }}>
+                            {task.summary}
+                          </div>
+                        )}
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            onClick={() => handleApprove(task.id)}
+                            disabled={busy}
+                            className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-medium disabled:opacity-40 cursor-pointer"
+                            style={{
+                              background: 'color-mix(in srgb, var(--color-success, #22c55e) 14%, transparent)',
+                              border: '1px solid color-mix(in srgb, var(--color-success, #22c55e) 25%, transparent)',
+                              color: 'var(--color-success, #22c55e)',
+                            }}
                           >
-                            {task.assigned_agent_id}
-                          </span>
-                          <RiskBadge risk={task.risk_level} />
+                            {approving ? <Loader2 size={11} className="animate-spin" /> : <Check size={11} />}
+                            Approve
+                          </button>
+                          <button
+                            onClick={() => handleDeny(task.id)}
+                            disabled={busy}
+                            className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-medium disabled:opacity-40 cursor-pointer"
+                            style={{
+                              background: 'color-mix(in srgb, var(--color-error, #ef4444) 12%, transparent)',
+                              border: '1px solid color-mix(in srgb, var(--color-error, #ef4444) 22%, transparent)',
+                              color: 'var(--color-error, #ef4444)',
+                            }}
+                          >
+                            {denying ? <Loader2 size={11} className="animate-spin" /> : <X size={11} />}
+                            Deny
+                          </button>
                         </div>
-                      </div>
-                      <div className="flex gap-1 shrink-0">
-                        <button
-                          onClick={() => handleApprove(task.id)}
-                          disabled={busy}
-                          title="Approve"
-                          className="p-1.5 rounded-lg disabled:opacity-40 cursor-pointer"
-                          style={{
-                            background: 'color-mix(in srgb, var(--color-success, #22c55e) 12%, transparent)',
-                            color: 'var(--color-success, #22c55e)',
-                          }}
-                        >
-                          {approving
-                            ? <Loader2 size={12} className="animate-spin" />
-                            : <Check size={12} />
-                          }
-                        </button>
-                        <button
-                          onClick={() => handleDeny(task.id)}
-                          disabled={busy}
-                          title="Deny"
-                          className="p-1.5 rounded-lg disabled:opacity-40 cursor-pointer"
-                          style={{
-                            background: 'color-mix(in srgb, var(--color-error, #ef4444) 12%, transparent)',
-                            color: 'var(--color-error, #ef4444)',
-                          }}
-                        >
-                          {denying
-                            ? <Loader2 size={12} className="animate-spin" />
-                            : <X size={12} />
-                          }
-                        </button>
                       </div>
                     </div>
                   );

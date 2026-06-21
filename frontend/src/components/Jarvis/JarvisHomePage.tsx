@@ -84,7 +84,7 @@ export function JarvisHomePage() {
       </div>
 
       {/* Mic control + footer */}
-      <div className="relative z-10 shrink-0 flex flex-col items-center pb-8 pt-2 gap-4">
+      <div className="relative z-10 shrink-0 flex flex-col items-center pb-8 pt-2 gap-3">
         <MicControl
           phase={phase}
           voiceEnabled={voiceEnabled}
@@ -94,15 +94,40 @@ export function JarvisHomePage() {
           onEndRecording={endRecordingNow}
           onCancel={cancelTurn}
         />
+
+        {/* Command examples */}
         <div
-          className="text-[11px] tracking-wide flex items-center gap-3"
-          style={{ color: 'rgba(160, 180, 220, 0.40)' }}
+          className="flex items-center gap-2 flex-wrap justify-center max-w-md px-4"
+          style={{ color: 'rgba(160, 180, 220, 0.50)' }}
         >
-          <span>⌘K — transcript & text fallback</span>
+          {[
+            '"Search my GitHub repos for bug fixes"',
+            '"What tasks need approval?"',
+            '"Summarise my missions today"',
+          ].map(ex => (
+            <span
+              key={ex}
+              className="text-[10px] px-2 py-0.5 rounded-full"
+              style={{
+                background: 'rgba(34, 211, 238, 0.06)',
+                border: '1px solid rgba(34, 211, 238, 0.12)',
+                color: 'rgba(160, 180, 220, 0.55)',
+              }}
+            >
+              {ex}
+            </span>
+          ))}
+        </div>
+
+        <div
+          className="text-[10px] tracking-wide flex items-center gap-2.5"
+          style={{ color: 'rgba(160, 180, 220, 0.35)' }}
+        >
+          <span>⌘K text fallback</span>
           <span aria-hidden="true">·</span>
-          <span>Follow-up listening active after reply</span>
+          <span>Voice: parked/unsafe</span>
           <span aria-hidden="true">·</span>
-          <span>Wake word — coming soon</span>
+          <span className="font-mono" style={{ color: 'rgba(61, 220, 151, 0.4)' }}>GitHub LIVE</span>
         </div>
       </div>
     </div>

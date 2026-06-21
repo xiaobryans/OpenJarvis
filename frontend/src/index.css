@@ -34,7 +34,14 @@
     --color-accent-purple: #8b5cf6;
     --color-accent-purple-hover: #7c3aed;
     --color-accent-purple-subtle: rgba(139, 92, 246, 0.1);
+    --color-accent-magenta: #c026d3;
+    --color-accent-magenta-subtle: rgba(192, 38, 211, 0.08);
     --color-accent-blue-subtle: rgba(8, 145, 178, 0.08);
+
+    --color-status-live: #16a34a;
+    --color-status-blocked: #ca8a04;
+    --color-status-parked: #71717a;
+    --color-status-pending: #ea580c;
 
     --color-success: #16a34a;
     --color-warning: #ca8a04;
@@ -93,11 +100,18 @@
     --color-accent-purple: #b794ff;
     --color-accent-purple-hover: #c9b0ff;
     --color-accent-purple-subtle: rgba(183, 148, 255, 0.12);
+    --color-accent-magenta: #e040fb;
+    --color-accent-magenta-subtle: rgba(224, 64, 251, 0.10);
     --color-accent-blue-subtle: rgba(79, 209, 255, 0.12);
 
     --color-success: #3ddc97;
     --color-warning: #f5a524;
     --color-error: #ff6b6b;
+
+    --color-status-live: #3ddc97;
+    --color-status-blocked: #f5a524;
+    --color-status-parked: #5c5c63;
+    --color-status-pending: #f97316;
 
     --color-code-bg: #0c121a;
     --color-input-bg: #0c121a;
@@ -141,11 +155,18 @@
       --color-accent-purple: #b794ff;
       --color-accent-purple-hover: #c9b0ff;
       --color-accent-purple-subtle: rgba(183, 148, 255, 0.12);
+      --color-accent-magenta: #e040fb;
+      --color-accent-magenta-subtle: rgba(224, 64, 251, 0.10);
       --color-accent-blue-subtle: rgba(79, 209, 255, 0.12);
 
       --color-success: #3ddc97;
       --color-warning: #f5a524;
       --color-error: #ff6b6b;
+
+      --color-status-live: #3ddc97;
+      --color-status-blocked: #f5a524;
+      --color-status-parked: #5c5c63;
+      --color-status-pending: #f97316;
 
       --color-code-bg: #0c121a;
       --color-input-bg: #0c121a;
@@ -603,6 +624,128 @@
     .hud-panel-head::after {
       animation: none !important;
     }
+  }
+
+  /* Glass / HUD surface — glassmorphism card with neon glow border */
+  .glass-panel {
+    background: linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--color-surface) 80%, transparent),
+      color-mix(in srgb, var(--color-bg-secondary) 70%, transparent)
+    );
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid color-mix(in srgb, var(--color-accent) 18%, var(--color-border));
+    border-radius: var(--radius-xl);
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, var(--color-accent) 6%, transparent),
+      0 8px 32px -4px rgba(0, 0, 0, 0.4),
+      inset 0 1px 0 color-mix(in srgb, var(--color-accent) 10%, transparent);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .glass-panel::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--color-accent) 3%, transparent),
+      transparent 50%,
+      color-mix(in srgb, var(--color-accent-purple) 2%, transparent)
+    );
+    pointer-events: none;
+  }
+
+  /* Connector/status neon chips */
+  .neon-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 2px 8px;
+    border-radius: 9999px;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    border: 1px solid;
+    white-space: nowrap;
+    transition: box-shadow 200ms ease;
+  }
+
+  .neon-chip-live {
+    color: var(--color-status-live);
+    background: color-mix(in srgb, var(--color-status-live) 10%, transparent);
+    border-color: color-mix(in srgb, var(--color-status-live) 30%, transparent);
+    box-shadow: 0 0 8px -2px color-mix(in srgb, var(--color-status-live) 30%, transparent);
+  }
+
+  .neon-chip-blocked {
+    color: var(--color-status-blocked);
+    background: color-mix(in srgb, var(--color-status-blocked) 10%, transparent);
+    border-color: color-mix(in srgb, var(--color-status-blocked) 28%, transparent);
+  }
+
+  .neon-chip-parked {
+    color: var(--color-status-parked);
+    background: color-mix(in srgb, var(--color-status-parked) 10%, transparent);
+    border-color: color-mix(in srgb, var(--color-status-parked) 25%, transparent);
+  }
+
+  .neon-chip-pending {
+    color: var(--color-status-pending);
+    background: color-mix(in srgb, var(--color-status-pending) 10%, transparent);
+    border-color: color-mix(in srgb, var(--color-status-pending) 28%, transparent);
+  }
+
+  /* Cockpit scan-line overlay */
+  @keyframes cockpit-scan {
+    0%   { transform: translateY(-100%); opacity: 0; }
+    10%  { opacity: 0.5; }
+    90%  { opacity: 0.5; }
+    100% { transform: translateY(200%); opacity: 0; }
+  }
+
+  .cockpit-scan::after {
+    content: '';
+    position: absolute;
+    left: 0; right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--color-accent), transparent);
+    animation: cockpit-scan 8s ease-in-out infinite;
+    pointer-events: none;
+  }
+
+  /* Status dot with glow */
+  .status-dot-live {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--color-status-live);
+    box-shadow: 0 0 6px var(--color-status-live);
+    flex-shrink: 0;
+    animation: hud-heartbeat 1.8s ease-in-out infinite;
+  }
+
+  .status-dot-blocked {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--color-status-blocked);
+    flex-shrink: 0;
+  }
+
+  .status-dot-parked {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--color-status-parked);
+    flex-shrink: 0;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .status-dot-live { animation: none !important; }
+    .cockpit-scan::after { animation: none !important; }
   }
 }
 :root {

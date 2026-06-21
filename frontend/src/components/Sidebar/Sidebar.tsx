@@ -58,15 +58,15 @@ export function Sidebar() {
   };
 
   const navItems = [
-    { path: '/', icon: MessageSquare, label: 'Chat' },
-    { path: '/dashboard', icon: BarChart3, label: 'Dashboard' },
-    { path: '/mission-control', icon: Target, label: 'Mission Control' },
-    { path: '/workbench', icon: Code2, label: 'Workbench' },
-    { path: '/data-sources', icon: Database, label: 'Data Sources' },
-    { path: '/agents', icon: Bot, label: 'Agents' },
-    { path: '/logs', icon: ScrollText, label: 'Logs' },
-    { path: '/settings', icon: Settings, label: 'Settings' },
-    { path: '/get-started', icon: Rocket, label: 'Get Started' },
+    { path: '/', icon: MessageSquare, label: 'Chat', badge: null },
+    { path: '/mission-control', icon: Target, label: 'Cockpit', badge: null },
+    { path: '/dashboard', icon: BarChart3, label: 'Dashboard', badge: null },
+    { path: '/workbench', icon: Code2, label: 'Workbench', badge: null },
+    { path: '/data-sources', icon: Database, label: 'Connectors', badge: '4 blocked' },
+    { path: '/agents', icon: Bot, label: 'Agents', badge: null },
+    { path: '/logs', icon: ScrollText, label: 'Logs', badge: null },
+    { path: '/settings', icon: Settings, label: 'Settings', badge: null },
+    { path: '/get-started', icon: Rocket, label: 'Onboarding', badge: null },
   ];
 
   return (
@@ -273,7 +273,19 @@ export function Sidebar() {
                     />
                   )}
                   <item.icon size={16} style={isActive ? { color: 'var(--color-accent)' } : undefined} />
-                  {item.label}
+                  <span className="flex-1 text-left">{item.label}</span>
+                  {item.badge && (
+                    <span
+                      className="text-[9px] px-1.5 py-0.5 rounded font-mono shrink-0"
+                      style={{
+                        background: 'color-mix(in srgb, var(--color-status-blocked, #f5a524) 12%, transparent)',
+                        color: 'var(--color-status-blocked, #f5a524)',
+                        border: '1px solid color-mix(in srgb, var(--color-status-blocked, #f5a524) 22%, transparent)',
+                      }}
+                    >
+                      {item.badge}
+                    </span>
+                  )}
                 </button>
               );
             })}
