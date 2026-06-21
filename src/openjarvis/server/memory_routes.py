@@ -95,9 +95,9 @@ async def memory_status() -> Dict[str, Any]:
         from openjarvis.memory.status import get_memory_os_status
         mos = get_memory_os_status()
         result["memory_os"] = {
-            "sprint": mos.sprint,
-            "total_entries": mos.total_entries,
-            "total_distilled": mos.total_distilled,
+            "sprint": mos.to_dict().get("sprint"),
+            "total_entries": mos.raw_archive_count,
+            "total_distilled": mos.distilled_count,
             "completed_items": mos.completed_items,
             "planned_not_complete": mos.planned_not_complete,
         }

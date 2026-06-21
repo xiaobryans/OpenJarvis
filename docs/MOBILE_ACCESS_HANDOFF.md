@@ -15,10 +15,10 @@
 | API key | Generated, stored in `~/.openjarvis/config.toml` |
 | PWA manifest | `manifest.webmanifest` present in static build |
 
-**Start command for LAN access:**
+**Start command for LAN access (use `uv run` to keep Rust memory active):**
 ```bash
 cd /Users/user/OpenJarvis
-python3 -m openjarvis.cli serve --host 0.0.0.0 --port 8000
+uv run python -m openjarvis.cli serve --host 0.0.0.0 --port 8000
 ```
 
 **iPhone URL:** `http://192.168.1.16:8000/mobile`
@@ -43,10 +43,10 @@ Jarvis has two mobile access surfaces:
 
 **MacBook must be on.** Backend runs locally at port 8000.
 
-1. Start Jarvis:
+1. Start Jarvis (use `uv run` to keep Rust memory active):
    ```bash
    cd /Users/user/OpenJarvis
-   python3 -m openjarvis.cli serve
+   uv run python -m openjarvis.cli serve --host 0.0.0.0 --port 8000
    ```
 2. Find MacBook LAN IP:
    ```bash
