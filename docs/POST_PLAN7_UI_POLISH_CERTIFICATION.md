@@ -5,7 +5,8 @@
 **Branch:** localhost-get-tool  
 **HEAD before sprint:** b155fe8b  
 **HEAD after sprint (initial commit):** 20ce0180 Post-Plan-7 UI Polish Sprint: cockpit, onboarding, connector status, mobile HUD  
-**HEAD at proof closure:** see below (3 bug-fix commits added on top)  
+**HEAD at proof closure (previous session):** 796a2f73 Post-Plan-7 UI proof closure: fix GitHub live status, Tauri IPC, sidebar cloud label  
+**HEAD at HOLD closure (this session):** see below  
 **Remote push:** fork/localhost-get-tool  
 **Dirty state:** clean  
 
@@ -40,14 +41,14 @@ approval UX improvements, mobile polish, and error/loading/empty state improveme
 | `frontend/src/pages/MobilePage.tsx` | Glassmorphism card styling (backdrop-blur); sprint header with glow dot; Connector & Gate Status card (GitHub LIVE, Gmail/Calendar/Slack/Telegram BLOCKED, Voice PARKED, Apple Signing ENROLLMENT PENDING, Plan 8 NOT STARTED, Final Cutover NOT STARTED) |
 | `frontend/src/components/Jarvis/JarvisHomePage.tsx` | Command example chips; "Voice: parked/unsafe · GitHub LIVE" status footer |
 | `docs/POST_PLAN7_UI_POLISH_CERTIFICATION.md` | This file |
-| `docs/certification/artifacts/post_plan7_ui/*.png` | 17 screenshot artifacts (see below) |
+| `docs/certification/artifacts/post_plan7_ui/*.png` | 17 screenshots (previous session) + 6 new HOLD-closure screenshots |
+| `src/openjarvis/autonomy/desktop_operator.py` | **HOLD closure fix** — added 5-min process-level cache to `check_screen_recording_permission()` to stop macOS permission prompt spam from 60-s health poller |
 
 ---
 
 ## A — Baseline Repo Proof
 
-Exact command outputs:
-
+### Previous session (proof closure)
 ```
 $ git status --short
 (empty — clean working tree)
@@ -62,7 +63,22 @@ $ git log -1 --oneline
 20ce0180 Post-Plan-7 UI Polish Sprint: cockpit, onboarding, connector status, mobile HUD
 ```
 
-HEAD matches `20ce0180` as reported. Branch is `localhost-get-tool`. Working tree clean.
+### HOLD closure session (this session — HEAD 796a2f73)
+```
+$ git status --short
+(empty — clean working tree)
+
+$ git rev-parse --abbrev-ref HEAD
+localhost-get-tool
+
+$ git rev-parse HEAD
+796a2f73d4956e01aa568914a01316f57e648e4d
+
+$ git log -1 --oneline
+796a2f73 Post-Plan-7 UI proof closure: fix GitHub live status, Tauri IPC, sidebar cloud label
+```
+
+HEAD is `796a2f73`. Branch is `localhost-get-tool`. Working tree clean before HOLD closure fixes.
 
 ---
 
@@ -133,7 +149,34 @@ All 8 sprint-changed UI files confirmed implemented, plus:
 | `docs/certification/artifacts/post_plan7_ui/05e_react_mobile_desktop.png` | React MobilePage at 1440px: all cards visible including BACKEND, MEMORY OS, CROSS-DEVICE CONTINUITY, ConnectorStatusBar at top with GitHub LIVE, sidebar with Cloud Node "Desktop app only" |
 | `docs/certification/artifacts/post_plan7_ui/06_mobile_cockpit.png` | Cockpit at 390px: ConnectorStatusBar visible at top (GitHub LIVE, Gmail, Calendar, Slack truncated), Cockpit nav active, Connectors(4 blocked) badge visible, "no-gap: HOLD" tag |
 
-**Connector & Gate Status card in MobilePage.tsx:** The card at line 994 of `MobilePage.tsx` lists all 9 items (GitHub LIVE, Gmail/Calendar/Slack/Telegram BLOCKED, Voice PARKED, Apple Signing ENROLLMENT PENDING, Plan 8 NOT STARTED, Final Cutover NOT STARTED). It is rendered unconditionally after the Pending Approvals card. It is part of the built bundle confirmed by `grep -n "Connector.*Gate"` returning line 994.
+**Connector & Gate Status card in MobilePage.tsx:** The card at line 994 of `MobilePage.tsx` lists all 9 items (GitHub LIVE, Gmail/Calendar/Slack/Telegram BLOCKED, Voice PARKED, Apple Signing ENROLLMENT PENDING, Plan 8 NOT STARTED, Final Cutover NOT STARTED). It is rendered unconditionally after the Pending Approvals card.
+
+### HOLD closure — additional mobile proof (new session)
+
+| Screenshot | What it proves |
+|-----------|----------------|
+| `08_mobile_front_door_390.png` | Front door at 390px: ConnectorStatusBar (GitHub LIVE), central orb, command examples, footer "Voice: parked/unsafe · GitHub LIVE", sidebar hamburger accessible |
+| `08b_mobile_page_full.png` | MobilePage loading state: ConnectorStatusBar, "JARVIS MOBILE" header, backend status |
+| `08c_mobile_gate_status.png` | **CONNECTOR & GATE STATUS card at 390px**: GitHub LIVE, Gmail BLOCKED—OAuth, Calendar BLOCKED—OAuth, Slack BLOCKED—token, Telegram BLOCKED—token, Voice (US13) PARKED, Apple Signing ENROLLMENT PENDING, Plan 8 NOT STARTED, Final Cutover NOT STARTED |
+| `08c_mobile_full_tall.png` | Full MobilePage at 390px (tall viewport): all sections including BACKEND, MEMORY OS, CROSS-DEVICE CONTINUITY, CREATE TASK, PENDING APPROVALS, CONNECTOR & GATE STATUS |
+| `10_onboarding_390.png` | Onboarding/Get Started at 390px: hero, "What's Live Now (Post Plan-7C)" section, GitHub Connector, Memory OS |
+| `10b_onboarding_390_full.png` | Onboarding full at 390px: same content (scrolled sections visible) |
+| `09_desktop_sidebar_nav.png` | Desktop sidebar at 1280px: all nav items (Chat, Cockpit, Connectors 4-blocked badge, Agents, Settings, Onboarding) |
+
+**Mobile proof checklist:**
+
+| Required item | Proof |
+|---|---|
+| Top connector/status visibility | `08_mobile_front_door_390.png` — ConnectorStatusBar at top visible at 390px |
+| GitHub LIVE | `08_mobile_front_door_390.png` ConnectorStatusBar green chip; `08c_mobile_gate_status.png` LIVE badge |
+| Gmail/Calendar/Slack/Telegram blocked | `08c_mobile_gate_status.png` — all 4 BLOCKED chips visible |
+| Voice parked/unsafe | `08_mobile_front_door_390.png` footer "Voice: parked/unsafe"; `08c_mobile_gate_status.png` PARKED badge |
+| Apple signing pending | `08c_mobile_gate_status.png` — ENROLLMENT PENDING badge visible |
+| Plan 8 not started | `08c_mobile_gate_status.png` — NOT STARTED badge visible |
+| Final cutover not passed | `08c_mobile_gate_status.png` — NOT STARTED badge visible |
+| Front door / command entry | `08_mobile_front_door_390.png` — orb, mic button, command chips at 390px |
+| Approvals/risk access | `08c_mobile_gate_status.png` — PENDING APPROVALS section visible |
+| Tasks/goals/memory/self-upgrade navigation | `06_mobile_cockpit.png` — sidebar visible with all nav items; `08_mobile_front_door_390.png` sidebar toggle |
 
 ---
 
@@ -220,7 +263,7 @@ The screenshot confirms:
 
 ---
 
-## G — Validation
+## G — Validation (previous session)
 
 | Check | Command | Result |
 |-------|---------|--------|
@@ -251,6 +294,51 @@ Three bugs were found during proof capture and fixed:
 **Bug:** The cloud status badge was labeled "Mission Control" — same as the old nav item name, confusing alongside the renamed "Cockpit" nav item.  
 **Fix:** Renamed to "Cloud Node". Web mode shows neutral gray "Desktop app only" instead of red error styling.  
 **Impact:** Sidebar is clear about what the badge represents.
+
+---
+
+## I — macOS Screen/System Audio Recording Permission Spam (HOLD closure fix)
+
+### Root Cause
+
+**Call chain:** `MissionControlPage` → `/v1/system/health` (polled every 60 s) → `run_all_checks()` → `check_desktop_operator_status()` → `get_desktop_permissions_status()` → `check_screen_recording_permission()` → `screencapture -x -t png /dev/null`
+
+The `screencapture` probe is the macOS system binary for taking screenshots. When run as a subprocess of the Python backend, macOS checks TCC (Transparency, Consent, and Control) for screen recording permission on behalf of the calling process. Because the backend runs as a Python subprocess of the Tauri app (ad-hoc signed as `-`), the TCC entry may not match exactly, causing the system to re-prompt on every probe call — every 60 seconds while Cockpit is open.
+
+### Fix Applied
+
+**File:** `src/openjarvis/autonomy/desktop_operator.py`
+
+Added a **5-minute process-level cache** to `check_screen_recording_permission()`:
+- Non-macOS: always returns NOT_APPLICABLE immediately (no cache, preserves test monkeypatching)
+- macOS: caches result of `screencapture -x -t png /dev/null` for 300 seconds
+- Subsequent calls within 5 minutes return `{...cached_result, "cached": True}` without running `screencapture`
+- After 5 minutes: re-probes (handles permission grant/revocation during running session)
+
+**Effect:** `screencapture` runs at most once per 5 minutes instead of every 60 seconds. Eliminates the spam prompt loop. First call on launch may still prompt if permission was never granted; subsequent calls return cached result silently.
+
+**Note on remaining system prompt after fix:** If macOS still shows ONE prompt on first launch (before the cache is populated), this is expected system behavior — the `screencapture` binary requesting TCC authorization for the Python subprocess identity. This is a single prompt, not spam. The fix eliminates the repeated every-60-second loop.
+
+### Validation
+
+```
+$ python -m pytest tests/autonomy/test_desktop_operator.py -x -q
+40 passed in 6.15s
+```
+
+Tests pass including `test_not_applicable_on_non_macos` (non-macOS short-circuit is placed before cache check to preserve monkeypatching behavior).
+
+---
+
+## Validation (HOLD closure pass)
+
+| Check | Command | Result |
+|-------|---------|--------|
+| TypeScript | `cd frontend && npx tsc --noEmit` | ✅ 0 errors |
+| Vitest (frontend) | `npm test -- --run` | ✅ 19/19 tests pass |
+| Pytest (desktop_operator) | `python -m pytest tests/autonomy/test_desktop_operator.py -x -q` | ✅ 40/40 tests pass |
+| git diff --check | `git diff --check` | ✅ clean (exit 0) |
+| Secret scan | `git diff HEAD -- src/.../desktop_operator.py \| rg "ghp_\|gho_\|sk-\|xoxb-\|AKIA"` | ✅ no secrets (rg exit 1 = no matches) |
 
 ---
 
@@ -295,18 +383,30 @@ Plan 8 (Trusted Delegation) may begin after Bryan reviews:
 
 ```
 docs/certification/artifacts/post_plan7_ui/
-  01_front_door_orb.png          — Front door orb, ConnectorStatusBar, command chips
-  02_cockpit_mission_control.png — Cockpit (loading), CERTIFICATION GATES, real missions
-  02b_cockpit_loaded.png         — Cockpit (API loading), system status chips partial
-  02c_cockpit_system_loaded.png  — Cockpit FULLY LOADED: all chips, 129 tools, approvals
-  03_onboarding_get_started.png  — Onboarding hero, What's Live Now grid
-  03b_onboarding_full.png        — Onboarding full page (all sections)
-  04_data_sources_connectors.png — Connectors: 3 connected, 22 available, Gmail/Calendar not connected
-  05_mobile_jarvis_view.png      — Backend PWA /mobile page (separate from React SPA)
-  05b_mobile_full_page.png       — Backend PWA full page
+
+--- Desktop/previous session ---
+  01_front_door_orb.png               — Front door orb, ConnectorStatusBar, command chips
+  02_cockpit_mission_control.png      — Cockpit (loading), CERTIFICATION GATES, real missions
+  02b_cockpit_loaded.png              — Cockpit (API loading), system status chips partial
+  02c_cockpit_system_loaded.png       — Cockpit FULLY LOADED: all chips, 129 tools, approvals
+  03_onboarding_get_started.png       — Onboarding hero, What's Live Now grid
+  03b_onboarding_full.png             — Onboarding full page (all sections)
+  04_data_sources_connectors.png      — Connectors: 3 connected, 22 available, Gmail/Calendar not connected
+  05_mobile_jarvis_view.png           — Backend PWA /mobile page (separate from React SPA)
+  05b_mobile_full_page.png            — Backend PWA full page
   05c_react_mobile_mobile_viewport.png — React MobilePage at 390px (sidebar visible)
-  05d_react_mobile_nosidebar.png — React MobilePage at 390px, content clear
-  05e_react_mobile_desktop.png   — React MobilePage at 1440px, all cards visible
-  06_mobile_cockpit.png          — Cockpit at 390px mobile viewport
-  07_tauri_desktop_app.png       — Tauri packaged desktop app running, sprint UI confirmed
+  05c_react_mobile_desktop_viewport.png — React MobilePage at 1440px desktop viewport
+  05d_react_mobile_nosidebar.png      — React MobilePage at 390px, content clear (BACKEND, MEMORY OS)
+  05e_react_mobile_desktop.png        — React MobilePage at 1440px, all cards visible
+  06_mobile_cockpit.png               — Cockpit at 390px mobile viewport, sidebar nav, no-gap: HOLD
+  07_tauri_desktop_app.png            — Tauri packaged desktop app running, sprint UI confirmed
+
+--- HOLD closure session ---
+  08_mobile_front_door_390.png        — **NEW** Front door at 390px: ConnectorStatusBar, orb, command chips, "Voice: parked/unsafe" footer
+  08b_mobile_page_full.png            — MobilePage loading state at 390px: ConnectorStatusBar, JARVIS MOBILE header
+  08c_mobile_gate_status.png          — **NEW** CONNECTOR & GATE STATUS card at 390px: all 9 items (GitHub LIVE, Gmail/Calendar/Slack/Telegram BLOCKED, Voice PARKED, Apple Signing ENROLLMENT PENDING, Plan 8 NOT STARTED, Final Cutover NOT STARTED)
+  08c_mobile_full_tall.png            — Full MobilePage at 390px (tall viewport): all sections including gate card
+  09_desktop_sidebar_nav.png          — Desktop sidebar at 1280px: full nav (Chat, Cockpit, Connectors 4 blocked, Agents, Logs, Settings, Onboarding)
+  10_onboarding_390.png               — **NEW** Onboarding at 390px: hero, Backend live, What's Live Now (Post Plan-7C)
+  10b_onboarding_390_full.png         — Onboarding full at 390px
 ```

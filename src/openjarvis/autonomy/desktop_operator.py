@@ -31,7 +31,8 @@ import ctypes.util
 import platform
 import shutil
 import subprocess
-from typing import Any, Dict
+import time
+from typing import Any, Dict, Optional
 
 
 # ---------------------------------------------------------------------------
@@ -55,6 +56,17 @@ class OperatorStatus:
 
 
 _IS_MACOS = platform.system() == "Darwin"
+
+# Process-level cache for screen-recording permission probe.
+# screencapture -x -t png /dev/null triggers a macOS TCC prompt if permission
+# is not yet granted.  Without caching, this fires on every run_all_checks()
+# call (every 60 s from the Cockpit health poller), spamming the user with
+# repeated permission dialogs even when the permission is already granted.
+# Cache the result for 5 minutes; the user must restart or wait 5 min for a
+# revoked permission to propagate (which is fine — revocation is rare).
+_screen_recording_cache: Optional[Dict[str, Any]] = None
+_screen_recording_cache_ts: float = 0.0
+_SCREEN_RECORDING_CACHE_TTL: float = 300.0  # seconds
 
 
 # ---------------------------------------------------------------------------
@@ -109,16 +121,32 @@ def check_screen_recording_permission() -> Dict[str, Any]:
     Uses 'screencapture -x -t png /dev/null' which succeeds silently if
     Screen Recording is granted and exits non-zero if denied.  Never writes
     actual image data because /dev/null discards output.
+
+    Result is cached for _SCREEN_RECORDING_CACHE_TTL seconds (default 5 min)
+    to prevent repeated macOS TCC prompts when this function is called from
+    health-check polling loops (Cockpit polls /v1/system/health every 60 s).
     """
+    global _screen_recording_cache, _screen_recording_cache_ts
+
+    # Non-macOS is always not-applicable; skip cache entirely so monkeypatching
+    # _IS_MACOS in tests still works correctly.
     if not _IS_MACOS:
         return {
             "permission": "screen_recording",
             "status": PermissionStatus.NOT_APPLICABLE,
             "platform": platform.system(),
         }
+
+    now = time.monotonic()
+    if (
+        _screen_recording_cache is not None
+        and (now - _screen_recording_cache_ts) < _SCREEN_RECORDING_CACHE_TTL
+    ):
+        return {**_screen_recording_cache, "cached": True}
+
     screencapture = shutil.which("screencapture")
     if not screencapture:
-        return {
+        result = {
             "permission": "screen_recording",
             "status": PermissionStatus.UNKNOWN,
             "error": "screencapture command not found",
@@ -126,14 +154,18 @@ def check_screen_recording_permission() -> Dict[str, Any]:
                 "System Settings → Privacy & Security → Screen Recording"
             ),
         }
+        _screen_recording_cache = result
+        _screen_recording_cache_ts = now
+        return result
+
     try:
-        result = subprocess.run(
+        proc = subprocess.run(
             [screencapture, "-x", "-t", "png", "/dev/null"],
             capture_output=True,
             timeout=5,
         )
-        granted = result.returncode == 0
-        return {
+        granted = proc.returncode == 0
+        result = {
             "permission": "screen_recording",
             "status": PermissionStatus.GRANTED if granted else PermissionStatus.NOT_DETERMINED,
             "has_access": granted,
@@ -142,8 +174,11 @@ def check_screen_recording_permission() -> Dict[str, Any]:
             ),
             "process_name": "OpenJarvis / Python",
         }
+        _screen_recording_cache = result
+        _screen_recording_cache_ts = now
+        return result
     except Exception as exc:
-        return {
+        result = {
             "permission": "screen_recording",
             "status": PermissionStatus.UNKNOWN,
             "error": str(exc),
@@ -151,6 +186,9 @@ def check_screen_recording_permission() -> Dict[str, Any]:
                 "System Settings → Privacy & Security → Screen Recording"
             ),
         }
+        _screen_recording_cache = result
+        _screen_recording_cache_ts = now
+        return result
 
 
 # ---------------------------------------------------------------------------
