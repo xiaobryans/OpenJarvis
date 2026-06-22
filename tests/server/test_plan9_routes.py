@@ -780,6 +780,16 @@ class TestPlan9Introspection:
         data = r.json()
         assert data["total"] == 20
 
+    def test_registry_returns_live_roles(self, client):
+        r = client.get("/v1/plan9/registry")
+        assert r.status_code == 200
+        data = r.json()
+        assert data["total_roles"] > 0
+        assert data["total_managers"] > 0
+        assert data["total_workers"] > 0
+        assert len(data["roles"]) == data["total_roles"]
+        assert "routed_model" in data["roles"][0]
+
     def test_inheritance_has_key_fields(self, client):
         r = client.get("/v1/plan9/inheritance")
         assert r.status_code == 200
@@ -792,7 +802,7 @@ class TestPlan9Introspection:
         assert data["mac_parity_required"] is True
 
     def test_no_secrets_in_introspection(self, client):
-        for path in ["/v1/plan9/rules", "/v1/plan9/skills", "/v1/plan9/commands", "/v1/plan9/inheritance"]:
+        for path in ["/v1/plan9/rules", "/v1/plan9/skills", "/v1/plan9/commands", "/v1/plan9/inheritance", "/v1/plan9/registry"]:
             r = client.get(path)
             _assert_no_secrets(r.text)
 
@@ -817,6 +827,7 @@ class TestNoSecretsInAnyRoute:
             "/v1/plan9/skills",
             "/v1/plan9/commands",
             "/v1/plan9/inheritance",
+            "/v1/plan9/registry",
         ]
         for route in get_routes:
             r = client.get(route)

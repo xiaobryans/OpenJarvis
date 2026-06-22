@@ -67,6 +67,27 @@ interface RoutingStatus {
   provider_health: Record<string, string>;
   unknown_needs_metadata?: number;
 }
+interface PanelFetchState {
+  status: 'loading' | 'ok' | 'error';
+  httpStatus?: number;
+  detail?: string;
+  at?: string;
+}
+interface RegistryStatus {
+  total_roles: number;
+  total_managers: number;
+  total_workers: number;
+}
+interface OrchestrationSummary {
+  elastic_pool_roles: number;
+  dag_rules: number;
+  retrieval_teams: number;
+}
+interface RuntimeProofSummary {
+  total_items: number;
+  verified_count: number;
+  pending_count: number;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tiny helpers
@@ -96,11 +117,49 @@ function dot(s: StatusDot): React.ReactNode {
 
 function ts() { return new Date().toLocaleTimeString(); }
 
-function BackendError({ endpoint, target, lastOk }: { endpoint: string; target: string; lastOk?: string }) {
+async function fetchTracked(
+  path: string,
+  onState: (s: PanelFetchState) => void,
+  onData: (r: Response) => Promise<void>,
+): Promise<void> {
+  onState({ status: 'loading' });
+  try {
+    const r = await apiFetch(path);
+    if (!r.ok) {
+      let detail = r.statusText;
+      try {
+        const j = await r.json();
+        detail = typeof j.detail === 'string' ? j.detail : JSON.stringify(j.detail ?? j);
+      } catch { /* non-json error body */ }
+      onState({ status: 'error', httpStatus: r.status, detail, at: ts() });
+      return;
+    }
+    await onData(r);
+    onState({ status: 'ok', httpStatus: r.status, at: ts() });
+  } catch (e) {
+    onState({ status: 'error', detail: String(e), at: ts() });
+  }
+}
+
+function BackendError({
+  endpoint,
+  target,
+  httpStatus,
+  detail,
+  lastOk,
+}: {
+  endpoint: string;
+  target: string;
+  httpStatus?: number;
+  detail?: string;
+  lastOk?: string;
+}) {
   return (
     <div style={{ color: '#ef4444', fontSize: 10 }}>
-      <div>⚠ Endpoint unreachable: <code style={{ fontSize: 9 }}>{endpoint}</code></div>
+      <div>⚠ <code style={{ fontSize: 9 }}>{endpoint}</code></div>
       <div style={{ color: '#9ca3af' }}>Target: {target}</div>
+      {httpStatus != null && <div>HTTP status: {httpStatus}</div>}
+      {detail && <div style={{ color: '#fca5a5' }}>{detail}</div>}
       {lastOk && <div style={{ color: '#9ca3af' }}>Last OK: {lastOk}</div>}
     </div>
   );
@@ -269,6 +328,17 @@ export function JarvisCockpitPage() {
   const [syncBusy, setSyncBusy] = useState(false);
   const [syncResult, setSyncResult] = useState('');
   const [routingStatus, setRoutingStatus] = useState<RoutingStatus | null>(null);
+  const [registry, setRegistry] = useState<RegistryStatus | null>(null);
+  const [orchestration, setOrchestration] = useState<OrchestrationSummary | null>(null);
+  const [runtimeProof, setRuntimeProof] = useState<RuntimeProofSummary | null>(null);
+  const [gitCommit, setGitCommit] = useState('');
+  const [fetchState, setFetchState] = useState<Record<string, PanelFetchState>>({});
+
+  const setPanelFetch = (key: string) => (s: PanelFetchState) => {
+    setFetchState(prev => ({ ...prev, [key]: s }));
+  };
+
+  const panelErr = (key: string) => fetchState[key]?.status === 'error';
 
   // ── status helpers ──
   const statusForMem = (): StatusDot => {
@@ -283,11 +353,16 @@ export function JarvisCockpitPage() {
     return 'ok';
   };
 
-  const statusForAgents = (): StatusDot => agents.length > 0 ? 'ok' : 'unknown';
+  const statusForAgents = (): StatusDot => {
+    if (panelErr('registry') || panelErr('capabilities')) return 'error';
+    if (!registry && !agents.length) return 'unknown';
+    return (registry?.total_roles ?? agents.length) > 0 ? 'ok' : 'warn';
+  };
 
   const connectorLive = connectors.filter(c => c.connected).length;
   const statusForConnectors = (): StatusDot => {
-    if (connectors.length === 0) return 'unknown';
+    if (panelErr('connectors')) return 'error';
+    if (connectors.length === 0) return fetchState.connectors?.status === 'ok' ? 'warn' : 'unknown';
     return connectorLive === connectors.length ? 'ok' : (connectorLive > 0 ? 'warn' : 'error');
   };
 
@@ -298,28 +373,33 @@ export function JarvisCockpitPage() {
   const fetchAll = useCallback(async (isOk: boolean) => {
     if (!isOk) return;
 
-    // health / cockpit
-    apiFetch('/health').then(r => r.json()).then(d => {
+    await fetchTracked('/health', setPanelFetch('health'), async (r) => {
+      const d = await r.json();
       setModel(d.model ?? '');
       setVersion(d.version ?? '');
-    }).catch(() => {});
+      setGitCommit(d.git_commit ?? '');
+    });
 
-    // approvals
-    apiFetch('/v1/approvals/pending').then(r => r.json()).then(d => {
+    await fetchTracked('/v1/approvals/pending', setPanelFetch('approvals'), async (r) => {
+      const d = await r.json();
       const list = Array.isArray(d) ? d : (d?.items ?? []);
       setPendingApprovals(list.length);
       setApprovalItems(list.slice(0, 10));
-    }).catch(() => {});
+    });
 
-    // connectors
-    apiFetch('/v1/connectors').then(r => r.json()).then(d => {
+    await fetchTracked('/v1/connectors', setPanelFetch('connectors'), async (r) => {
+      const d = await r.json();
       const all: { name?: string; is_connected?: boolean; endpoint?: string }[] =
         Array.isArray(d) ? d : (d?.connectors ?? []);
-      setConnectors(all.map(c => ({ name: c.name ?? 'unknown', connected: !!c.is_connected, endpoint: c.endpoint })));
-    }).catch(() => { setConnectors([]); });
+      setConnectors(all.map(c => ({
+        name: c.name ?? 'unknown',
+        connected: !!c.is_connected,
+        endpoint: c.endpoint,
+      })));
+    });
 
-    // memory
-    apiFetch('/v1/memory/status').then(r => r.json()).then(d => {
+    await fetchTracked('/v1/memory/status', setPanelFetch('memory'), async (r) => {
+      const d = await r.json();
       const mos = d.memory_os ?? {};
       const cs = d.cloud_sync ?? {};
       setMemStatus({
@@ -330,30 +410,34 @@ export function JarvisCockpitPage() {
         last_sync: undefined,
       });
       setMemLastRefresh(ts());
-    }).catch(() => { setMemLastRefresh('FAILED'); });
+    });
 
-    // rust status
-    apiFetch('/v1/memory/rust-status').then(r => r.json()).then(d => {
-      setMemStatus(prev => prev ? { ...prev, rust_available: d.rust_available } : prev);
-    }).catch(() => {});
+    await fetchTracked('/v1/memory/rust-status', setPanelFetch('rust'), async (r) => {
+      const d = await r.json();
+      setMemStatus(prev => prev ? { ...prev, rust_available: d.rust_available } : {
+        total_entries: 0,
+        cloud_sync_available: false,
+        rust_available: d.rust_available,
+      });
+    });
 
-    // Plan 9 parity
-    apiFetch('/v1/parity/status').then(r => r.json()).then(d => {
+    await fetchTracked('/v1/parity/status', setPanelFetch('parity'), async (r) => {
+      const d = await r.json();
       setPlan9({
         verdict: d.plan9_verdict ?? undefined,
         mobile_cloud_live: d.mobile_cloud_live ?? 0,
         mac_local_live: d.mac_local_live ?? 0,
         parked: Array.isArray(d.parked) ? d.parked.length : 0,
         gaps: Array.isArray(d.gaps) ? d.gaps.length : 0,
+        last_checked: ts(),
       });
       setPlan9LastRefresh(ts());
-    }).catch(() => { setPlan9LastRefresh('FAILED'); });
+    });
 
-    // Plan 9 capability matrix → build agent roster
-    apiFetch('/v1/capabilities/status').then(r => r.json()).then(d => {
+    await fetchTracked('/v1/capabilities/status', setPanelFetch('capabilities'), async (r) => {
+      const d = await r.json();
       const caps: { capability_id?: string; display_name?: string; domain?: string; status?: string }[] =
         Array.isArray(d) ? d : (d?.capabilities ?? []);
-      // Group by domain; each domain is a "manager"; capabilities are workers
       const domainMap = new Map<string, AgentEntry>();
       caps.forEach(cap => {
         const domain = cap.domain ?? 'unknown';
@@ -362,25 +446,34 @@ export function JarvisCockpitPage() {
             id: domain,
             name: domain.replace(/_/g, ' '),
             kind: 'manager',
-            status: 'active',
+            status: cap.status ?? 'active',
             domain,
           });
         }
       });
       setAgents(Array.from(domainMap.values()));
-    }).catch(() => {});
+    });
 
-    // mac worker status
-    apiFetch('/v1/mac-worker/status').then(r => r.json()).then(d => {
+    await fetchTracked('/v1/plan9/registry', setPanelFetch('registry'), async (r) => {
+      const d = await r.json();
+      setRegistry({
+        total_roles: d.total_roles ?? 0,
+        total_managers: d.total_managers ?? 0,
+        total_workers: d.total_workers ?? 0,
+      });
+    });
+
+    await fetchTracked('/v1/mac-worker/status', setPanelFetch('macWorker'), async (r) => {
+      const d = await r.json();
       setMacWorkerStatus({
-        queued: d.total_tasks ?? 0,
+        queued: d.total_tasks ?? d.queued ?? 0,
         running: d.running ?? 0,
         failed: d.failed ?? 0,
       });
-    }).catch(() => {});
+    });
 
-    // model routing status (Plan 9K)
-    apiFetch('/v1/model-routing/status').then(r => r.json()).then(d => {
+    await fetchTracked('/v1/model-routing/status', setPanelFetch('routing'), async (r) => {
+      const d = await r.json();
       setRoutingStatus({
         provider_count: d.provider_count ?? 0,
         model_count: d.model_count ?? 0,
@@ -399,7 +492,25 @@ export function JarvisCockpitPage() {
         provider_health: d.provider_health ?? {},
         unknown_needs_metadata: d.unknown_needs_metadata ?? 0,
       });
-    }).catch(() => {});
+    });
+
+    await fetchTracked('/v1/orchestration/policy', setPanelFetch('orchestration'), async (r) => {
+      const d = await r.json();
+      setOrchestration({
+        elastic_pool_roles: (d.elastic_pools?.roles ?? []).length,
+        dag_rules: (d.parallel_dag?.safety_rules ?? []).length,
+        retrieval_teams: Object.keys(d.retrieval_worker_policies ?? {}).length,
+      });
+    });
+
+    await fetchTracked('/v1/plan9/runtime-proof-checklist', setPanelFetch('runtimeProof'), async (r) => {
+      const d = await r.json();
+      setRuntimeProof({
+        total_items: d.total_items ?? 0,
+        verified_count: d.verified_count ?? 0,
+        pending_count: d.pending_count ?? 0,
+      });
+    });
   }, []);
 
   useEffect(() => {
@@ -475,15 +586,24 @@ export function JarvisCockpitPage() {
   // Compact panel data
   // ─────────────────────────────────────────────────────────────────────────
 
+  const connectorOffline = connectors.filter(c => !c.connected);
+  const connectorBadge = connectors.length > 0
+    ? `${connectorLive}/${connectors.length}`
+    : (fetchState.connectors?.status === 'ok' ? '0/0' : '—');
+
   const panelCards: HUDCardProps[] = [
     {
       id: 'mission',
       icon: '🎯',
       label: 'Mission Control',
-      status: apiOk ? 'ok' : (apiOk === false ? 'error' : 'unknown'),
+      status: apiOk ? (panelErr('parity') ? 'error' : 'ok') : (apiOk === false ? 'error' : 'unknown'),
       lines: [
         apiOk ? 'Cloud + local: reachable' : 'Backend unreachable',
-        plan9 ? `Plan 9: ${plan9.gaps} gaps · ${plan9.parked} parked` : 'Plan 9: loading…',
+        plan9
+          ? `Plan 9: ${plan9.gaps} gaps · ${plan9.parked} parked · ☁${plan9.mobile_cloud_live}/🖥${plan9.mac_local_live}`
+          : panelErr('parity')
+            ? `Error ${fetchState.parity?.httpStatus ?? ''}`
+            : (fetchState.parity?.status === 'loading' ? 'Fetching parity…' : 'Parity: no data'),
       ],
       onExpand: setExpandedPanel,
     },
@@ -491,10 +611,12 @@ export function JarvisCockpitPage() {
       id: 'cockpit',
       icon: '⚡',
       label: 'Cockpit',
-      status: apiOk ? 'ok' : 'error',
+      status: apiOk ? (panelErr('health') ? 'error' : 'ok') : 'error',
       lines: [
-        model ? `Model: ${model}` : 'Model: connecting…',
-        version ? `v${version}` : 'Version: —',
+        model
+          ? `Runtime model: ${model}${routingStatus?.pa_front_door_model ? ` · PA: ${routingStatus.pa_front_door_model}` : ''}`
+          : (panelErr('health') ? `Health error ${fetchState.health?.httpStatus ?? ''}` : 'Model: fetching…'),
+        version ? `v${version}${gitCommit ? ` · ${gitCommit.slice(0, 8)}` : ''}` : 'Version: —',
       ],
       onExpand: setExpandedPanel,
     },
@@ -502,10 +624,12 @@ export function JarvisCockpitPage() {
       id: 'authority',
       icon: '🛑',
       label: 'Authority',
-      status: pendingApprovals > 0 ? 'warn' : 'ok',
+      status: panelErr('approvals') ? 'error' : (pendingApprovals > 0 ? 'warn' : 'ok'),
       badge: pendingApprovals > 0 ? pendingApprovals : undefined,
       lines: [
-        pendingApprovals > 0 ? `${pendingApprovals} pending approval(s)` : 'No pending approvals',
+        panelErr('approvals')
+          ? `Approvals error ${fetchState.approvals?.httpStatus ?? ''}`
+          : (pendingApprovals > 0 ? `${pendingApprovals} pending approval(s)` : 'No pending approvals'),
         'Emergency stop available',
       ],
       onExpand: setExpandedPanel,
@@ -514,10 +638,14 @@ export function JarvisCockpitPage() {
       id: 'workbench',
       icon: '🔧',
       label: 'Workbench',
-      status: apiOk ? 'ok' : 'unknown',
+      status: panelErr('macWorker') || panelErr('orchestration') ? 'error' : (apiOk ? 'ok' : 'unknown'),
       lines: [
-        macWorkerStatus ? `Mac queue: ${macWorkerStatus.queued} tasks` : 'Mac queue: loading…',
-        macWorkerStatus?.failed ? `${macWorkerStatus.failed} failed` : 'Coding · Git · Tests wired',
+        macWorkerStatus
+          ? `Mac queue: ${macWorkerStatus.queued} queued · ${macWorkerStatus.running} running · ${macWorkerStatus.failed} failed`
+          : (panelErr('macWorker') ? `Mac worker error ${fetchState.macWorker?.httpStatus ?? ''}` : 'Mac queue: fetching…'),
+        orchestration
+          ? `DAG rules: ${orchestration.dag_rules} · Elastic pools: ${orchestration.elastic_pool_roles} · Retrieval teams: ${orchestration.retrieval_teams}`
+          : (panelErr('orchestration') ? 'Orchestration policy unavailable' : 'Orchestration: fetching…'),
       ],
       onExpand: setExpandedPanel,
     },
@@ -526,10 +654,18 @@ export function JarvisCockpitPage() {
       icon: '🔌',
       label: 'Connectors',
       status: statusForConnectors(),
-      badge: `${connectorLive}/${connectors.length || '?'}`,
+      badge: connectorBadge,
       lines: [
-        connectors.length ? `${connectorLive} live, ${connectors.length - connectorLive} offline` : 'Loading…',
-        connectors.filter(c => !c.connected).map(c => c.name).slice(0, 2).join(', ') || 'All connected',
+        panelErr('connectors')
+          ? `Connectors error ${fetchState.connectors?.httpStatus ?? ''}`
+          : connectors.length === 0
+            ? '0 connectors configured'
+            : `${connectorLive} connected · ${connectorOffline.length} offline`,
+        connectors.length === 0
+          ? 'Configure connectors in settings'
+          : connectorOffline.length === 0
+            ? 'All configured connectors connected'
+            : `Offline: ${connectorOffline.slice(0, 3).map(c => c.name).join(', ')}`,
       ],
       onExpand: setExpandedPanel,
     },
@@ -538,10 +674,14 @@ export function JarvisCockpitPage() {
       icon: '🤖',
       label: 'Agents',
       status: statusForAgents(),
-      badge: agents.length || undefined,
+      badge: (registry?.total_roles ?? agents.length) || undefined,
       lines: [
-        agents.length ? `${agents.length} domains / managers` : (apiOk ? 'Loading from Plan 9…' : 'Backend unreachable'),
-        agents.length ? agents.slice(0, 2).map(a => a.name).join(', ') + '…' : '',
+        registry
+          ? `${registry.total_managers} managers · ${registry.total_workers} workers · ${registry.total_roles} roles`
+          : panelErr('registry')
+            ? `Registry error ${fetchState.registry?.httpStatus ?? ''}`
+            : (apiOk ? 'Registry: fetching…' : 'Backend unreachable'),
+        agents.length ? `${agents.length} capability domains` : '',
       ],
       onExpand: setExpandedPanel,
     },
@@ -549,10 +689,14 @@ export function JarvisCockpitPage() {
       id: 'memory',
       icon: '🧠',
       label: 'Memory',
-      status: statusForMem(),
+      status: panelErr('memory') || panelErr('rust') ? 'error' : statusForMem(),
       lines: [
-        memStatus ? `${memStatus.total_entries} entries stored` : (apiOk ? 'Loading…' : 'Backend unreachable'),
-        memStatus ? (memStatus.cloud_sync_available ? `S3 sync: active (${memStatus.bucket ?? '…'})` : 'S3 sync: unavailable') : '',
+        memStatus
+          ? `${memStatus.total_entries} entries · Rust: ${memStatus.rust_available ? 'active' : 'MISSING'}`
+          : (panelErr('memory') ? `Memory error ${fetchState.memory?.httpStatus ?? ''}` : (apiOk ? 'Memory: fetching…' : 'Backend unreachable')),
+        memStatus
+          ? (memStatus.cloud_sync_available ? `S3 sync: active (${memStatus.bucket ?? 'bucket'})` : 'S3 sync: unavailable')
+          : '',
       ],
       onExpand: setExpandedPanel,
     },
@@ -562,8 +706,12 @@ export function JarvisCockpitPage() {
       label: 'Plan 9',
       status: statusForPlan9(),
       lines: [
-        plan9 ? `☁ ${plan9.mobile_cloud_live} live · 🖥 ${plan9.mac_local_live} mac` : (apiOk ? 'Loading…' : 'Backend unreachable'),
-        plan9 ? (plan9.gaps > 0 ? `${plan9.gaps} gaps remaining` : 'All capabilities live') : '',
+        plan9
+          ? `Verdict: ${plan9.verdict ?? '—'} · ☁${plan9.mobile_cloud_live} · 🖥${plan9.mac_local_live}`
+          : (panelErr('parity') ? 'Parity unavailable' : (apiOk ? 'Plan 9: fetching…' : 'Backend unreachable')),
+        runtimeProof
+          ? `Runtime proof: ${runtimeProof.verified_count}/${runtimeProof.total_items} verified · ${runtimeProof.pending_count} pending`
+          : (plan9 ? (plan9.gaps > 0 ? `${plan9.gaps} gaps remaining` : 'Capability matrix: no gaps') : ''),
       ],
       onExpand: setExpandedPanel,
     },
@@ -571,10 +719,10 @@ export function JarvisCockpitPage() {
       id: 'logs',
       icon: '📜',
       label: 'Logs / Audit',
-      status: 'ok',
+      status: logs.length > 0 ? 'ok' : 'warn',
       lines: [
-        logs.length > 0 ? logs[0].text.slice(0, 50) : 'No recent events',
-        logs.length > 1 ? logs[1].text.slice(0, 50) : '',
+        logs.length > 0 ? logs[0].text.slice(0, 50) : 'No audit events in HUD (audit stream not wired)',
+        pendingApprovals > 0 ? `${pendingApprovals} approval(s) pending` : 'Approvals tracked via /v1/approvals/pending',
       ],
       onExpand: setExpandedPanel,
     },
@@ -582,11 +730,15 @@ export function JarvisCockpitPage() {
       id: 'routing',
       icon: '🔀',
       label: 'Model Routing',
-      status: routingStatus ? (routingStatus.blocked_providers.length > 0 ? 'warn' : 'ok') : 'unknown',
+      status: panelErr('routing') ? 'error' : (routingStatus ? (routingStatus.blocked_providers.length > 0 ? 'warn' : 'ok') : 'unknown'),
       badge: routingStatus ? `${routingStatus.provider_count}p/${routingStatus.non_fallback_model_count}m` : undefined,
       lines: [
-        routingStatus ? `${routingStatus.provider_count} providers · ${routingStatus.non_fallback_model_count} cloud models` : (apiOk ? 'Loading…' : 'Backend unreachable'),
-        routingStatus ? `PA: ${routingStatus.pa_front_door_model} · GLM-5.2: ${routingStatus.glm_5_2_available ? 'avail' : 'pending'} · Kimi K2.6: ${routingStatus.kimi_k2_6_available ? 'avail' : 'pending'}` : '',
+        routingStatus
+          ? `${routingStatus.provider_count} providers · ${routingStatus.non_fallback_model_count} cloud models · ${routingStatus.role_declaration_count} roles`
+          : (panelErr('routing') ? `Routing error ${fetchState.routing?.httpStatus ?? ''}` : (apiOk ? 'Routing: fetching…' : 'Backend unreachable')),
+        routingStatus
+          ? `PA: ${routingStatus.pa_front_door_model} · GLM: ${routingStatus.glm_5_2_available ? 'avail' : 'pending'} · Kimi: ${routingStatus.kimi_k2_6_available ? 'avail' : 'pending'}`
+          : '',
       ],
       onExpand: setExpandedPanel,
     },

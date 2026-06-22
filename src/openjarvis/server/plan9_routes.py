@@ -987,6 +987,48 @@ async def get_plan9_commands(status_filter: Optional[str] = Query(None, alias="s
     }
 
 
+@router.get("/v1/plan9/registry")
+async def get_plan9_registry() -> Dict[str, Any]:
+    """Live manager/worker registry from Plan 9K role declarations."""
+    from openjarvis.plan9.specialized_router import (
+        get_role_declarations,
+        get_specialized_router,
+    )
+
+    decls = get_role_declarations()
+    router_inst = get_specialized_router()
+    roles: List[Dict[str, Any]] = []
+    managers = 0
+    workers = 0
+    for role_id in sorted(decls):
+        decl = decls[role_id]
+        if decl.role_type == "manager":
+            managers += 1
+        else:
+            workers += 1
+        entry = decl.to_dict()
+        try:
+            decision = router_inst.select(
+                role_id=role_id,
+                task_description="registry_status_probe",
+                task_classification="normal",
+            )
+            entry["routed_model"] = decision.chosen_model_id
+            entry["route_reason"] = decision.route_reason
+        except Exception as exc:  # noqa: BLE001 — surface routing failure in registry
+            entry["routed_model"] = None
+            entry["route_reason"] = f"routing_error:{type(exc).__name__}"
+        roles.append(entry)
+
+    return {
+        "source": "specialized_router.role_declarations",
+        "total_roles": len(roles),
+        "total_managers": managers,
+        "total_workers": workers,
+        "roles": roles,
+    }
+
+
 @router.get("/v1/plan9/inheritance")
 async def get_plan9_inheritance() -> Dict[str, Any]:
     """Return Plan 9 default inheritance policy for future managers/workers."""
