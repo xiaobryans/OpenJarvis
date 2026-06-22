@@ -1138,6 +1138,8 @@ class RoutingDecision9K:
     benchmark_required: bool
     kimi_eligible: bool
     offline_fallback_active: bool
+    policy_labels: List[str] = field(default_factory=list)
+    heavy_coding_preference_applied: bool = False
     timestamp: float = field(default_factory=time.time)
 
     def to_dict(self) -> Dict:
@@ -1157,6 +1159,8 @@ class RoutingDecision9K:
             "benchmark_required": self.benchmark_required,
             "kimi_eligible": self.kimi_eligible,
             "offline_fallback_active": self.offline_fallback_active,
+            "policy_labels": self.policy_labels,
+            "heavy_coding_preference_applied": self.heavy_coding_preference_applied,
             "timestamp": self.timestamp,
         }
 
@@ -1214,13 +1218,34 @@ class SpecializedRouter:
         """Select the best model for a role/task. Returns audit-visible decision."""
         decl = self._get_declaration(role_id)
         kimi_benchmarked = self._catalog.kimi_benchmarked()
+        from openjarvis.plan9.heavy_coding_policy import (
+            build_policy_labels_for_decision,
+            glm_allowed_for_route,
+            glm_benchmarked,
+            is_heavy_coding_context_for_decl,
+            is_high_risk_role,
+            kimi_allowed_for_route,
+        )
+        glm_bench = glm_benchmarked(self._catalog)
+        high_risk = is_high_risk_role(
+            decl.required_capabilities, decl.risk_threshold, role_id
+        )
+        heavy_coding = is_heavy_coding_context_for_decl(
+            role_id,
+            task_classification,
+            decl.required_capabilities,
+            decl.preferred_capabilities,
+            decl.risk_threshold,
+        )
 
         tried: List[str] = []
         fallback_reason: Optional[str] = None
         escalation_reason: Optional[str] = None
         why_cheaper_rejected = ""
 
-        candidate_models = self._build_candidate_list(decl, kimi_benchmarked, force_fallback)
+        candidate_models, hc_labels = self._build_candidate_list(
+            decl, kimi_benchmarked, force_fallback, task_classification
+        )
 
         for model_id in candidate_models:
             model = self._catalog.get_model(model_id)
@@ -1244,10 +1269,31 @@ class SpecializedRouter:
                 why_cheaper_rejected += f" | {model_id} rejected: provider {provider_id!r} forbidden"
                 continue
 
-            # Check Kimi benchmark gate
-            if model.is_kimi and not kimi_benchmarked:
+            # High-risk roles: forbid GLM/Kimi unless fully benchmarked
+            if high_risk and (model.is_kimi or model.is_glm):
+                tried.append(f"{model_id}:forbidden_high_risk_glm_kimi")
+                why_cheaper_rejected += (
+                    f" | {model_id} rejected: GLM/Kimi forbidden for "
+                    "security/billing/IAM/secrets/deploy/final-review"
+                )
+                continue
+
+            # Kimi benchmark gate (relaxed for heavy-coding K2.6 secondary route)
+            kimi_ok, kimi_reject = kimi_allowed_for_route(
+                model, kimi_benchmarked, heavy_coding
+            )
+            if not kimi_ok:
                 tried.append(f"{model_id}:kimi_not_benchmarked")
-                why_cheaper_rejected += f" | {model_id} rejected: Kimi requires benchmark proof (not yet accepted)"
+                why_cheaper_rejected += f" | {model_id} rejected: {kimi_reject}"
+                continue
+
+            # GLM gate for non-heavy-coding routes
+            glm_ok, glm_reject = glm_allowed_for_route(
+                model, glm_bench, heavy_coding, high_risk
+            )
+            if not glm_ok:
+                tried.append(f"{model_id}:glm_not_eligible")
+                why_cheaper_rejected += f" | {model_id} rejected: {glm_reject}"
                 continue
 
             # Check offline fallback restriction (not for force_fallback)
@@ -1267,9 +1313,15 @@ class SpecializedRouter:
                 continue
 
             # Passed all checks — select this model
+            policy_labels = build_policy_labels_for_decision(
+                model, heavy_coding, high_risk, force_fallback,
+                kimi_benchmarked, glm_bench, hc_labels,
+            )
             route_reason = self._build_route_reason(
                 model, decl, tried, kimi_benchmarked, force_fallback,
                 override_reason=override_reason,
+                heavy_coding=heavy_coding,
+                policy_labels=policy_labels,
             )
 
             return RoutingDecision9K(
@@ -1286,8 +1338,12 @@ class SpecializedRouter:
                 estimated_cost_class=self._estimate_cost_class(model),
                 risk_level=decl.risk_threshold.value,
                 benchmark_required=bool(decl.benchmark_required_for),
-                kimi_eligible=kimi_benchmarked,
+                kimi_eligible=kimi_benchmarked or (
+                    heavy_coding and model.is_kimi
+                ),
                 offline_fallback_active=force_fallback,
+                policy_labels=policy_labels,
+                heavy_coding_preference_applied=heavy_coding and bool(hc_labels),
             )
 
         # No model found in normal chain — try offline fallback last resort
@@ -1330,22 +1386,25 @@ class SpecializedRouter:
         decl: RoleCapabilityDeclaration,
         kimi_benchmarked: bool,
         force_fallback: bool,
-    ) -> List[str]:
+        task_classification: str = "normal",
+    ) -> tuple[List[str], List[str]]:
         """Build ordered list of model candidates for dynamic selection.
 
         Order:
           1. Local/offline fallback models (only when force_fallback=True)
-          2. Role's declared priority hints (fallback_chain) — curator's best choices
-          3. Dynamic expansion: ALL other eligible catalog models scored by capability,
-             cost, latency, risk — selected from the FULL catalog, not a static list
-          4. Escalation model (last resort)
-
-        This means routing is NOT limited to the declared fallback_chain. If a new
-        provider/model enters the catalog with the right capabilities, it becomes
-        automatically eligible — no code change required.
+          2. Heavy-coding preference injection (GLM-5.2, Kimi K2.6) when applicable
+          3. Role's declared priority hints (fallback_chain)
+          4. Dynamic expansion: ALL other eligible catalog models scored
+          5. Escalation model (last resort)
         """
+        from openjarvis.plan9.heavy_coding_policy import (
+            is_heavy_coding_context_for_decl,
+            reorder_heavy_coding_candidates,
+        )
+
         seen: set = set()
         candidates: List[str] = []
+        hc_labels: List[str] = []
 
         def _add(mid: str) -> None:
             if mid and mid not in seen:
@@ -1357,12 +1416,19 @@ class SpecializedRouter:
                 if m.is_offline_fallback:
                     _add(m.model_id)
 
+        heavy_coding = is_heavy_coding_context_for_decl(
+            decl.role_id,
+            task_classification,
+            decl.required_capabilities,
+            decl.preferred_capabilities,
+            decl.risk_threshold,
+        )
+
         # Priority hints (curator-declared order, tried first)
         for model_id in decl.fallback_chain:
             _add(model_id)
 
         # Dynamic expansion: full catalog scoring
-        # This is the key Plan 9K requirement: non-PA roles are NOT fixed to one model.
         dynamic = self._catalog.score_candidates(
             required_caps=decl.required_capabilities,
             preferred_caps=decl.preferred_capabilities,
@@ -1379,7 +1445,12 @@ class SpecializedRouter:
         if decl.escalation_model:
             _add(decl.escalation_model)
 
-        return candidates
+        if heavy_coding and not force_fallback:
+            candidates, hc_labels = reorder_heavy_coding_candidates(
+                candidates, self._catalog, inject_from_catalog=True
+            )
+
+        return candidates, hc_labels
 
     def _build_route_reason(
         self,
@@ -1389,6 +1460,8 @@ class SpecializedRouter:
         kimi_benchmarked: bool,
         force_fallback: bool,
         override_reason: str = "",
+        heavy_coding: bool = False,
+        policy_labels: Optional[List[str]] = None,
     ) -> str:
         parts = [
             f"role={decl.role_id}",
@@ -1398,13 +1471,19 @@ class SpecializedRouter:
         ]
         if tried:
             parts.append(f"tried_before={tried[:3]}")
-        if not kimi_benchmarked:
+        if heavy_coding:
+            parts.append("heavy_coding_preference=GLM-5.2>Kimi-K2.6>catalog(dynamic)")
+        if policy_labels:
+            parts.append(f"policy_labels={policy_labels}")
+        if not kimi_benchmarked and model.is_kimi:
+            parts.append("kimi_pending_benchmark(heavy_coding_secondary_ok)")
+        elif not kimi_benchmarked:
             parts.append("kimi_not_eligible(benchmark_required)")
         if force_fallback:
             parts.append("offline_fallback_mode=True")
         if override_reason:
             parts.append(f"override={override_reason!r}")
-        if model.is_kimi:
+        if model.is_kimi and kimi_benchmarked:
             parts.append("kimi_eligible=True(benchmark_accepted)")
         cap_match = [t.value for t in decl.preferred_capabilities if model.has_capability(t)]
         if cap_match:
@@ -1448,27 +1527,46 @@ class SpecializedRouter:
 
     def routing_status(self) -> Dict:
         """Return overall routing system status."""
+        from openjarvis.plan9.heavy_coding_policy import (
+            get_target_model_availability,
+            glm_benchmarked,
+        )
         catalog = self._catalog
         decls = self._declarations
         summary = catalog.catalog_summary()
+        target_avail = get_target_model_availability(catalog)
         return {
             "provider_count": catalog.provider_count(),
             "model_count": catalog.model_count(),
             "non_fallback_model_count": len(catalog.non_fallback_models()),
             "kimi_model_count": len(catalog.kimi_models()),
             "kimi_benchmarked": catalog.kimi_benchmarked(),
+            "glm_benchmarked": glm_benchmarked(catalog),
             "role_declaration_count": len(decls),
             "pa_front_door_model": "openai/gpt-4o",
             "pa_stable_models": PA_STABLE_MODELS,
             "catalog_summary": summary,
+            "heavy_coding_route_preference": (
+                "GLM-5.2 (preferred) → Kimi K2.6 (secondary) → "
+                "best coding-specialized catalog model → Sonnet (high-risk/validation failure only)"
+            ),
+            "policy_labels": {
+                "glm_5_2": "GLM_5_2_CURRENT_PREFERRED_HEAVY_CODING_ROUTE_PENDING_BENCHMARK",
+                "kimi_k2_6": "KIMI_K2_6_SECONDARY_HEAVY_CODING_ROUTE_PENDING_BENCHMARK",
+                "kimi": "KIMI_NOT_BENCHMARKED",
+                "glm": "GLM_NOT_FULLY_BENCHMARK_ACCEPTED",
+                "sonnet": "SONNET_HIGH_RISK_FINAL_REVIEW_ROUTE",
+                "ollama": "OLLAMA_LOCAL_FALLBACK_ONLY",
+            },
+            "target_model_availability": target_avail,
             "dynamic_selection": (
                 "Router scores ALL eligible catalog models per role. "
-                "fallback_chain provides priority ordering hints; "
-                "dynamic expansion finds additional eligible models from full catalog."
+                "Heavy coding applies temporary GLM/Kimi preference ordering; "
+                "not a permanent fixed global model assignment."
             ),
             "fallback_policy": (
                 "Ollama/local models are fallback-only (provider_outage | quota_failure | offline | debug_override). "
-                "Kimi requires benchmark acceptance. PA uses GPT/OpenAI stable route."
+                "Kimi K2.6 allowed for heavy coding pending benchmark. PA uses GPT/OpenAI stable route."
             ),
         }
 

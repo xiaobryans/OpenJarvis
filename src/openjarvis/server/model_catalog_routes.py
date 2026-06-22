@@ -199,19 +199,29 @@ async def get_model_catalog_capabilities() -> Dict[str, Any]:
 @router.get("/v1/model-routing/status")
 async def get_model_routing_status() -> Dict[str, Any]:
     """Return current routing system status for HUD display."""
+    from openjarvis.plan9.heavy_coding_policy import (
+        all_provider_key_status,
+        get_target_model_availability,
+    )
     router_inst = get_specialized_router()
     catalog = get_provider_catalog()
     decls = get_role_declarations()
 
     status = router_inst.routing_status()
+    key_status = all_provider_key_status()
+    target_avail = get_target_model_availability(catalog)
 
-    # Provider health summary
-    import os
+    # Provider health summary (supports alternate env var names)
     provider_health = {}
     for p in catalog.all_providers:
         if p.is_local:
             provider_health[p.provider_id] = "local"
+        elif p.provider_id in key_status:
+            provider_health[p.provider_id] = (
+                "configured" if key_status[p.provider_id]["configured"] else "not_configured"
+            )
         elif p.api_key_env:
+            import os
             configured = bool(os.environ.get(p.api_key_env, "").strip())
             provider_health[p.provider_id] = "configured" if configured else "not_configured"
         else:
@@ -220,19 +230,46 @@ async def get_model_routing_status() -> Dict[str, Any]:
     return {
         **status,
         "provider_health": provider_health,
-        "active_routing_policy": "dynamic_specialized_per_role",
-        "current_task_route": None,  # populated when active task running
-        "fallback_events": [],        # populated from audit log
+        "provider_key_status": key_status,
+        "target_model_availability": target_avail,
+        "active_routing_policy": (
+            "dynamic_specialized_per_role; "
+            "heavy_coding: GLM-5.2 > Kimi K2.6 > catalog > Sonnet(high-risk only)"
+        ),
+        "heavy_coding_route_preference": status.get(
+            "heavy_coding_route_preference",
+            "GLM-5.2 → Kimi K2.6 → best coding catalog model",
+        ),
+        "current_task_route": None,
+        "fallback_events": [],
         "benchmark_status": {
-            "kimi": "NOT_BENCHMARKED" if not catalog.kimi_benchmarked() else "ACCEPTED",
+            "kimi": "KIMI_NOT_BENCHMARKED" if not catalog.kimi_benchmarked() else "ACCEPTED",
+            "glm": (
+                "GLM_NOT_FULLY_BENCHMARK_ACCEPTED"
+                if not status.get("glm_benchmarked")
+                else "ACCEPTED"
+            ),
         },
+        "policy_labels": status.get("policy_labels", {}),
+        "glm_5_2_available": any(
+            v.get("status") == "AVAILABLE"
+            for v in target_avail.get("glm_5_2", {}).values()
+        ),
+        "kimi_k2_6_available": any(
+            v.get("status") == "AVAILABLE"
+            for v in target_avail.get("kimi_k2_6", {}).values()
+        ),
         "blocked_providers": [
             p.provider_id for p in catalog.all_providers
             if provider_health.get(p.provider_id) == "not_configured"
+            and not p.is_local and p.provider_id != "openrouter"
         ],
         "role_declaration_coverage": len(decls),
         "pa_front_door_model": "openai/gpt-4o",
         "pa_cheap_model": "openai/gpt-4o-mini",
+        "unknown_needs_metadata": status.get("catalog_summary", {}).get(
+            "unknown_needs_metadata", 0
+        ),
         "last_updated": time.time(),
     }
 
@@ -265,6 +302,10 @@ async def explain_model_routing_9k(req: ModelRouteExplainRequest9K) -> Dict[str,
         "role": req.role,
         "task": req.task,
         "task_classification": req.task_classification,
+        "temporary_heavy_coding_policy_applied": explanation["decision"].get(
+            "heavy_coding_preference_applied", False
+        ),
+        "policy_labels": explanation["decision"].get("policy_labels", []),
         **explanation,
     }
 
@@ -458,10 +499,18 @@ async def get_model_catalog_summary() -> Dict[str, Any]:
     last_report = get_last_discovery_report()
 
     import os
+    from openjarvis.plan9.heavy_coding_policy import (
+        all_provider_key_status,
+        get_target_model_availability,
+    )
     discovery_status: Dict[str, Any] = {}
+    key_status = all_provider_key_status()
     for p in catalog.all_providers:
         env_key = p.api_key_env
-        has_key = bool(os.environ.get(env_key, "").strip()) if env_key else True
+        alt = key_status.get(p.provider_id, {})
+        has_key = alt.get("configured", False) if alt else (
+            bool(os.environ.get(env_key, "").strip()) if env_key else True
+        )
         discovery_status[p.provider_id] = {
             "has_key": has_key,
             "is_local": p.is_local,
@@ -472,10 +521,13 @@ async def get_model_catalog_summary() -> Dict[str, Any]:
                 else "local" if p.is_local
                 else "key_missing"
             ),
+            "required_env_var": alt.get("env_var", env_key),
         }
 
     return {
         **summary,
+        "target_model_availability": get_target_model_availability(catalog),
+        "provider_key_status": key_status,
         "discovery_status_per_provider": discovery_status,
         "last_discovery_run": last_report.to_dict() if last_report else None,
         "discovery_note": (

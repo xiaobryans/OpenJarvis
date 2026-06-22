@@ -332,7 +332,7 @@ class TestDynamicExpansion:
         is_kimi_benchmarked = catalog.kimi_benchmarked()
 
         # Build candidate list
-        candidates = router._build_candidate_list(decl, is_kimi_benchmarked, force_fallback=False)
+        candidates, _ = router._build_candidate_list(decl, is_kimi_benchmarked, force_fallback=False)
         chain_set = set(decl.fallback_chain)
 
         # Candidates must include at least some models NOT in the declared chain
@@ -349,7 +349,7 @@ class TestDynamicExpansion:
         for role_id, decl in decls.items():
             if role_id in excluded_roles:
                 continue
-            candidates = router._build_candidate_list(
+            candidates, _ = router._build_candidate_list(
                 decl, catalog.kimi_benchmarked(), force_fallback=False
             )
             eligible = [
@@ -460,7 +460,7 @@ class TestPAStableRoute:
     def test_pa_dynamic_candidates_only_openai(self, catalog, router):
         """PA's dynamic candidates should only come from OpenAI (forbidden: kimi, ollama)."""
         decl = get_role_declarations().get("jarvis_pa")
-        candidates = router._build_candidate_list(decl, False, force_fallback=False)
+        candidates, _ = router._build_candidate_list(decl, False, force_fallback=False)
         for mid in candidates:
             m = catalog.get_model(mid)
             if m:

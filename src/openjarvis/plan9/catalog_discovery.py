@@ -248,10 +248,13 @@ async def _discover_anthropic(catalog: ProviderCatalog9K) -> ProviderDiscoveryRe
 
 async def _discover_kimi(catalog: ProviderCatalog9K) -> ProviderDiscoveryResult:
     result = ProviderDiscoveryResult(provider_id="kimi", status=ProviderDiscoveryStatus.NOT_ATTEMPTED)
-    api_key = os.environ.get("KIMI_API_KEY", "").strip()
+    api_key = (
+        os.environ.get("KIMI_API_KEY", "").strip()
+        or os.environ.get("MOONSHOT_API_KEY", "").strip()
+    )
     if not api_key:
         result.status = ProviderDiscoveryStatus.API_KEY_MISSING
-        result.blocker = "KIMI_API_KEY not set; using static metadata (3 models)"
+        result.blocker = "KIMI_API_KEY or MOONSHOT_API_KEY not set; using static metadata"
         result.models_found = len(catalog.models_for_provider("kimi"))
         return result
 
@@ -398,10 +401,13 @@ async def _discover_perplexity(catalog: ProviderCatalog9K) -> ProviderDiscoveryR
 
 async def _discover_aimlapi(catalog: ProviderCatalog9K) -> ProviderDiscoveryResult:
     result = ProviderDiscoveryResult(provider_id="aimlapi", status=ProviderDiscoveryStatus.NOT_ATTEMPTED)
-    api_key = os.environ.get("AIMLAPI_KEY", "").strip()
+    api_key = (
+        os.environ.get("AIMLAPI_API_KEY", "").strip()
+        or os.environ.get("AIMLAPI_KEY", "").strip()
+    )
     if not api_key:
         result.status = ProviderDiscoveryStatus.API_KEY_MISSING
-        result.blocker = "AIMLAPI_KEY not set; using static metadata"
+        result.blocker = "AIMLAPI_API_KEY or AIMLAPI_KEY not set; using static metadata"
         result.models_found = len(catalog.models_for_provider("aimlapi"))
         return result
 
@@ -514,6 +520,40 @@ def _merge_discovered_models(
 # Discovery manager (orchestrates all providers)
 # ---------------------------------------------------------------------------
 
+async def _discover_zai(catalog: ProviderCatalog9K) -> ProviderDiscoveryResult:
+    """Z.ai / GLM direct provider."""
+    result = ProviderDiscoveryResult(provider_id="zai", status=ProviderDiscoveryStatus.NOT_ATTEMPTED)
+    api_key = (
+        os.environ.get("ZAI_API_KEY", "").strip()
+        or os.environ.get("GLM_API_KEY", "").strip()
+    )
+    if not api_key:
+        result.status = ProviderDiscoveryStatus.API_KEY_MISSING
+        result.blocker = "ZAI_API_KEY or GLM_API_KEY not set; using static metadata"
+        result.models_found = len(catalog.models_for_provider("zai"))
+        return result
+
+    t0 = time.time()
+    data = await _get_json(
+        "https://api.z.ai/api/paas/v4/models",
+        headers={"Authorization": f"Bearer {api_key}"},
+    )
+    result.elapsed_ms = (time.time() - t0) * 1000
+
+    if data is None:
+        result.status = ProviderDiscoveryStatus.API_UNREACHABLE
+        result.blocker = "Z.ai /models call failed or timed out"
+        result.models_found = len(catalog.models_for_provider("zai"))
+        return result
+
+    models_data = data.get("data", data if isinstance(data, list) else [])
+    if isinstance(models_data, dict):
+        models_data = models_data.get("data", [])
+    _merge_discovered_models(catalog, "zai", models_data, id_field="id", name_field="id", result=result)
+    result.status = ProviderDiscoveryStatus.LIVE
+    return result
+
+
 _ADAPTERS = {
     "openai": _discover_openai,
     "anthropic": _discover_anthropic,
@@ -525,6 +565,7 @@ _ADAPTERS = {
     "xai": _discover_xai,
     "openrouter": _discover_openrouter,
     "aimlapi": _discover_aimlapi,
+    "zai": _discover_zai,
     "ollama": _discover_ollama,
 }
 

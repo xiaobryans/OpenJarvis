@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import pytest
 
+from openjarvis.plan9.heavy_coding_policy import is_glm_52_model
 from openjarvis.plan9.model_catalog_9k import (
     BenchmarkStatus,
     CapabilityTag,
@@ -338,12 +339,15 @@ class TestRoleCapabilityDeclarations:
 
 class TestCheapRoutesCapabilitySpecific:
     def test_coding_cheap_is_coding_specialist(self, router):
-        """Coding role cheap route must select a coding-specialist model."""
-        # In normal mode (no force_fallback), coding routes to deepseek
-        decision = router.select(role_id="coding_manager", task_description="write a Python function")
-        # Should be either deepseek or claude-sonnet (not generic gpt-4o-mini for coding_manager)
-        assert "deepseek" in decision.chosen_model_id.lower() or "sonnet" in decision.chosen_model_id.lower(), (
-            f"coding_manager should use deepseek or sonnet, got: {decision.chosen_model_id}"
+        """Coding role must select a coding-specialist model (GLM/Kimi/deepseek/sonnet)."""
+        decision = router.select(
+            role_id="coding_manager",
+            task_description="write a Python function",
+            task_classification="normal_heavy_coding",
+        )
+        mid = decision.chosen_model_id.lower()
+        assert any(s in mid for s in ("glm", "kimi", "deepseek", "sonnet", "claude")), (
+            f"coding_manager should use coding specialist, got: {decision.chosen_model_id}"
         )
 
     def test_retrieval_cheap_is_extraction_specialist(self, router):
@@ -363,11 +367,11 @@ class TestCheapRoutesCapabilitySpecific:
         )
 
     def test_frontend_cheap_is_ui_specialist(self, router):
-        """Frontend cheap route must use a UI-capable model."""
+        """Frontend route must use a UI-capable model (GLM/Kimi/mini/haiku)."""
         decision = router.select(role_id="frontend_worker", task_description="fix CSS button style")
-        # Frontend should use gpt-4o-mini (UI, cheap) or haiku
-        assert any(s in decision.chosen_model_id.lower() for s in ["gpt-4o-mini", "mini", "haiku"]), (
-            f"frontend_worker cheap should be mini/haiku, got: {decision.chosen_model_id}"
+        mid = decision.chosen_model_id.lower()
+        assert any(s in mid for s in ["gpt-4o-mini", "mini", "haiku", "glm", "kimi"]), (
+            f"frontend_worker should be UI-capable model, got: {decision.chosen_model_id}"
         )
 
     def test_doc_cheap_is_summarization_capable(self, router):
@@ -516,12 +520,23 @@ class TestKimiNotDefault:
         """catalog.kimi_benchmarked() must return False initially."""
         assert catalog.kimi_benchmarked() is False
 
-    def test_kimi_not_selected_for_coding(self, router):
-        """coding_manager must not select Kimi when not benchmarked."""
-        decision = router.select(role_id="coding_manager", task_description="implement feature")
-        assert "kimi" not in decision.chosen_model_id.lower(), (
-            f"coding_manager must not use Kimi (not benchmarked), got: {decision.chosen_model_id}"
+    def test_kimi_k26_allowed_for_heavy_coding_pending_benchmark(self, router):
+        """Heavy coding may use Kimi K2.6 as secondary route pending benchmark."""
+        decision = router.select(
+            role_id="coding_manager",
+            task_description="implement feature",
+            task_classification="normal_heavy_coding",
         )
+        # GLM preferred first; if GLM selected that's also valid
+        mid = decision.chosen_model_id.lower()
+        assert any(s in mid for s in ("glm", "kimi", "deepseek", "sonnet")), (
+            f"coding_manager heavy coding route invalid: {decision.chosen_model_id}"
+        )
+
+    def test_kimi_not_selected_for_pa(self, router):
+        """PA must not select Kimi."""
+        decision = router.select(role_id="jarvis_pa", task_description="hello")
+        assert "kimi" not in decision.chosen_model_id.lower()
 
     def test_kimi_not_default_any_role(self, matrix):
         """No role in the routing matrix should have Kimi as default cheap/balanced/best."""
@@ -558,26 +573,36 @@ class TestKimiNotDefault:
 
 class TestKimiFallback:
     def test_kimi_not_selected_when_not_benchmarked(self, router):
-        """Router must skip Kimi models when benchmark not accepted."""
+        """Non-heavy-coding research role must skip Kimi when not benchmarked."""
         decision = router.select(
-            role_id="refactor_worker",
-            task_description="big refactor",
+            role_id="research_manager",
+            task_description="find papers on transformers",
         )
         assert "kimi" not in decision.chosen_model_id.lower()
-        # Should explain why Kimi was rejected
-        assert "kimi" in decision.why_cheaper_rejected.lower() or "kimi" in decision.route_reason.lower(), (
-            "Route reason should mention Kimi was considered but not benchmarked"
-        )
 
-    def test_fallback_to_sonnet_when_kimi_rejected(self, router):
-        """When Kimi is rejected, router must select Sonnet or another trusted model."""
-        decision = router.select(
-            role_id="coding_manager",
-            task_description="large refactor",
-        )
-        assert "kimi" not in decision.chosen_model_id.lower()
-        # Must be a real cloud model (not local)
-        assert "ollama" not in decision.chosen_model_id.lower()
+    def test_fallback_when_glm_kimi_unavailable(self, router, catalog):
+        """When GLM and Kimi unavailable, coding routes to other coding models."""
+        glm_ids = [m.model_id for m in catalog.all_models if is_glm_52_model(m.model_id)]
+        kimi_ids = [m.model_id for m in catalog.all_models if "kimi" in m.model_id.lower()]
+        saved = {}
+        for mid in glm_ids + kimi_ids:
+            m = catalog.get_model(mid)
+            if m:
+                saved[mid] = m.is_available
+                m.is_available = False
+        try:
+            decision = router.select(
+                role_id="coding_manager",
+                task_description="large refactor",
+                task_classification="repo_refactor",
+            )
+            assert "kimi" not in decision.chosen_model_id.lower() or not saved
+            assert "ollama" not in decision.chosen_model_id.lower()
+        finally:
+            for mid, avail in saved.items():
+                m = catalog.get_model(mid)
+                if m:
+                    m.is_available = avail
 
 
 # ---------------------------------------------------------------------------

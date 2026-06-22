@@ -486,7 +486,7 @@ class TestInheritanceCoverage:
         for role_id, decl in decls.items():
             if role_id in pa_roles:
                 continue
-            candidates = router._build_candidate_list(decl, False, force_fallback=False)
+            candidates, _ = router._build_candidate_list(decl, False, force_fallback=False)
             eligible = [c for c in candidates if catalog.get_model(c) and catalog.get_model(c).is_available]
             if len(eligible) <= 1:
                 violations.append(
@@ -513,7 +513,7 @@ class TestInheritanceCoverage:
         )
 
         # Build candidates list — must come entirely from dynamic scoring
-        candidates = router._build_candidate_list(decl, False, force_fallback=False)
+        candidates, _ = router._build_candidate_list(decl, False, force_fallback=False)
         assert len(candidates) >= 3, (
             f"Dynamic scoring must find 3+ candidates for DEFAULT_CHAT, got: {candidates}"
         )

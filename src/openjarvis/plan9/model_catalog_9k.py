@@ -150,7 +150,14 @@ class ModelEntry9K:
 
     @property
     def is_kimi(self) -> bool:
-        return self.provider_id == "kimi"
+        return self.provider_id == "kimi" or (
+            "kimi" in self.model_id.lower() or "moonshot" in self.model_id.lower()
+        )
+
+    @property
+    def is_glm(self) -> bool:
+        n = self.model_id.lower()
+        return self.provider_id == "zai" or "glm" in n or n.startswith("z-ai/")
 
     def has_capability(self, tag: CapabilityTag) -> bool:
         return tag in self.capability_tags
@@ -174,6 +181,7 @@ class ModelEntry9K:
             "is_available": self.is_available,
             "is_offline_fallback": self.is_offline_fallback,
             "is_kimi": self.is_kimi,
+            "is_glm": self.is_glm,
             "model_status": self.model_status.value,
             "discovery_source": self.discovery_source,
             "notes": self.notes,
@@ -263,11 +271,20 @@ PROVIDERS: Dict[str, ProviderEntry] = {
     "aimlapi": ProviderEntry(
         provider_id="aimlapi",
         display_name="AIMLAPI (aggregator)",
-        api_key_env="AIMLAPI_KEY",
+        api_key_env="AIMLAPI_API_KEY",
         base_url="https://api.aimlapi.com/v1",
         supports_model_list=True,
         is_local=False,
-        notes="Aggregator for many providers.",
+        notes="Aggregator for many providers. Also accepts AIMLAPI_KEY env var.",
+    ),
+    "zai": ProviderEntry(
+        provider_id="zai",
+        display_name="Z.ai / GLM",
+        api_key_env="ZAI_API_KEY",
+        base_url="https://api.z.ai/api/paas/v4",
+        supports_model_list=True,
+        is_local=False,
+        notes="Direct GLM provider. Also accepts GLM_API_KEY env var.",
     ),
     "ollama": ProviderEntry(
         provider_id="ollama",
@@ -537,6 +554,117 @@ CATALOG: List[ModelEntry9K] = [
         allowed_risk_level=AllowedRiskLevel.MEDIUM,
         benchmark_status=BenchmarkStatus.NOT_BENCHMARKED,
         notes="BENCHMARK-GATED. Kimi via OpenRouter route. Not default.",
+    ),
+    ModelEntry9K(
+        model_id="kimi/kimi-k2.6",
+        display_name="Kimi K2.6 (MoonshotAI)",
+        provider_id="kimi",
+        context_window=200_000,
+        input_cost_per_mtok=0.60,
+        output_cost_per_mtok=2.50,
+        latency_class=LatencyClass.MEDIUM,
+        capability_tags=_tags(
+            CapabilityTag.CODING,
+            CapabilityTag.REPO_SCALE_REFACTOR,
+            CapabilityTag.BACKEND_API,
+            CapabilityTag.FRONTEND_UI,
+            CapabilityTag.LONG_CONTEXT,
+            CapabilityTag.TOOL_CALLING,
+            CapabilityTag.STRUCTURED_OUTPUT,
+        ),
+        allowed_risk_level=AllowedRiskLevel.MEDIUM,
+        benchmark_status=BenchmarkStatus.NOT_BENCHMARKED,
+        notes=(
+            "KIMI_K2_6_SECONDARY_HEAVY_CODING_ROUTE_PENDING_BENCHMARK. "
+            "Eligible for normal heavy coding when GLM-5.2 unavailable. "
+            "Not default for PA or high-risk review."
+        ),
+    ),
+    ModelEntry9K(
+        model_id="openrouter/moonshotai/kimi-k2.6",
+        display_name="Kimi K2.6 (via OpenRouter)",
+        provider_id="openrouter",
+        context_window=200_000,
+        input_cost_per_mtok=0.60,
+        output_cost_per_mtok=2.50,
+        latency_class=LatencyClass.MEDIUM,
+        capability_tags=_tags(
+            CapabilityTag.CODING,
+            CapabilityTag.REPO_SCALE_REFACTOR,
+            CapabilityTag.BACKEND_API,
+            CapabilityTag.LONG_CONTEXT,
+            CapabilityTag.TOOL_CALLING,
+        ),
+        allowed_risk_level=AllowedRiskLevel.MEDIUM,
+        benchmark_status=BenchmarkStatus.NOT_BENCHMARKED,
+        notes="Kimi K2.6 via OpenRouter. Secondary heavy-coding route pending benchmark.",
+    ),
+
+    # =========================================================================
+    # GLM / Z.ai — preferred heavy-coding route (pending benchmark)
+    # =========================================================================
+    ModelEntry9K(
+        model_id="zai/glm-5.2",
+        display_name="GLM-5.2 (Z.ai)",
+        provider_id="zai",
+        context_window=200_000,
+        input_cost_per_mtok=0.50,
+        output_cost_per_mtok=2.00,
+        latency_class=LatencyClass.MEDIUM,
+        capability_tags=_tags(
+            CapabilityTag.CODING,
+            CapabilityTag.REPO_SCALE_REFACTOR,
+            CapabilityTag.BACKEND_API,
+            CapabilityTag.FRONTEND_UI,
+            CapabilityTag.TEST_GENERATION,
+            CapabilityTag.DEBUGGING,
+            CapabilityTag.TOOL_CALLING,
+            CapabilityTag.STRUCTURED_OUTPUT,
+            CapabilityTag.LONG_CONTEXT,
+        ),
+        allowed_risk_level=AllowedRiskLevel.MEDIUM,
+        benchmark_status=BenchmarkStatus.NOT_BENCHMARKED,
+        notes=(
+            "GLM_5_2_CURRENT_PREFERRED_HEAVY_CODING_ROUTE_PENDING_BENCHMARK. "
+            "Preferred for normal heavy coding when available. Not PA default."
+        ),
+    ),
+    ModelEntry9K(
+        model_id="openrouter/z-ai/glm-5.2",
+        display_name="GLM-5.2 (via OpenRouter)",
+        provider_id="openrouter",
+        context_window=200_000,
+        input_cost_per_mtok=0.50,
+        output_cost_per_mtok=2.00,
+        latency_class=LatencyClass.MEDIUM,
+        capability_tags=_tags(
+            CapabilityTag.CODING,
+            CapabilityTag.REPO_SCALE_REFACTOR,
+            CapabilityTag.BACKEND_API,
+            CapabilityTag.TOOL_CALLING,
+            CapabilityTag.LONG_CONTEXT,
+        ),
+        allowed_risk_level=AllowedRiskLevel.MEDIUM,
+        benchmark_status=BenchmarkStatus.NOT_BENCHMARKED,
+        notes="GLM-5.2 via OpenRouter. Preferred heavy-coding route pending benchmark.",
+    ),
+    ModelEntry9K(
+        model_id="aimlapi/glm-5.2",
+        display_name="GLM-5.2 (via AIMLAPI)",
+        provider_id="aimlapi",
+        context_window=200_000,
+        input_cost_per_mtok=0.50,
+        output_cost_per_mtok=2.00,
+        latency_class=LatencyClass.MEDIUM,
+        capability_tags=_tags(
+            CapabilityTag.CODING,
+            CapabilityTag.BACKEND_API,
+            CapabilityTag.TOOL_CALLING,
+            CapabilityTag.LONG_CONTEXT,
+        ),
+        allowed_risk_level=AllowedRiskLevel.MEDIUM,
+        benchmark_status=BenchmarkStatus.NOT_BENCHMARKED,
+        notes="GLM-5.2 via AIMLAPI. Preferred heavy-coding route pending benchmark.",
     ),
 
     # =========================================================================

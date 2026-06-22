@@ -54,12 +54,18 @@ interface RoutingStatus {
   model_count: number;
   non_fallback_model_count: number;
   kimi_benchmarked: boolean;
+  glm_benchmarked?: boolean;
+  glm_5_2_available?: boolean;
+  kimi_k2_6_available?: boolean;
+  heavy_coding_route_preference?: string;
   role_declaration_count: number;
   pa_front_door_model: string;
   active_routing_policy: string;
   blocked_providers: string[];
   benchmark_status: Record<string, string>;
+  policy_labels?: Record<string, string>;
   provider_health: Record<string, string>;
+  unknown_needs_metadata?: number;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -380,12 +386,18 @@ export function JarvisCockpitPage() {
         model_count: d.model_count ?? 0,
         non_fallback_model_count: d.non_fallback_model_count ?? 0,
         kimi_benchmarked: d.kimi_benchmarked ?? false,
+        glm_benchmarked: d.glm_benchmarked ?? false,
+        glm_5_2_available: d.glm_5_2_available ?? false,
+        kimi_k2_6_available: d.kimi_k2_6_available ?? false,
+        heavy_coding_route_preference: d.heavy_coding_route_preference ?? '',
         role_declaration_count: d.role_declaration_count ?? 0,
         pa_front_door_model: d.pa_front_door_model ?? '—',
         active_routing_policy: d.active_routing_policy ?? '—',
         blocked_providers: d.blocked_providers ?? [],
         benchmark_status: d.benchmark_status ?? {},
+        policy_labels: d.policy_labels ?? {},
         provider_health: d.provider_health ?? {},
+        unknown_needs_metadata: d.unknown_needs_metadata ?? 0,
       });
     }).catch(() => {});
   }, []);
@@ -574,7 +586,7 @@ export function JarvisCockpitPage() {
       badge: routingStatus ? `${routingStatus.provider_count}p/${routingStatus.non_fallback_model_count}m` : undefined,
       lines: [
         routingStatus ? `${routingStatus.provider_count} providers · ${routingStatus.non_fallback_model_count} cloud models` : (apiOk ? 'Loading…' : 'Backend unreachable'),
-        routingStatus ? `PA: ${routingStatus.pa_front_door_model} · Kimi: ${routingStatus.kimi_benchmarked ? 'eligible' : 'pending benchmark'}` : '',
+        routingStatus ? `PA: ${routingStatus.pa_front_door_model} · GLM-5.2: ${routingStatus.glm_5_2_available ? 'avail' : 'pending'} · Kimi K2.6: ${routingStatus.kimi_k2_6_available ? 'avail' : 'pending'}` : '',
       ],
       onExpand: setExpandedPanel,
     },
@@ -841,17 +853,48 @@ export function JarvisCockpitPage() {
                 <Row label="PA policy" value="GPT/OpenAI stable route — not Ollama/Kimi" status="ok" />
               </>
             ) : null}
-            <SectionHeading>Kimi Benchmark Status</SectionHeading>
+            <SectionHeading>Heavy Coding Route (temporary policy)</SectionHeading>
             {routingStatus ? (
               <>
                 <Row
-                  label="Kimi eligible"
-                  value={routingStatus.kimi_benchmarked ? 'Yes — benchmark accepted' : 'No — pending benchmark proof'}
+                  label="GLM-5.2 available"
+                  value={routingStatus.glm_5_2_available ? 'Yes' : 'Not in catalog / key missing'}
+                  status={routingStatus.glm_5_2_available ? 'ok' : 'warn'}
+                />
+                <Row
+                  label="Kimi K2.6 available"
+                  value={routingStatus.kimi_k2_6_available ? 'Yes' : 'Not in catalog / key missing'}
+                  status={routingStatus.kimi_k2_6_available ? 'ok' : 'warn'}
+                />
+                <Row
+                  label="Heavy-coding preference"
+                  value={routingStatus.heavy_coding_route_preference || 'GLM-5.2 → Kimi K2.6 → catalog'}
+                  status="ok"
+                />
+                <Row
+                  label="Unknown/unbenchmarked"
+                  value={routingStatus.unknown_needs_metadata ?? 0}
+                />
+              </>
+            ) : null}
+            <SectionHeading>Kimi / GLM Benchmark Status</SectionHeading>
+            {routingStatus ? (
+              <>
+                <Row
+                  label="Kimi benchmark"
+                  value={routingStatus.kimi_benchmarked ? 'Accepted' : 'KIMI_NOT_BENCHMARKED'}
                   status={routingStatus.kimi_benchmarked ? 'ok' : 'warn'}
                 />
-                <Row label="Kimi default" value="Never default until benchmark accepted" />
+                <Row
+                  label="GLM benchmark"
+                  value={routingStatus.glm_benchmarked ? 'Accepted' : 'GLM_NOT_FULLY_BENCHMARK_ACCEPTED'}
+                  status={routingStatus.glm_benchmarked ? 'ok' : 'warn'}
+                />
                 {Object.entries(routingStatus.benchmark_status).map(([k, v]) => (
                   <Row key={k} label={`Benchmark: ${k}`} value={String(v)} status={v === 'ACCEPTED' ? 'ok' : 'warn'} />
+                ))}
+                {routingStatus.policy_labels && Object.entries(routingStatus.policy_labels).map(([k, v]) => (
+                  <Row key={k} label={`Policy: ${k}`} value={String(v)} />
                 ))}
               </>
             ) : null}
@@ -876,9 +919,10 @@ export function JarvisCockpitPage() {
             )}
             <SectionHeading>Routing Policy Notes</SectionHeading>
             <div style={{ fontSize: 10, color: 'rgba(140,180,210,0.7)', lineHeight: 1.6 }}>
+              <div>• Heavy coding: GLM-5.2 preferred → Kimi K2.6 → best coding catalog model (dynamic)</div>
+              <div>• Sonnet: high-risk / final-review / validation-failure escalation only</div>
               <div>• Cheap routes are capability-specific (not one universal model)</div>
               <div>• Research roles prefer Perplexity/Sonar (web-grounded)</div>
-              <div>• Coding cheap route uses DeepSeek (coding specialist)</div>
               <div>• Security/billing/IAM/deploy: Anthropic Claude only</div>
               <div>• Ollama/local: offline fallback only</div>
               <div>• No manual model picker in normal UI</div>
