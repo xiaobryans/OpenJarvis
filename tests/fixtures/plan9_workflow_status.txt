@@ -1,0 +1,7 @@
+# Plan 9 Jarvis coding workflow probe file — safe to edit in workflow tests.
+# Do not store secrets here.
+status=idle
+
+# plan9-jarvis-loop-1 workflow=loop1 at=2026-06-22T18:35:57Z
+
+# plan9-jarvis-loop-1-exec workflow=loop1-exec at=2026-06-22T18:35:59Z
