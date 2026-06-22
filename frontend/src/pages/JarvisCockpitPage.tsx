@@ -28,7 +28,7 @@ import type { TurnPhase } from '../hooks/useVoiceTurn';
 
 type PanelId =
   | 'mission' | 'cockpit' | 'authority' | 'workbench' | 'connectors'
-  | 'agents' | 'memory' | 'plan9' | 'logs' | 'settings';
+  | 'agents' | 'memory' | 'plan9' | 'logs' | 'settings' | 'routing';
 
 type StatusDot = 'ok' | 'warn' | 'error' | 'unknown';
 
@@ -49,6 +49,18 @@ interface Plan9Status {
   last_checked?: string;
 }
 interface AgentEntry { id: string; name: string; kind: 'manager' | 'worker'; status: string; domain: string; }
+interface RoutingStatus {
+  provider_count: number;
+  model_count: number;
+  non_fallback_model_count: number;
+  kimi_benchmarked: boolean;
+  role_declaration_count: number;
+  pa_front_door_model: string;
+  active_routing_policy: string;
+  blocked_providers: string[];
+  benchmark_status: Record<string, string>;
+  provider_health: Record<string, string>;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tiny helpers
@@ -250,6 +262,7 @@ export function JarvisCockpitPage() {
   const [macWorkerStatus, setMacWorkerStatus] = useState<{ queued: number; running: number; failed: number } | null>(null);
   const [syncBusy, setSyncBusy] = useState(false);
   const [syncResult, setSyncResult] = useState('');
+  const [routingStatus, setRoutingStatus] = useState<RoutingStatus | null>(null);
 
   // ── status helpers ──
   const statusForMem = (): StatusDot => {
@@ -357,6 +370,22 @@ export function JarvisCockpitPage() {
         queued: d.total_tasks ?? 0,
         running: d.running ?? 0,
         failed: d.failed ?? 0,
+      });
+    }).catch(() => {});
+
+    // model routing status (Plan 9K)
+    apiFetch('/v1/model-routing/status').then(r => r.json()).then(d => {
+      setRoutingStatus({
+        provider_count: d.provider_count ?? 0,
+        model_count: d.model_count ?? 0,
+        non_fallback_model_count: d.non_fallback_model_count ?? 0,
+        kimi_benchmarked: d.kimi_benchmarked ?? false,
+        role_declaration_count: d.role_declaration_count ?? 0,
+        pa_front_door_model: d.pa_front_door_model ?? '—',
+        active_routing_policy: d.active_routing_policy ?? '—',
+        blocked_providers: d.blocked_providers ?? [],
+        benchmark_status: d.benchmark_status ?? {},
+        provider_health: d.provider_health ?? {},
       });
     }).catch(() => {});
   }, []);
@@ -534,6 +563,18 @@ export function JarvisCockpitPage() {
       lines: [
         logs.length > 0 ? logs[0].text.slice(0, 50) : 'No recent events',
         logs.length > 1 ? logs[1].text.slice(0, 50) : '',
+      ],
+      onExpand: setExpandedPanel,
+    },
+    {
+      id: 'routing',
+      icon: '🔀',
+      label: 'Model Routing',
+      status: routingStatus ? (routingStatus.blocked_providers.length > 0 ? 'warn' : 'ok') : 'unknown',
+      badge: routingStatus ? `${routingStatus.provider_count}p/${routingStatus.non_fallback_model_count}m` : undefined,
+      lines: [
+        routingStatus ? `${routingStatus.provider_count} providers · ${routingStatus.non_fallback_model_count} cloud models` : (apiOk ? 'Loading…' : 'Backend unreachable'),
+        routingStatus ? `PA: ${routingStatus.pa_front_door_model} · Kimi: ${routingStatus.kimi_benchmarked ? 'eligible' : 'pending benchmark'}` : '',
       ],
       onExpand: setExpandedPanel,
     },
@@ -775,6 +816,73 @@ export function JarvisCockpitPage() {
             <Row label="Secret scan" value="Active on all API responses" status="ok" />
             <Row label="Hard gates" value="Approval required for deploy / destructive ops" status="ok" />
             <Row label="Cost control" value="Changed-file-only review enforced" status="ok" />
+          </Overlay>
+        );
+
+      case 'routing':
+        return (
+          <Overlay title="Model Routing — Plan 9K" icon="🔀" onClose={() => setExpandedPanel(null)}>
+            <SectionHeading>Routing System Status</SectionHeading>
+            {routingStatus ? (
+              <>
+                <Row label="Providers configured" value={routingStatus.provider_count} status="ok" />
+                <Row label="Cloud models available" value={routingStatus.non_fallback_model_count} status="ok" />
+                <Row label="Total catalog (incl. fallback)" value={routingStatus.model_count} />
+                <Row label="Role declarations" value={routingStatus.role_declaration_count} status="ok" />
+                <Row label="Active routing policy" value={routingStatus.active_routing_policy} status="ok" />
+              </>
+            ) : (
+              <BackendError endpoint="/v1/model-routing/status" target={apiTarget} />
+            )}
+            <SectionHeading>PA Front-Door Route</SectionHeading>
+            {routingStatus ? (
+              <>
+                <Row label="PA model" value={routingStatus.pa_front_door_model} status="ok" />
+                <Row label="PA policy" value="GPT/OpenAI stable route — not Ollama/Kimi" status="ok" />
+              </>
+            ) : null}
+            <SectionHeading>Kimi Benchmark Status</SectionHeading>
+            {routingStatus ? (
+              <>
+                <Row
+                  label="Kimi eligible"
+                  value={routingStatus.kimi_benchmarked ? 'Yes — benchmark accepted' : 'No — pending benchmark proof'}
+                  status={routingStatus.kimi_benchmarked ? 'ok' : 'warn'}
+                />
+                <Row label="Kimi default" value="Never default until benchmark accepted" />
+                {Object.entries(routingStatus.benchmark_status).map(([k, v]) => (
+                  <Row key={k} label={`Benchmark: ${k}`} value={String(v)} status={v === 'ACCEPTED' ? 'ok' : 'warn'} />
+                ))}
+              </>
+            ) : null}
+            <SectionHeading>Provider Health</SectionHeading>
+            {routingStatus ? (
+              Object.entries(routingStatus.provider_health).map(([provider, health]) => (
+                <Row
+                  key={provider}
+                  label={provider}
+                  value={String(health)}
+                  status={health === 'configured' || health === 'local' || health === 'no_key_required' ? 'ok' : 'warn'}
+                />
+              ))
+            ) : null}
+            {routingStatus && routingStatus.blocked_providers.length > 0 && (
+              <>
+                <SectionHeading>Blocked / Unconfigured Providers</SectionHeading>
+                {routingStatus.blocked_providers.map(p => (
+                  <Row key={p} label={p} value="not configured (API key missing)" status="warn" />
+                ))}
+              </>
+            )}
+            <SectionHeading>Routing Policy Notes</SectionHeading>
+            <div style={{ fontSize: 10, color: 'rgba(140,180,210,0.7)', lineHeight: 1.6 }}>
+              <div>• Cheap routes are capability-specific (not one universal model)</div>
+              <div>• Research roles prefer Perplexity/Sonar (web-grounded)</div>
+              <div>• Coding cheap route uses DeepSeek (coding specialist)</div>
+              <div>• Security/billing/IAM/deploy: Anthropic Claude only</div>
+              <div>• Ollama/local: offline fallback only</div>
+              <div>• No manual model picker in normal UI</div>
+            </div>
           </Overlay>
         );
 
