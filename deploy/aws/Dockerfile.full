@@ -70,16 +70,8 @@ RUN pip install --no-cache-dir uv && \
 # Fail the image build immediately if the Rust extension cannot be imported
 # or if JarvisMemory cannot initialize. This prevents deploying a broken image.
 RUN python -c "import openjarvis_rust; print('VALIDATION: openjarvis_rust IMPORT_OK')"
-RUN python -c "
-from openjarvis.memory.store import JarvisMemory
-m = JarvisMemory()
-count = m.count()
-print(f'VALIDATION: JarvisMemory INIT_OK — entries={count}')
-"
-RUN python -c "
-from openjarvis.server.memory_routes import router
-print('VALIDATION: memory_routes IMPORT_OK — routes:', [r.path for r in router.routes])
-"
+RUN python -c "from openjarvis.memory.store import JarvisMemory; m = JarvisMemory(); print('VALIDATION: JarvisMemory INIT_OK entries=' + str(m.count()))"
+RUN python -c "from openjarvis.server.memory_routes import router; paths=[r.path for r in router.routes]; print('VALIDATION: memory_routes IMPORT_OK routes=' + str(paths))"
 
 # ── Runtime setup ──────────────────────────────────────────────────────────
 RUN useradd -m -u 1000 jarvis && \
