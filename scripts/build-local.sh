@@ -161,7 +161,20 @@ if $DRY_RUN; then
 fi
 
 # ── Step 4: Run founder-local build ─────────────────────────────────────
-header "Step 4 — Run founder-local build (npm run build:tauri:local)"
+header "Step 4 — Rust extension (openjarvis_rust) for local desktop memory"
+
+if command -v uv >/dev/null 2>&1 && command -v rustc >/dev/null 2>&1; then
+  info "Building openjarvis_rust into project venv (maturin develop)..."
+  if (cd "$REPO_ROOT" && uv run maturin develop -m rust/crates/openjarvis-python/Cargo.toml); then
+    ok "openjarvis_rust installed into .venv"
+  else
+    warn "maturin develop failed — desktop memory will run degraded (SQLite fallback)"
+  fi
+else
+  warn "uv or rustc missing — skipping openjarvis_rust build (desktop memory degraded)"
+fi
+
+header "Step 5 — Run founder-local build (npm run build:tauri:local)"
 
 echo "  Command: cd frontend && npm run build:tauri:local"
 echo "  (--bundles app, createUpdaterArtifacts=false, updater.active=false)"
@@ -177,8 +190,8 @@ BUILD_ELAPSED=$(( BUILD_END - BUILD_START ))
 echo ""
 ok "Build completed in ${BUILD_ELAPSED}s with exit code $BUILD_EXIT"
 
-# ── Step 5: Record /Applications post-state ─────────────────────────────
-header "Step 5 — /Applications post-state (content checksums)"
+# ── Step 6: Record /Applications post-state ─────────────────────────────
+header "Step 6 — /Applications post-state (content checksums)"
 
 POST_BIN_SHA="absent"
 POST_PLIST_SHA="absent"
@@ -203,7 +216,7 @@ else
 fi
 
 # ── Step 6: /Applications mutation check ────────────────────────────────
-header "Step 6 — /Applications mutation detection"
+header "Step 7 — /Applications mutation detection"
 
 ANY_CHANGE=false
 CONTENT_CHANGED=false
@@ -269,7 +282,7 @@ else
 fi
 
 # ── Step 7: Verify artifact ──────────────────────────────────────────────
-header "Step 7 — Artifact verification"
+header "Step 8 — Artifact verification"
 
 cd "$REPO_ROOT"
 if [ -d "$BUNDLE_APP" ]; then
@@ -287,7 +300,7 @@ fi
 
 # ── Step 8: Optional install to ~/Applications/ ─────────────────────────
 if $DO_INSTALL; then
-  header "Step 8 — Install to ~/Applications/ (explicit authorization)"
+  header "Step 9 — Install to ~/Applications/ (explicit authorization)"
   DEST="$HOME/Applications"
   mkdir -p "$DEST"
   rm -rf "$DEST/OpenJarvis.app"
@@ -295,7 +308,7 @@ if $DO_INSTALL; then
   ok "Installed to $DEST/OpenJarvis.app (v$BUNDLE_VER)"
   info "Remove quarantine if needed: xattr -dr com.apple.quarantine '$DEST/OpenJarvis.app'"
 else
-  header "Step 8 — Install (skipped — no --install flag)"
+  header "Step 9 — Install (skipped — no --install flag)"
   info "To install to ~/Applications/: ./scripts/build-local.sh --install"
   info "To install to /Applications/: copy manually with Bryan authorization only"
 fi

@@ -1213,6 +1213,28 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
         Ok(_) => {} // success — fall through
     }
 
+    // uv sync recreates the venv from lockfile and drops maturin develop edits.
+    // Rebuild openjarvis_rust so desktop memory reports rust_available=true.
+    {
+        let mut s = status.lock().await;
+        s.detail = "Building Rust memory extension (openjarvis_rust)...".into();
+    }
+    let mut maturin_cmd = tokio::process::Command::new(&uv_bin);
+    maturin_cmd
+        .args([
+            "run",
+            "maturin",
+            "develop",
+            "-m",
+            "rust/crates/openjarvis-python/Cargo.toml",
+        ])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .current_dir(root);
+    prepare_subprocess_for_appimage(&mut maturin_cmd);
+    // Best-effort: pure-Python SQLite memory remains if rustc/maturin unavailable.
+    let _ = maturin_cmd.output().await;
+
     {
         let mut s = status.lock().await;
         s.detail = format!("Starting API server from {}...", root.display());
