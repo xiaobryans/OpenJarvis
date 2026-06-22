@@ -637,6 +637,20 @@ class JarvisMemory:
             return None
         return self._row_to_entry(row)
 
+    def list_all_raw(self, *, exclude_deleted: bool = True, limit: int = 5000) -> List[MemoryEntry]:
+        """Return all entries in the store (up to *limit*).
+
+        Used by cloud-sync push to serialize the full local state to S3.
+        """
+        limit = max(1, min(limit, 50_000))
+        clause = "status != 'deleted'" if exclude_deleted else "1=1"
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"SELECT * FROM memory_entries WHERE {clause} ORDER BY created_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [self._row_to_entry(r) for r in rows]
+
     @staticmethod
     def _row_to_entry(row: sqlite3.Row) -> MemoryEntry:
         try:

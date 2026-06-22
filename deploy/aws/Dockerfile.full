@@ -4,7 +4,42 @@
 #
 # Build: docker build -f deploy/aws/Dockerfile.full -t jarvis-full .
 # Run:   docker run -p 8000:8000 -e OPENJARVIS_API_KEY=... jarvis-full
+#
+# Stage 1 (rust-builder): Compiles the openjarvis_rust Python extension using
+#   maturin + the full Rust workspace under rust/. Produces a .whl.
+# Stage 2 (production):   Installs Python deps + the pre-built .whl, then
+#   validates both `import openjarvis_rust` and JarvisMemory init before
+#   switching to the unprivileged jarvis user.
 
+# ── Stage 1: Rust extension build ─────────────────────────────────────────
+FROM python:3.12-slim-bookworm AS rust-builder
+
+WORKDIR /build
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl gcc g++ pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Rust 1.88+ (minimum required by workspace rust-version = "1.88")
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+    | sh -s -- -y --default-toolchain stable --no-modify-path
+ENV PATH="/root/.cargo/bin:${PATH}"
+RUN rustup show
+
+# Install maturin to build the Python extension wheel
+RUN pip install --no-cache-dir "maturin>=1.0,<2.0"
+
+# Copy only the Rust workspace — keeps the context small if Python src changes
+COPY rust/ rust/
+
+# Build the openjarvis_rust cdylib wheel (--release for production perf)
+# -m points to the specific crate; workspace root is rust/
+WORKDIR /build/rust
+RUN maturin build --release \
+    -m crates/openjarvis-python/Cargo.toml \
+    --out /wheels
+
+# ── Stage 2: Production image ──────────────────────────────────────────────
 FROM python:3.12-slim-bookworm
 
 WORKDIR /app
@@ -23,9 +58,30 @@ COPY src/ src/
 COPY scripts/install scripts/install
 COPY deploy/windows deploy/windows
 
-RUN pip install --no-cache-dir uv && \
-    uv pip install --system ".[server]"
+# Copy the pre-built wheel from Stage 1
+COPY --from=rust-builder /wheels/ /tmp/wheels/
 
+RUN pip install --no-cache-dir uv && \
+    uv pip install --system ".[server]" && \
+    pip install --no-cache-dir /tmp/wheels/*.whl && \
+    rm -rf /tmp/wheels
+
+# ── Build-time validation ──────────────────────────────────────────────────
+# Fail the image build immediately if the Rust extension cannot be imported
+# or if JarvisMemory cannot initialize. This prevents deploying a broken image.
+RUN python -c "import openjarvis_rust; print('VALIDATION: openjarvis_rust IMPORT_OK')"
+RUN python -c "
+from openjarvis.memory.store import JarvisMemory
+m = JarvisMemory()
+count = m.count()
+print(f'VALIDATION: JarvisMemory INIT_OK — entries={count}')
+"
+RUN python -c "
+from openjarvis.server.memory_routes import router
+print('VALIDATION: memory_routes IMPORT_OK — routes:', [r.path for r in router.routes])
+"
+
+# ── Runtime setup ──────────────────────────────────────────────────────────
 RUN useradd -m -u 1000 jarvis && \
     mkdir -p /app/data && \
     chown -R jarvis:jarvis /app/data

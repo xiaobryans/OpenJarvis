@@ -5,11 +5,14 @@ Routes:
   POST /v1/memory             — write a memory entry
   GET  /v1/memory/search      — search memory (query, namespace, project_id)
   GET  /v1/memory/status      — Memory OS full status (Sprint 2B surface)
+  POST /v1/memory/sync        — push local→S3 / pull S3→local for cross-device parity
 
 Governance:
   - No secrets accepted (ValueError → 400)
   - Project memories isolated by project_id
   - OMNIX is project_id='omnix', not hardcoded as the only project
+  - Sync pull does INSERT OR REPLACE (no deletions via sync — deletions must go
+    through MemoryGovernance) so it is safe to call from cloud ECS or mobile.
 """
 
 from __future__ import annotations
@@ -154,6 +157,120 @@ async def search_memory(
         limit=max(1, min(limit, 200)),
     )
     return {"results": [r.to_dict() for r in results], "count": len(results)}
+
+
+@router.post("/v1/memory/sync")
+async def sync_memory(
+    mode: str = "pull",
+    namespace: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Sync memory with S3 for cross-device parity.
+
+    mode values:
+      "pull"  — pull S3 entries into local SQLite (use on ECS/iPhone cloud)
+      "push"  — push local SQLite entries to S3  (use on MacBook after writes)
+      "both"  — push first, then pull (full bidirectional merge)
+
+    namespace: optional — restrict push to a single namespace (pull is always full).
+
+    This is the mechanism for Plan 9 cross-device memory parity:
+      MacBook: POST /v1/memory  (write)  → POST /v1/memory/sync?mode=push
+      iPhone:  POST /v1/memory/sync?mode=pull → GET /v1/memory/search (finds it)
+    """
+    if mode not in ("pull", "push", "both"):
+        raise HTTPException(status_code=400, detail="mode must be 'pull', 'push', or 'both'")
+
+    from openjarvis.memory.cloud_sync import JarvisMemoryS3Sync
+
+    mem = _get_memory()
+    sync = JarvisMemoryS3Sync()
+    result: Dict[str, Any] = {"mode": mode}
+
+    # ------------------------------------------------------------------ push
+    if mode in ("push", "both"):
+        try:
+            raw_entries = mem.list_all_raw()
+            if namespace:
+                raw_entries = [e for e in raw_entries if e.namespace == namespace]
+            push_result = sync.push_raw([e.to_dict() for e in raw_entries])
+            result["push"] = push_result.to_dict()
+        except Exception as exc:
+            result["push"] = {"ok": False, "error": str(exc)}
+
+    # ------------------------------------------------------------------ pull
+    if mode in ("pull", "both"):
+        try:
+            ok, s3_entries, err = sync.pull_raw()
+            if not ok:
+                result["pull"] = {
+                    "ok": False,
+                    "error": err or "S3 pull failed",
+                    "hint": "Ensure OMNIX_WORKBENCH_MEMORY_BUCKET and AWS credentials are set",
+                }
+            else:
+                imported = 0
+                skipped = 0
+                errors: List[str] = []
+                for raw in s3_entries:
+                    try:
+                        mem.store(
+                            namespace=raw.get("namespace") or "default",
+                            content=raw.get("content") or "",
+                            source=raw.get("source") or "s3_sync",
+                            project_id=raw.get("project_id") or "",
+                            mission_id=raw.get("mission_id"),
+                            agent_id=raw.get("agent_id"),
+                            tags=raw.get("tags") or [],
+                            confidence=float(raw.get("confidence", 1.0)),
+                            kind=raw.get("kind") or "event",
+                            status=raw.get("status") or "active",
+                            expires_at=raw.get("expires_at"),
+                            entry_id=raw.get("entry_id"),
+                        )
+                        imported += 1
+                    except ValueError:
+                        # secret scrubber rejected content — skip silently
+                        skipped += 1
+                    except Exception as exc:
+                        errors.append(str(exc)[:120])
+                result["pull"] = {
+                    "ok": True,
+                    "total_from_s3": len(s3_entries),
+                    "imported": imported,
+                    "skipped_secret": skipped,
+                    "errors": errors[:5],
+                }
+        except Exception as exc:
+            result["pull"] = {"ok": False, "error": str(exc)}
+
+    result["total_entries_after"] = mem.count()
+    return result
+
+
+@router.get("/v1/memory/rust-status")
+async def memory_rust_status() -> Dict[str, Any]:
+    """Return openjarvis_rust extension availability and actionable fix hint."""
+    try:
+        from openjarvis._rust_bridge import RUST_AVAILABLE
+        if RUST_AVAILABLE:
+            return {
+                "rust_available": True,
+                "status": "IMPORT_OK",
+                "detail": "openjarvis_rust extension is installed and importable.",
+            }
+        else:
+            return {
+                "rust_available": False,
+                "status": "MISSING",
+                "detail": (
+                    "openjarvis_rust not importable. Memory API routes (store/search/sync) "
+                    "work without it via pure-Python SQLite path. "
+                    "Rust extension adds BM25/semantic retrieval for tool calls. "
+                    "Fix: ensure Dockerfile builds rust/crates/openjarvis-python with maturin."
+                ),
+            }
+    except Exception as exc:
+        return {"rust_available": False, "status": "ERROR", "detail": str(exc)}
 
 
 __all__ = ["router"]
