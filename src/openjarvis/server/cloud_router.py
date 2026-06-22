@@ -39,6 +39,8 @@ _LOCAL_HF_ORGS = (
 
 def _load_keys() -> dict[str, str]:
     """Read cloud-keys.env from disk every call so live updates are picked up."""
+    from openjarvis.core.env_loader import ensure_local_env_loaded
+    ensure_local_env_loaded()
     keys: dict[str, str] = {}
     # File first, then fall back to process environment
     if _CLOUD_ENV_FILE.exists():
@@ -54,6 +56,12 @@ def _load_keys() -> dict[str, str]:
         "GEMINI_API_KEY",
         "GOOGLE_API_KEY",
         "OPENROUTER_API_KEY",
+        "AIMLAPI_API_KEY",
+        "AIMLAPI_KEY",
+        "KIMI_API_KEY",
+        "MOONSHOT_API_KEY",
+        "ZAI_API_KEY",
+        "GLM_API_KEY",
         "MINIMAX_API_KEY",
     ):
         val = os.environ.get(name)

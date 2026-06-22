@@ -87,17 +87,37 @@ class BenchmarkPlanRequest(BaseModel):
 # GET /v1/model-catalog/providers
 # ---------------------------------------------------------------------------
 
+@router.get("/v1/model-catalog/provider-keys")
+async def get_provider_key_status() -> Dict[str, Any]:
+    """Report Plan 9K provider API key presence (PRESENT/MISSING only — no values)."""
+    from openjarvis.core.env_loader import load_local_env, provider_key_status_table
+    load_summary = load_local_env()
+    keys = provider_key_status_table()
+    return {
+        "provider_keys": keys,
+        "env_load_summary": load_summary,
+        "note": "Values are never returned. source: process_env | dotenv | dotenv_local | cloud_keys_env | not_found",
+    }
+
+
 @router.get("/v1/model-catalog/providers")
 async def get_model_catalog_providers() -> Dict[str, Any]:
     """Return all configured providers in the normalized model catalog."""
+    from openjarvis.core.env_loader import ensure_local_env_loaded
+    ensure_local_env_loaded()
     catalog = get_provider_catalog()
     providers_dict = catalog.to_providers_dict()
 
     import os
+    from openjarvis.plan9.heavy_coding_policy import PROVIDER_KEY_ENV_VARS, env_key_configured
     for p in providers_dict["providers"]:
-        env_key = p.get("api_key_env", "")
-        if env_key:
-            p["api_key_configured"] = bool(os.environ.get(env_key, "").strip())
+        pid = p.get("provider_id", "")
+        aliases = PROVIDER_KEY_ENV_VARS.get(pid)
+        if aliases:
+            configured, _ = env_key_configured(*aliases)
+            p["api_key_configured"] = configured
+        elif p.get("api_key_env"):
+            p["api_key_configured"] = bool(os.environ.get(p["api_key_env"], "").strip())
         else:
             p["api_key_configured"] = True  # local/no-key providers
         # Annotate per-provider model count from catalog
@@ -199,16 +219,19 @@ async def get_model_catalog_capabilities() -> Dict[str, Any]:
 @router.get("/v1/model-routing/status")
 async def get_model_routing_status() -> Dict[str, Any]:
     """Return current routing system status for HUD display."""
+    from openjarvis.core.env_loader import ensure_local_env_loaded, provider_key_status_table
     from openjarvis.plan9.heavy_coding_policy import (
         all_provider_key_status,
         get_target_model_availability,
     )
+    ensure_local_env_loaded()
     router_inst = get_specialized_router()
     catalog = get_provider_catalog()
     decls = get_role_declarations()
 
     status = router_inst.routing_status()
     key_status = all_provider_key_status()
+    provider_keys_canonical = provider_key_status_table()
     target_avail = get_target_model_availability(catalog)
 
     # Provider health summary (supports alternate env var names)
@@ -231,6 +254,7 @@ async def get_model_routing_status() -> Dict[str, Any]:
         **status,
         "provider_health": provider_health,
         "provider_key_status": key_status,
+        "provider_keys_canonical": provider_keys_canonical,
         "target_model_availability": target_avail,
         "active_routing_policy": (
             "dynamic_specialized_per_role; "

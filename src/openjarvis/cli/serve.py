@@ -11,28 +11,9 @@ import time
 
 
 def _load_project_dotenv() -> None:
-    """Load .env from the project root into os.environ if keys are missing.
-
-    Only sets keys that are NOT already in the environment — never overrides
-    explicit shell exports or CLI-provided env vars. Never logs key values.
-    Safe to call multiple times (idempotent).
-    """
-    # Project root is 4 directories above this file:
-    # src/openjarvis/cli/serve.py → src/openjarvis/cli → src/openjarvis → src → root
-    env_file = pathlib.Path(__file__).parent.parent.parent.parent / ".env"
-    if not env_file.is_file():
-        return
-    try:
-        for line in env_file.read_text(encoding="utf-8", errors="replace").splitlines():
-            line = line.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            key, _, val = line.partition("=")
-            key = key.strip()
-            if key and key not in os.environ:
-                os.environ[key] = val.strip()
-    except OSError:
-        pass  # non-fatal — env may already be set
+    """Load project .env files into os.environ (delegates to canonical env_loader)."""
+    from openjarvis.core.env_loader import load_local_env
+    load_local_env()
 
 
 # ---------------------------------------------------------------------------

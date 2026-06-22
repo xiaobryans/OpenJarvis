@@ -159,6 +159,8 @@ def is_sonnet_model(model_id: str) -> bool:
 
 def env_key_configured(*env_names: str) -> Tuple[bool, str]:
     """Return (configured, primary_env_var_name). Never exposes key value."""
+    from openjarvis.core.env_loader import ensure_local_env_loaded
+    ensure_local_env_loaded()
     for name in env_names:
         if os.environ.get(name, "").strip():
             return True, name
@@ -182,7 +184,27 @@ def provider_key_status(provider_id: str) -> Dict[str, Any]:
 
 
 def all_provider_key_status() -> Dict[str, Dict[str, Any]]:
-    return {pid: provider_key_status(pid) for pid in PROVIDER_KEY_ENV_VARS}
+    from openjarvis.core.env_loader import ensure_local_env_loaded, provider_key_status_table
+    ensure_local_env_loaded()
+    table = provider_key_status_table()
+    # Map to legacy shape used by routes
+    legacy: Dict[str, Dict[str, Any]] = {}
+    pid_map = {
+        "OPENROUTER_API_KEY": "openrouter",
+        "AIMLAPI_API_KEY": "aimlapi",
+        "ZAI_API_KEY": "zai",
+        "KIMI_API_KEY": "kimi",
+    }
+    for canonical, info in table.items():
+        pid = pid_map.get(canonical, canonical.lower())
+        legacy[pid] = {
+            "configured": info["status"] == "PRESENT",
+            "env_var": info["env_var"],
+            "status": "KEY_CONFIGURED" if info["status"] == "PRESENT" else "API_KEY_MISSING",
+            "source": info.get("source", "not_found"),
+            "alternate_env_vars": info.get("alternate_env_vars", []),
+        }
+    return legacy
 
 
 def is_high_risk_role(

@@ -607,6 +607,9 @@ async def run_catalog_discovery(
 
     This is intentionally async: do not call at import time.
     """
+    from openjarvis.core.env_loader import ensure_local_env_loaded
+    ensure_local_env_loaded()
+
     global _LAST_REPORT
 
     cat = catalog or get_provider_catalog()

@@ -30,6 +30,13 @@ from openjarvis.core.registry import (
 
 
 @pytest.fixture(autouse=True)
+def _load_project_env_for_tests() -> None:
+    """Ensure project .env / .env.local load before tests that touch provider keys."""
+    from openjarvis.core.env_loader import ensure_local_env_loaded
+    ensure_local_env_loaded()
+
+
+@pytest.fixture(autouse=True)
 def _clean_registries() -> None:
     """Ensure each test starts with empty registries and a fresh event bus."""
     ModelRegistry.clear()

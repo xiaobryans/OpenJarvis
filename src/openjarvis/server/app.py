@@ -178,23 +178,9 @@ def create_app(
     webhook_config: dict | None = None,
     cors_origins: list[str] | None = None,
 ) -> FastAPI:
-    """Create and configure the FastAPI application.
-
-    Parameters
-    ----------
-    engine:
-        The inference engine to use for completions.
-    model:
-        Default model name.
-    agent:
-        Optional agent instance for agent-mode completions.
-    bus:
-        Optional event bus for telemetry.
-    channel_bridge:
-        Optional channel bridge for multi-platform messaging.
-    config:
-        Optional JarvisConfig for other settings.
-    """
+    """Create and configure the FastAPI application."""
+    from openjarvis.core.env_loader import ensure_local_env_loaded
+    ensure_local_env_loaded()
     app = FastAPI(
         title="OpenJarvis API",
         description="OpenAI-compatible API server for OpenJarvis",
@@ -338,8 +324,10 @@ def create_app(
     app.include_router(workstream_router)
     app.include_router(goals_router)
     app.include_router(self_upgrade_router)
-    app.include_router(plan9_router)
+    # Plan 9K model catalog/routing must register before plan9_routes so
+    # /v1/model-routing/explain resolves to the 9K specialized router.
     app.include_router(model_catalog_router)
+    app.include_router(plan9_router)
     include_all_routes(app)
 
     # Restore SendBlue channel bindings from database on startup
