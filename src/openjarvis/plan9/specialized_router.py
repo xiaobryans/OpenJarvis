@@ -1189,25 +1189,19 @@ class SpecializedRouter:
         return self._declarations.get(role_id, self._build_default_declaration(role_id))
 
     def _build_default_declaration(self, role_id: str) -> RoleCapabilityDeclaration:
-        """Default declaration for unknown roles — inherit safe defaults."""
-        return RoleCapabilityDeclaration(
-            role_id=role_id,
-            role_type="unknown",
-            required_capabilities=[CapabilityTag.DEFAULT_CHAT],
-            preferred_capabilities=[CapabilityTag.STRUCTURED_OUTPUT],
-            forbidden_provider_classes=["ollama", "offline_fallback"],
-            fallback_chain=[
-                "openai/gpt-4o-mini",
-                "openai/gpt-4o",
-                "anthropic/claude-sonnet-4-20250514",
-            ],
-            escalation_model="anthropic/claude-sonnet-4-20250514",
-            cost_ceiling="medium",
-            latency_preference=LatencyClass.MEDIUM,
-            risk_threshold=RiskThreshold.MEDIUM,
-            benchmark_required_for=["kimi/kimi-k2"],
-            audit_required=True,
-        )
+        """Default declaration for unknown roles — inherit dynamic routing policy.
+
+        PA/front-door roles (jarvis_pa, cos_gm) get a stable 1-3 GPT/OpenAI chain.
+        All other roles get an EMPTY fallback_chain so routing comes entirely from
+        score_candidates() across the full catalog at runtime.
+
+        This is the Plan 9K future-proof rule: any new role added later is
+        automatically eligible to use the full catalog without hardcoding models.
+        """
+        from openjarvis.plan9.inheritance_policy import get_default_policy
+        policy = get_default_policy()
+        is_pa = role_id in ("jarvis_pa", "cos_gm")
+        return policy.build_default_declaration(role_id, role_type="unknown", is_pa=is_pa)
 
     def select(
         self,

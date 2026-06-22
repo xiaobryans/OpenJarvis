@@ -30,6 +30,7 @@ except ImportError:
 
 from openjarvis.plan9.catalog_discovery import (
     get_last_discovery_report,
+    run_catalog_discovery,
     run_catalog_discovery_sync,
 )
 from openjarvis.plan9.inheritance_policy import (
@@ -92,7 +93,6 @@ async def get_model_catalog_providers() -> Dict[str, Any]:
     catalog = get_provider_catalog()
     providers_dict = catalog.to_providers_dict()
 
-    # Add key-configured status (no actual key values)
     import os
     for p in providers_dict["providers"]:
         env_key = p.get("api_key_env", "")
@@ -100,9 +100,15 @@ async def get_model_catalog_providers() -> Dict[str, Any]:
             p["api_key_configured"] = bool(os.environ.get(env_key, "").strip())
         else:
             p["api_key_configured"] = True  # local/no-key providers
+        # Annotate per-provider model count from catalog
+        pid = p.get("provider_id", "")
+        p["model_count"] = len(catalog.models_for_provider(pid))
 
+    provider_count = providers_dict.get("total", 0)
     return {
         **providers_dict,
+        "provider_count": provider_count,
+        "total_models": catalog.model_count(),
         "note": "api_key_configured shows whether env var is set. No key values are returned.",
         "kimi_benchmark_status": (
             "BENCHMARK_ACCEPTED" if catalog.kimi_benchmarked() else "NOT_BENCHMARKED"
@@ -498,7 +504,7 @@ async def trigger_model_catalog_discovery(
     before = catalog.model_count()
 
     try:
-        report = run_catalog_discovery_sync(catalog=catalog, providers=providers)
+        report = await run_catalog_discovery(catalog=catalog, providers=providers)
     except Exception as exc:
         return {
             "status": "ERROR",

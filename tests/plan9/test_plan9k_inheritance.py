@@ -69,31 +69,85 @@ def router(catalog):
 # ---------------------------------------------------------------------------
 
 class TestDefaultInheritance:
-    def test_new_manager_gets_default_declaration(self, router):
-        """A new manager role with no explicit declaration gets the safe default."""
+    def test_new_manager_gets_dynamic_default_declaration(self, router, catalog):
+        """A new manager role gets DYNAMIC routing — selects from full catalog, not fixed chain."""
         decision = router.select(
             role_id="totally_new_future_manager_xyz",
             task_description="some management task",
         )
-        # Must get a real model (not error out)
-        assert decision.chosen_model_id, "New role must resolve to a model via default inheritance"
+        assert decision.chosen_model_id, "New role must resolve to a model via dynamic catalog scoring"
         assert "ollama" not in decision.chosen_model_id.lower()
         assert "kimi" not in decision.chosen_model_id.lower()
 
-    def test_new_worker_gets_default_declaration(self, router):
-        """A new worker role gets the safe default routing."""
+        # Prove: the default fallback_chain is empty (dynamic, not fixed)
+        decl = router._get_declaration("totally_new_future_manager_xyz")
+        assert len(decl.fallback_chain) == 0, (
+            f"Non-PA default declaration must have empty fallback_chain. "
+            f"Got: {decl.fallback_chain}"
+        )
+
+    def test_new_worker_gets_dynamic_default_declaration(self, router):
+        """A new worker role gets dynamic routing via catalog scoring."""
         decision = router.select(
             role_id="new_future_worker_abc",
             task_description="process something",
         )
         assert decision.chosen_model_id
         assert "ollama" not in decision.chosen_model_id.lower()
+        decl = router._get_declaration("new_future_worker_abc")
+        assert len(decl.fallback_chain) == 0, (
+            "Non-PA worker must have empty fallback_chain (dynamic catalog scoring)."
+        )
 
-    def test_default_declaration_uses_openai_as_first_choice(self, policy):
-        """Default declaration must prefer OpenAI GPT models."""
-        decl = policy.build_default_declaration("test_role")
-        assert "openai/gpt-4o-mini" in decl.fallback_chain or "openai/gpt-4o" in decl.fallback_chain, (
-            f"Default declaration must include OpenAI models in fallback_chain: {decl.fallback_chain}"
+    def test_non_pa_dynamic_routing_uses_full_catalog(self, router, catalog):
+        """Non-PA dynamic routing selects from full catalog, not fixed list."""
+        # Add a specialized new model to catalog
+        from openjarvis.plan9.model_catalog_9k import ModelEntry9K, LatencyClass, AllowedRiskLevel, ModelStatus
+        new_model = ModelEntry9K(
+            model_id="futureai/new-chat-model",
+            display_name="FutureAI Chat",
+            provider_id="futureai",
+            context_window=128_000,
+            input_cost_per_mtok=1.0,
+            output_cost_per_mtok=4.0,
+            latency_class=LatencyClass.MEDIUM,
+            capability_tags=frozenset([
+                __import__("openjarvis.plan9.model_catalog_9k", fromlist=["CapabilityTag"]).CapabilityTag.DEFAULT_CHAT,
+                __import__("openjarvis.plan9.model_catalog_9k", fromlist=["CapabilityTag"]).CapabilityTag.STRUCTURED_OUTPUT,
+            ]),
+            allowed_risk_level=AllowedRiskLevel.MEDIUM,
+            model_status=ModelStatus.STATIC_METADATA,
+        )
+        catalog.add_discovered_model(new_model)
+        try:
+            # Verify the new model is in scored candidates for a non-PA role
+            from openjarvis.plan9.model_catalog_9k import CapabilityTag
+            candidates = catalog.score_candidates(
+                required_caps=[CapabilityTag.DEFAULT_CHAT],
+                preferred_caps=[CapabilityTag.STRUCTURED_OUTPUT],
+                forbidden_providers=["ollama"],
+            )
+            assert "futureai/new-chat-model" in candidates, (
+                "New model must be in dynamic candidates without any role code changes"
+            )
+        finally:
+            catalog._models = [m for m in catalog._models if m.model_id != "futureai/new-chat-model"]
+            catalog._by_id.pop("futureai/new-chat-model", None)
+
+    def test_non_pa_default_declaration_has_empty_chain(self, policy):
+        """Non-PA default declaration has EMPTY fallback_chain — dynamic scoring takes over."""
+        decl = policy.build_default_declaration("some_new_worker", is_pa=False)
+        assert len(decl.fallback_chain) == 0, (
+            f"Non-PA default must have empty fallback_chain (dynamic scoring). "
+            f"Got: {decl.fallback_chain}"
+        )
+
+    def test_pa_default_declaration_has_stable_chain(self, policy):
+        """PA default declaration has a stable small OpenAI chain."""
+        decl = policy.build_default_declaration("jarvis_pa", is_pa=True)
+        assert len(decl.fallback_chain) >= 1
+        assert all("openai" in m for m in decl.fallback_chain), (
+            f"PA chain must be OpenAI only: {decl.fallback_chain}"
         )
 
     def test_default_declaration_forbids_ollama(self, policy):
@@ -157,15 +211,38 @@ class TestMissingCapabilitiesFailsValidation:
         error_rules = [e.rule for e in errors if e.severity == "error"]
         assert "required_capabilities_non_empty" in error_rules
 
-    def test_new_role_no_fallback_chain_fails(self, validator):
-        """New role with empty fallback_chain must fail validation."""
+    def test_non_pa_role_empty_fallback_chain_allowed(self, validator):
+        """Non-PA role with empty fallback_chain is VALID — dynamic scoring covers it."""
         decl = RoleCapabilityDeclaration(
-            role_id="no_chain_role",
+            role_id="dynamic_only_worker",
             role_type="worker",
             required_capabilities=[CapabilityTag.CODING],
             preferred_capabilities=[],
             forbidden_provider_classes=["ollama"],
-            fallback_chain=[],  # Empty!
+            fallback_chain=[],  # Empty — dynamic catalog scoring takes over
+            escalation_model="anthropic/claude-sonnet-4-20250514",
+            cost_ceiling="medium",
+            latency_preference=LatencyClass.MEDIUM,
+            risk_threshold=RiskThreshold.MEDIUM,
+            benchmark_required_for=["kimi/kimi-k2"],
+            audit_required=True,
+        )
+        errors = validator.validate(decl)
+        error_rules = [e.rule for e in errors if e.severity == "error"]
+        assert "pa_fallback_chain_non_empty" not in error_rules, (
+            "Non-PA role with empty fallback_chain must NOT fail validation. "
+            "Dynamic catalog scoring is the primary mechanism."
+        )
+
+    def test_pa_role_empty_fallback_chain_fails(self, validator):
+        """PA role MUST have a stable fallback_chain."""
+        decl = RoleCapabilityDeclaration(
+            role_id="jarvis_pa",
+            role_type="agent",
+            required_capabilities=[CapabilityTag.DEFAULT_CHAT],
+            preferred_capabilities=[],
+            forbidden_provider_classes=["ollama"],
+            fallback_chain=[],  # Empty — WRONG for PA!
             escalation_model="openai/gpt-4o",
             cost_ceiling="medium",
             latency_preference=LatencyClass.MEDIUM,
@@ -175,7 +252,9 @@ class TestMissingCapabilitiesFailsValidation:
         )
         errors = validator.validate(decl)
         error_rules = [e.rule for e in errors if e.severity == "error"]
-        assert "fallback_chain_non_empty" in error_rules
+        assert "pa_fallback_chain_non_empty" in error_rules, (
+            "PA role must have a stable fallback_chain (GPT/OpenAI models)"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -380,12 +459,73 @@ class TestInheritanceCoverage:
         assert len(coverage["inheritance_rules"]) >= 5
 
     def test_coverage_report_has_default_policy(self):
-        """Coverage report must include default_policy dict."""
+        """Coverage report must include default_policy dict with PA and non-PA chains."""
         coverage = get_inheritance_coverage()
         assert "default_policy" in coverage
         policy_dict = coverage["default_policy"]
-        assert "default_fallback_chain" in policy_dict
+        assert "pa_fallback_chain" in policy_dict, "PA stable chain must be in policy"
+        assert "non_pa_fallback_chain" in policy_dict, "Non-PA dynamic chain must be in policy"
         assert "default_required_capabilities" in policy_dict
+        # Non-PA chain must be empty (dynamic catalog scoring)
+        assert policy_dict["non_pa_fallback_chain"] == [], (
+            "Non-PA default fallback_chain must be empty (dynamic routing)"
+        )
+
+    def test_no_non_pa_role_is_fixed_to_one_model(self):
+        """No non-PA role should have only 1 static model as its entire candidate pool.
+        Dynamic scoring must provide additional candidates beyond fallback_chain."""
+        from openjarvis.plan9.specialized_router import SpecializedRouter
+        from openjarvis.plan9.model_catalog_9k import get_provider_catalog
+
+        catalog = get_provider_catalog()
+        router = SpecializedRouter(catalog=catalog)
+        decls = get_role_declarations()
+        pa_roles = {"jarvis_pa", "cos_gm"}
+
+        violations = []
+        for role_id, decl in decls.items():
+            if role_id in pa_roles:
+                continue
+            candidates = router._build_candidate_list(decl, False, force_fallback=False)
+            eligible = [c for c in candidates if catalog.get_model(c) and catalog.get_model(c).is_available]
+            if len(eligible) <= 1:
+                violations.append(
+                    f"{role_id}: only {len(eligible)} eligible candidate(s). "
+                    "Dynamic routing must provide multiple choices."
+                )
+        assert len(violations) == 0, (
+            f"Non-PA roles fixed to single model (Plan 9K violation): {violations}"
+        )
+
+    def test_non_pa_default_routes_from_full_catalog(self):
+        """Unknown non-PA role must select from full catalog via dynamic scoring."""
+        from openjarvis.plan9.specialized_router import SpecializedRouter
+        from openjarvis.plan9.model_catalog_9k import get_provider_catalog
+
+        catalog = get_provider_catalog()
+        router = SpecializedRouter(catalog=catalog)
+
+        # Build default declaration for an unknown non-PA role
+        decl = router._get_declaration("unknown_new_brain_module")
+        # Must be dynamic (empty chain)
+        assert len(decl.fallback_chain) == 0, (
+            f"Non-PA default must have empty fallback_chain, got: {decl.fallback_chain}"
+        )
+
+        # Build candidates list — must come entirely from dynamic scoring
+        candidates = router._build_candidate_list(decl, False, force_fallback=False)
+        assert len(candidates) >= 3, (
+            f"Dynamic scoring must find 3+ candidates for DEFAULT_CHAT, got: {candidates}"
+        )
+        # Candidates must include models from multiple providers (not just one fixed chain)
+        providers_represented = {
+            catalog.get_model(c).provider_id
+            for c in candidates
+            if catalog.get_model(c)
+        }
+        assert len(providers_represented) >= 2, (
+            f"Dynamic routing must draw from 2+ providers, got: {providers_represented}"
+        )
 
     def test_no_existing_role_has_zero_required_capabilities(self):
         """All explicitly declared roles must have non-empty required_capabilities."""

@@ -405,8 +405,13 @@ class TestInheritanceEndpoint:
         resp = client.get("/v1/model-routing/inheritance")
         data = resp.json()
         policy = data["default_policy"]
-        assert "default_fallback_chain" in policy
+        assert "pa_fallback_chain" in policy, "PA stable chain must be in policy"
+        assert "non_pa_fallback_chain" in policy, "Non-PA dynamic chain must be in policy"
         assert "default_forbidden_provider_classes" in policy
+        # Non-PA chain must be empty
+        assert policy["non_pa_fallback_chain"] == [], (
+            "non_pa_fallback_chain must be empty (dynamic catalog scoring)"
+        )
 
     def test_inheritance_rules_non_empty(self):
         resp = client.get("/v1/model-routing/inheritance")

@@ -41,21 +41,36 @@ from openjarvis.plan9.specialized_router import (
 class DefaultInheritancePolicy:
     """The baseline every new role inherits unless explicitly overridden.
 
+    TWO inheritance modes:
+    - PA/front-door: stable 1-3 GPT/OpenAI models. Fixed chain is acceptable
+      because PA needs consistency across conversations.
+    - Non-PA brain/COS/managers/workers: DYNAMIC capability-based selection.
+      No fixed model chain. The router scores ALL eligible catalog models at
+      runtime using required_capabilities, preferred_capabilities, cost_ceiling,
+      risk_threshold, provider health, and benchmark status.
+
     Rules:
-    - Any new role that does NOT have an explicit `RoleCapabilityDeclaration`
-      automatically gets a safe default: GPT-4o-mini + GPT-4o, no Ollama/Kimi.
-    - If a new role declares capabilities, it must pass `RoleInheritanceValidator`.
-    - If a new role needs Kimi or Ollama, it must explicitly override with a reason.
-    - Security/deploy/IAM/billing/final_review roles must use high_reasoning models.
+    - Any new non-PA role MUST declare required_capabilities or fail validation.
+    - Non-PA roles inherit an empty fallback_chain — routing comes entirely from
+      dynamic catalog scoring via score_candidates().
+    - New models added to catalog automatically become eligible for non-PA roles.
+    - Kimi/Ollama use requires explicit override with a reason.
+    - Security/deploy/IAM/billing/final_review roles need HIGH_REASONING.
     """
 
-    # Models any new unknown role defaults to (PA-safe route)
-    default_fallback_chain: List[str] = field(default_factory=lambda: [
+    # PA-only: stable 1-3 GPT/OpenAI models for front-door consistency
+    pa_fallback_chain: List[str] = field(default_factory=lambda: [
         "openai/gpt-4o-mini",
         "openai/gpt-4o",
-        "anthropic/claude-sonnet-4-20250514",
     ])
-    default_escalation_model: str = "anthropic/claude-sonnet-4-20250514"
+    pa_escalation_model: str = "openai/gpt-4o"
+
+    # Non-PA brain/COS/manager/worker: EMPTY fallback_chain → dynamic catalog scoring
+    # The router's score_candidates() selects from full catalog at runtime.
+    non_pa_fallback_chain: List[str] = field(default_factory=list)   # intentionally empty
+    non_pa_escalation_model: str = "anthropic/claude-sonnet-4-20250514"
+
+    # Shared defaults
     default_required_capabilities: List[CapabilityTag] = field(
         default_factory=lambda: [CapabilityTag.DEFAULT_CHAT]
     )
@@ -70,7 +85,7 @@ class DefaultInheritancePolicy:
     default_risk_threshold: RiskThreshold = RiskThreshold.MEDIUM
     default_audit_required: bool = True
 
-    # Capabilities that trigger high-risk validation
+    # Capabilities that trigger high-risk validation (security/deploy trigger only)
     high_risk_capability_triggers: List[CapabilityTag] = field(
         default_factory=lambda: [
             CapabilityTag.SECURITY_REVIEW,
@@ -80,25 +95,40 @@ class DefaultInheritancePolicy:
             CapabilityTag.FINAL_REVIEW,
         ]
     )
-    # Models forbidden for high-risk roles
     high_risk_forbidden: List[str] = field(
         default_factory=lambda: ["ollama", "offline_fallback", "kimi", "deepseek"]
     )
-    # Required capabilities for high-risk roles
     high_risk_required_capabilities: List[CapabilityTag] = field(
         default_factory=lambda: [CapabilityTag.HIGH_REASONING]
     )
 
-    def build_default_declaration(self, role_id: str, role_type: str = "worker") -> RoleCapabilityDeclaration:
-        """Build a default capability declaration for a new unknown role."""
+    def build_default_declaration(
+        self,
+        role_id: str,
+        role_type: str = "worker",
+        is_pa: bool = False,
+    ) -> RoleCapabilityDeclaration:
+        """Build a default capability declaration for a new unknown role.
+
+        PA roles get a stable small chain.
+        Non-PA roles get an EMPTY chain → full dynamic catalog scoring.
+        """
+        if is_pa or role_id in ("jarvis_pa", "cos_gm"):
+            chain = list(self.pa_fallback_chain)
+            escalation = self.pa_escalation_model
+        else:
+            # Non-PA: empty chain — all routing comes from score_candidates()
+            chain = list(self.non_pa_fallback_chain)
+            escalation = self.non_pa_escalation_model
+
         return RoleCapabilityDeclaration(
             role_id=role_id,
             role_type=role_type,
             required_capabilities=list(self.default_required_capabilities),
             preferred_capabilities=list(self.default_preferred_capabilities),
             forbidden_provider_classes=list(self.default_forbidden_provider_classes),
-            fallback_chain=list(self.default_fallback_chain),
-            escalation_model=self.default_escalation_model,
+            fallback_chain=chain,
+            escalation_model=escalation,
             cost_ceiling=self.default_cost_ceiling,
             latency_preference=self.default_latency_preference,
             risk_threshold=self.default_risk_threshold,
@@ -108,8 +138,16 @@ class DefaultInheritancePolicy:
 
     def to_dict(self) -> Dict:
         return {
-            "default_fallback_chain": self.default_fallback_chain,
-            "default_escalation_model": self.default_escalation_model,
+            "pa_fallback_chain": self.pa_fallback_chain,
+            "pa_escalation_model": self.pa_escalation_model,
+            "non_pa_fallback_chain": self.non_pa_fallback_chain,
+            "non_pa_escalation_model": self.non_pa_escalation_model,
+            "dynamic_selection_note": (
+                "Non-PA roles use an EMPTY fallback_chain. "
+                "Routing comes entirely from score_candidates() across the full catalog. "
+                "Every new model added to the catalog is automatically eligible "
+                "for non-PA roles without any code changes."
+            ),
             "default_required_capabilities": [t.value for t in self.default_required_capabilities],
             "default_preferred_capabilities": [t.value for t in self.default_preferred_capabilities],
             "default_forbidden_provider_classes": self.default_forbidden_provider_classes,
@@ -183,12 +221,15 @@ class RoleInheritanceValidator:
                 message="required_capabilities must not be empty. All roles must declare what they need.",
             ))
 
-        # Rule 2: fallback_chain must be non-empty
-        if not decl.fallback_chain:
+        # Rule 2: fallback_chain note — for non-PA roles, empty is ACCEPTABLE.
+        # When empty, the router uses dynamic catalog scoring entirely (score_candidates()).
+        # PA roles should have a stable small chain.
+        is_pa = decl.role_id in ("jarvis_pa", "cos_gm")
+        if is_pa and not decl.fallback_chain:
             errors.append(InheritanceValidationError(
                 role_id=decl.role_id,
-                rule="fallback_chain_non_empty",
-                message="fallback_chain must not be empty. All roles must declare priority model hints.",
+                rule="pa_fallback_chain_non_empty",
+                message="PA/front-door role must have a stable fallback_chain (1-3 GPT/OpenAI models).",
             ))
 
         # Rule 3: audit_required must be True
@@ -286,14 +327,26 @@ class RoleInheritanceValidator:
                 "inherited_defaults": True,
             }
 
+        is_pa = role_id in ("jarvis_pa", "cos_gm")
+        # Non-PA roles use empty chain (dynamic catalog scoring)
+        # PA roles use stable OpenAI chain
+        default_chain = (
+            list(self._policy.pa_fallback_chain) if is_pa
+            else list(self._policy.non_pa_fallback_chain)
+        )
+        default_escalation = (
+            self._policy.pa_escalation_model if is_pa
+            else self._policy.non_pa_escalation_model
+        )
+
         decl = RoleCapabilityDeclaration(
             role_id=role_id,
             role_type=role_type,
             required_capabilities=required_capabilities,
             preferred_capabilities=[],
             forbidden_provider_classes=forbidden_provider_classes or ["ollama", "offline_fallback"],
-            fallback_chain=fallback_chain or self._policy.default_fallback_chain,
-            escalation_model=self._policy.default_escalation_model,
+            fallback_chain=fallback_chain if fallback_chain is not None else default_chain,
+            escalation_model=default_escalation,
             cost_ceiling="medium",
             latency_preference=LatencyClass.MEDIUM,
             risk_threshold=risk_threshold or RiskThreshold.MEDIUM,
