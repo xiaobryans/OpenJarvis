@@ -821,19 +821,122 @@ async def git_commit_workflow(req: GitCommitRequest) -> Dict[str, Any]:
             ),
         }
 
-    # 5. Approval token present + dry_run=False: would execute real commit
-    # Actual git operations are DOCUMENTED — not yet fully wired for production
-    return {
-        **base_response,
-        "mode": "APPROVAL_RECEIVED",
-        "committed": False,
-        "approval_token_accepted": True,
-        "note": (
-            "Approval token accepted. Real git commit execution is not yet wired "
-            "in this route. Use local CLI for actual commits."
-        ),
-        "approval_required": False,
-    }
+    # 5. Approval token present + dry_run=False: execute real commit
+    try:
+        from openjarvis.plan9.execution_chain import (
+            assert_allowed_workflow_file,
+            mark_approval_used,
+            record_execution_audit,
+            repo_root as _repo_root,
+            rollback_instruction,
+            validate_plan8_approval,
+        )
+        approval = validate_plan8_approval(
+            req.approval_token,
+            "git_commit",
+            allowed_action_types=["git_commit", "git_workflow"],
+        )
+    except ValueError as exc:
+        record_execution_audit(
+            action_type="git_commit",
+            actor="jarvis",
+            execution_status="blocked",
+            error_message=str(exc),
+        )
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+    if not req.files:
+        raise HTTPException(
+            status_code=400,
+            detail="files list required for real commit — specify allowlisted paths explicitly",
+        )
+
+    try:
+        for file_path in req.files:
+            assert_allowed_workflow_file(file_path)
+
+        add_result = subprocess.run(
+            ["git", "add", "--"] + req.files,
+            capture_output=True,
+            text=True,
+            timeout=15,
+            cwd=str(_repo_root()),
+        )
+        if add_result.returncode != 0:
+            record_execution_audit(
+                action_type="git_commit",
+                actor=approval.requester,
+                execution_status="failed",
+                approval_decision="granted",
+                affected_resource=",".join(req.files),
+                error_message=add_result.stderr[:500],
+                metadata={"approval_id": approval.approval_id},
+            )
+            return {
+                **base_response,
+                "mode": "COMMIT_FAILED",
+                "committed": False,
+                "error": add_result.stderr[:1000],
+            }
+
+        commit_result = subprocess.run(
+            ["git", "commit", "-m", req.commit_message],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            cwd=str(_repo_root()),
+        )
+        committed = commit_result.returncode == 0
+        commit_hash = ""
+        if committed:
+            hash_r = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                cwd=str(_repo_root()),
+            )
+            commit_hash = hash_r.stdout.strip() if hash_r.returncode == 0 else ""
+
+        mark_approval_used(approval.approval_id)
+        rollback = rollback_instruction(commit_hash) if committed else ""
+        record_execution_audit(
+            action_type="git_commit",
+            actor=approval.requester,
+            execution_status="success" if committed else "failed",
+            approval_decision="granted",
+            affected_resource=commit_hash or ",".join(req.files),
+            rollback_reference=rollback,
+            error_message="" if committed else commit_result.stderr[:500],
+            metadata={
+                "approval_id": approval.approval_id,
+                "branch": req.branch or current_branch,
+                "files": req.files,
+            },
+        )
+
+        return {
+            **base_response,
+            "mode": "COMMITTED" if committed else "COMMIT_FAILED",
+            "committed": committed,
+            "commit_hash": commit_hash,
+            "output": (commit_result.stdout + commit_result.stderr)[:2000],
+            "rollback_instruction": rollback,
+            "approval_id": approval.approval_id,
+            "approval_required": False,
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        record_execution_audit(
+            action_type="git_commit",
+            actor=approval.requester,
+            execution_status="failed",
+            approval_decision="granted",
+            error_message=str(exc),
+            metadata={"approval_id": approval.approval_id},
+        )
+        raise HTTPException(status_code=500, detail=f"Commit error: {exc}") from exc
 
 
 # ---------------------------------------------------------------------------
@@ -1325,6 +1428,27 @@ class GitPushRequest(BaseModel):
     confirm_force: bool = Field(False, description="Must be True to allow force=True to proceed")
 
 
+class CodingWorkflowRequest(BaseModel):
+    """Jarvis coding workflow — plan, edit, test, diff, approval-gated commit/push."""
+    task: str = Field(..., min_length=5, description="Task description")
+    target_file: str = Field(
+        "tests/fixtures/plan9_workflow_status.txt",
+        description="Allowlisted file to edit",
+    )
+    edit_line: str = Field(..., min_length=3, description="Harmless line to append")
+    test_paths: List[str] = Field(
+        default_factory=lambda: ["tests/core/test_env_loader.py"],
+        description="pytest paths to run after edit",
+    )
+    commit_message: str = Field(..., min_length=8, description="Commit message if committing")
+    remote: str = Field("fork", description="Git remote for push")
+    branch: Optional[str] = Field(None, description="Branch to push (default: current)")
+    dry_run: bool = Field(True, description="If True, stop after diff/tests (no commit/push)")
+    commit_approval_token: Optional[str] = Field(None, description="Plan 8 approval_id for commit")
+    push_approval_token: Optional[str] = Field(None, description="Plan 8 approval_id for push")
+    workflow_id: str = Field("loop", description="Workflow identifier for audit (loop1, loop2, etc.)")
+
+
 @router.post("/v1/git/push")
 async def git_push_workflow(req: GitPushRequest) -> Dict[str, Any]:
     """Push workflow. Single-executor, approval-gated, secret-scan gated.
@@ -1431,7 +1555,29 @@ async def git_push_workflow(req: GitPushRequest) -> Dict[str, Any]:
             ),
         }
 
-    # Non-dry-run: approval present — push for real
+    # Non-dry-run: approval present — validate and push for real
+    from openjarvis.plan9.execution_chain import (
+        mark_approval_used,
+        record_execution_audit,
+        rollback_instruction,
+        validate_plan8_approval,
+    )
+
+    try:
+        approval = validate_plan8_approval(
+            req.approval_token,
+            "git_push",
+            allowed_action_types=["git_push", "git_workflow"],
+        )
+    except ValueError as exc:
+        record_execution_audit(
+            action_type="git_push",
+            actor="jarvis",
+            execution_status="blocked",
+            error_message=str(exc),
+        )
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
     push_cmd = ["git", "push", req.remote, target_branch]
     if req.force:
         push_cmd.insert(2, "--force")
@@ -1442,11 +1588,29 @@ async def git_push_workflow(req: GitPushRequest) -> Dict[str, Any]:
             capture_output=True, text=True, timeout=60, cwd=str(repo_root),
         )
         pushed = push_r.returncode == 0
+        rollback = (
+            f"git push {req.remote} {target_branch}~1:{target_branch}  # force rollback — owner approval required"
+            if pushed
+            else ""
+        )
+        mark_approval_used(approval.approval_id)
+        record_execution_audit(
+            action_type="git_push",
+            actor=approval.requester,
+            execution_status="success" if pushed else "failed",
+            approval_decision="granted",
+            affected_resource=f"{req.remote}/{target_branch}",
+            rollback_reference=rollback,
+            error_message="" if pushed else push_r.stderr[:500],
+            metadata={"approval_id": approval.approval_id},
+        )
         return {
             **base,
             "mode": "PUSHED" if pushed else "PUSH_FAILED",
             "pushed": pushed,
             "output": (push_r.stdout + push_r.stderr)[:2000],
+            "rollback_instruction": rollback,
+            "approval_id": approval.approval_id,
         }
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Push error: {exc}") from exc
@@ -1547,6 +1711,218 @@ async def get_files_index(
         "glob_pattern": glob_pattern,
         "files": files,
     }
+
+
+# ---------------------------------------------------------------------------
+# /v1/coding/workflow — Jarvis approval-gated coding execution chain
+# ---------------------------------------------------------------------------
+
+_LAST_WORKFLOW_STATUS: Dict[str, Any] = {}
+
+
+@router.get("/v1/coding/workflow/status")
+async def get_coding_workflow_status() -> Dict[str, Any]:
+    """Return last Jarvis coding workflow execution status."""
+    return {
+        "last_workflow": _LAST_WORKFLOW_STATUS or None,
+        "endpoint": "POST /v1/coding/workflow/run",
+    }
+
+
+@router.post("/v1/coding/workflow/run")
+async def run_coding_workflow(req: CodingWorkflowRequest) -> Dict[str, Any]:
+    """Execute Jarvis coding workflow: plan → edit → test → diff → optional commit/push."""
+    import subprocess
+    import sys
+    from datetime import datetime, timezone
+
+    from openjarvis.plan9.execution_chain import (
+        assert_allowed_workflow_file,
+        git_current_branch,
+        record_execution_audit,
+        repo_root,
+    )
+
+    global _LAST_WORKFLOW_STATUS
+    root = repo_root()
+    started = datetime.now(timezone.utc).isoformat()
+
+    plan = {
+        "task": req.task,
+        "target_file": req.target_file,
+        "steps": ["edit", "test", "diff", "approval", "commit", "push"],
+        "workflow_id": req.workflow_id,
+    }
+
+    try:
+        assert_allowed_workflow_file(req.target_file)
+    except ValueError as exc:
+        result = {
+            "status": "BLOCKED",
+            "workflow_id": req.workflow_id,
+            "plan": plan,
+            "error": str(exc),
+            "started_at": started,
+        }
+        _LAST_WORKFLOW_STATUS = result
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    target = root / req.target_file
+    if not target.exists():
+        raise HTTPException(status_code=404, detail=f"Target file not found: {req.target_file}")
+
+    # Edit — append harmless line
+    line = req.edit_line.strip()
+    if not line.startswith("#") and not line.startswith("status="):
+        line = f"# {line}"
+    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    append_text = f"\n{line} workflow={req.workflow_id} at={timestamp}\n"
+    scan = _secret_scan(append_text)
+    if scan["abort_required"]:
+        raise HTTPException(status_code=400, detail="Edit line failed secret scan")
+
+    with target.open("a", encoding="utf-8") as fh:
+        fh.write(append_text)
+
+    record_execution_audit(
+        action_type="coding_workflow_edit",
+        actor="jarvis",
+        execution_status="success",
+        affected_resource=req.target_file,
+        metadata={"workflow_id": req.workflow_id, "line": line[:120]},
+    )
+
+    # Tests
+    test_cmd = [sys.executable, "-m", "pytest"] + req.test_paths + ["--tb=short", "-q"]
+    test_r = subprocess.run(test_cmd, capture_output=True, text=True, timeout=120, cwd=str(root))
+    tests_passed = test_r.returncode == 0
+
+    record_execution_audit(
+        action_type="coding_workflow_test",
+        actor="jarvis",
+        execution_status="success" if tests_passed else "failed",
+        affected_resource=",".join(req.test_paths),
+        error_message="" if tests_passed else test_r.stderr[:500],
+        metadata={"workflow_id": req.workflow_id, "return_code": test_r.returncode},
+    )
+
+    if not tests_passed:
+        diff_r = subprocess.run(
+            ["git", "diff", "--", req.target_file],
+            capture_output=True, text=True, timeout=10, cwd=str(root),
+        )
+        result = {
+            "status": "TESTS_FAILED",
+            "workflow_id": req.workflow_id,
+            "plan": plan,
+            "tests_passed": False,
+            "test_output": (test_r.stdout + test_r.stderr)[-4000:],
+            "diff": diff_r.stdout[:4000],
+            "rollback_instruction": f"git checkout -- {req.target_file}",
+            "started_at": started,
+        }
+        _LAST_WORKFLOW_STATUS = result
+        return result
+
+    # Diff
+    diff_r = subprocess.run(
+        ["git", "diff", "--", req.target_file],
+        capture_output=True, text=True, timeout=10, cwd=str(root),
+    )
+    diff_text = diff_r.stdout
+
+    # Stage file
+    subprocess.run(["git", "add", "--", req.target_file], cwd=str(root), timeout=15, check=False)
+
+    base_result: Dict[str, Any] = {
+        "status": "READY_FOR_APPROVAL",
+        "workflow_id": req.workflow_id,
+        "plan": plan,
+        "tests_passed": True,
+        "test_output_tail": (test_r.stdout + test_r.stderr)[-2000:],
+        "diff": diff_text[:8000],
+        "target_file": req.target_file,
+        "branch": git_current_branch(root),
+        "started_at": started,
+        "approval_endpoints": {
+            "request": "POST /v1/authority/approvals/request",
+            "grant": "POST /v1/authority/approvals/{id}/grant",
+            "commit": "POST /v1/git/commit",
+            "push": "POST /v1/git/push",
+        },
+    }
+
+    if req.dry_run:
+        base_result["status"] = "DRY_RUN_COMPLETE"
+        base_result["message"] = (
+            "Edit and tests complete. Request Plan 8 approval, then re-run with "
+            "dry_run=False and commit_approval_token / push_approval_token."
+        )
+        _LAST_WORKFLOW_STATUS = base_result
+        record_execution_audit(
+            action_type="coding_workflow_dry_run",
+            actor="jarvis",
+            execution_status="success",
+            affected_resource=req.target_file,
+            metadata={"workflow_id": req.workflow_id},
+        )
+        return base_result
+
+    # Commit (approval-gated)
+    commit_result: Dict[str, Any] = {"committed": False}
+    if req.commit_approval_token:
+        commit_req = GitCommitRequest(
+            commit_message=req.commit_message,
+            files=[req.target_file],
+            dry_run=False,
+            approval_token=req.commit_approval_token,
+            branch=req.branch,
+        )
+        commit_result = await git_commit_workflow(commit_req)
+        if not commit_result.get("committed"):
+            base_result["status"] = "COMMIT_FAILED"
+            base_result["commit"] = commit_result
+            _LAST_WORKFLOW_STATUS = base_result
+            return base_result
+    else:
+        base_result["status"] = "COMMIT_APPROVAL_REQUIRED"
+        _LAST_WORKFLOW_STATUS = base_result
+        return base_result
+
+    # Push (approval-gated) — only if tests passed and commit succeeded
+    push_result: Dict[str, Any] = {"pushed": False}
+    if req.push_approval_token:
+        push_req = GitPushRequest(
+            branch=req.branch,
+            remote=req.remote,
+            dry_run=False,
+            approval_token=req.push_approval_token,
+        )
+        push_result = await git_push_workflow(push_req)
+    else:
+        base_result["status"] = "PUSH_APPROVAL_REQUIRED"
+        base_result["commit"] = commit_result
+        _LAST_WORKFLOW_STATUS = base_result
+        return base_result
+
+    final = {
+        **base_result,
+        "status": "COMPLETE" if push_result.get("pushed") else "PUSH_FAILED",
+        "commit": commit_result,
+        "push": push_result,
+        "rollback_instruction": commit_result.get("rollback_instruction", ""),
+        "audit_hint": "GET /v1/authority/audit",
+    }
+    record_execution_audit(
+        action_type="coding_workflow_complete",
+        actor="jarvis",
+        execution_status="success" if push_result.get("pushed") else "failed",
+        affected_resource=commit_result.get("commit_hash", req.target_file),
+        rollback_reference=final.get("rollback_instruction", ""),
+        metadata={"workflow_id": req.workflow_id},
+    )
+    _LAST_WORKFLOW_STATUS = final
+    return final
 
 
 # ---------------------------------------------------------------------------

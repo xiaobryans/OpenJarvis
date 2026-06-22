@@ -406,3 +406,69 @@ async def stream_cloud(
 
     else:
         raise ValueError(f"Unknown cloud provider for model: {model!r}")
+
+
+def generate_cloud(
+    model: str,
+    messages: Sequence[Message],
+    temperature: float = 0.7,
+    max_tokens: int = 1024,
+) -> dict[str, Any]:
+    """Non-streaming cloud completion for the given model."""
+    provider = get_provider(model)
+    keys = _load_keys()
+
+    if provider == "openai":
+        api_key = keys.get("OPENAI_API_KEY", "")
+        if not api_key:
+            raise ValueError("OPENAI_API_KEY not set — add it in the Cloud Models tab")
+        base_url = "https://api.openai.com/v1"
+        api_key_name = "OPENAI_API_KEY"
+    elif provider == "openrouter":
+        api_key = keys.get("OPENROUTER_API_KEY", "")
+        if not api_key:
+            raise ValueError("OPENROUTER_API_KEY not set — add it in the Cloud Models tab")
+        base_url = "https://openrouter.ai/api/v1"
+        api_key_name = "OPENROUTER_API_KEY"
+    elif provider == "anthropic":
+        raise ValueError("Non-streaming anthropic route not implemented — use streaming or openrouter")
+    elif provider == "google":
+        raise ValueError("Non-streaming google route not implemented — use streaming or openrouter")
+    elif provider == "minimax":
+        api_key = keys.get("MINIMAX_API_KEY", "")
+        if not api_key:
+            raise ValueError("MINIMAX_API_KEY not set")
+        base_url = "https://api.minimax.io/v1"
+        api_key_name = "MINIMAX_API_KEY"
+    else:
+        raise ValueError(f"Unknown cloud provider for model: {model!r}")
+
+    payload = {
+        "model": model,
+        "messages": _to_openai_msgs(messages),
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+        "stream": False,
+    }
+    headers = {
+        "Authorization": f"Bearer {keys[api_key_name]}",
+        "Content-Type": "application/json",
+    }
+    with httpx.Client(timeout=60) as client:
+        resp = client.post(f"{base_url}/chat/completions", json=payload, headers=headers)
+        resp.raise_for_status()
+        data = resp.json()
+
+    choice = (data.get("choices") or [{}])[0]
+    message = choice.get("message") or {}
+    usage = data.get("usage") or {}
+    return {
+        "content": message.get("content", ""),
+        "finish_reason": choice.get("finish_reason", "stop"),
+        "usage": {
+            "prompt_tokens": usage.get("prompt_tokens", 0),
+            "completion_tokens": usage.get("completion_tokens", 0),
+            "total_tokens": usage.get("total_tokens", 0),
+        },
+        "provider": provider,
+    }

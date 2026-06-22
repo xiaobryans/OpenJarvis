@@ -227,11 +227,16 @@ async def list_revoked_approvals() -> Dict[str, Any]:
 async def request_approval(body: ApprovalRequest) -> Dict[str, Any]:
     """Create an approval record for a proposed action."""
     engine = _get_approval_engine()
+    audit = _get_audit_store()
+    profile = classify_action(body.action_type)
+    tier = body.tier if body.tier > 0 else profile.recommended_tier
+    risk_level = body.risk_level if body.risk_level != "low" else profile.risk_label
+
     record = engine.request_approval(
         action_type=body.action_type,
         requester=body.requester,
-        tier=body.tier,
-        risk_level=body.risk_level,
+        tier=tier,
+        risk_level=risk_level,
         action_preview=body.action_preview,
         affected_systems=body.affected_systems,
         affected_files=body.affected_files,
@@ -241,24 +246,64 @@ async def request_approval(body: ApprovalRequest) -> Dict[str, Any]:
         scope=body.scope,
         expires_in_seconds=body.expires_in_seconds,
     )
+    audit.record(
+        action_type="approval_requested",
+        actor=body.requester,
+        tier=tier,
+        risk_level=risk_level,
+        approval_decision=record.status.value,
+        execution_status="success",
+        affected_resource=body.action_type,
+        approval_id=record.approval_id,
+        audit_trace_id=record.audit_trace_id,
+        context={"mode": record.mode.value, "scope": body.scope},
+    )
     return record.to_dict()
 
 
 @router.post("/v1/authority/approvals/{approval_id}/grant")
 async def grant_approval(approval_id: str, body: GrantRequest) -> Dict[str, Any]:
     engine = _get_approval_engine()
+    audit = _get_audit_store()
+    pending = engine.get(approval_id)
     success = engine.grant(approval_id, expires_in_seconds=body.expires_in_seconds)
     if not success:
         raise HTTPException(status_code=404, detail="Approval not found or not in PENDING state")
-    return {"status": "granted", "approval_id": approval_id}
+    updated = engine.get(approval_id)
+    audit.record(
+        action_type="approval_granted",
+        actor="owner",
+        tier=updated.tier if updated else 0,
+        risk_level=updated.risk_level if updated else "low",
+        approval_decision="granted",
+        execution_status="success",
+        affected_resource=pending.action_type if pending else "",
+        approval_id=approval_id,
+        audit_trace_id=updated.audit_trace_id if updated else "",
+    )
+    return {"status": "granted", "approval_id": approval_id, "record": updated.to_dict() if updated else {}}
 
 
 @router.post("/v1/authority/approvals/{approval_id}/deny")
 async def deny_approval(approval_id: str, body: DenyRequest) -> Dict[str, Any]:
     engine = _get_approval_engine()
+    audit = _get_audit_store()
+    pending = engine.get(approval_id)
     success = engine.deny(approval_id, reason=body.reason)
     if not success:
         raise HTTPException(status_code=404, detail="Approval not found")
+    audit.record(
+        action_type="approval_denied",
+        actor="owner",
+        tier=pending.tier if pending else 0,
+        risk_level=pending.risk_level if pending else "low",
+        approval_decision="denied",
+        execution_status="blocked",
+        affected_resource=pending.action_type if pending else "",
+        approval_id=approval_id,
+        error_info=body.reason,
+        audit_trace_id=pending.audit_trace_id if pending else "",
+    )
     return {"status": "denied", "approval_id": approval_id}
 
 

@@ -317,6 +317,9 @@ export function JarvisCockpitPage() {
   const [version, setVersion] = useState('');
   const [pendingApprovals, setPendingApprovals] = useState<number>(0);
   const [approvalItems, setApprovalItems] = useState<{ id: string; description?: string; status?: string }[]>([]);
+  const [auditCount, setAuditCount] = useState(0);
+  const [auditEntries, setAuditEntries] = useState<{ action_type?: string; execution_status?: string; actor?: string }[]>([]);
+  const [workflowStatus, setWorkflowStatus] = useState<{ status?: string; workflow_id?: string; commit_hash?: string } | null>(null);
   const [connectors, setConnectors] = useState<ConnectorInfo[]>([]);
   const [memStatus, setMemStatus] = useState<MemoryStatus | null>(null);
   const [memLastRefresh, setMemLastRefresh] = useState('');
@@ -380,11 +383,32 @@ export function JarvisCockpitPage() {
       setGitCommit(d.git_commit ?? '');
     });
 
-    await fetchTracked('/v1/approvals/pending', setPanelFetch('approvals'), async (r) => {
+    await fetchTracked('/v1/authority/approvals/pending', setPanelFetch('approvals'), async (r) => {
       const d = await r.json();
-      const list = Array.isArray(d) ? d : (d?.items ?? []);
-      setPendingApprovals(list.length);
-      setApprovalItems(list.slice(0, 10));
+      const list = d?.approvals ?? [];
+      setPendingApprovals(d?.count ?? list.length);
+      setApprovalItems(list.slice(0, 10).map((a: { approval_id?: string; action_preview?: string; action_type?: string; status?: string }) => ({
+        id: a.approval_id ?? 'unknown',
+        description: a.action_preview ?? a.action_type,
+        status: a.status,
+      })));
+    });
+
+    await fetchTracked('/v1/authority/audit?limit=10', setPanelFetch('audit'), async (r) => {
+      const d = await r.json();
+      const entries = d?.entries ?? [];
+      setAuditCount(d?.total_count ?? entries.length);
+      setAuditEntries(entries.slice(0, 10));
+      setLogs(entries.slice(0, 8).map((e: { action_type?: string; execution_status?: string; ts?: number }) => ({
+        text: `${e.action_type ?? 'event'} — ${e.execution_status ?? 'unknown'}`,
+        level: e.execution_status === 'failed' ? 'error' : 'info',
+        time: e.ts ? new Date(e.ts * 1000).toLocaleTimeString() : '',
+      })));
+    });
+
+    await fetchTracked('/v1/coding/workflow/status', setPanelFetch('workflow'), async (r) => {
+      const d = await r.json();
+      setWorkflowStatus(d?.last_workflow ?? null);
     });
 
     await fetchTracked('/v1/connectors', setPanelFetch('connectors'), async (r) => {
@@ -810,11 +834,18 @@ export function JarvisCockpitPage() {
       case 'authority':
         return (
           <Overlay title="Authority / Emergency Stop" icon="🛑" onClose={() => setExpandedPanel(null)}>
-            <SectionHeading>Pending Approvals</SectionHeading>
+            <SectionHeading>Pending Approvals (/v1/authority/approvals/pending)</SectionHeading>
             {pendingApprovals === 0
               ? <Row label="Queue" value="Empty — no pending approvals" status="ok" />
               : approvalItems.map(a => (
                 <Row key={a.id} label={a.id.slice(0, 20)} value={a.description ?? '—'} status="warn" />
+              ))
+            }
+            <SectionHeading>Recent Audit ({auditCount})</SectionHeading>
+            {auditEntries.length === 0
+              ? <Row label="Audit" value="No events yet — GET /v1/authority/audit" status="warn" />
+              : auditEntries.map((e, i) => (
+                <Row key={i} label={e.action_type ?? 'event'} value={e.execution_status ?? '—'} status={e.execution_status === 'failed' ? 'error' : 'ok'} />
               ))
             }
             <SectionHeading>Emergency Stop</SectionHeading>
@@ -832,9 +863,14 @@ export function JarvisCockpitPage() {
       case 'workbench':
         return (
           <Overlay title="Workbench" icon="🔧" onClose={() => setExpandedPanel(null)}>
+            <SectionHeading>Coding Workflow</SectionHeading>
+            {workflowStatus
+              ? <Row label={workflowStatus.workflow_id ?? 'last'} value={workflowStatus.status ?? '—'} status={workflowStatus.status === 'COMPLETE' ? 'ok' : 'warn'} />
+              : <Row label="Workflow" value="No workflow run yet — POST /v1/coding/workflow/run" status="warn" />
+            }
             <SectionHeading>Available Operations</SectionHeading>
             {[
-              ['Coding / search', '/v1/coding/search', 'WIRED'],
+              ['Coding / workflow', '/v1/coding/workflow/run', 'WIRED'],
               ['Coding / read file', '/v1/coding/files/read', 'WIRED'],
               ['Coding / diff stage', '/v1/coding/diff/stage', 'WIRED'],
               ['Testing / run', '/v1/testing/run', 'WIRED'],

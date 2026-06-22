@@ -60,6 +60,16 @@ async def chat_completions(request_body: ChatCompletionRequest, request: Request
             model = server_model
         elif agent is not None:
             model = getattr(agent, "_model", model)
+    elif model == "auto":
+        from openjarvis.server.cloud_router import _load_keys
+
+        if _load_keys().get("OPENROUTER_API_KEY"):
+            model = "openai/gpt-4o-mini"
+            request.app.state._chat_route_label = "openrouter_auto"
+        else:
+            server_model = getattr(request.app.state, "model", "") or "qwen3.5:2b"
+            model = server_model
+            request.app.state._chat_route_label = "local_fallback"
 
     # Inject cloud runtime context when running on ECS/cloud so the LLM
     # accurately reports its deployment environment. Only injected when the
@@ -397,6 +407,18 @@ async def chat_completions(request_body: ChatCompletionRequest, request: Request
     # tools (e.g. injecting MCP tools through this endpoint and wanting
     # the agent to execute them), add an explicit opt-in header rather
     # than removing this guard — silent re-routing is what produced #414.
+    from openjarvis.server.cloud_router import is_cloud_model
+
+    if is_cloud_model(model) and not request_body.stream:
+        bus = getattr(request.app.state, "bus", None)
+        return _handle_direct(
+            engine,
+            model,
+            request_body,
+            bus=bus,
+            complexity_info=complexity_info,
+        )
+
     if agent is not None and not request_body.tools:
         return _handle_agent(
             agent,
@@ -429,6 +451,41 @@ def _handle_direct(
     kwargs: dict[str, Any] = {}
     if req.tools:
         kwargs["tools"] = req.tools
+
+    from openjarvis.server.cloud_router import generate_cloud, is_cloud_model
+
+    if is_cloud_model(model):
+        try:
+            cloud_result = generate_cloud(
+                model,
+                messages,
+                temperature=req.temperature,
+                max_tokens=req.max_tokens,
+            )
+            return ChatCompletionResponse(
+                model=model,
+                choices=[
+                    Choice(
+                        message=ChoiceMessage(
+                            role="assistant",
+                            content=cloud_result.get("content", ""),
+                        ),
+                        finish_reason=cloud_result.get("finish_reason", "stop"),
+                    )
+                ],
+                usage=UsageInfo(
+                    prompt_tokens=cloud_result.get("usage", {}).get("prompt_tokens", 0),
+                    completion_tokens=cloud_result.get("usage", {}).get("completion_tokens", 0),
+                    total_tokens=cloud_result.get("usage", {}).get("total_tokens", 0),
+                ),
+                complexity=complexity_info,
+            )
+        except Exception as exc:
+            raise HTTPException(
+                status_code=502,
+                detail=f"Cloud model {model!r} failed: {exc}",
+            ) from exc
+
     if bus:
         from openjarvis.telemetry.instrumented_engine import InstrumentedEngine
         from openjarvis.telemetry.wrapper import instrumented_generate
@@ -1185,6 +1242,20 @@ async def health(request: Request):
     except Exception:
         pass
 
+    configured_model = getattr(request.app.state, "model", "unknown")
+    chat_route_label = getattr(request.app.state, "_chat_route_label", None)
+    openrouter_available = False
+    try:
+        from openjarvis.server.cloud_router import _load_keys, is_cloud_model
+
+        openrouter_available = bool(_load_keys().get("OPENROUTER_API_KEY"))
+        is_local_fallback = (
+            not is_cloud_model(str(configured_model))
+            and not openrouter_available
+        ) or chat_route_label == "local_fallback"
+    except Exception:
+        is_local_fallback = True
+
     return {
         "status": "ok",
         "app": "openjarvis",
@@ -1194,7 +1265,13 @@ async def health(request: Request):
         "started_at": started_at,
         "uptime_s": uptime_s,
         "engine": getattr(request.app.state, "engine_name", "unknown"),
-        "model": getattr(request.app.state, "model", "unknown"),
+        "model": configured_model,
+        "model_routing": {
+            "configured_model": configured_model,
+            "is_local_fallback": is_local_fallback,
+            "openrouter_available": openrouter_available,
+            "last_chat_route": chat_route_label or ("local_fallback" if is_local_fallback else "configured"),
+        },
         "stt_provider": stt_provider,
         "tts_provider": tts_provider,
     }
