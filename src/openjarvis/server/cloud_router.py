@@ -62,6 +62,7 @@ def _load_keys() -> dict[str, str]:
         "MOONSHOT_API_KEY",
         "ZAI_API_KEY",
         "GLM_API_KEY",
+        "Z.AI_API_KEY",
         "MINIMAX_API_KEY",
     ):
         val = os.environ.get(name)

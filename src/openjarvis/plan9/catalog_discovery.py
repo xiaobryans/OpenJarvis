@@ -526,10 +526,11 @@ async def _discover_zai(catalog: ProviderCatalog9K) -> ProviderDiscoveryResult:
     api_key = (
         os.environ.get("ZAI_API_KEY", "").strip()
         or os.environ.get("GLM_API_KEY", "").strip()
+        or os.environ.get("Z.AI_API_KEY", "").strip()
     )
     if not api_key:
         result.status = ProviderDiscoveryStatus.API_KEY_MISSING
-        result.blocker = "ZAI_API_KEY or GLM_API_KEY not set; using static metadata"
+        result.blocker = "ZAI_API_KEY, GLM_API_KEY, or Z.AI_API_KEY not set; using static metadata"
         result.models_found = len(catalog.models_for_provider("zai"))
         return result
 

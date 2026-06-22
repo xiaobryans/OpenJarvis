@@ -105,7 +105,7 @@ KIMI_K2_6_PATTERNS = (
 PROVIDER_KEY_ENV_VARS: Dict[str, Tuple[str, ...]] = {
     "openrouter": ("OPENROUTER_API_KEY",),
     "aimlapi": ("AIMLAPI_API_KEY", "AIMLAPI_KEY"),
-    "zai": ("ZAI_API_KEY", "GLM_API_KEY"),
+    "zai": ("ZAI_API_KEY", "GLM_API_KEY", "Z.AI_API_KEY"),
     "kimi": ("KIMI_API_KEY", "MOONSHOT_API_KEY"),
 }
 
