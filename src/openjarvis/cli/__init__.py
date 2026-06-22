@@ -43,6 +43,7 @@ from openjarvis.cli.tool_cmd import tool
 from openjarvis.cli.vault_cmd import vault
 from openjarvis.cli.voice_cmd import voice
 from openjarvis.cli.workflow_cmd import workflow
+from openjarvis.cli.plan9_cmd import plan9
 
 
 @click.group(
@@ -129,6 +130,7 @@ cli.add_command(tool, "tool")
 cli.add_command(registry, "registry")
 cli.add_command(config, "config")
 cli.add_command(scan, "scan")
+cli.add_command(plan9, "plan9")
 cli.add_command(connect, "connect")
 cli.add_command(digest, "digest")
 cli.add_command(omnix, "omnix")

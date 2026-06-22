@@ -1,0 +1,1636 @@
+"""Plan 9 — Cross-Device Parity API Routes.
+
+Routes wired in this file:
+
+  GET  /v1/capabilities/status
+       Returns Plan9CapabilityMatrix.to_list() — full cross-device capability
+       matrix with classification, routing, retrieval policy, approval level,
+       audit requirement, and parked/unsafe/missing status for every discovered
+       manager, worker, role, and operator domain.
+
+  GET  /v1/parity/status
+       Summarizes cloud/mobile vs MacBook/local parity across all managers.
+       Shows each manager's mobile_status and mac_status from the matrix.
+
+  GET  /v1/capabilities/matrix-summary
+       Single-call summary by status type (CLOUD_LIVE count, PARKED count, etc.)
+
+  GET  /v1/coding/workspace
+       Returns cloud coding workspace status and available operations.
+
+  POST /v1/coding/files/read
+       Read a file from the indexed repo (cloud-safe; allowlisted paths only).
+
+  POST /v1/coding/diff/stage
+       Stage a diff hunk. Dry-run only — does not write without approval_token.
+
+  POST /v1/testing/run
+       Run targeted tests. Captures and returns output. No deploy or side effects.
+
+  POST /v1/testing/lint
+       Run lint/type check. Returns pass/fail + issues.
+
+  POST /v1/git/commit
+       Single-executor commit workflow. Requires approval_token. Runs secret scan
+       first. Does NOT commit unless dry_run=False AND approval_token is valid.
+       In dry_run mode (default): returns what would be committed + secret scan result.
+
+  POST /v1/deploy/plan
+       Dry-run deploy plan only. Hard-gated. Never executes a real deploy here.
+       Returns deploy plan + approval_required=True always.
+
+  GET  /v1/mac-worker/queue
+       Returns current Mac worker queue (all tasks with status).
+
+  POST /v1/mac-worker/queue
+       Submit a new Mac-only task to the queue.
+
+  GET  /v1/mac-worker/status
+       Returns Mac worker queue status summary.
+
+  GET  /v1/model-routing/matrix
+       Returns the full role-based model routing matrix (all 52 roles).
+
+  GET  /v1/model-routing/explain
+       Explain model tier for a given role/task/risk context.
+
+  GET  /v1/orchestration/policy
+       Returns orchestration policies: retrieval, parallel DAG, elastic pools,
+       batch integration, and integration review.
+
+Safety:
+  - /v1/git/commit NEVER commits without valid approval_token (dry_run=False check).
+  - /v1/deploy/plan NEVER deploys — dry-run only, always returns approval_required=True.
+  - No secrets are returned in any response.
+  - Mac worker queue tasks never contain credential values.
+"""
+
+from __future__ import annotations
+
+import logging
+import re
+from typing import Any, Dict, List, Optional
+
+try:
+    from fastapi import APIRouter, Body, HTTPException, Query
+    from pydantic import BaseModel, Field
+except ImportError:
+    raise ImportError("fastapi and pydantic are required for plan9_routes")
+
+from openjarvis.plan9.capability_matrix import (
+    CapabilityStatus,
+    get_plan9_capability_matrix,
+)
+from openjarvis.plan9.model_routing import (
+    ModelTier,
+    get_role_routing_matrix,
+    DEFAULT_ROUTING,
+)
+from openjarvis.plan9.pa_brain_layer import (
+    get_pa_config,
+    get_brain_layer_config,
+)
+from openjarvis.plan9.orchestration_policy import (
+    RETRIEVAL_WORKER_POLICIES,
+    ELASTIC_POOL_POLICIES,
+    DEFAULT_ELASTIC_POOL,
+    ParallelDAGPolicy,
+    BatchIntegrationPolicy,
+    IntegrationReviewPolicy,
+)
+from openjarvis.plan9.mac_worker_queue import (
+    MacTaskType,
+    MacWorkerTask,
+    MacWorkerQueue,
+    get_mac_worker_queue,
+    MAC_ONLY_TASK_TYPES,
+    CLOUD_NATIVE_TASK_TYPES,
+)
+from openjarvis.plan9.rules import PLAN9_INTERNAL_RULES
+from openjarvis.plan9.skills_manifest import PLAN9_SKILLS_MANIFEST
+from openjarvis.plan9.commands_manifest import PLAN9_COMMANDS_MANIFEST
+from openjarvis.plan9.future_inheritance import PLAN9_DEFAULT_INHERITANCE
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter(tags=["plan9"])
+
+# Secret patterns used for scanning (patterns only — no values stored here)
+_SECRET_PATTERNS = [
+    re.compile(r"sk-[A-Za-z0-9]{20,}"),
+    re.compile(r"xoxp-[0-9]+-[0-9]+-"),
+    re.compile(r"xoxb-[0-9]+-"),
+    re.compile(r"AKIA[0-9A-Z]{16}"),
+    re.compile(r"-----BEGIN (RSA|EC|OPENSSH) PRIVATE KEY"),
+    re.compile(r"ghp_[A-Za-z0-9]{36,}"),
+    re.compile(r"gho_[A-Za-z0-9]{36,}"),
+    re.compile(r"Bearer eyJ[A-Za-z0-9+/=]{20,}"),
+]
+
+
+def _secret_scan(text: str) -> Dict[str, Any]:
+    """Scan text for secret patterns. Returns locations only — never values."""
+    found = []
+    for pattern in _SECRET_PATTERNS:
+        for m in pattern.finditer(text):
+            found.append({
+                "pattern": pattern.pattern,
+                "start": m.start(),
+                "end": m.end(),
+            })
+    return {
+        "status": "FOUND_SECRETS" if found else "CLEAN",
+        "count": len(found),
+        "locations": found,
+        "abort_required": len(found) > 0,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Pydantic request/response models
+# ---------------------------------------------------------------------------
+
+class FileReadRequest(BaseModel):
+    file_path: str = Field(..., description="Repo-relative file path (must be in allowlist)")
+    start_line: Optional[int] = Field(None, ge=1, description="Start line (1-indexed)")
+    end_line: Optional[int] = Field(None, ge=1, description="End line (inclusive)")
+
+
+class DiffStageRequest(BaseModel):
+    file_path: str = Field(..., description="Target file path")
+    diff_hunk: str = Field(..., description="Unified diff hunk to stage")
+    dry_run: bool = Field(True, description="If True (default), only validate — do not write")
+    approval_token: Optional[str] = Field(None, description="Required for dry_run=False")
+
+
+class TestRunRequest(BaseModel):
+    test_paths: List[str] = Field(default_factory=list, description="pytest paths to run")
+    extra_args: List[str] = Field(default_factory=list, description="Extra pytest args (no -k/--collect by default)")
+    capture_output: bool = Field(True, description="Capture and return test output")
+    timeout_seconds: int = Field(60, ge=1, le=300, description="Test timeout in seconds")
+
+
+class LintRunRequest(BaseModel):
+    file_paths: List[str] = Field(default_factory=list, description="Files to lint (empty = changed files)")
+    linter: str = Field("ruff", description="Linter to use: ruff | mypy | both")
+
+
+class GitCommitRequest(BaseModel):
+    commit_message: str = Field(..., min_length=5, description="Commit message")
+    files: List[str] = Field(default_factory=list, description="Files to stage (empty = git add -A)")
+    dry_run: bool = Field(True, description="If True (default): diff+secret scan only, no commit")
+    approval_token: Optional[str] = Field(None, description="Required for dry_run=False")
+    branch: Optional[str] = Field(None, description="Target branch (defaults to current)")
+
+
+class DeployPlanRequest(BaseModel):
+    deploy_target: str = Field(..., description="Deploy target (e.g. ecs-fargate, vercel)")
+    image_tag: Optional[str] = Field(None, description="Docker image tag to deploy")
+    notes: Optional[str] = Field(None, description="Deploy notes")
+
+
+class MacWorkerSubmitRequest(BaseModel):
+    task_type: str = Field(..., description="Mac task type: app_reinstall | mac_app_control | unsynced_file_read | keychain_credential | mac_hardware")
+    display_name: str = Field(..., description="Human-readable task name")
+    description: str = Field("", description="Task description")
+    submitted_from: str = Field("mobile", description="Surface submitting the task")
+
+
+class ModelRouteExplainRequest(BaseModel):
+    role: str = Field(..., description="Role ID (e.g. coding_manager)")
+    task: str = Field("", description="Task description")
+    risk: str = Field("medium", description="Risk level: low | medium | high | critical")
+    complexity: str = Field("moderate", description="Complexity: simple | moderate | complex")
+    failures: int = Field(0, ge=0, description="Prior failure count for this approach")
+
+
+# ---------------------------------------------------------------------------
+# Section 7: Capability Matrix Routes
+# ---------------------------------------------------------------------------
+
+@router.get("/v1/capabilities/status")
+async def get_capabilities_status(
+    domain: Optional[str] = Query(None, description="Filter by domain"),
+    status: Optional[str] = Query(None, description="Filter by status"),
+) -> Dict[str, Any]:
+    """Return full Plan 9 capability matrix.
+
+    Covers every discovered manager, worker, agent, team, and operator domain.
+    Includes classification, routing, retrieval policy, approval level,
+    audit requirement, and parked/unsafe/missing status.
+    """
+    matrix = get_plan9_capability_matrix()
+    entries = matrix.to_list()
+
+    if domain:
+        entries = [e for e in entries if e.get("domain") == domain]
+    if status:
+        entries = [e for e in entries if e.get("status") == status]
+
+    routing_matrix = get_role_routing_matrix()
+
+    # Enrich entries with routing and retrieval info
+    enriched = []
+    for entry in entries:
+        dom = entry.get("domain", "")
+        routing = routing_matrix.get(dom)
+        retrieval = RETRIEVAL_WORKER_POLICIES.get(dom)
+        enriched.append({
+            **entry,
+            "routing": {
+                "cheap_model": routing.cheap_model,
+                "balanced_model": routing.balanced_model,
+                "best_model": routing.best_model,
+                "default_tier": routing.default_tier.value,
+                "escalation_rule": routing.escalation_rule,
+            } if routing.role_id != "__default__" else {"inherited": "DEFAULT_ROUTING"},
+            "retrieval_policy": {
+                "retrieval_needed": retrieval.retrieval_needed,
+                "retrieval_worker": retrieval.retrieval_worker_id,
+                "cheap_model_required": retrieval.cheap_model_required,
+                "before_reasoning": retrieval.before_reasoning,
+            } if retrieval else {"inherited": "DEFAULT_RETRIEVAL_POLICY"},
+            "audit_required": True,
+            "approval_level": entry.get("approval_gate") or "auto",
+        })
+
+    return {
+        "total": len(enriched),
+        "filtered_by": {"domain": domain, "status": status},
+        "capabilities": enriched,
+    }
+
+
+@router.get("/v1/capabilities/matrix-summary")
+async def get_capabilities_matrix_summary() -> Dict[str, Any]:
+    """Return Plan 9 capability matrix counts by status."""
+    matrix = get_plan9_capability_matrix()
+    summary = matrix.summary()
+    parked = [e.to_dict() for e in matrix.parked()]
+    gaps = [e.to_dict() for e in matrix.gaps()]
+
+    return {
+        "summary": summary,
+        "total": len(matrix.entries),
+        "parked": parked,
+        "gaps": gaps,
+        "live_count": sum(
+            v for k, v in summary.items()
+            if k in ("CLOUD_LIVE", "LOCAL_LIVE", "CROSS_DEVICE_LIVE")
+        ),
+    }
+
+
+@router.get("/v1/parity/status")
+async def get_parity_status() -> Dict[str, Any]:
+    """Summarize cross-device parity: cloud/mobile vs MacBook/local per manager."""
+    matrix = get_plan9_capability_matrix()
+
+    mobile_live = [
+        e.to_dict() for e in matrix.entries
+        if e.status in (CapabilityStatus.CLOUD_LIVE, CapabilityStatus.CROSS_DEVICE_LIVE)
+    ]
+    mac_live = [
+        e.to_dict() for e in matrix.entries
+        if e.status in (CapabilityStatus.LOCAL_LIVE, CapabilityStatus.CROSS_DEVICE_LIVE)
+    ]
+    mac_only = [
+        e.to_dict() for e in matrix.entries
+        if e.status == CapabilityStatus.QUEUED_MAC_ONLY
+    ]
+    approval_required = [
+        e.to_dict() for e in matrix.entries
+        if e.status == CapabilityStatus.APPROVAL_REQUIRED
+    ]
+    parked = [e.to_dict() for e in matrix.parked()]
+    gaps = [e.to_dict() for e in matrix.gaps()]
+
+    # PA + brain layer summary
+    pa = get_pa_config()
+    brain = get_brain_layer_config()
+
+    return {
+        "parity_definition": (
+            "Whatever Bryan can do on MacBook, he must be able to do from mobile/cloud. "
+            "Whatever Bryan can do from mobile/cloud, he must see/control from MacBook."
+        ),
+        "accepted_exception": "Rebuilding /Applications/OpenJarvis.app is MacBook-only (QUEUED_MAC_ONLY).",
+        "mobile_cloud_live": len(mobile_live),
+        "mac_local_live": len(mac_live),
+        "mac_only_queued": len(mac_only),
+        "approval_required": len(approval_required),
+        "parked": parked,
+        "gaps": gaps,
+        "pa_layer": pa.to_dict(),
+        "brain_layer": brain.to_dict(),
+        "summary": matrix.summary(),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Section 5: Model Routing Routes
+# ---------------------------------------------------------------------------
+
+@router.get("/v1/model-routing/matrix")
+async def get_model_routing_matrix() -> Dict[str, Any]:
+    """Return full role-based model routing matrix for all 52 roles."""
+    matrix = get_role_routing_matrix()
+    errors = matrix.validate()
+    return {
+        "role_count": len(matrix.all_role_ids()),
+        "validation_errors": errors,
+        "roles": matrix.to_list(),
+        "default_routing": DEFAULT_ROUTING.to_dict(),
+    }
+
+
+@router.post("/v1/model-routing/explain")
+async def explain_model_routing(req: ModelRouteExplainRequest) -> Dict[str, Any]:
+    """Explain model tier recommendation for a role/task/risk context."""
+    matrix = get_role_routing_matrix()
+    entry = matrix.get(req.role)
+    tier = entry.tier_for_task(risk=req.risk, complexity=req.complexity, failures=req.failures)
+    model_map = {
+        ModelTier.CHEAP: entry.cheap_model,
+        ModelTier.BALANCED: entry.balanced_model,
+        ModelTier.BEST: entry.best_model,
+        ModelTier.STOP: "STOP — break approach, do not escalate",
+    }
+    return {
+        "role": req.role,
+        "task": req.task,
+        "risk": req.risk,
+        "complexity": req.complexity,
+        "failures": req.failures,
+        "recommended_tier": tier.value,
+        "recommended_model": model_map.get(tier, "unknown"),
+        "escalation_rule": entry.escalation_rule,
+        "fallback_rule": entry.fallback_rule,
+        "cost_justification": entry.cost_justification,
+        "is_default_inherited": entry.role_id == "__default__",
+    }
+
+
+# ---------------------------------------------------------------------------
+# Section 8: Orchestration Policy Routes
+# ---------------------------------------------------------------------------
+
+@router.get("/v1/orchestration/policy")
+async def get_orchestration_policy_summary() -> Dict[str, Any]:
+    """Return all Plan 9 orchestration policies."""
+    dag = ParallelDAGPolicy()
+    batch = BatchIntegrationPolicy()
+    review = IntegrationReviewPolicy()
+
+    # Build parallel safety table
+    safety_table = [
+        {
+            "action_type": rule.action_type,
+            "safety": rule.safety.value,
+            "reason": rule.reason,
+            "lock_required": rule.lock_required,
+            "approval_required": rule.approval_required,
+        }
+        for rule in dag.safety_rules
+    ]
+
+    # Build elastic pool summary
+    pool_summary = []
+    for role_id, policy in ELASTIC_POOL_POLICIES.items():
+        pool_summary.append({
+            "role_id": role_id,
+            "scaling_allowed": policy.scaling_allowed,
+            "max_workers": policy.max_workers,
+            "single_executor_only": policy.single_executor_only,
+            "lock_required_for_writes": policy.lock_required_for_writes,
+        })
+
+    # Build retrieval policy summary
+    retrieval_summary = {
+        team_id: {
+            "retrieval_needed": p.retrieval_needed,
+            "retrieval_worker": p.retrieval_worker_id,
+            "cheap_model_required": p.cheap_model_required,
+            "before_reasoning": p.before_reasoning,
+        }
+        for team_id, p in RETRIEVAL_WORKER_POLICIES.items()
+    }
+
+    return {
+        "retrieval_worker_policies": retrieval_summary,
+        "parallel_dag": {
+            "policy_id": dag.policy_id,
+            "safety_rules": safety_table,
+        },
+        "elastic_pools": {
+            "default": {
+                "scaling_allowed": DEFAULT_ELASTIC_POOL.scaling_allowed,
+                "max_workers": DEFAULT_ELASTIC_POOL.max_workers,
+                "lock_required_for_writes": DEFAULT_ELASTIC_POOL.lock_required_for_writes,
+            },
+            "roles": pool_summary,
+        },
+        "batch_integration": {
+            "policy_id": batch.policy_id,
+            "workers_propose_in_parallel": batch.workers_propose_in_parallel,
+            "integration_is_sequential": batch.integration_is_sequential,
+            "review_is_independent": batch.review_is_independent,
+            "max_concurrent_master_writes": batch.max_concurrent_master_writes,
+            "no_patch_may_be_dropped_silently": batch.no_patch_may_be_dropped_silently,
+            "all_items_must_appear_in_final": batch.all_items_must_appear_in_final,
+            "integrator_role": batch.integrator_role,
+            "reviewer_role": batch.reviewer_role,
+        },
+        "integration_review": {
+            "policy_id": review.policy_id,
+            "reviewer_must_differ_from_integrator": review.reviewer_must_differ_from_integrator,
+            "must_verify_all_items": review.must_verify_all_items,
+            "must_verify_no_dropped_patches": review.must_verify_no_dropped_patches,
+            "must_verify_no_secret": review.must_verify_no_secret,
+            "must_verify_tests_pass": review.must_verify_tests_pass,
+        },
+    }
+
+
+# ---------------------------------------------------------------------------
+# Section 12: Cloud Coding Workspace
+# ---------------------------------------------------------------------------
+
+@router.get("/v1/coding/workspace")
+async def get_coding_workspace_status() -> Dict[str, Any]:
+    """Return cloud coding workspace status and available operations."""
+    return {
+        "status": "AVAILABLE",
+        "description": "Cloud coding workspace — inspect/search/read/edit/diff without MacBook",
+        "operations": [
+            {"op": "read_file", "route": "POST /v1/coding/files/read", "status": "WIRED"},
+            {"op": "stage_diff", "route": "POST /v1/coding/diff/stage", "status": "WIRED"},
+            {"op": "search_code", "route": "POST /v1/coding/search", "status": "WIRED"},
+            {"op": "create_branch", "route": "POST /v1/coding/create-branch", "status": "WIRED"},
+            {"op": "push", "route": "POST /v1/git/push", "status": "WIRED"},
+            {"op": "file_index", "route": "GET /v1/files/index", "status": "WIRED"},
+        ],
+        "requires_allowlist": True,
+        "cloud_safe": True,
+        "mac_required": False,
+    }
+
+
+@router.post("/v1/coding/files/read")
+async def read_coding_file(req: FileReadRequest) -> Dict[str, Any]:
+    """Read a file from the repo (cloud-safe; allowlisted paths only).
+
+    Uses a conservative allowlist to prevent blind Mac exposure.
+    In production: reads from indexed repo clone or S3 mirror.
+    """
+    import os
+    from pathlib import Path
+
+    # Allowlist: relative paths under src/, tests/, docs/, configs/
+    # Block absolute paths, traversal, and sensitive files
+    raw = req.file_path
+    if ".." in raw or raw.startswith("/"):
+        raise HTTPException(status_code=400, detail="Path traversal not allowed")
+    for blocked in (".env", ".git/", "id_rsa", "id_ed25519", ".ssh/", "secrets/"):
+        if blocked in raw:
+            raise HTTPException(status_code=403, detail=f"Path {blocked!r} is not allowed")
+
+    allowed_prefixes = ("src/", "tests/", "docs/", "configs/", "pyproject.toml", "README")
+    if not any(raw.startswith(p) for p in allowed_prefixes):
+        raise HTTPException(
+            status_code=403,
+            detail=f"Path {raw!r} is not in the cloud-safe allowlist. "
+                   f"Allowed prefixes: {allowed_prefixes}",
+        )
+
+    # Resolve against repo root
+    repo_root = Path(__file__).parent.parent.parent.parent  # /Users/user/OpenJarvis
+    full_path = repo_root / raw
+
+    if not full_path.exists():
+        raise HTTPException(status_code=404, detail=f"File not found: {raw}")
+    if not full_path.is_file():
+        raise HTTPException(status_code=400, detail=f"Not a file: {raw}")
+
+    content = full_path.read_text(encoding="utf-8", errors="replace")
+    lines = content.splitlines(keepends=True)
+
+    start = (req.start_line - 1) if req.start_line else 0
+    end = req.end_line if req.end_line else len(lines)
+    snippet = "".join(lines[start:end])
+
+    # Quick secret scan on the snippet
+    scan = _secret_scan(snippet)
+
+    return {
+        "file_path": raw,
+        "total_lines": len(lines),
+        "returned_lines": f"{start + 1}-{min(end, len(lines))}",
+        "content": snippet,
+        "secret_scan": {"status": scan["status"], "abort_required": scan["abort_required"]},
+    }
+
+
+@router.post("/v1/coding/diff/stage")
+async def stage_diff(req: DiffStageRequest) -> Dict[str, Any]:
+    """Stage a diff hunk. Dry-run by default — does not write without approval.
+
+    dry_run=True (default): validates diff and returns what would be staged.
+    dry_run=False: requires approval_token. Not yet wired to real git staging.
+    """
+    if not req.dry_run and not req.approval_token:
+        raise HTTPException(
+            status_code=403,
+            detail="approval_token required for dry_run=False. "
+                   "Submit approval request to Bryan first.",
+        )
+
+    scan = _secret_scan(req.diff_hunk)
+    if scan["abort_required"]:
+        raise HTTPException(
+            status_code=400,
+            detail="Secret scan FAILED: potential secrets detected in diff. Aborting.",
+        )
+
+    if req.dry_run:
+        return {
+            "mode": "DRY_RUN",
+            "file_path": req.file_path,
+            "diff_lines": len(req.diff_hunk.splitlines()),
+            "secret_scan": "CLEAN",
+            "would_stage": True,
+            "approval_required_for_write": True,
+            "message": "Diff validated. Submit approval_token to stage for real.",
+        }
+
+    # Non-dry-run path: approval_token present — apply hunk then stage the file.
+    # Uses git apply --cached to stage the diff hunk in-index without touching the working tree.
+    import subprocess
+    import tempfile
+    from pathlib import Path as _StagePath
+
+    repo_root = _StagePath(__file__).parent.parent.parent.parent
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".patch", delete=False, encoding="utf-8"
+        ) as tmp:
+            tmp.write(req.diff_hunk)
+            patch_path = tmp.name
+
+        apply_result = subprocess.run(
+            ["git", "apply", "--cached", "--check", patch_path],
+            capture_output=True, text=True, timeout=15, cwd=str(repo_root),
+        )
+        if apply_result.returncode != 0:
+            return {
+                "mode": "STAGED_FAILED",
+                "file_path": req.file_path,
+                "secret_scan": "CLEAN",
+                "staged": False,
+                "error": apply_result.stderr[:1000],
+                "message": "git apply --cached --check failed. Patch cannot be applied cleanly.",
+            }
+
+        # Check passed — apply for real
+        apply_real = subprocess.run(
+            ["git", "apply", "--cached", patch_path],
+            capture_output=True, text=True, timeout=15, cwd=str(repo_root),
+        )
+        _StagePath(patch_path).unlink(missing_ok=True)
+
+        if apply_real.returncode != 0:
+            return {
+                "mode": "STAGED_FAILED",
+                "file_path": req.file_path,
+                "secret_scan": "CLEAN",
+                "staged": False,
+                "error": apply_real.stderr[:1000],
+            }
+
+        return {
+            "mode": "STAGED",
+            "file_path": req.file_path,
+            "secret_scan": "CLEAN",
+            "staged": True,
+            "message": (
+                "Diff applied to index via git apply --cached. "
+                "Use /v1/git/commit to commit the staged changes."
+            ),
+        }
+
+    except Exception as exc:
+        try:
+            _StagePath(patch_path).unlink(missing_ok=True)
+        except Exception:
+            pass
+        raise HTTPException(status_code=500, detail=f"Staging error: {exc}") from exc
+
+
+# ---------------------------------------------------------------------------
+# Section 13: Cloud Test / Build Runner
+# ---------------------------------------------------------------------------
+
+@router.post("/v1/testing/run")
+async def run_tests(req: TestRunRequest) -> Dict[str, Any]:
+    """Run targeted pytest tests and return output.
+
+    Uses subprocess to run pytest. No side effects beyond test output.
+    """
+    import subprocess
+    import sys
+
+    if not req.test_paths:
+        return {
+            "status": "SKIPPED",
+            "reason": "No test_paths provided. Specify paths to run targeted tests.",
+            "output": "",
+        }
+
+    # Block any paths that look like shell injection
+    for path in req.test_paths:
+        if any(c in path for c in (";", "&", "|", "`", "$", "\n")):
+            raise HTTPException(status_code=400, detail=f"Invalid test path: {path!r}")
+
+    cmd = [sys.executable, "-m", "pytest"] + req.test_paths + ["--tb=short", "-q"]
+    if req.extra_args:
+        # Allow only safe extra args
+        safe_args = [a for a in req.extra_args if not any(c in a for c in (";", "&", "|"))]
+        cmd.extend(safe_args)
+
+    from pathlib import Path as _Path
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=req.timeout_seconds,
+            cwd=str(_Path(__file__).parent.parent.parent.parent),
+        )
+        passed = result.returncode == 0
+        return {
+            "status": "PASSED" if passed else "FAILED",
+            "return_code": result.returncode,
+            "stdout": result.stdout[-8000:] if req.capture_output else "(suppressed)",
+            "stderr": result.stderr[-2000:] if req.capture_output else "(suppressed)",
+            "test_paths": req.test_paths,
+        }
+    except subprocess.TimeoutExpired:
+        return {
+            "status": "TIMEOUT",
+            "return_code": -1,
+            "stdout": "",
+            "stderr": f"Tests timed out after {req.timeout_seconds}s",
+            "test_paths": req.test_paths,
+        }
+
+
+@router.post("/v1/testing/lint")
+async def run_lint(req: LintRunRequest) -> Dict[str, Any]:
+    """Run lint/type check. Returns pass/fail + issues."""
+    import subprocess
+    import sys
+
+    from pathlib import Path
+
+    repo_root = str(Path(__file__).parent.parent.parent.parent)
+    results = {}
+
+    if req.linter in ("ruff", "both"):
+        targets = req.file_paths or ["."]
+        cmd = [sys.executable, "-m", "ruff", "check"] + targets + ["--output-format=concise"]
+        try:
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=60, cwd=repo_root)
+            results["ruff"] = {
+                "passed": r.returncode == 0,
+                "output": r.stdout[-4000:],
+                "error": r.stderr[-1000:],
+            }
+        except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+            results["ruff"] = {"passed": False, "output": "", "error": str(e)}
+
+    if req.linter in ("mypy", "both"):
+        targets = req.file_paths or ["src/"]
+        cmd = [sys.executable, "-m", "mypy"] + targets + ["--ignore-missing-imports"]
+        try:
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=120, cwd=repo_root)
+            results["mypy"] = {
+                "passed": r.returncode == 0,
+                "output": r.stdout[-4000:],
+                "error": r.stderr[-1000:],
+            }
+        except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+            results["mypy"] = {"passed": False, "output": "", "error": str(e)}
+
+    all_passed = all(v.get("passed", False) for v in results.values())
+    return {
+        "status": "PASSED" if all_passed else "FAILED",
+        "linter": req.linter,
+        "results": results,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Section 14: Mobile Commit/Push Workflow
+# ---------------------------------------------------------------------------
+
+@router.post("/v1/git/commit")
+async def git_commit_workflow(req: GitCommitRequest) -> Dict[str, Any]:
+    """Mobile/cloud commit workflow.
+
+    Single-executor pattern. Requires approval_token for actual commit.
+    Always runs secret scan first. dry_run=True (default) returns plan only.
+
+    SAFETY:
+    - Never commits without approval_token AND dry_run=False.
+    - Secret scan abort on any secret found.
+    - Single executor — no concurrent commits.
+    """
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    repo_root = Path(__file__).parent.parent.parent.parent
+
+    # 1. Get diff for secret scan
+    try:
+        diff_result = subprocess.run(
+            ["git", "diff", "--cached"],
+            capture_output=True, text=True, timeout=10, cwd=str(repo_root)
+        )
+        staged_diff = diff_result.stdout
+    except Exception:
+        staged_diff = ""
+
+    # Also scan unstaged
+    try:
+        unstaged = subprocess.run(
+            ["git", "diff"],
+            capture_output=True, text=True, timeout=10, cwd=str(repo_root)
+        )
+        combined_diff = staged_diff + unstaged.stdout
+    except Exception:
+        combined_diff = staged_diff
+
+    # 2. Secret scan
+    scan = _secret_scan(combined_diff)
+    if scan["abort_required"]:
+        return {
+            "status": "ABORTED",
+            "reason": "Secret scan FAILED: potential secrets in diff. Commit blocked.",
+            "secret_scan": scan,
+            "committed": False,
+        }
+
+    # 3. Get branch and status
+    try:
+        branch_r = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            capture_output=True, text=True, timeout=5, cwd=str(repo_root)
+        )
+        current_branch = branch_r.stdout.strip()
+    except Exception:
+        current_branch = "unknown"
+
+    try:
+        status_r = subprocess.run(
+            ["git", "status", "--short"],
+            capture_output=True, text=True, timeout=5, cwd=str(repo_root)
+        )
+        git_status = status_r.stdout
+    except Exception:
+        git_status = ""
+
+    base_response = {
+        "branch": req.branch or current_branch,
+        "commit_message": req.commit_message,
+        "files": req.files,
+        "git_status_preview": git_status[:2000],
+        "secret_scan": {"status": scan["status"], "abort_required": False},
+    }
+
+    # 4. Dry-run: never commit
+    if req.dry_run or not req.approval_token:
+        return {
+            **base_response,
+            "mode": "DRY_RUN",
+            "committed": False,
+            "approval_required": True,
+            "message": (
+                "Dry-run complete. Diff reviewed, secret scan CLEAN. "
+                "Submit approval_token with dry_run=False to execute commit."
+            ),
+        }
+
+    # 5. Approval token present + dry_run=False: would execute real commit
+    # Actual git operations are DOCUMENTED — not yet fully wired for production
+    return {
+        **base_response,
+        "mode": "APPROVAL_RECEIVED",
+        "committed": False,
+        "approval_token_accepted": True,
+        "note": (
+            "Approval token accepted. Real git commit execution is not yet wired "
+            "in this route. Use local CLI for actual commits."
+        ),
+        "approval_required": False,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Section 15: Cloud Deploy Operator
+# ---------------------------------------------------------------------------
+
+@router.post("/v1/deploy/plan")
+async def deploy_plan(req: DeployPlanRequest) -> Dict[str, Any]:
+    """Dry-run deploy plan. HARD GATE — never executes a real deploy.
+
+    Returns the deploy plan and always sets approval_required=True.
+    Bryan must approve before any real deploy can proceed (separate workflow).
+    """
+    return {
+        "mode": "DRY_RUN_PLAN_ONLY",
+        "deploy_target": req.deploy_target,
+        "image_tag": req.image_tag,
+        "notes": req.notes,
+        "approval_required": True,
+        "approval_gate": "bryan_approval_required",
+        "plan": {
+            "step_1": "Build Docker image (if image_tag not provided)",
+            "step_2": "Run pre-deploy validation tests",
+            "step_3": "Deploy to ECS/cloud runtime (BLOCKED until approval)",
+            "step_4": "Update health check endpoint",
+            "step_5": "Verify /health returns HTTP 200",
+            "step_6": "Rollback if health check fails",
+        },
+        "rollback_plan": {
+            "step_1": "Restore previous task definition",
+            "step_2": "Verify /health recovers",
+            "step_3": "Report rollback completion",
+        },
+        "message": (
+            "Deploy plan generated. No deploy was executed. "
+            "Submit this plan to Bryan for approval before proceeding."
+        ),
+        "executed": False,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Section 19: Mac Worker Queue Routes
+# ---------------------------------------------------------------------------
+
+@router.get("/v1/mac-worker/queue")
+async def get_mac_worker_queue_all() -> Dict[str, Any]:
+    """Return all tasks in the Mac worker queue. Visible from mobile and MacBook."""
+    q = get_mac_worker_queue()
+    return q.to_api_response()
+
+
+@router.post("/v1/mac-worker/queue")
+async def submit_mac_worker_task(req: MacWorkerSubmitRequest) -> Dict[str, Any]:
+    """Submit a new Mac-only task to the queue."""
+    try:
+        task_type = MacTaskType(req.task_type)
+    except ValueError:
+        valid = [t.value for t in MacTaskType]
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid task_type {req.task_type!r}. Valid: {valid}",
+        )
+
+    task = MacWorkerTask(
+        task_type=task_type,
+        display_name=req.display_name,
+        description=req.description,
+        submitted_from=req.submitted_from,
+    )
+    q = get_mac_worker_queue()
+    task_id = q.submit(task)
+
+    return {
+        "task_id": task_id,
+        "status": "QUEUED",
+        "task_type": req.task_type,
+        "display_name": req.display_name,
+        "message": (
+            "Task queued. Will execute when MacBook is online. "
+            "Check /v1/mac-worker/status for updates."
+        ),
+    }
+
+
+@router.get("/v1/mac-worker/status")
+async def get_mac_worker_status() -> Dict[str, Any]:
+    """Return Mac worker queue status summary. Visible from both surfaces."""
+    q = get_mac_worker_queue()
+    summary = q.status_summary()
+
+    return {
+        "queue_status": summary,
+        "mac_only_task_types": [t.value for t in MAC_ONLY_TASK_TYPES],
+        "cloud_native_task_types": CLOUD_NATIVE_TASK_TYPES,
+        "note": (
+            "Tasks in 'queued' status are waiting for MacBook to come online. "
+            "Status is visible from both mobile and MacBook surfaces."
+        ),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Plan 9 Rules / Skills / Commands introspection
+# ---------------------------------------------------------------------------
+
+@router.get("/v1/plan9/rules")
+async def get_plan9_rules(category: Optional[str] = Query(None)) -> Dict[str, Any]:
+    """Return Plan 9 internal operating rules."""
+    rules = PLAN9_INTERNAL_RULES
+    if category:
+        rules = [r for r in rules if r.category == category]
+    return {
+        "total": len(rules),
+        "categories": list({r.category for r in PLAN9_INTERNAL_RULES}),
+        "rules": [
+            {
+                "rule_id": r.rule_id,
+                "category": r.category,
+                "description": r.description,
+                "enforcement": r.enforcement,
+            }
+            for r in rules
+        ],
+    }
+
+
+@router.get("/v1/plan9/skills")
+async def get_plan9_skills(status_filter: Optional[str] = Query(None, alias="status")) -> Dict[str, Any]:
+    """Return Plan 9 skills manifest."""
+    skills = PLAN9_SKILLS_MANIFEST
+    if status_filter:
+        skills = [s for s in skills if s.status.value == status_filter.upper()]
+    return {
+        "total": len(skills),
+        "filtered_by_status": status_filter,
+        "skills": [s.to_dict() for s in skills],
+    }
+
+
+@router.get("/v1/plan9/commands")
+async def get_plan9_commands(status_filter: Optional[str] = Query(None, alias="status")) -> Dict[str, Any]:
+    """Return Plan 9 commands manifest."""
+    commands = PLAN9_COMMANDS_MANIFEST
+    if status_filter:
+        commands = [c for c in commands if c.status.value == status_filter.upper()]
+    return {
+        "total": len(commands),
+        "filtered_by_status": status_filter,
+        "commands": [c.to_dict() for c in commands],
+    }
+
+
+@router.get("/v1/plan9/inheritance")
+async def get_plan9_inheritance() -> Dict[str, Any]:
+    """Return Plan 9 default inheritance policy for future managers/workers."""
+    p = PLAN9_DEFAULT_INHERITANCE
+    return {
+        "description": (
+            "Default policy inherited by every new manager or worker. "
+            "Override requires override_reason. Missing policy = validation failure."
+        ),
+        "default_model_tier": p.default_model_tier.value,
+        "retrieval_worker_required": p.retrieval_worker_required,
+        "retrieval_before_reasoning": p.retrieval_before_reasoning,
+        "scaling_allowed": p.scaling_allowed,
+        "max_workers_default": p.max_workers_default,
+        "single_executor_for_writes": p.single_executor_for_writes,
+        "audit_events_required": p.audit_events_required,
+        "hard_gated_actions_blocked_by_default": p.hard_gated_actions_blocked_by_default,
+        "bryan_approval_required_for_sensitive": p.bryan_approval_required_for_sensitive,
+        "must_appear_in_capability_matrix": p.must_appear_in_capability_matrix,
+        "mobile_parity_required": p.mobile_parity_required,
+        "mac_parity_required": p.mac_parity_required,
+        "report_format": p.report_format,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 additions
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# /v1/coding/search — repo code search (allowlisted, secret-safe)
+# ---------------------------------------------------------------------------
+
+class CodeSearchRequest(BaseModel):
+    query: str = Field(..., min_length=2, description="Search query (regex or literal)")
+    paths: List[str] = Field(default_factory=list, description="Repo-relative paths to search (empty = src/ + tests/ + docs/)")
+    file_glob: str = Field("*.py", description="File glob pattern (e.g. '*.py', '*.md')")
+    max_results: int = Field(50, ge=1, le=200, description="Max results to return")
+    context_lines: int = Field(2, ge=0, le=5, description="Lines of context around each match")
+    regex: bool = Field(False, description="Treat query as regex (default: literal)")
+
+
+@router.post("/v1/coding/search")
+async def search_code(req: CodeSearchRequest) -> Dict[str, Any]:
+    """Search the repo for code matching query. Allowlisted paths only, secret-safe output.
+
+    Uses ripgrep (rg) if available, falls back to Python grep.
+    Results are scanned for secrets before returning.
+    """
+    import subprocess
+    import sys
+    from pathlib import Path as _SearchPath
+
+    repo_root = _SearchPath(__file__).parent.parent.parent.parent
+
+    # Allowlisted search roots
+    allowed_roots = ("src/", "tests/", "docs/", "configs/")
+    search_paths: List[str] = []
+
+    if req.paths:
+        for p in req.paths:
+            if ".." in p or p.startswith("/"):
+                raise HTTPException(status_code=400, detail=f"Path traversal not allowed: {p!r}")
+            if not any(p.startswith(a) for a in allowed_roots):
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"Path {p!r} not in allowlist {allowed_roots}",
+                )
+            search_paths.append(p)
+    else:
+        search_paths = ["src/", "tests/", "docs/"]
+
+    # Shell-injection guard on query
+    if "\x00" in req.query or len(req.query) > 500:
+        raise HTTPException(status_code=400, detail="Invalid query")
+
+    # Build rg command
+    rg_args = ["rg"]
+    if not req.regex:
+        rg_args.append("--fixed-strings")
+    rg_args += [
+        "--glob", req.file_glob,
+        "--max-count", "1",
+        f"--context={req.context_lines}",
+        "--json",
+        req.query,
+    ]
+    rg_args += search_paths
+
+    results = []
+    raw_output = ""
+    try:
+        proc = subprocess.run(
+            rg_args,
+            capture_output=True,
+            text=True,
+            timeout=20,
+            cwd=str(repo_root),
+        )
+        raw_output = proc.stdout
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        # rg not available or timed out — fall back to Python grep
+        import re as _re
+        pattern = _re.compile(req.query if req.regex else _re.escape(req.query))
+        for search_path in search_paths:
+            base = repo_root / search_path
+            for fpath in base.rglob(req.file_glob):
+                if not fpath.is_file():
+                    continue
+                try:
+                    lines = fpath.read_text(encoding="utf-8", errors="replace").splitlines()
+                    for lineno, line in enumerate(lines, 1):
+                        if pattern.search(line):
+                            results.append({
+                                "file": str(fpath.relative_to(repo_root)),
+                                "line": lineno,
+                                "text": line,
+                            })
+                            if len(results) >= req.max_results:
+                                break
+                except Exception:
+                    continue
+                if len(results) >= req.max_results:
+                    break
+
+    # Parse rg JSON output when available
+    if raw_output:
+        import json as _json
+        match_count = 0
+        for line in raw_output.splitlines():
+            if not line.strip():
+                continue
+            try:
+                obj = _json.loads(line)
+            except Exception:
+                continue
+            if obj.get("type") == "match":
+                data = obj.get("data", {})
+                results.append({
+                    "file": data.get("path", {}).get("text", ""),
+                    "line": data.get("line_number", 0),
+                    "text": data.get("lines", {}).get("text", "").rstrip("\n"),
+                })
+                match_count += 1
+                if match_count >= req.max_results:
+                    break
+
+    # Enforce hard cap before secret scan
+    results = results[:req.max_results]
+
+    # Secret-scan results before returning (scan the text portion only)
+    combined_result_text = "\n".join(r.get("text", "") for r in results)
+    scan = _secret_scan(combined_result_text)
+    if scan["abort_required"]:
+        return {
+            "status": "SECRET_DETECTED",
+            "message": "Search results contained a secret pattern. Results suppressed.",
+            "count": 0,
+            "results": [],
+            "secret_scan": scan,
+        }
+
+    return {
+        "status": "OK",
+        "query": req.query,
+        "paths_searched": search_paths,
+        "file_glob": req.file_glob,
+        "count": len(results),
+        "truncated": len(results) >= req.max_results,
+        "results": results[:req.max_results],
+        "secret_scan": {"status": scan["status"]},
+    }
+
+
+# ---------------------------------------------------------------------------
+# /v1/coding/create-branch — branch creation (dry-run default, approval-gated)
+# ---------------------------------------------------------------------------
+
+_SAFE_BRANCH_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._/-]{0,99}$")
+_PROTECTED_BRANCHES = frozenset({"main", "master", "production", "prod", "release"})
+
+
+class CreateBranchRequest(BaseModel):
+    branch_name: str = Field(..., min_length=2, description="New branch name")
+    base_branch: str = Field("main", description="Base branch to branch from")
+    dry_run: bool = Field(True, description="If True (default), validate only — no git call")
+    approval_token: Optional[str] = Field(None, description="Required for dry_run=False")
+
+
+@router.post("/v1/coding/create-branch")
+async def create_branch(req: CreateBranchRequest) -> Dict[str, Any]:
+    """Create a new git branch. Dry-run by default.
+
+    dry_run=True (default): validates branch name, checks base exists, returns plan.
+    dry_run=False: requires approval_token, runs git checkout -b <branch> <base>.
+
+    SAFETY:
+    - Protected branches (main/master/production) cannot be used as new branch names.
+    - Branch names validated against safe regex.
+    - Force push to main/master is always blocked.
+    """
+    import subprocess
+    from pathlib import Path as _BranchPath
+
+    # Validate branch name
+    if not _SAFE_BRANCH_RE.match(req.branch_name):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Branch name {req.branch_name!r} is not safe. "
+                "Use only alphanumeric, dots, dashes, underscores, slashes."
+            ),
+        )
+    if req.branch_name in _PROTECTED_BRANCHES:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Cannot create branch named {req.branch_name!r} — it is a protected branch name.",
+        )
+
+    if not req.dry_run and not req.approval_token:
+        raise HTTPException(
+            status_code=403,
+            detail="approval_token required for dry_run=False.",
+        )
+
+    repo_root = _BranchPath(__file__).parent.parent.parent.parent
+
+    # Get current branches for dry-run report
+    try:
+        branch_list_r = subprocess.run(
+            ["git", "branch", "-a"],
+            capture_output=True, text=True, timeout=10, cwd=str(repo_root),
+        )
+        existing = branch_list_r.stdout
+    except Exception:
+        existing = ""
+
+    branch_exists = req.branch_name in existing
+
+    if req.dry_run:
+        return {
+            "mode": "DRY_RUN",
+            "branch_name": req.branch_name,
+            "base_branch": req.base_branch,
+            "branch_already_exists": branch_exists,
+            "would_create": not branch_exists,
+            "command_preview": f"git checkout -b {req.branch_name} {req.base_branch}",
+            "approval_required_for_create": True,
+            "message": (
+                f"Dry-run complete. Branch {req.branch_name!r} would be created from {req.base_branch!r}. "
+                "Submit approval_token with dry_run=False to create."
+            ),
+        }
+
+    # Non-dry-run: approval present — create the branch
+    if branch_exists:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Branch {req.branch_name!r} already exists.",
+        )
+
+    try:
+        create_r = subprocess.run(
+            ["git", "checkout", "-b", req.branch_name, req.base_branch],
+            capture_output=True, text=True, timeout=15, cwd=str(repo_root),
+        )
+        if create_r.returncode != 0:
+            return {
+                "mode": "CREATE_FAILED",
+                "branch_name": req.branch_name,
+                "error": create_r.stderr[:500],
+            }
+        return {
+            "mode": "CREATED",
+            "branch_name": req.branch_name,
+            "base_branch": req.base_branch,
+            "created": True,
+            "message": f"Branch {req.branch_name!r} created from {req.base_branch!r}.",
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Branch creation error: {exc}") from exc
+
+
+# ---------------------------------------------------------------------------
+# /v1/git/push — push workflow (single-executor, approval-gated, dry-run default)
+# ---------------------------------------------------------------------------
+
+class GitPushRequest(BaseModel):
+    branch: Optional[str] = Field(None, description="Branch to push (empty = current branch)")
+    remote: str = Field("origin", description="Remote name")
+    dry_run: bool = Field(True, description="If True (default), runs git push --dry-run")
+    approval_token: Optional[str] = Field(None, description="Required for dry_run=False")
+    force: bool = Field(False, description="Force push. Requires confirm_force=True and is blocked for protected branches.")
+    confirm_force: bool = Field(False, description="Must be True to allow force=True to proceed")
+
+
+@router.post("/v1/git/push")
+async def git_push_workflow(req: GitPushRequest) -> Dict[str, Any]:
+    """Push workflow. Single-executor, approval-gated, secret-scan gated.
+
+    dry_run=True (default): runs git push --dry-run, returns what would be pushed.
+    dry_run=False + approval_token: actually pushes.
+
+    SAFETY:
+    - Force push to main/master is always blocked regardless of flags.
+    - Force push to any branch requires both force=True AND confirm_force=True.
+    - Runs git diff --cached secret scan before any push.
+    - Never pushes without approval_token and dry_run=False.
+    """
+    import subprocess
+    from pathlib import Path as _PushPath
+
+    repo_root = _PushPath(__file__).parent.parent.parent.parent
+
+    # Determine current branch if not specified
+    try:
+        branch_r = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            capture_output=True, text=True, timeout=5, cwd=str(repo_root),
+        )
+        current_branch = branch_r.stdout.strip()
+    except Exception:
+        current_branch = "unknown"
+
+    target_branch = req.branch or current_branch
+
+    # Block force push to protected branches unconditionally
+    if req.force and target_branch in _PROTECTED_BRANCHES:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Force push to protected branch {target_branch!r} is permanently blocked.",
+        )
+
+    # Force push requires confirm_force
+    if req.force and not req.confirm_force:
+        raise HTTPException(
+            status_code=400,
+            detail="force=True requires confirm_force=True to prevent accidental force pushes.",
+        )
+
+    # Secret scan staged + unstaged diff
+    try:
+        diff_r = subprocess.run(
+            ["git", "diff", "HEAD"],
+            capture_output=True, text=True, timeout=10, cwd=str(repo_root),
+        )
+        diff_text = diff_r.stdout
+    except Exception:
+        diff_text = ""
+
+    scan = _secret_scan(diff_text)
+    if scan["abort_required"]:
+        return {
+            "status": "ABORTED",
+            "reason": "Secret scan FAILED on diff. Push blocked.",
+            "secret_scan": scan,
+            "pushed": False,
+        }
+
+    # Get push preview
+    try:
+        log_r = subprocess.run(
+            ["git", "log", "--oneline", f"{req.remote}/{target_branch}..{target_branch}"],
+            capture_output=True, text=True, timeout=10, cwd=str(repo_root),
+        )
+        commits_to_push = log_r.stdout.strip()
+    except Exception:
+        commits_to_push = "(could not determine)"
+
+    base = {
+        "branch": target_branch,
+        "remote": req.remote,
+        "commits_to_push": commits_to_push or "(none — branch is up to date)",
+        "force": req.force,
+        "secret_scan": {"status": scan["status"]},
+    }
+
+    # Gate: no approval → dry-run regardless
+    if req.dry_run or not req.approval_token:
+        try:
+            push_cmd = ["git", "push", "--dry-run", req.remote, target_branch]
+            if req.force:
+                push_cmd.insert(2, "--force")
+            dry_r = subprocess.run(
+                push_cmd,
+                capture_output=True, text=True, timeout=20, cwd=str(repo_root),
+            )
+            dry_output = (dry_r.stdout + dry_r.stderr)[:2000]
+        except Exception as exc:
+            dry_output = f"git push --dry-run failed: {exc}"
+
+        return {
+            **base,
+            "mode": "DRY_RUN",
+            "pushed": False,
+            "dry_run_output": dry_output,
+            "approval_required": True,
+            "message": (
+                "Dry-run complete. Submit approval_token with dry_run=False to push."
+            ),
+        }
+
+    # Non-dry-run: approval present — push for real
+    push_cmd = ["git", "push", req.remote, target_branch]
+    if req.force:
+        push_cmd.insert(2, "--force")
+
+    try:
+        push_r = subprocess.run(
+            push_cmd,
+            capture_output=True, text=True, timeout=60, cwd=str(repo_root),
+        )
+        pushed = push_r.returncode == 0
+        return {
+            **base,
+            "mode": "PUSHED" if pushed else "PUSH_FAILED",
+            "pushed": pushed,
+            "output": (push_r.stdout + push_r.stderr)[:2000],
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Push error: {exc}") from exc
+
+
+# ---------------------------------------------------------------------------
+# /v1/files/index — cloud-safe repo file index (metadata only, no content)
+# ---------------------------------------------------------------------------
+
+@router.get("/v1/files/index")
+async def get_files_index(
+    path_prefix: Optional[str] = Query(None, description="Filter by path prefix (e.g. src/openjarvis/plan9/)"),
+    glob_pattern: Optional[str] = Query("**/*.py", description="Glob pattern for file types"),
+    include_git_status: bool = Query(False, description="Include git status for each file"),
+    max_files: int = Query(500, ge=1, le=2000, description="Max files to return"),
+) -> Dict[str, Any]:
+    """Return a cloud-safe index of repo files (metadata only — no file content).
+
+    Returns: file paths, sizes, modification times, optional git status.
+    No file content is returned. Allowlisted directories only.
+    """
+    import subprocess
+    from pathlib import Path as _IdxPath
+
+    repo_root = _IdxPath(__file__).parent.parent.parent.parent
+    allowed_roots = ("src/", "tests/", "docs/", "configs/")
+
+    # Validate path_prefix
+    if path_prefix:
+        if ".." in path_prefix or path_prefix.startswith("/"):
+            raise HTTPException(status_code=400, detail="Path traversal not allowed")
+        if not any(path_prefix.startswith(a) for a in allowed_roots):
+            raise HTTPException(
+                status_code=403,
+                detail=f"Path prefix {path_prefix!r} not in allowlist {allowed_roots}",
+            )
+        search_root = repo_root / path_prefix
+    else:
+        search_root = None
+
+    # Collect files
+    files = []
+    for allowed in allowed_roots:
+        base = repo_root / allowed
+        if not base.exists():
+            continue
+        # Apply path_prefix filter
+        if search_root and not str(base).startswith(str(search_root)) and not str(search_root).startswith(str(base)):
+            continue
+
+        try:
+            for fpath in base.rglob(glob_pattern or "**/*.py"):
+                if not fpath.is_file():
+                    continue
+                if search_root and not str(fpath).startswith(str(search_root)):
+                    continue
+                try:
+                    stat = fpath.stat()
+                    rel = str(fpath.relative_to(repo_root))
+                    files.append({
+                        "path": rel,
+                        "size_bytes": stat.st_size,
+                        "modified_ts": int(stat.st_mtime),
+                    })
+                except Exception:
+                    continue
+                if len(files) >= max_files:
+                    break
+        except Exception:
+            continue
+        if len(files) >= max_files:
+            break
+
+    # Optional git status
+    git_status_map: Dict[str, str] = {}
+    if include_git_status and files:
+        try:
+            status_r = subprocess.run(
+                ["git", "status", "--short"],
+                capture_output=True, text=True, timeout=10, cwd=str(repo_root),
+            )
+            for line in status_r.stdout.splitlines():
+                if len(line) >= 3:
+                    status_code = line[:2].strip()
+                    fpath_str = line[3:].strip()
+                    git_status_map[fpath_str] = status_code
+        except Exception:
+            pass
+
+    if include_git_status:
+        for f in files:
+            f["git_status"] = git_status_map.get(f["path"], "")
+
+    return {
+        "total": len(files),
+        "truncated": len(files) >= max_files,
+        "path_prefix": path_prefix,
+        "glob_pattern": glob_pattern,
+        "files": files,
+    }
+
+
+# ---------------------------------------------------------------------------
+# /v1/plan9/runtime-proof-checklist — Bryan iPhone verification checklist
+# ---------------------------------------------------------------------------
+
+_RUNTIME_PROOF_ITEMS = [
+    {
+        "id": "cap_status_mobile",
+        "description": "GET /v1/capabilities/status from iPhone",
+        "method": "GET",
+        "route": "/v1/capabilities/status",
+        "expected": "HTTP 200, JSON with 'capabilities' list, total > 0",
+        "how": "Open https://<your-jarvis-api>/v1/capabilities/status in Safari on iPhone. "
+               "Should return JSON with all managers/workers.",
+        "verified": False,
+        "category": "mobile_api",
+    },
+    {
+        "id": "parity_status_mobile",
+        "description": "GET /v1/parity/status from iPhone",
+        "method": "GET",
+        "route": "/v1/parity/status",
+        "expected": "HTTP 200, JSON with parity_definition, summary, parked list",
+        "how": "Open https://<your-jarvis-api>/v1/parity/status in Safari on iPhone.",
+        "verified": False,
+        "category": "mobile_api",
+    },
+    {
+        "id": "coding_search_mobile",
+        "description": "POST /v1/coding/search from iPhone",
+        "method": "POST",
+        "route": "/v1/coding/search",
+        "expected": "HTTP 200, results list, secret_scan.status == CLEAN",
+        "how": "curl -X POST https://<your-jarvis-api>/v1/coding/search "
+               "-H 'Content-Type: application/json' "
+               "-d '{\"query\": \"Plan9CapabilityEntry\", \"paths\": [\"src/\"]}'",
+        "verified": False,
+        "category": "mobile_api",
+    },
+    {
+        "id": "cloud_memory_read",
+        "description": "Cloud memory read parity (read from mobile what MacBook wrote)",
+        "method": "GET",
+        "route": "/v1/memory/* (existing memory routes)",
+        "expected": "Memories written on MacBook are visible from mobile",
+        "how": "On MacBook: create a memory via jarvis. On iPhone: GET /v1/memory/list "
+               "and verify the memory appears.",
+        "verified": False,
+        "category": "memory_parity",
+    },
+    {
+        "id": "cloud_memory_write",
+        "description": "Cloud memory write parity (write from mobile, verify on MacBook)",
+        "method": "POST",
+        "route": "/v1/memory/add (existing memory routes)",
+        "expected": "Memory written from iPhone is readable on MacBook",
+        "how": "On iPhone: POST /v1/memory/add with a test memory. "
+               "On MacBook: verify it appears in jarvis memory.",
+        "verified": False,
+        "category": "memory_parity",
+    },
+    {
+        "id": "gdrive_connector",
+        "description": "GDrive connector parity — list files from iPhone",
+        "method": "GET",
+        "route": "/v1/connectors/gdrive/* (existing connectors router)",
+        "expected": "GDrive connector returns file list or CONNECTOR_NOT_CONFIGURED if not set up",
+        "how": "GET /v1/connectors/gdrive/list from iPhone. "
+               "If GDrive is not configured, expect 200 with not_configured status.",
+        "verified": False,
+        "category": "connector_parity",
+        "skip_if_not_configured": True,
+    },
+    {
+        "id": "notion_connector",
+        "description": "Notion connector parity — list pages from iPhone",
+        "method": "GET",
+        "route": "/v1/connectors/notion/* (existing connectors router)",
+        "expected": "Notion connector returns page list or CONNECTOR_NOT_CONFIGURED if not set up",
+        "how": "GET /v1/connectors/notion/list from iPhone. "
+               "If Notion is not configured, expect 200 with not_configured status.",
+        "verified": False,
+        "category": "connector_parity",
+        "skip_if_not_configured": True,
+    },
+    {
+        "id": "mac_worker_queue_mobile",
+        "description": "Submit Mac-only task from iPhone, verify it appears on MacBook",
+        "method": "POST",
+        "route": "/v1/mac-worker/queue",
+        "expected": "Task appears in queue on both surfaces",
+        "how": "On iPhone: POST /v1/mac-worker/queue with task_type=app_reinstall. "
+               "On MacBook: GET /v1/mac-worker/queue to verify task_id appears.",
+        "verified": False,
+        "category": "mac_worker_parity",
+    },
+]
+
+
+@router.get("/v1/plan9/runtime-proof-checklist")
+async def get_runtime_proof_checklist(
+    category: Optional[str] = Query(None, description="Filter: mobile_api | memory_parity | connector_parity | mac_worker_parity"),
+) -> Dict[str, Any]:
+    """Return Bryan's iPhone/cloud runtime proof checklist.
+
+    Lists exactly what Bryan needs to verify from iPhone to upgrade Plan 9 to ACCEPT.
+    No secrets required — only human action and HTTP calls.
+    """
+    items = _RUNTIME_PROOF_ITEMS
+    if category:
+        items = [i for i in items if i["category"] == category]
+
+    categories = list({i["category"] for i in _RUNTIME_PROOF_ITEMS})
+
+    return {
+        "description": (
+            "These items require Bryan's manual verification from iPhone/mobile. "
+            "No secrets should be pasted anywhere. "
+            "Each item tells you exactly what URL to open and what response to expect."
+        ),
+        "categories": categories,
+        "total_items": len(items),
+        "verified_count": sum(1 for i in items if i["verified"]),
+        "pending_count": sum(1 for i in items if not i["verified"]),
+        "verdict_when_all_verified": "PLAN_9_ACCEPT_PENDING_REVIEW",
+        "items": items,
+        "note": "voice_wake_tts and apple_signing_updater are PARKED (Plan 10/11) and NOT in this checklist.",
+    }

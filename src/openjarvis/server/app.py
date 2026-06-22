@@ -37,6 +37,7 @@ from openjarvis.server.life_os_routes import router as life_os_router
 from openjarvis.server.workstream_routes import router as workstream_router
 from openjarvis.server.goals_routes import router as goals_router
 from openjarvis.server.self_upgrade_routes import router as self_upgrade_router
+from openjarvis.server.plan9_routes import router as plan9_router
 
 logger = logging.getLogger(__name__)
 
@@ -336,6 +337,7 @@ def create_app(
     app.include_router(workstream_router)
     app.include_router(goals_router)
     app.include_router(self_upgrade_router)
+    app.include_router(plan9_router)
     include_all_routes(app)
 
     # Restore SendBlue channel bindings from database on startup

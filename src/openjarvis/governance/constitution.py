@@ -473,6 +473,53 @@ STRICT_OPERATING_RULES_PLATFORMS = (
 
 
 # ===========================================================================
+# Plan 9 — Cross-Device Parity Rules (additive to all above)
+# ===========================================================================
+#
+# Plan 9 scope: Full Cross-Device Jarvis Parity / Mobile-Cloud-MacBook
+# Operator Completion. These rules extend (do not replace) the existing rules.
+#
+# Full machine-readable Plan 9 doctrine: openjarvis.plan9
+# Human-readable: docs/PLAN9_CROSS_DEVICE_PARITY.md
+
+PLAN9_CROSS_DEVICE_PARITY_RULES = [
+    "Plan 9 parity: whatever Bryan can do on MacBook, he must be able to do from mobile/cloud.",
+    "Plan 9 parity: whatever Bryan can do from mobile/cloud, he must see/control from MacBook.",
+    "Plan 9 exception: rebuilding/reinstalling /Applications/OpenJarvis.app is MacBook-only (accepted permanent exception).",
+    "Plan 9 parked: voice/wake/TTS is PARKED until Plan 10. Do not reopen in Plan 9.",
+    "Plan 9 parked: Apple signing/auto-updater is PARKED until Plan 11. Do not reopen in Plan 9.",
+    "Plan 9 parked: Cursor rules are NOT part of Plan 9. Future roadmap only.",
+    "Plan 9 capability status: use CLOUD_LIVE / LOCAL_LIVE / CROSS_DEVICE_LIVE / QUEUED_MAC_ONLY / APPROVAL_REQUIRED / PARKED / MISSING / UNSAFE / UNKNOWN_NEEDS_PROOF.",
+    "Plan 9 managers: all 17 discovered managers must be inventoried, routed, and have parity status.",
+    "Plan 9 workers: all 30 discovered workers must be inventoried, routed, and have parity status.",
+    "Plan 9 future-proof: new managers/workers automatically inherit default routing, retrieval, audit, and parity policies.",
+    "Plan 9 model routing: cheap for reads/retrieval; balanced for normal work; best only for high-risk/architecture/security.",
+    "Plan 9 retrieval: every team has a cheap retrieval worker before expensive reasoning.",
+    "Plan 9 parallel: safe+independent = parallel; risky/dependent/state-changing = sequential/locked/approval-gated.",
+    "Plan 9 elastic pools: scale same-role workers; single executor only for commits/deploys/destructive ops.",
+    "Plan 9 batch integration: workers draft patches in parallel; Batch Integration Manager produces single coherent diff.",
+    "Plan 9 integration review: Integration Review Manager independently verifies all items present in final diff.",
+    "Plan 9 verdict: use PLAN_9_ACCEPT_PENDING_REVIEW / PLAN_9_LIMITED_ACCEPT_PENDING_REVIEW / PLAN_9_HOLD / PLAN_9_BLOCKED / PLAN_9_FAIL / PLAN_9_UNSAFE.",
+]
+
+PLAN9_PARKED = {
+    "voice_wake_tts": "PARKED until Plan 10",
+    "apple_signing_updater": "PARKED until Plan 11",
+    "app_reinstall_mac": "QUEUED_MAC_ONLY (accepted permanent exception)",
+    "cursor_rules": "NOT part of Plan 9 — future roadmap",
+}
+
+PLAN9_VERDICT_TYPES = [
+    "PLAN_9_ACCEPT_PENDING_REVIEW",
+    "PLAN_9_LIMITED_ACCEPT_PENDING_REVIEW",
+    "PLAN_9_HOLD",
+    "PLAN_9_BLOCKED",
+    "PLAN_9_FAIL",
+    "PLAN_9_UNSAFE",
+]
+
+
+# ===========================================================================
 # Constitution summary (machine-readable)
 # ===========================================================================
 
@@ -489,6 +536,9 @@ CONSTITUTION = {
     "hard_gate_actions": sorted(HARD_GATE_ACTIONS),
     "always_approval_agents": sorted(ALWAYS_APPROVAL_AGENTS),
     "approval_required_risk_levels": sorted(APPROVAL_REQUIRED_RISK_LEVELS),
+    "plan9_cross_device_parity_rules": PLAN9_CROSS_DEVICE_PARITY_RULES,
+    "plan9_parked": PLAN9_PARKED,
+    "plan9_verdict_types": PLAN9_VERDICT_TYPES,
 }
 
 
@@ -508,6 +558,9 @@ __all__ = [
     "JARVIS_IDENTITY",
     "JARVIS_VERSION",
     "OMNIX_PROJECT",
+    "PLAN9_CROSS_DEVICE_PARITY_RULES",
+    "PLAN9_PARKED",
+    "PLAN9_VERDICT_TYPES",
     "ProjectProfile",
     "ProjectRegistry",
     "SCOPED_ACCESS_RULES",
