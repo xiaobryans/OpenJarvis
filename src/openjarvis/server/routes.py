@@ -1244,6 +1244,7 @@ async def health(request: Request):
 
     configured_model = getattr(request.app.state, "model", "unknown")
     chat_route_label = getattr(request.app.state, "_chat_route_label", None)
+    backend_source = _os.environ.get("OPENJARVIS_BACKEND_SOURCE", "external_or_unknown")
     openrouter_available = False
     try:
         from openjarvis.server.cloud_router import _load_keys, is_cloud_model
@@ -1266,6 +1267,7 @@ async def health(request: Request):
         "uptime_s": uptime_s,
         "engine": getattr(request.app.state, "engine_name", "unknown"),
         "model": configured_model,
+        "backend_source": backend_source,
         "model_routing": {
             "configured_model": configured_model,
             "is_local_fallback": is_local_fallback,

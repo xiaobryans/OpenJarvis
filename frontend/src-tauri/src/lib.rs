@@ -264,6 +264,20 @@ fn resolve_bin(name: &str) -> String {
     name.to_string()
 }
 
+/// Short git HEAD for commit parity checks (reuse vs respawn).
+fn git_head_short(root: &std::path::Path) -> Option<String> {
+    let out = std::process::Command::new("git")
+        .args(["rev-parse", "--short", "HEAD"])
+        .current_dir(root)
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if s.is_empty() { None } else { Some(s) }
+}
+
 /// Find the OpenJarvis project root (contains pyproject.toml).
 /// Checks OPENJARVIS_ROOT env var, walks up from the executable, then
 /// probes common clone locations.
@@ -1067,6 +1081,8 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
                     .and_then(|v| v.as_i64());
                 let existing_commit = fingerprint.get("git_commit")
                     .and_then(|v| v.as_str()).unwrap_or("unknown");
+                let existing_source = fingerprint.get("backend_source")
+                    .and_then(|v| v.as_str()).unwrap_or("external_or_unknown");
                 let existing_stt = fingerprint.get("stt_provider")
                     .and_then(|v| v.as_str()).unwrap_or("unknown");
                 let health_ok = http_status.is_success()
@@ -1090,20 +1106,29 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
 
                 let engine_ok = wanted_engine.is_empty() || existing_engine == wanted_engine;
                 let model_ok = wanted_model_arg.is_empty() || existing_model == wanted_model_arg;
+                let wanted_commit = project_root
+                    .as_ref()
+                    .and_then(|r| git_head_short(r))
+                    .unwrap_or_default();
+                let commit_ok = wanted_commit.is_empty()
+                    || existing_commit == wanted_commit
+                    || existing_commit == "unknown";
+                let source_ok = existing_source == "desktop_app";
 
-                if health_ok && engine_ok && model_ok {
-                    // Healthy OpenJarvis with compatible config — reuse it.
+                if health_ok && engine_ok && model_ok && commit_ok && source_ok {
+                    // Healthy app-spawned OpenJarvis with compatible config — reuse it.
                     {
                         let mut s = status.lock().await;
                         s.detail = format!(
-                            "Reusing existing OpenJarvis backend (pid={pid}, \
+                            "Reusing app-spawned OpenJarvis backend (pid={pid}, \
                              engine={engine}, model={model}, stt={stt}, \
-                             commit={commit}).",
+                             commit={commit}, source={source}).",
                             pid = existing_pid.map(|p| p.to_string()).unwrap_or("?".into()),
                             engine = existing_engine,
                             model = existing_model,
                             stt = existing_stt,
                             commit = existing_commit,
+                            source = existing_source,
                         );
                         s.server_ready = true;
                         s.phase = "ready".into();
@@ -1117,10 +1142,20 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
                     return;
                 }
 
-                // Stale or wrong-config OpenJarvis — SIGTERM its PID and respawn.
+                // Stale, external, or wrong-config OpenJarvis — SIGTERM its PID and respawn.
                 let mut mismatch = vec![];
                 if !engine_ok { mismatch.push(format!("engine: running={existing_engine:?} wanted={wanted_engine:?}")); }
                 if !model_ok  { mismatch.push(format!("model: running={existing_model:?} wanted={wanted_model_arg:?}")); }
+                if !commit_ok {
+                    mismatch.push(format!(
+                        "commit: running={existing_commit:?} wanted={wanted_commit:?}"
+                    ));
+                }
+                if !source_ok {
+                    mismatch.push(format!(
+                        "backend_source: running={existing_source:?} wanted=\"desktop_app\""
+                    ));
+                }
                 if !health_ok { mismatch.push(format!("health={http_status}")); }
 
                 {
@@ -1275,6 +1310,7 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
     for (key, value) in read_cloud_keys() {
         cmd.env(&key, &value);
     }
+    cmd.env("OPENJARVIS_BACKEND_SOURCE", "desktop_app");
     let jarvis_child = cmd.spawn();
 
     match jarvis_child {
