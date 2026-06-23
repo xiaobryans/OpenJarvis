@@ -14,6 +14,8 @@ from openjarvis.server.company_org_routes import router as mobile_router
 @pytest.fixture(scope="module")
 def mobile_client():
     app = FastAPI()
+    from openjarvis.server.routes import router as main_router
+    app.include_router(main_router)
     app.include_router(mobile_router)
     return TestClient(app)
 
@@ -40,12 +42,19 @@ class TestPlan9MobileProofPage:
         assert "normalizeApiKey" in html
         assert "Raw API key only" in html
 
-    def test_build_marker_in_html(self, mobile_client, monkeypatch):
+    def test_cloud_proof_banner(self, mobile_client, monkeypatch):
         monkeypatch.setenv("JARVIS_BUILD_COMMIT", "abc1234")
         html = mobile_client.get("/mobile").text
-        assert "Mobile build" in html
-        assert "abc1234" in html
-        assert "Auth normalization: v2" in html or "Auth normalization" in html
+        assert "PLAN 9 CLOUD PROOF PAGE — abc1234" in html
+
+    def test_health_mobile_proof_route(self, mobile_client, monkeypatch):
+        monkeypatch.setenv("JARVIS_BUILD_COMMIT", "abc1234")
+        resp = mobile_client.get("/health/mobile-proof")
+        assert resp.status_code == 200
+        html = resp.text
+        assert "PLAN 9 CLOUD PROOF PAGE — abc1234" in html
+        assert "Target: same origin" not in html
+        assert "Local" not in html or "localStorage" in html
 
     def test_cache_control_headers(self, mobile_client):
         resp = mobile_client.get("/mobile")

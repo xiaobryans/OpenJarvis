@@ -370,7 +370,8 @@ def create_app(
         except Exception as exc:
             logger.debug("Webhook routes init skipped: %s", exc)
 
-    # Serve static frontend assets if the static/ directory exists
+    # Serve static frontend assets if the static/ directory exists (local/desktop only).
+    # Cloud Dockerfile.full removes static/ — no React SPA or service worker on ECS.
     static_dir = pathlib.Path(__file__).parent / "static"
     if static_dir.is_dir():
         assets_dir = static_dir / "assets"
@@ -381,9 +382,14 @@ def create_app(
                 name="static-assets",
             )
 
+        _SPA_EXCLUDED = frozenset({"mobile", "health/mobile-proof"})
+
         @app.get("/{full_path:path}")
         async def spa_catch_all(full_path: str):
             """Serve static files directly, fall back to index.html for SPA routes."""
+            if full_path in _SPA_EXCLUDED or full_path.startswith("health/mobile-proof"):
+                from fastapi.responses import JSONResponse
+                return JSONResponse({"detail": "Not Found"}, status_code=404)
             if full_path:
                 candidate = (static_dir / full_path).resolve()
                 # Path traversal prevention

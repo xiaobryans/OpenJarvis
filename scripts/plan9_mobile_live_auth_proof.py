@@ -63,7 +63,7 @@ def main() -> int:
 
     EVIDENCE.mkdir(parents=True, exist_ok=True)
 
-    url = f"{CLOUD}/mobile?v={build}"
+    url = f"{CLOUD}/health/mobile-proof?v={build}"
     report: dict = {"url": url, "build": build, "cases": []}
 
     with sync_playwright() as p:
@@ -80,7 +80,7 @@ def main() -> int:
         page.wait_for_timeout(1500)
         body = page.inner_text("body")
         report["build_marker_visible"] = build in body or "Mobile build" in body
-        report["not_react_page"] = "AWS Always-On" not in body
+        report["not_react_page"] = "AWS Always-On" not in body.split("SW-safe URL")[0]
         report["header_mode_visible"] = "Header mode" in body
 
         report["cases"].append(_run_case(page, "raw_key", key))

@@ -66,7 +66,8 @@ COPY --from=rust-builder /wheels/ /tmp/wheels/
 RUN pip install --no-cache-dir uv && \
     uv pip install --system ".[server]" && \
     pip install --no-cache-dir /tmp/wheels/*.whl && \
-    rm -rf /tmp/wheels
+    rm -rf /tmp/wheels && \
+    rm -rf /app/src/openjarvis/server/static
 
 # ── Build-time validation ──────────────────────────────────────────────────
 # Fail the image build immediately if the Rust extension cannot be imported

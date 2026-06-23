@@ -1189,6 +1189,17 @@ async def server_info(request: Request):
     }
 
 
+@router.get("/health/mobile-proof")
+async def health_mobile_proof_page() -> Any:
+    """SW-safe Plan 9 mobile proof page (Workbox denylist includes /health/*).
+
+    Use this URL on iPhone Safari when a stale React service worker hijacks /mobile.
+    """
+    from openjarvis.server.mobile_proof_page import mobile_proof_response
+
+    return mobile_proof_response()
+
+
 @router.get("/health")
 async def health(request: Request):
     """Health check with identity fingerprint.

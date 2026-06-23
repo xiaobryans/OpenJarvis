@@ -14,6 +14,12 @@
   <link rel="manifest" href="/manifest.webmanifest">
   <title>Jarvis Mobile — Plan 9 Proof</title>
   <style>
+    .cloud-proof-banner {
+      background: #1e3a5f; border: 2px solid #3b82f6; padding: 14px 12px;
+      margin-bottom: 14px; border-radius: 8px; text-align: center;
+      font-weight: 700; font-family: monospace; font-size: 0.85rem;
+      color: #bfdbfe; letter-spacing: 0.04em;
+    }
     :root {
       --bg: #070b11; --surface: #111827; --border: #1f2937; --accent: #3b82f6;
       --text: #f9fafb; --muted: #6b7280; --warn: #f59e0b; --ok: #22c55e; --err: #ef4444;
@@ -88,6 +94,22 @@
   </style>
 </head>
 <body>
+  <div class="cloud-proof-banner" id="cloud-proof-banner">PLAN 9 CLOUD PROOF PAGE — {{MOBILE_BUILD_COMMIT}}</div>
+  <script>
+  /* Bypass stale React PWA service workers that hijack /mobile navigation on iPhone Safari. */
+  (function() {
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations().then(function(regs) {
+        regs.forEach(function(r) { r.unregister(); });
+      });
+    }
+    if ('caches' in window) {
+      caches.keys().then(function(names) {
+        names.forEach(function(n) { caches.delete(n); });
+      });
+    }
+  })();
+  </script>
   <h1>Jarvis Mobile</h1>
   <p class="subtitle">Plan 9 proof — cloud target: <span id="cloud-target"></span></p>
 
@@ -101,7 +123,7 @@
       <span class="status-label">Auth normalization</span>
       <span class="status-value">{{AUTH_NORM_VERSION}}</span>
     </div>
-    <p class="hint">If you see &quot;AWS Always-On&quot; tabs, you are on the React app — not this cloud proof page. Open a fresh Safari tab to this exact URL with <code>?v={{MOBILE_BUILD_COMMIT}}</code>.</p>
+    <p class="hint">SW-safe URL (use if /mobile shows React tabs): <code>/health/mobile-proof?v={{MOBILE_BUILD_COMMIT}}</code></p>
   </div>
 
   <div class="card">
