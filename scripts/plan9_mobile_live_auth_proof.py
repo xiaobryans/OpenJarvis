@@ -33,7 +33,7 @@ def _cloud_key() -> str:
 def _run_case(page, label: str, stored: str) -> dict:
     page.evaluate("localStorage.clear()")
     page.evaluate("(k) => localStorage.setItem('jarvis_mobile_api_key', k)", stored)
-    page.click('button:has-text("Test API Key")')
+    page.click('button.secondary[onclick="testApiKey()"]')
     page.wait_for_timeout(2500)
     text = page.inner_text("body")
     verdict_ok = "AUTHENTICATED" in text and "HTTP 200" in text
