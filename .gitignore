@@ -134,3 +134,13 @@ frontend/tsconfig.tsbuildinfo
 
 # Third-party runtime code (not committed)
 .external/
+
+# Apple signing / notarization (never commit credentials or profiles)
+*.provisionprofile
+*.mobileprovision
+*.p12
+*.cer
+**/AuthKey_*.p8
+.apple-signing/
+notarization/
+*.notarylog
