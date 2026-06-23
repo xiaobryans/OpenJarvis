@@ -120,6 +120,29 @@ interface PendingApproval {
   created_at: string;
 }
 
+type AuthVerdict = 'NO_AUTH_KEY' | 'KEY_SET_BUT_AUTH_FAILED' | 'AUTHENTICATED' | 'NOT_TESTED';
+
+interface EndpointFailure {
+  path: string;
+  status: number;
+}
+
+interface PanelLoads {
+  registry: boolean;
+  approvals: boolean;
+  audit: boolean;
+  workflow: boolean;
+  routing: boolean;
+  memory: boolean;
+}
+
+interface Plan9Registry {
+  managers?: number;
+  workers?: number;
+  roles?: unknown[];
+  summary?: { managers?: number; workers?: number };
+}
+
 interface ChatResult {
   success: boolean;
   response?: string;
@@ -262,7 +285,25 @@ export function MobilePage() {
   const [loading, setLoading] = useState(true);
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
   const [refreshing, setRefreshing] = useState(false);
-  const [authError, setAuthError] = useState(false);
+  const [authVerdict, setAuthVerdict] = useState<AuthVerdict>(() =>
+    getStoredApiKey() ? 'NOT_TESTED' : 'NO_AUTH_KEY',
+  );
+  const [endpointFailures, setEndpointFailures] = useState<EndpointFailure[]>([]);
+  const [testKeyResult, setTestKeyResult] = useState<string | null>(null);
+  const [panelLoads, setPanelLoads] = useState<PanelLoads>({
+    registry: false,
+    approvals: false,
+    audit: false,
+    workflow: false,
+    routing: false,
+    memory: false,
+  });
+  const [registry, setRegistry] = useState<Plan9Registry | null>(null);
+  const [auditData, setAuditData] = useState<unknown>(null);
+  const [workflowData, setWorkflowData] = useState<unknown>(null);
+  const [routingData, setRoutingData] = useState<unknown>(null);
+  const [connectorsData, setConnectorsData] = useState<unknown>(null);
+  const [scrollProof, setScrollProof] = useState(false);
   const [chatInput, setChatInput] = useState('');
   const [chatResult, setChatResult] = useState<ChatResult | null>(null);
   const [chatLoading, setChatLoading] = useState(false);
@@ -273,6 +314,7 @@ export function MobilePage() {
   const [showKeyInput, setShowKeyInput] = useState(false);
   const [keyDraft, setKeyDraft] = useState('');
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
 
   const isRemote = backendUrl.trim() !== '';
   const targetLabel = isRemote
@@ -283,7 +325,15 @@ export function MobilePage() {
     const base = url ?? backendUrl;
     const token = key ?? apiKey;
     setRefreshing(true);
-    setAuthError(false);
+    const failures: EndpointFailure[] = [];
+    const loads: PanelLoads = {
+      registry: false,
+      approvals: false,
+      audit: false,
+      workflow: false,
+      routing: false,
+      memory: false,
+    };
 
     // Public health first (no auth needed)
     try {
@@ -298,31 +348,110 @@ export function MobilePage() {
       setHealth({ reachable: false });
     }
 
-    // Auth-gated routes
-    try {
-      const res = await backendFetch(base, '/v1/memory/status', token);
-      if (res.status === 401 || res.status === 403) { setAuthError(true); }
-      else if (res.ok) setMemory(await res.json());
-    } catch { /* non-fatal */ }
+    const authedGet = async (path: string, onOk: (data: unknown) => void) => {
+      if (!token) return;
+      try {
+        const res = await backendFetch(base, path, token);
+        if (res.status === 401 || res.status === 403) {
+          failures.push({ path, status: res.status });
+          return;
+        }
+        if (res.ok) {
+          const data = await res.json();
+          onOk(data);
+        }
+      } catch { /* non-fatal */ }
+    };
 
-    try {
-      const res = await backendFetch(base, '/v1/mobile/continuity/status', token);
-      if (res.ok) setContinuity(await res.json());
-    } catch { /* non-fatal */ }
+    await authedGet('/v1/plan9/registry', (data) => {
+      loads.registry = true;
+      setRegistry(data as Plan9Registry);
+    });
+    await authedGet('/v1/memory/status', (data) => {
+      loads.memory = true;
+      setMemory(data as MemoryStatus);
+    });
+    await authedGet('/v1/mobile/continuity/status', (data) => {
+      setContinuity(data as ContinuityStatus);
+    });
+    await authedGet('/v1/authority/approvals/pending', (data) => {
+      loads.approvals = true;
+      const d = data as { actions?: PendingApproval[]; pending?: PendingApproval[] };
+      setApprovals(d.actions ?? d.pending ?? []);
+    });
+    await authedGet('/v1/authority/audit', (data) => {
+      loads.audit = true;
+      setAuditData(data);
+    });
+    await authedGet('/v1/coding/workflow/status', (data) => {
+      loads.workflow = true;
+      setWorkflowData(data);
+    });
+    await authedGet('/v1/model-routing/status', (data) => {
+      loads.routing = true;
+      setRoutingData(data);
+    });
+    await authedGet('/v1/connectors', (data) => {
+      setConnectorsData(data);
+    });
 
-    try {
-      const res = await backendFetch(base, '/v1/approvals/pending', token);
-      if (res.ok) {
-        const d = await res.json();
-        const list: PendingApproval[] = d.actions ?? d.pending ?? [];
-        setApprovals(list);
-      }
-    } catch { /* non-fatal */ }
+    setPanelLoads(loads);
+    setEndpointFailures(failures);
+
+    if (!token) {
+      setAuthVerdict('NO_AUTH_KEY');
+    } else if (loads.registry) {
+      setAuthVerdict('AUTHENTICATED');
+    } else if (failures.some((f) => f.path === '/v1/plan9/registry')) {
+      setAuthVerdict('KEY_SET_BUT_AUTH_FAILED');
+    } else if (failures.length > 0) {
+      setAuthVerdict('KEY_SET_BUT_AUTH_FAILED');
+    }
 
     setLastRefresh(new Date());
     setLoading(false);
     setRefreshing(false);
   };
+
+  const testApiKey = async () => {
+    if (!apiKey) {
+      setTestKeyResult('No key stored — enter and Save first');
+      setAuthVerdict('NO_AUTH_KEY');
+      return;
+    }
+    setTestKeyResult('Testing GET /v1/plan9/registry…');
+    try {
+      const res = await backendFetch(backendUrl, '/v1/plan9/registry', apiKey);
+      if (res.status === 200) {
+        setTestKeyResult('Test OK: /v1/plan9/registry → HTTP 200');
+        setAuthVerdict('AUTHENTICATED');
+        await fetchAll(undefined, apiKey);
+      } else {
+        setTestKeyResult(`Test FAILED: /v1/plan9/registry → HTTP ${res.status}`);
+        setAuthVerdict('KEY_SET_BUT_AUTH_FAILED');
+        setEndpointFailures([{ path: '/v1/plan9/registry', status: res.status }]);
+      }
+    } catch (e) {
+      setTestKeyResult(`Test error: ${String(e).slice(0, 80)}`);
+      setAuthVerdict('KEY_SET_BUT_AUTH_FAILED');
+    }
+  };
+
+  useEffect(() => {
+    document.documentElement.classList.add('mobile-proof-scroll');
+    return () => document.documentElement.classList.remove('mobile-proof-scroll');
+  }, []);
+
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el) return;
+    const obs = new IntersectionObserver(
+      ([entry]) => { if (entry?.isIntersecting) setScrollProof(true); },
+      { threshold: 0.25 },
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [loading]);
 
   useEffect(() => {
     fetchAll();
@@ -345,8 +474,15 @@ export function MobilePage() {
     setApiKey(k);
     setShowKeyInput(false);
     setKeyDraft('');
+    setAuthVerdict(k ? 'NOT_TESTED' : 'NO_AUTH_KEY');
+    setTestKeyResult(k ? 'Key saved — tap Test API Key' : null);
     fetchAll(undefined, k);
   };
+
+  const verdictColor =
+    authVerdict === 'AUTHENTICATED' ? '#22c55e'
+    : authVerdict === 'NOT_TESTED' ? '#f59e0b'
+    : '#ef4444';
 
   const handleChat = async () => {
     if (!chatInput.trim()) return;
@@ -426,11 +562,14 @@ export function MobilePage() {
 
   return (
     <div
+      className="mobile-proof-root"
       style={{
         maxWidth: '480px',
         margin: '0 auto',
-        padding: '16px 12px 40px',
-        minHeight: '100%',
+        padding: '16px 12px calc(env(safe-area-inset-bottom, 0px) + 5rem)',
+        minHeight: '100dvh',
+        overflowY: 'auto',
+        WebkitOverflowScrolling: 'touch',
         color: 'var(--color-text, #eee)',
         fontFamily: 'var(--font-sans, system-ui, sans-serif)',
       }}
@@ -582,23 +721,29 @@ export function MobilePage() {
         <span
           style={{
             fontSize: '10px',
-            background: apiKey
-              ? 'color-mix(in srgb, #22c55e 12%, transparent)'
-              : 'color-mix(in srgb, #ef4444 12%, transparent)',
-            color: apiKey ? '#22c55e' : '#ef4444',
-            border: `1px solid color-mix(in srgb, ${apiKey ? '#22c55e' : '#ef4444'} 25%, transparent)`,
+            background: `color-mix(in srgb, ${verdictColor} 12%, transparent)`,
+            color: verdictColor,
+            border: `1px solid color-mix(in srgb, ${verdictColor} 25%, transparent)`,
             borderRadius: '3px',
             padding: '1px 5px',
             cursor: 'pointer',
+            fontFamily: 'monospace',
           }}
           onClick={() => setShowKeyInput((x) => !x)}
         >
-          {apiKey ? 'AUTH ✓' : 'NO AUTH ⚠'}
+          {authVerdict}
         </span>
-        {authError && (
-          <span style={{ color: '#ef4444', fontSize: '10px' }}>401 — check API key</span>
-        )}
+        <span style={{ fontSize: '10px', color: 'var(--color-text-muted, #888)' }}>
+          key: {apiKey ? 'set (hidden)' : 'none'}
+        </span>
       </div>
+      {endpointFailures.length > 0 && (
+        <div style={{ fontSize: '10px', color: '#ef4444', marginBottom: '8px', fontFamily: 'monospace' }}>
+          {endpointFailures.map((f) => (
+            <div key={f.path}>{f.path} → HTTP {f.status}</div>
+          ))}
+        </div>
+      )}
 
       {/* API key input */}
       {showKeyInput && (
@@ -639,6 +784,18 @@ export function MobilePage() {
             >
               Save
             </button>
+            <button
+              onClick={testApiKey}
+              style={{
+                padding: '7px 12px', fontSize: '12px', borderRadius: '5px',
+                background: 'color-mix(in srgb, var(--color-accent, #4fd1ff) 12%, transparent)',
+                color: 'var(--color-accent, #4fd1ff)',
+                border: '1px solid color-mix(in srgb, var(--color-accent, #4fd1ff) 28%, transparent)',
+                cursor: 'pointer',
+              }}
+            >
+              Test API Key
+            </button>
             {apiKey && (
               <button
                 onClick={() => { storeApiKey(''); setApiKey(''); setShowKeyInput(false); }}
@@ -653,7 +810,26 @@ export function MobilePage() {
               </button>
             )}
           </div>
+          {testKeyResult && (
+            <div style={{ fontSize: '11px', color: 'var(--color-text-muted, #888)', marginTop: '6px', fontFamily: 'monospace' }}>
+              {testKeyResult}
+            </div>
+          )}
         </div>
+      )}
+
+      {!loading && (
+        <Card title="Mobile Proof Summary">
+          <Row label="Physical iPhone" value="manual proof required" />
+          <Row label="Cloud reachable" value={isReachable ? 'yes' : 'no'} dot={isReachable ? STATUS_COLOR.ok : STATUS_COLOR.error} />
+          <Row label="Authenticated" value={authVerdict === 'AUTHENTICATED' ? 'yes' : 'no'} dot={authVerdict === 'AUTHENTICATED' ? STATUS_COLOR.ok : STATUS_COLOR.warn} />
+          <Row label="Registry loaded" value={panelLoads.registry ? 'yes' : 'no'} />
+          <Row label="Approvals loaded" value={panelLoads.approvals ? 'yes' : 'no'} />
+          <Row label="Audit/workflow loaded" value={panelLoads.audit && panelLoads.workflow ? 'yes' : 'no'} />
+          <Row label="Routing loaded" value={panelLoads.routing ? 'yes' : 'no'} />
+          <Row label="Memory loaded" value={panelLoads.memory ? 'yes' : 'no'} />
+          <Row label="Scroll proof (reach bottom)" value={scrollProof ? 'yes' : 'no'} />
+        </Card>
       )}
 
       {loading ? (
@@ -709,6 +885,26 @@ export function MobilePage() {
                   value={memOS.vector_search?.replace('ACTIVE_', '').replace('BLOCKED_', '⚠ ') ?? '—'}
                 />
               </>
+            )}
+          </Card>
+
+          {/* Plan 9 Registry */}
+          <Card title="Plan 9 Registry (roles / managers / workers)">
+            {!apiKey && (
+              <div style={{ fontSize: '12px', color: '#f59e0b' }}>Set and test API key to load</div>
+            )}
+            {registry ? (
+              <>
+                <Row label="Managers" value={String(registry.managers ?? registry.summary?.managers ?? '—')} />
+                <Row label="Workers" value={String(registry.workers ?? registry.summary?.workers ?? '—')} />
+                <div style={{ fontSize: '11px', fontFamily: 'monospace', color: 'var(--color-text-muted, #888)', marginTop: '6px', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                  {JSON.stringify(registry.roles ?? registry, null, 2).slice(0, 600)}
+                </div>
+              </>
+            ) : (
+              <div style={{ fontSize: '13px', color: 'var(--color-text-muted, #888)' }}>
+                {apiKey ? 'Not loaded or auth failed' : 'No API key'}
+              </div>
             )}
           </Card>
 
@@ -825,6 +1021,38 @@ export function MobilePage() {
               )}
             </Card>
           )}
+
+          {/* Audit & Workflow */}
+          <Card title="Audit & Workflow Status">
+            {!panelLoads.audit && !panelLoads.workflow && (
+              <div style={{ fontSize: '13px', color: 'var(--color-text-muted, #888)' }}>
+                {!apiKey ? 'No API key' : 'Not loaded'}
+              </div>
+            )}
+            {auditData != null && (
+              <div style={{ fontSize: '11px', fontFamily: 'monospace', color: 'var(--color-text-muted, #888)', whiteSpace: 'pre-wrap', wordBreak: 'break-word', marginBottom: '8px' }}>
+                audit: {JSON.stringify(auditData, null, 2).slice(0, 400)}
+              </div>
+            )}
+            {workflowData != null && (
+              <div style={{ fontSize: '11px', fontFamily: 'monospace', color: 'var(--color-text-muted, #888)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                workflow: {JSON.stringify(workflowData, null, 2).slice(0, 400)}
+              </div>
+            )}
+          </Card>
+
+          {/* Model Routing */}
+          <Card title="Model Routing Status">
+            {routingData != null ? (
+              <div style={{ fontSize: '11px', fontFamily: 'monospace', color: 'var(--color-text-muted, #888)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                {JSON.stringify(routingData, null, 2).slice(0, 500)}
+              </div>
+            ) : (
+              <div style={{ fontSize: '13px', color: 'var(--color-text-muted, #888)' }}>
+                {!apiKey ? 'No API key' : 'Not loaded'}
+              </div>
+            )}
+          </Card>
 
           {/* Chat (remote: real LLM) */}
           {isRemote && (
@@ -992,30 +1220,40 @@ export function MobilePage() {
             )}
           </Card>
 
-          {/* Connector & Gate Status */}
-          <Card title="Connector & Gate Status">
-            {[
-              { label: 'GitHub', status: 'LIVE', color: 'var(--color-success, #22c55e)' },
-              { label: 'Gmail', status: 'BLOCKED — OAuth', color: 'var(--color-warn, #f59e0b)' },
-              { label: 'Calendar', status: 'BLOCKED — OAuth', color: 'var(--color-warn, #f59e0b)' },
-              { label: 'Slack', status: 'BLOCKED — token', color: 'var(--color-warn, #f59e0b)' },
-              { label: 'Telegram', status: 'BLOCKED — token', color: 'var(--color-warn, #f59e0b)' },
-              { label: 'Voice (US13)', status: 'PARKED', color: 'var(--color-text-muted, #666)' },
-              { label: 'Apple Signing', status: 'ENROLLMENT PENDING', color: '#f97316' },
-              { label: 'Plan 8 Authority', status: 'ACTIVE (Backend)', color: 'var(--color-success, #22c55e)' },
-              { label: 'Final Cutover', status: 'NOT STARTED', color: 'var(--color-text-muted, #666)' },
-            ].map(({ label, status, color }) => (
-              <div key={label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '5px 0', borderBottom: '1px solid color-mix(in srgb, var(--color-border, #333) 25%, transparent)', gap: 8 }}>
-                <span style={{ fontSize: 12, color: 'var(--color-text-muted, #aaa)' }}>{label}</span>
-                <span style={{ fontSize: 10, fontFamily: 'monospace', color, background: `color-mix(in srgb, ${color} 10%, transparent)`, padding: '2px 6px', borderRadius: 4, border: `1px solid color-mix(in srgb, ${color} 22%, transparent)`, whiteSpace: 'nowrap' }}>
-                  {status}
-                </span>
+          {/* Connector Status (live) */}
+          <Card title="Connector Status">
+            {connectorsData != null ? (
+              <div style={{ fontSize: '11px', fontFamily: 'monospace', color: 'var(--color-text-muted, #888)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                {JSON.stringify(connectorsData, null, 2).slice(0, 800)}
               </div>
-            ))}
+            ) : (
+              <div style={{ fontSize: '13px', color: 'var(--color-text-muted, #888)' }}>
+                {!apiKey ? 'No API key' : 'Not available or not loaded'}
+              </div>
+            )}
           </Card>
 
           {/* Plan 8B — Mobile Authority Cockpit */}
           <MobileAuthorityCockpit backendUrl={backendUrl} apiKey={apiKey} />
+
+          <section
+            ref={sentinelRef}
+            style={{
+              textAlign: 'center',
+              padding: '24px 16px',
+              marginTop: '12px',
+              marginBottom: '24px',
+              border: '2px dashed color-mix(in srgb, var(--color-border, #333) 70%, transparent)',
+              borderRadius: '10px',
+              color: 'var(--color-text-muted, #888)',
+              fontSize: '13px',
+              fontWeight: 700,
+              letterSpacing: '0.08em',
+              fontFamily: 'monospace',
+            }}
+          >
+            END OF MOBILE PROOF
+          </section>
 
           {/* Footer */}
           {lastRefresh && (

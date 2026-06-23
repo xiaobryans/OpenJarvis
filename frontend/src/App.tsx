@@ -194,6 +194,7 @@ export default function App() {
     <>
       <UpdateChecker />
       <Routes>
+        <Route path="mobile" element={<MobilePage />} />
         <Route element={<Layout />}>
           <Route index element={<JarvisCockpitPage />} />
           <Route path="classic" element={<JarvisHomePage />} />
@@ -207,7 +208,6 @@ export default function App() {
           <Route path="mission-control" element={<MissionControlPage />} />
           <Route path="workbench" element={<WorkbenchPage />} />
           <Route path="authority" element={<AuthorityPage />} />
-          <Route path="mobile" element={<MobilePage />} />
         </Route>
       </Routes>
       <Toaster position="bottom-right" />

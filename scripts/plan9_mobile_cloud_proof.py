@@ -105,7 +105,11 @@ def main() -> int:
             page.screenshot(path=str(shot), full_page=True)
             browser.close()
 
-        ui_ok = "cloud" in text.lower() or "remote" in text.lower() or "health" in text.lower()
+        ui_ok = (
+            "END OF MOBILE PROOF" in text
+            and "Mobile Proof Summary" in text
+            and ("AUTHENTICATED" in text or "KEY_SET" in text)
+        )
         api_ok = all(v.get("http") == 200 for v in api_report.values() if "/health" not in v or True)
         api_ok = api_report.get("/health", {}).get("http") == 200 and all(
             v.get("http") == 200 for k, v in api_report.items() if k != "/health"

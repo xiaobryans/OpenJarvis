@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#070b11">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Jarvis">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <title>Jarvis Mobile — Plan 9 Proof</title>
+  <style>
+    :root {
+      --bg: #070b11; --surface: #111827; --border: #1f2937; --accent: #3b82f6;
+      --text: #f9fafb; --muted: #6b7280; --warn: #f59e0b; --ok: #22c55e; --err: #ef4444;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html {
+      min-height: 100dvh;
+      overflow-y: auto;
+      overflow-x: hidden;
+      -webkit-overflow-scrolling: touch;
+    }
+    body {
+      background: var(--bg); color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      min-height: 100dvh;
+      overflow-y: auto;
+      overflow-x: hidden;
+      padding: 1rem 1rem calc(env(safe-area-inset-bottom, 0px) + 5rem);
+    }
+    h1 { font-size: 1.25rem; font-weight: 700; color: var(--accent); margin-bottom: 0.25rem; }
+    .subtitle { color: var(--muted); font-size: 0.8rem; margin-bottom: 1rem; }
+    .badge {
+      display: inline-block; padding: 2px 8px; border-radius: 4px;
+      font-size: 0.7rem; font-weight: 600; font-family: monospace;
+    }
+    .badge-ok { background: #064e3b; color: #d1fae5; }
+    .badge-warn { background: #78350f; color: #fef3c7; }
+    .badge-hold { background: #3b1f00; color: #fde68a; }
+    .badge-err { background: #450a0a; color: #fecaca; }
+    .badge-info { background: #1e3a5f; color: #bfdbfe; }
+    .card {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+      padding: 1rem; margin-bottom: 1rem;
+    }
+    .card h2 {
+      font-size: 0.85rem; font-weight: 600; color: var(--muted);
+      text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.75rem;
+    }
+    .status-row {
+      display: flex; justify-content: space-between; align-items: flex-start;
+      gap: 0.5rem; padding: 0.4rem 0; border-bottom: 1px solid var(--border);
+      font-size: 0.85rem;
+    }
+    .status-row:last-child { border-bottom: none; }
+    .status-label { color: var(--muted); flex-shrink: 0; }
+    .status-value { text-align: right; word-break: break-word; font-family: monospace; font-size: 0.78rem; }
+    input, textarea, select {
+      width: 100%; background: var(--bg); border: 1px solid var(--border);
+      color: var(--text); border-radius: 6px; padding: 0.6rem 0.8rem;
+      font-size: 0.9rem; margin-top: 0.5rem;
+    }
+    button {
+      background: var(--accent); color: white; border: none; border-radius: 6px;
+      padding: 0.6rem 1rem; font-size: 0.85rem; font-weight: 600; cursor: pointer;
+      margin-top: 0.5rem;
+    }
+    button.secondary { background: transparent; border: 1px solid var(--border); color: var(--text); }
+    button.danger { background: #991b1b; }
+    button:active { opacity: 0.85; }
+    .btn-row { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+    .btn-row button { flex: 1; min-width: 120px; }
+    .hint { font-size: 0.75rem; color: var(--muted); margin-top: 0.35rem; }
+    .fail-list { font-size: 0.75rem; color: var(--err); margin-top: 0.5rem; font-family: monospace; }
+    .fail-list div { padding: 0.15rem 0; }
+    #test-result { font-size: 0.75rem; margin-top: 0.5rem; font-family: monospace; word-break: break-all; }
+    .sentinel {
+      text-align: center; padding: 1.5rem 1rem; margin-top: 1rem;
+      border: 2px dashed var(--border); border-radius: 8px;
+      color: var(--muted); font-size: 0.85rem; font-weight: 700; letter-spacing: 0.08em;
+    }
+    .panel-body { font-size: 0.78rem; font-family: monospace; color: var(--muted); white-space: pre-wrap; word-break: break-word; max-height: 200px; overflow-y: auto; }
+  </style>
+</head>
+<body>
+  <h1>Jarvis Mobile</h1>
+  <p class="subtitle">Plan 9 proof — cloud target: <span id="cloud-target"></span></p>
+
+  <div class="card">
+    <h2>Auth &amp; API Key</h2>
+    <div class="status-row">
+      <span class="status-label">Key stored locally</span>
+      <span class="status-value" id="key-present">no</span>
+    </div>
+    <div class="status-row">
+      <span class="status-label">Auth verdict</span>
+      <span class="status-value"><span id="auth-verdict-badge" class="badge badge-hold">NOT_TESTED</span></span>
+    </div>
+    <p class="hint">Key saved in browser localStorage only — never displayed or logged.</p>
+    <input type="password" id="api-key-input" placeholder="Bearer token (OPENJARVIS_API_KEY)" autocomplete="off">
+    <div class="btn-row">
+      <button type="button" onclick="saveApiKey()">Save Key</button>
+      <button type="button" class="secondary" onclick="testApiKey()">Test API Key</button>
+      <button type="button" class="danger" onclick="clearApiKey()">Clear</button>
+    </div>
+    <div id="test-result"></div>
+    <div id="auth-failures" class="fail-list"></div>
+  </div>
+
+  <div class="card">
+    <h2>Mobile Proof Summary</h2>
+    <div class="status-row"><span class="status-label">Physical iPhone</span><span class="status-value">manual proof required</span></div>
+    <div class="status-row"><span class="status-label">Cloud reachable</span><span class="status-value" id="sum-cloud">no</span></div>
+    <div class="status-row"><span class="status-label">Authenticated</span><span class="status-value" id="sum-auth">no</span></div>
+    <div class="status-row"><span class="status-label">Registry loaded</span><span class="status-value" id="sum-registry">no</span></div>
+    <div class="status-row"><span class="status-label">Approvals loaded</span><span class="status-value" id="sum-approvals">no</span></div>
+    <div class="status-row"><span class="status-label">Audit/workflow loaded</span><span class="status-value" id="sum-audit">no</span></div>
+    <div class="status-row"><span class="status-label">Routing loaded</span><span class="status-value" id="sum-routing">no</span></div>
+    <div class="status-row"><span class="status-label">Memory loaded</span><span class="status-value" id="sum-memory">no</span></div>
+    <div class="status-row"><span class="status-label">Scroll proof (reach bottom)</span><span class="status-value" id="sum-scroll">no</span></div>
+    <button type="button" onclick="refreshAll()">Refresh All Panels</button>
+  </div>
+
+  <div class="card">
+    <h2>Health</h2>
+    <div id="panel-health" class="panel-body">Loading…</div>
+  </div>
+
+  <div class="card">
+    <h2>Plan 9 Registry (roles / managers / workers)</h2>
+    <div id="panel-registry" class="panel-body">Not loaded</div>
+  </div>
+
+  <div class="card">
+    <h2>Approvals Pending</h2>
+    <div id="panel-approvals" class="panel-body">Not loaded</div>
+  </div>
+
+  <div class="card">
+    <h2>Audit &amp; Workflow Status</h2>
+    <div id="panel-audit" class="panel-body">Not loaded</div>
+  </div>
+
+  <div class="card">
+    <h2>Model Routing Status</h2>
+    <div id="panel-routing" class="panel-body">Not loaded</div>
+  </div>
+
+  <div class="card">
+    <h2>Memory Status</h2>
+    <div id="panel-memory" class="panel-body">Not loaded</div>
+  </div>
+
+  <div class="card">
+    <h2>Cloud Target / MacBook-Off</h2>
+    <div id="panel-continuity" class="panel-body">Not loaded</div>
+  </div>
+
+  <div class="card">
+    <h2>Connector Status</h2>
+    <div id="panel-connectors" class="panel-body">Not loaded</div>
+  </div>
+
+  <div class="card">
+    <h2>Text Input (Fallback)</h2>
+    <p class="hint">Mic failure → use text fallback below. Voice: separate sprint (not in this proof).</p>
+    <textarea id="text-input" rows="3" placeholder="Type your request to Jarvis…"></textarea>
+    <button type="button" onclick="submitText()">Send to Jarvis</button>
+    <div id="status-output" class="hint" style="margin-top:0.5rem;"></div>
+  </div>
+
+  <div class="card sentinel" id="end-sentinel">END OF MOBILE PROOF</div>
+  <!-- continuity probe: /v1/continuity/macbook-off-status -->
+
+<script>
+const LS_KEY = 'jarvis_mobile_api_key';
+const LS_KEY_LEGACY = 'jarvis_api_key';
+
+const panels = {
+  health: { path: '/health', auth: false, el: 'panel-health' },
+  registry: { path: '/v1/plan9/registry', auth: true, el: 'panel-registry' },
+  approvals: { path: '/v1/authority/approvals/pending', auth: true, el: 'panel-approvals' },
+  audit: { path: '/v1/authority/audit', auth: true, el: 'panel-audit' },
+  workflow: { path: '/v1/coding/workflow/status', auth: true, el: 'panel-audit' },
+  routing: { path: '/v1/model-routing/status', auth: true, el: 'panel-routing' },
+  memory: { path: '/v1/memory/status', auth: true, el: 'panel-memory' },
+  continuity: { path: '/v1/mobile/continuity/status', auth: true, el: 'panel-continuity' },
+  connectors: { path: '/v1/connectors', auth: true, el: 'panel-connectors' },
+};
+
+let authVerdict = 'NOT_TESTED';
+let endpointFailures = [];
+let panelLoaded = {};
+
+function getApiKey() {
+  return localStorage.getItem(LS_KEY) || localStorage.getItem(LS_KEY_LEGACY) || '';
+}
+
+function setKeyPresentUi() {
+  const k = getApiKey();
+  document.getElementById('key-present').textContent = k ? 'yes (not shown)' : 'no';
+}
+
+function setAuthVerdict(verdict) {
+  authVerdict = verdict;
+  const badge = document.getElementById('auth-verdict-badge');
+  badge.textContent = verdict;
+  badge.className = 'badge ' + (
+    verdict === 'AUTHENTICATED' ? 'badge-ok' :
+    verdict === 'NO_AUTH_KEY' ? 'badge-warn' :
+    verdict === 'KEY_SET_BUT_AUTH_FAILED' ? 'badge-err' : 'badge-hold'
+  );
+  document.getElementById('sum-auth').textContent = verdict === 'AUTHENTICATED' ? 'yes' : 'no';
+}
+
+function renderFailures() {
+  const el = document.getElementById('auth-failures');
+  if (!endpointFailures.length) { el.innerHTML = ''; return; }
+  el.innerHTML = endpointFailures.map(f =>
+    '<div>' + f.path + ' → HTTP ' + f.status + '</div>'
+  ).join('');
+}
+
+async function apiFetch(path, auth) {
+  const headers = { Accept: 'application/json' };
+  const key = getApiKey();
+  if (auth && key) headers['Authorization'] = 'Bearer ' + key;
+  const r = await fetch(path, { headers });
+  let body = null;
+  try { body = await r.json(); } catch (_) { body = null; }
+  return { status: r.status, ok: r.ok, body };
+}
+
+function summarizeJson(data, maxLen) {
+  if (data == null) return '—';
+  const s = typeof data === 'string' ? data : JSON.stringify(data, null, 2);
+  return s.length > (maxLen || 1200) ? s.slice(0, maxLen || 1200) + '…' : s;
+}
+
+async function fetchPanel(name) {
+  const cfg = panels[name];
+  if (!cfg) return;
+  const el = document.getElementById(cfg.el);
+  if (!getApiKey() && cfg.auth) {
+    el.textContent = 'Set API key and Test to load';
+    panelLoaded[name] = false;
+    return;
+  }
+  try {
+    const res = await apiFetch(cfg.path, cfg.auth);
+    if (cfg.auth && (res.status === 401 || res.status === 403)) {
+      endpointFailures.push({ path: cfg.path, status: res.status });
+      el.textContent = 'HTTP ' + res.status + ' — auth failed';
+      panelLoaded[name] = false;
+      return;
+    }
+    if (!res.ok) {
+      el.textContent = 'HTTP ' + res.status;
+      panelLoaded[name] = false;
+      return;
+    }
+    panelLoaded[name] = true;
+    if (name === 'registry' && res.body) {
+      const m = res.body.managers ?? res.body.summary?.managers;
+      const w = res.body.workers ?? res.body.summary?.workers;
+      const roles = res.body.roles ?? res.body.registry;
+      el.textContent = 'managers: ' + (m ?? '?') + ', workers: ' + (w ?? '?') +
+        '\n' + summarizeJson(roles || res.body, 800);
+    } else if (name === 'health') {
+      document.getElementById('sum-cloud').textContent = res.ok ? 'yes' : 'no';
+      el.textContent = summarizeJson(res.body, 600);
+    } else if (name === 'workflow') {
+      const auditEl = document.getElementById('panel-audit');
+      auditEl.textContent = (auditEl.textContent || '') + '\n--- workflow ---\n' + summarizeJson(res.body, 400);
+    } else if (name === 'continuity') {
+      let extra = '';
+      try {
+        const mo = await apiFetch('/v1/continuity/macbook-off-status', false);
+        if (mo.ok && mo.body) extra = '\n--- macbook-off ---\n' + summarizeJson(mo.body, 300);
+      } catch (_) { /* non-fatal */ }
+      el.textContent = summarizeJson(res.body, 600) + extra;
+    } else {
+      el.textContent = summarizeJson(res.body, 900);
+    }
+  } catch (e) {
+    el.textContent = 'Error: ' + e.message;
+    panelLoaded[name] = false;
+  }
+}
+
+async function refreshAll() {
+  endpointFailures = [];
+  panelLoaded = {};
+  document.getElementById('auth-failures').innerHTML = '';
+  const key = getApiKey();
+  if (!key) {
+    setAuthVerdict('NO_AUTH_KEY');
+  } else if (authVerdict === 'NO_AUTH_KEY') {
+    setAuthVerdict('NOT_TESTED');
+  }
+  await fetchPanel('health');
+  if (key) {
+    await fetchPanel('registry');
+    await fetchPanel('approvals');
+    await fetchPanel('audit');
+    await fetchPanel('workflow');
+    await fetchPanel('routing');
+    await fetchPanel('memory');
+    await fetchPanel('continuity');
+    await fetchPanel('connectors');
+  } else {
+    ['registry','approvals','audit','routing','memory','continuity','connectors'].forEach(n => {
+      document.getElementById(panels[n].el).textContent = 'No API key';
+    });
+  }
+  if (key && panelLoaded.registry) {
+    setAuthVerdict('AUTHENTICATED');
+  } else if (key && endpointFailures.some(f => f.path === '/v1/plan9/registry')) {
+    setAuthVerdict('KEY_SET_BUT_AUTH_FAILED');
+  } else if (key && authVerdict === 'NOT_TESTED') {
+    /* keep NOT_TESTED until explicit test or registry load */
+  } else if (key && !panelLoaded.registry && endpointFailures.length) {
+    setAuthVerdict('KEY_SET_BUT_AUTH_FAILED');
+  }
+  document.getElementById('sum-registry').textContent = panelLoaded.registry ? 'yes' : 'no';
+  document.getElementById('sum-approvals').textContent = panelLoaded.approvals ? 'yes' : 'no';
+  document.getElementById('sum-audit').textContent = (panelLoaded.audit && panelLoaded.workflow) ? 'yes' : 'no';
+  document.getElementById('sum-routing').textContent = panelLoaded.routing ? 'yes' : 'no';
+  document.getElementById('sum-memory').textContent = panelLoaded.memory ? 'yes' : 'no';
+  renderFailures();
+}
+
+async function testApiKey() {
+  const out = document.getElementById('test-result');
+  const key = getApiKey();
+  if (!key) {
+    out.textContent = 'No key stored — enter and Save first';
+    setAuthVerdict('NO_AUTH_KEY');
+    return;
+  }
+  out.textContent = 'Testing GET /v1/plan9/registry…';
+  endpointFailures = [];
+  try {
+    const res = await apiFetch('/v1/plan9/registry', true);
+    if (res.status === 200) {
+      out.textContent = 'Test OK: /v1/plan9/registry → HTTP 200';
+      setAuthVerdict('AUTHENTICATED');
+      await refreshAll();
+    } else if (res.status === 401 || res.status === 403) {
+      out.textContent = 'Test FAILED: /v1/plan9/registry → HTTP ' + res.status;
+      endpointFailures = [{ path: '/v1/plan9/registry', status: res.status }];
+      setAuthVerdict('KEY_SET_BUT_AUTH_FAILED');
+      renderFailures();
+    } else {
+      out.textContent = 'Test result: /v1/plan9/registry → HTTP ' + res.status;
+      setAuthVerdict('KEY_SET_BUT_AUTH_FAILED');
+    }
+  } catch (e) {
+    out.textContent = 'Test error: ' + e.message;
+    setAuthVerdict('KEY_SET_BUT_AUTH_FAILED');
+  }
+}
+
+function saveApiKey() {
+  const k = document.getElementById('api-key-input').value.trim();
+  if (!k) return;
+  localStorage.setItem(LS_KEY, k);
+  localStorage.setItem(LS_KEY_LEGACY, k);
+  document.getElementById('api-key-input').value = '';
+  setKeyPresentUi();
+  setAuthVerdict('NOT_TESTED');
+  document.getElementById('test-result').textContent = 'Key saved — tap Test API Key';
+}
+
+function clearApiKey() {
+  localStorage.removeItem(LS_KEY);
+  localStorage.removeItem(LS_KEY_LEGACY);
+  setKeyPresentUi();
+  setAuthVerdict('NO_AUTH_KEY');
+  document.getElementById('test-result').textContent = '';
+  endpointFailures = [];
+  renderFailures();
+  refreshAll();
+}
+
+async function submitText() {
+  const text = document.getElementById('text-input').value.trim();
+  if (!text) return;
+  const apiKey = getApiKey();
+  const out = document.getElementById('status-output');
+  out.textContent = 'Sending…';
+  const headers = { 'Content-Type': 'application/json', Accept: 'application/json' };
+  if (apiKey) headers['Authorization'] = 'Bearer ' + apiKey;
+  try {
+    const r = await fetch('/v1/chat/completions', {
+      method: 'POST', headers,
+      body: JSON.stringify({
+        model: 'default',
+        messages: [{ role: 'user', content: text }],
+        stream: false
+      })
+    });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      out.textContent = 'Error ' + r.status + ': ' + (err.detail || JSON.stringify(err).slice(0, 200));
+      return;
+    }
+    const d = await r.json();
+    const reply = d?.choices?.[0]?.message?.content ?? JSON.stringify(d).slice(0, 400);
+    out.textContent = reply.slice(0, 800);
+  } catch (e) { out.textContent = 'Error: ' + e.message; }
+}
+
+document.getElementById('cloud-target').textContent = window.location.origin;
+
+const scrollObs = new IntersectionObserver(function(entries) {
+  if (entries[0] && entries[0].isIntersecting) {
+    document.getElementById('sum-scroll').textContent = 'yes';
+  }
+}, { threshold: 0.25 });
+scrollObs.observe(document.getElementById('end-sentinel'));
+
+setKeyPresentUi();
+if (!getApiKey()) setAuthVerdict('NO_AUTH_KEY');
+refreshAll();
+</script>
+</body>
+</html>
