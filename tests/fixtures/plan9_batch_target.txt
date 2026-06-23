@@ -1,0 +1,4 @@
+# Plan 9 batch integration fixture — safe allowlisted target.
+status=worker_a
+--- batch_integrator_merge ---
+review_marker=worker_b

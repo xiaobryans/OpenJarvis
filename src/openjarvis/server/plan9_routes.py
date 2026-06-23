@@ -98,6 +98,16 @@ from openjarvis.plan9.orchestration_policy import (
     BatchIntegrationPolicy,
     IntegrationReviewPolicy,
 )
+from openjarvis.plan9.orchestration_executor import (
+    batch_run_to_dict,
+    dag_run_to_dict,
+    get_batch_run,
+    get_dag_run,
+    get_last_batch_run,
+    get_last_dag_run,
+    run_batch_integration,
+    run_controlled_dag,
+)
 from openjarvis.plan9.mac_worker_queue import (
     MacTaskType,
     MacWorkerTask,
@@ -450,6 +460,43 @@ async def get_orchestration_policy_summary() -> Dict[str, Any]:
             "must_verify_tests_pass": review.must_verify_tests_pass,
         },
     }
+
+
+@router.post("/v1/orchestration/dag/run")
+async def orchestration_dag_run(req: OrchestrationDagRunRequest) -> Dict[str, Any]:
+    """Execute a controlled Plan 9 DAG with retrieval, parallel groups, and live task states."""
+    record = run_controlled_dag(task_description=req.task_description, scope=req.scope)
+    return dag_run_to_dict(record)
+
+
+@router.get("/v1/orchestration/dag/status")
+async def orchestration_dag_status(run_id: Optional[str] = None) -> Dict[str, Any]:
+    """Return DAG run status by id or the most recent run."""
+    record = get_dag_run(run_id) if run_id else get_last_dag_run()
+    if record is None:
+        return {"status": "no_runs", "run_id": run_id}
+    return dag_run_to_dict(record)
+
+
+@router.post("/v1/orchestration/batch/run")
+async def orchestration_batch_run(req: OrchestrationBatchRunRequest) -> Dict[str, Any]:
+    """Run same-file batch integration on allowlisted fixture with integrator + reviewer."""
+    record = run_batch_integration(
+        target_file=req.target_file,
+        worker_a_patch=req.worker_a_patch,
+        worker_b_patch=req.worker_b_patch,
+        run_tests=req.run_tests,
+    )
+    return batch_run_to_dict(record)
+
+
+@router.get("/v1/orchestration/batch/status")
+async def orchestration_batch_status(run_id: Optional[str] = None) -> Dict[str, Any]:
+    """Return batch integration run status by id or the most recent run."""
+    record = get_batch_run(run_id) if run_id else get_last_batch_run()
+    if record is None:
+        return {"status": "no_runs", "run_id": run_id}
+    return batch_run_to_dict(record)
 
 
 # ---------------------------------------------------------------------------
@@ -1426,6 +1473,18 @@ class GitPushRequest(BaseModel):
     approval_token: Optional[str] = Field(None, description="Required for dry_run=False")
     force: bool = Field(False, description="Force push. Requires confirm_force=True and is blocked for protected branches.")
     confirm_force: bool = Field(False, description="Must be True to allow force=True to proceed")
+
+
+class OrchestrationDagRunRequest(BaseModel):
+    task_description: str = Field(..., min_length=3, description="Controlled task description")
+    scope: str = Field("tests/fixtures", description="Retrieval scope (allowlisted paths only)")
+
+
+class OrchestrationBatchRunRequest(BaseModel):
+    target_file: str = Field(..., description="Allowlisted fixture file path")
+    worker_a_patch: str = Field(..., min_length=1, description="Worker A proposed content")
+    worker_b_patch: str = Field(..., min_length=1, description="Worker B proposed content")
+    run_tests: bool = Field(True, description="Run pytest after integration")
 
 
 class CodingWorkflowRequest(BaseModel):

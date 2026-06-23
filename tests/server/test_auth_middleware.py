@@ -7,6 +7,7 @@ import pytest
 pytest.importorskip("fastapi", reason="openjarvis[server] not installed")
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.testclient import TestClient
 
 from openjarvis.server.auth_middleware import AuthMiddleware
@@ -14,6 +15,13 @@ from openjarvis.server.auth_middleware import AuthMiddleware
 
 def _make_app(api_key: str) -> FastAPI:
     app = FastAPI()
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["http://127.0.0.1:5173"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
     app.add_middleware(AuthMiddleware, api_key=api_key)
 
     @app.get("/v1/models")
@@ -72,6 +80,17 @@ class TestAuthMiddleware:
     def test_metrics_requires_auth(self, client):
         resp = client.get("/metrics")
         assert resp.status_code == 401
+
+    def test_options_preflight_not_auth_blocked(self, client):
+        resp = client.options(
+            "/v1/models",
+            headers={
+                "Origin": "http://127.0.0.1:5173",
+                "Access-Control-Request-Method": "GET",
+                "Access-Control-Request-Headers": "authorization",
+            },
+        )
+        assert resp.status_code == 200
 
     def test_metrics_accepts_valid_key(self, client):
         resp = client.get(

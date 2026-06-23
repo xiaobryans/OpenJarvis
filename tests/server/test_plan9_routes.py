@@ -808,6 +808,63 @@ class TestPlan9Introspection:
 
 
 # ============================================================================
+# Live orchestration executor routes
+# ============================================================================
+
+class TestOrchestrationExecutorRoutes:
+
+    def test_dag_run_live(self, client):
+        r = client.post(
+            "/v1/orchestration/dag/run",
+            json={"task_description": "route test DAG", "scope": "tests/fixtures"},
+        )
+        assert r.status_code == 200
+        data = r.json()
+        assert data["state"] == "completed"
+        assert data["retrieval_invoked"] is True
+        assert len(data["nodes"]) >= 4
+        _assert_no_secrets(r.text)
+
+    def test_dag_status(self, client):
+        client.post(
+            "/v1/orchestration/dag/run",
+            json={"task_description": "status test", "scope": "tests/fixtures"},
+        )
+        r = client.get("/v1/orchestration/dag/status")
+        assert r.status_code == 200
+        assert r.json()["state"] == "completed"
+
+    def test_batch_run_allowlisted(self, client):
+        r = client.post(
+            "/v1/orchestration/batch/run",
+            json={
+                "target_file": "tests/fixtures/plan9_batch_target.txt",
+                "worker_a_patch": "# batch route test A\nstatus=a\n",
+                "worker_b_patch": "marker=b\n",
+                "run_tests": False,
+            },
+        )
+        assert r.status_code == 200
+        data = r.json()
+        assert data["state"] == "completed"
+        assert data["reviewer_verdict"] == "approved"
+        _assert_no_secrets(r.text)
+
+    def test_batch_blocks_non_allowlisted(self, client):
+        r = client.post(
+            "/v1/orchestration/batch/run",
+            json={
+                "target_file": "src/openjarvis/server/routes.py",
+                "worker_a_patch": "a",
+                "worker_b_patch": "b",
+                "run_tests": False,
+            },
+        )
+        assert r.status_code == 200
+        assert r.json()["blocked"] is True
+
+
+# ============================================================================
 # Cross-cutting: no secrets in any Plan 9 route response
 # ============================================================================
 
