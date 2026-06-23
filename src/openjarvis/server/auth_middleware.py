@@ -22,7 +22,15 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
     def __init__(self, app, api_key: str = "") -> None:  # noqa: ANN001
         super().__init__(app)
-        self._api_key = api_key or os.environ.get("OPENJARVIS_API_KEY", "")
+        self._api_key = (api_key or os.environ.get("OPENJARVIS_API_KEY", "")).strip()
+
+    @staticmethod
+    def _normalize_bearer_token(raw: str) -> str:
+        """Strip whitespace and accidental nested ``Bearer`` prefixes from token."""
+        token = raw.strip()
+        while token.lower().startswith("bearer "):
+            token = token[7:].strip()
+        return token
 
     async def dispatch(self, request: Request, call_next):  # noqa: ANN001
         # Browsers send unauthenticated OPTIONS preflights for cross-origin /v1 calls.
@@ -36,6 +44,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
                     status_code=401,
                 )
             scheme, _, token = auth.partition(" ")
+            token = self._normalize_bearer_token(token)
             # Constant-time comparison to avoid leaking the key via timing.
             if scheme.lower() != "bearer" or not secrets.compare_digest(
                 token, self._api_key

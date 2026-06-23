@@ -37,6 +37,13 @@ class TestPlan9MobileProofPage:
         assert "Test API Key" in html
         assert "/v1/plan9/registry" in html
         assert "testApiKey" in html
+        assert "normalizeApiKey" in html
+        assert "Raw API key only" in html
+
+    def test_header_mode_diagnostics(self, mobile_client):
+        html = mobile_client.get("/mobile").text
+        assert "header-mode" in html
+        assert "Authorization: Bearer &lt;hidden&gt;" in html
 
     def test_required_panel_paths(self, mobile_client):
         html = mobile_client.get("/mobile").text

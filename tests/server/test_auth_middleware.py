@@ -69,6 +69,22 @@ class TestAuthMiddleware:
         )
         assert resp.status_code == 200
 
+    def test_accepts_key_with_accidental_bearer_prefix_in_token(self, client):
+        """Mobile clients may send Bearer Bearer <key> if user pasted prefix — normalize token."""
+        resp = client.get(
+            "/v1/models",
+            headers={"Authorization": "Bearer Bearer oj_sk_test123"},
+        )
+        assert resp.status_code == 200
+
+    def test_accepts_key_with_whitespace(self, client):
+        app = _make_app(" oj_sk_test123 ")
+        resp = TestClient(app).get(
+            "/v1/models",
+            headers={"Authorization": "Bearer oj_sk_test123"},
+        )
+        assert resp.status_code == 200
+
     def test_health_exempt(self, client):
         resp = client.get("/health")
         assert resp.status_code == 200

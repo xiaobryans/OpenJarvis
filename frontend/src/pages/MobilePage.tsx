@@ -42,12 +42,32 @@ function storeBackend(url: string): void {
     else localStorage.removeItem(LS_BACKEND_KEY);
   } catch { /* ignore */ }
 }
+function normalizeApiKey(raw: string): string {
+  if (!raw) return '';
+  let k = raw.trim();
+  if ((k.startsWith('"') && k.endsWith('"')) || (k.startsWith("'") && k.endsWith("'"))) {
+    k = k.slice(1, -1).trim();
+  }
+  while (/^bearer\s+/i.test(k)) {
+    k = k.replace(/^bearer\s+/i, '').trim();
+  }
+  return k;
+}
+
 function getStoredApiKey(): string {
-  try { return localStorage.getItem(LS_AUTH_KEY) ?? ''; } catch { return ''; }
+  try {
+    const raw = localStorage.getItem(LS_AUTH_KEY) ?? '';
+    const norm = normalizeApiKey(raw);
+    if (raw && norm && norm !== raw) {
+      localStorage.setItem(LS_AUTH_KEY, norm);
+    }
+    return norm;
+  } catch { return ''; }
 }
 function storeApiKey(key: string): void {
   try {
-    if (key) localStorage.setItem(LS_AUTH_KEY, key);
+    const norm = normalizeApiKey(key);
+    if (norm) localStorage.setItem(LS_AUTH_KEY, norm);
     else localStorage.removeItem(LS_AUTH_KEY);
   } catch { /* ignore */ }
 }
@@ -56,7 +76,8 @@ async function backendFetch(backendUrl: string, path: string, apiKey: string, op
   const base = backendUrl.replace(/\/$/, '');
   const url = base ? `${base}${path}` : path;
   const headers: Record<string, string> = { Accept: 'application/json' };
-  if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+  const token = normalizeApiKey(apiKey);
+  if (token) headers['Authorization'] = `Bearer ${token}`;
   if (opts?.body) headers['Content-Type'] = 'application/json';
   return fetch(url, { ...opts, headers: { ...headers, ...(opts?.headers as Record<string, string> | undefined) } });
 }
@@ -419,20 +440,23 @@ export function MobilePage() {
       setAuthVerdict('NO_AUTH_KEY');
       return;
     }
-    setTestKeyResult('Testing GET /v1/plan9/registry…');
+    const headerMode = 'Authorization: Bearer <hidden>';
+    setTestKeyResult(`Testing GET /v1/plan9/registry…\nHeader: ${headerMode}`);
     try {
       const res = await backendFetch(backendUrl, '/v1/plan9/registry', apiKey);
       if (res.status === 200) {
-        setTestKeyResult('Test OK: /v1/plan9/registry → HTTP 200');
+        setTestKeyResult(`Test OK: GET /v1/plan9/registry → HTTP 200\nHeader: ${headerMode}`);
         setAuthVerdict('AUTHENTICATED');
         await fetchAll(undefined, apiKey);
       } else {
-        setTestKeyResult(`Test FAILED: /v1/plan9/registry → HTTP ${res.status}`);
+        setTestKeyResult(
+          `Test FAILED: GET /v1/plan9/registry → HTTP ${res.status}\nHeader: ${headerMode}\nTip: raw cloud OPENJARVIS_API_KEY only (no Bearer prefix). Clear and re-enter if unsure.`,
+        );
         setAuthVerdict('KEY_SET_BUT_AUTH_FAILED');
         setEndpointFailures([{ path: '/v1/plan9/registry', status: res.status }]);
       }
     } catch (e) {
-      setTestKeyResult(`Test error: ${String(e).slice(0, 80)}`);
+      setTestKeyResult(`Test error: ${String(e).slice(0, 80)}\nHeader: ${headerMode}`);
       setAuthVerdict('KEY_SET_BUT_AUTH_FAILED');
     }
   };
@@ -475,7 +499,7 @@ export function MobilePage() {
     setShowKeyInput(false);
     setKeyDraft('');
     setAuthVerdict(k ? 'NOT_TESTED' : 'NO_AUTH_KEY');
-    setTestKeyResult(k ? 'Key saved — tap Test API Key' : null);
+    setTestKeyResult(k ? 'Key saved (normalized) — tap Test API Key' : null);
     fetchAll(undefined, k);
   };
 
@@ -757,12 +781,12 @@ export function MobilePage() {
           }}
         >
           <div style={{ fontSize: '11px', color: 'var(--color-text-muted, #888)', marginBottom: '6px' }}>
-            OPENJARVIS_API_KEY (stored in localStorage)
+            Raw OPENJARVIS_API_KEY (cloud Secrets Manager). No Bearer prefix. Stored in localStorage only.
           </div>
           <div style={{ display: 'flex', gap: '6px' }}>
             <input
               type="password"
-              placeholder="Enter Bearer token..."
+              placeholder="Raw API key only (no Bearer prefix)"
               value={keyDraft}
               onChange={(e) => setKeyDraft(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') saveApiKey(); }}

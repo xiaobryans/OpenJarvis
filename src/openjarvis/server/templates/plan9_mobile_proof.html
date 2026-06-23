@@ -98,8 +98,12 @@
       <span class="status-label">Auth verdict</span>
       <span class="status-value"><span id="auth-verdict-badge" class="badge badge-hold">NOT_TESTED</span></span>
     </div>
-    <p class="hint">Key saved in browser localStorage only — never displayed or logged.</p>
-    <input type="password" id="api-key-input" placeholder="Bearer token (OPENJARVIS_API_KEY)" autocomplete="off">
+    <p class="hint">Enter raw OPENJARVIS_API_KEY from AWS Secrets Manager (cloud). Saved in localStorage only — never displayed. Do not prefix with &quot;Bearer&quot;.</p>
+    <div class="status-row">
+      <span class="status-label">Header mode</span>
+      <span class="status-value" id="header-mode">Authorization: Bearer &lt;hidden&gt;</span>
+    </div>
+    <input type="password" id="api-key-input" placeholder="Raw API key only (no Bearer prefix)" autocomplete="off">
     <div class="btn-row">
       <button type="button" onclick="saveApiKey()">Save Key</button>
       <button type="button" class="secondary" onclick="testApiKey()">Test API Key</button>
@@ -194,13 +198,47 @@ let authVerdict = 'NOT_TESTED';
 let endpointFailures = [];
 let panelLoaded = {};
 
+function normalizeApiKey(raw) {
+  if (!raw || typeof raw !== 'string') return '';
+  let k = raw.trim();
+  if ((k.startsWith('"') && k.endsWith('"')) || (k.startsWith("'") && k.endsWith("'"))) {
+    k = k.slice(1, -1).trim();
+  }
+  while (/^bearer\s+/i.test(k)) {
+    k = k.replace(/^bearer\s+/i, '').trim();
+  }
+  return k;
+}
+
+function persistApiKey(raw) {
+  const norm = normalizeApiKey(raw);
+  if (!norm) return '';
+  localStorage.setItem(LS_KEY, norm);
+  localStorage.setItem(LS_KEY_LEGACY, norm);
+  return norm;
+}
+
+function migrateStoredKey() {
+  const raw = localStorage.getItem(LS_KEY) || localStorage.getItem(LS_KEY_LEGACY) || '';
+  if (!raw) return;
+  const norm = normalizeApiKey(raw);
+  if (norm && norm !== raw) persistApiKey(norm);
+}
+
 function getApiKey() {
+  migrateStoredKey();
   return localStorage.getItem(LS_KEY) || localStorage.getItem(LS_KEY_LEGACY) || '';
+}
+
+function authHeaderLabel() {
+  const k = getApiKey();
+  return k ? 'Authorization: Bearer <hidden>' : 'none';
 }
 
 function setKeyPresentUi() {
   const k = getApiKey();
   document.getElementById('key-present').textContent = k ? 'yes (not shown)' : 'no';
+  document.getElementById('header-mode').textContent = authHeaderLabel();
 }
 
 function setAuthVerdict(verdict) {
@@ -226,7 +264,7 @@ function renderFailures() {
 async function apiFetch(path, auth) {
   const headers = { Accept: 'application/json' };
   const key = getApiKey();
-  if (auth && key) headers['Authorization'] = 'Bearer ' + key;
+  if (auth && key) headers['Authorization'] = 'Bearer ' + normalizeApiKey(key);
   const r = await fetch(path, { headers });
   let body = null;
   try { body = await r.json(); } catch (_) { body = null; }
@@ -340,38 +378,44 @@ async function testApiKey() {
     setAuthVerdict('NO_AUTH_KEY');
     return;
   }
-  out.textContent = 'Testing GET /v1/plan9/registry…';
+  const norm = normalizeApiKey(key);
+  out.textContent = 'Testing GET /v1/plan9/registry…\nHeader: ' + authHeaderLabel();
   endpointFailures = [];
   try {
     const res = await apiFetch('/v1/plan9/registry', true);
     if (res.status === 200) {
-      out.textContent = 'Test OK: /v1/plan9/registry → HTTP 200';
+      out.textContent = 'Test OK: GET /v1/plan9/registry → HTTP 200\nHeader: ' + authHeaderLabel();
       setAuthVerdict('AUTHENTICATED');
       await refreshAll();
     } else if (res.status === 401 || res.status === 403) {
-      out.textContent = 'Test FAILED: /v1/plan9/registry → HTTP ' + res.status;
+      out.textContent = 'Test FAILED: GET /v1/plan9/registry → HTTP ' + res.status +
+        '\nHeader: ' + authHeaderLabel() +
+        '\nTip: use raw cloud OPENJARVIS_API_KEY only (no Bearer prefix). Clear key and re-enter if unsure.';
       endpointFailures = [{ path: '/v1/plan9/registry', status: res.status }];
       setAuthVerdict('KEY_SET_BUT_AUTH_FAILED');
       renderFailures();
     } else {
-      out.textContent = 'Test result: /v1/plan9/registry → HTTP ' + res.status;
+      out.textContent = 'Test result: GET /v1/plan9/registry → HTTP ' + res.status +
+        '\nHeader: ' + authHeaderLabel();
       setAuthVerdict('KEY_SET_BUT_AUTH_FAILED');
     }
   } catch (e) {
-    out.textContent = 'Test error: ' + e.message;
+    out.textContent = 'Test error: ' + e.message + '\nHeader: ' + authHeaderLabel();
     setAuthVerdict('KEY_SET_BUT_AUTH_FAILED');
   }
 }
 
 function saveApiKey() {
-  const k = document.getElementById('api-key-input').value.trim();
-  if (!k) return;
-  localStorage.setItem(LS_KEY, k);
-  localStorage.setItem(LS_KEY_LEGACY, k);
+  const norm = persistApiKey(document.getElementById('api-key-input').value);
+  if (!norm) {
+    document.getElementById('test-result').textContent = 'Empty key — enter OPENJARVIS_API_KEY';
+    setAuthVerdict('NO_AUTH_KEY');
+    return;
+  }
   document.getElementById('api-key-input').value = '';
   setKeyPresentUi();
   setAuthVerdict('NOT_TESTED');
-  document.getElementById('test-result').textContent = 'Key saved — tap Test API Key';
+  document.getElementById('test-result').textContent = 'Key saved (normalized) — tap Test API Key';
 }
 
 function clearApiKey() {
@@ -392,7 +436,7 @@ async function submitText() {
   const out = document.getElementById('status-output');
   out.textContent = 'Sending…';
   const headers = { 'Content-Type': 'application/json', Accept: 'application/json' };
-  if (apiKey) headers['Authorization'] = 'Bearer ' + apiKey;
+  if (apiKey) headers['Authorization'] = 'Bearer ' + normalizeApiKey(apiKey);
   try {
     const r = await fetch('/v1/chat/completions', {
       method: 'POST', headers,
