@@ -55,6 +55,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY pyproject.toml README.md ./
 COPY src/ src/
+COPY tests/ tests/
+COPY docs/ docs/
 COPY scripts/install scripts/install
 COPY deploy/windows deploy/windows
 
@@ -82,6 +84,7 @@ USER jarvis
 
 ENV PYTHONUNBUFFERED=1
 ENV JARVIS_DATA_DIR=/app/data
+ENV OPENJARVIS_ROOT=/app
 
 EXPOSE 8000
 

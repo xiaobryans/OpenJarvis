@@ -119,6 +119,7 @@ from openjarvis.plan9.mac_worker_queue import (
 from openjarvis.plan9.rules import PLAN9_INTERNAL_RULES
 from openjarvis.plan9.skills_manifest import PLAN9_SKILLS_MANIFEST
 from openjarvis.plan9.commands_manifest import PLAN9_COMMANDS_MANIFEST
+from openjarvis.plan9.execution_chain import repo_root
 from openjarvis.plan9.future_inheritance import PLAN9_DEFAULT_INHERITANCE
 
 logger = logging.getLogger(__name__)
@@ -506,9 +507,17 @@ async def orchestration_batch_status(run_id: Optional[str] = None) -> Dict[str, 
 @router.get("/v1/coding/workspace")
 async def get_coding_workspace_status() -> Dict[str, Any]:
     """Return cloud coding workspace status and available operations."""
+    from openjarvis.plan9.workspace_root import workspace_index_summary, workspace_root
+
+    idx = workspace_index_summary()
+    root = workspace_root()
     return {
         "status": "AVAILABLE",
         "description": "Cloud coding workspace — inspect/search/read/edit/diff without MacBook",
+        "workspace_root": str(root),
+        "indexed_file_count": idx["indexed_file_count"],
+        "prefix_counts": idx["prefix_counts"],
+        "pyproject_present": idx["pyproject_present"],
         "operations": [
             {"op": "read_file", "route": "POST /v1/coding/files/read", "status": "WIRED"},
             {"op": "stage_diff", "route": "POST /v1/coding/diff/stage", "status": "WIRED"},
@@ -528,34 +537,30 @@ async def read_coding_file(req: FileReadRequest) -> Dict[str, Any]:
     """Read a file from the repo (cloud-safe; allowlisted paths only).
 
     Uses a conservative allowlist to prevent blind Mac exposure.
-    In production: reads from indexed repo clone or S3 mirror.
+    Reads from OPENJARVIS_ROOT workspace (set to /app in cloud container).
     """
-    import os
-    from pathlib import Path
+    from openjarvis.plan9.workspace_root import workspace_prefix_allowed, workspace_root
 
-    # Allowlist: relative paths under src/, tests/, docs/, configs/
-    # Block absolute paths, traversal, and sensitive files
     raw = req.file_path
-    if ".." in raw or raw.startswith("/"):
-        raise HTTPException(status_code=400, detail="Path traversal not allowed")
-    for blocked in (".env", ".git/", "id_rsa", "id_ed25519", ".ssh/", "secrets/"):
-        if blocked in raw:
-            raise HTTPException(status_code=403, detail=f"Path {blocked!r} is not allowed")
-
-    allowed_prefixes = ("src/", "tests/", "docs/", "configs/", "pyproject.toml", "README")
-    if not any(raw.startswith(p) for p in allowed_prefixes):
+    if not workspace_prefix_allowed(raw):
+        if ".." in raw or raw.startswith("/"):
+            raise HTTPException(status_code=400, detail="Path traversal not allowed")
+        for blocked in (".env", ".git/", "id_rsa", "id_ed25519", ".ssh/", "secrets/"):
+            if blocked in raw:
+                raise HTTPException(status_code=403, detail=f"Path {blocked!r} is not allowed")
         raise HTTPException(
             status_code=403,
-            detail=f"Path {raw!r} is not in the cloud-safe allowlist. "
-                   f"Allowed prefixes: {allowed_prefixes}",
+            detail=f"Path {raw!r} is not in the cloud-safe allowlist.",
         )
 
-    # Resolve against repo root
-    repo_root = Path(__file__).parent.parent.parent.parent  # /Users/user/OpenJarvis
-    full_path = repo_root / raw
+    root = workspace_root()
+    full_path = root / raw
 
     if not full_path.exists():
-        raise HTTPException(status_code=404, detail=f"File not found: {raw}")
+        raise HTTPException(
+            status_code=404,
+            detail=f"File not found: {raw} (workspace_root={root})",
+        )
     if not full_path.is_file():
         raise HTTPException(status_code=400, detail=f"Not a file: {raw}")
 
@@ -616,7 +621,7 @@ async def stage_diff(req: DiffStageRequest) -> Dict[str, Any]:
     import tempfile
     from pathlib import Path as _StagePath
 
-    repo_root = _StagePath(__file__).parent.parent.parent.parent
+    root = repo_root()
     try:
         with tempfile.NamedTemporaryFile(
             mode="w", suffix=".patch", delete=False, encoding="utf-8"
@@ -626,7 +631,7 @@ async def stage_diff(req: DiffStageRequest) -> Dict[str, Any]:
 
         apply_result = subprocess.run(
             ["git", "apply", "--cached", "--check", patch_path],
-            capture_output=True, text=True, timeout=15, cwd=str(repo_root),
+            capture_output=True, text=True, timeout=15, cwd=str(root),
         )
         if apply_result.returncode != 0:
             return {
@@ -641,7 +646,7 @@ async def stage_diff(req: DiffStageRequest) -> Dict[str, Any]:
         # Check passed — apply for real
         apply_real = subprocess.run(
             ["git", "apply", "--cached", patch_path],
-            capture_output=True, text=True, timeout=15, cwd=str(repo_root),
+            capture_output=True, text=True, timeout=15, cwd=str(root),
         )
         _StagePath(patch_path).unlink(missing_ok=True)
 
@@ -711,7 +716,7 @@ async def run_tests(req: TestRunRequest) -> Dict[str, Any]:
             capture_output=True,
             text=True,
             timeout=req.timeout_seconds,
-            cwd=str(_Path(__file__).parent.parent.parent.parent),
+            cwd=str(repo_root()),
         )
         passed = result.returncode == 0
         return {
@@ -739,14 +744,14 @@ async def run_lint(req: LintRunRequest) -> Dict[str, Any]:
 
     from pathlib import Path
 
-    repo_root = str(Path(__file__).parent.parent.parent.parent)
+    root = str(repo_root())
     results = {}
 
     if req.linter in ("ruff", "both"):
         targets = req.file_paths or ["."]
         cmd = [sys.executable, "-m", "ruff", "check"] + targets + ["--output-format=concise"]
         try:
-            r = subprocess.run(cmd, capture_output=True, text=True, timeout=60, cwd=repo_root)
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=60, cwd=root)
             results["ruff"] = {
                 "passed": r.returncode == 0,
                 "output": r.stdout[-4000:],
@@ -759,7 +764,7 @@ async def run_lint(req: LintRunRequest) -> Dict[str, Any]:
         targets = req.file_paths or ["src/"]
         cmd = [sys.executable, "-m", "mypy"] + targets + ["--ignore-missing-imports"]
         try:
-            r = subprocess.run(cmd, capture_output=True, text=True, timeout=120, cwd=repo_root)
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=120, cwd=root)
             results["mypy"] = {
                 "passed": r.returncode == 0,
                 "output": r.stdout[-4000:],
@@ -796,13 +801,13 @@ async def git_commit_workflow(req: GitCommitRequest) -> Dict[str, Any]:
     import sys
     from pathlib import Path
 
-    repo_root = Path(__file__).parent.parent.parent.parent
+    root = repo_root()
 
     # 1. Get diff for secret scan
     try:
         diff_result = subprocess.run(
             ["git", "diff", "--cached"],
-            capture_output=True, text=True, timeout=10, cwd=str(repo_root)
+            capture_output=True, text=True, timeout=10, cwd=str(root)
         )
         staged_diff = diff_result.stdout
     except Exception:
@@ -812,7 +817,7 @@ async def git_commit_workflow(req: GitCommitRequest) -> Dict[str, Any]:
     try:
         unstaged = subprocess.run(
             ["git", "diff"],
-            capture_output=True, text=True, timeout=10, cwd=str(repo_root)
+            capture_output=True, text=True, timeout=10, cwd=str(root)
         )
         combined_diff = staged_diff + unstaged.stdout
     except Exception:
@@ -832,7 +837,7 @@ async def git_commit_workflow(req: GitCommitRequest) -> Dict[str, Any]:
     try:
         branch_r = subprocess.run(
             ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-            capture_output=True, text=True, timeout=5, cwd=str(repo_root)
+            capture_output=True, text=True, timeout=5, cwd=str(root)
         )
         current_branch = branch_r.stdout.strip()
     except Exception:
@@ -841,7 +846,7 @@ async def git_commit_workflow(req: GitCommitRequest) -> Dict[str, Any]:
     try:
         status_r = subprocess.run(
             ["git", "status", "--short"],
-            capture_output=True, text=True, timeout=5, cwd=str(repo_root)
+            capture_output=True, text=True, timeout=5, cwd=str(root)
         )
         git_status = status_r.stdout
     except Exception:
@@ -1232,7 +1237,7 @@ async def search_code(req: CodeSearchRequest) -> Dict[str, Any]:
     import sys
     from pathlib import Path as _SearchPath
 
-    repo_root = _SearchPath(__file__).parent.parent.parent.parent
+    root = repo_root()
 
     # Allowlisted search roots
     allowed_roots = ("src/", "tests/", "docs/", "configs/")
@@ -1276,7 +1281,7 @@ async def search_code(req: CodeSearchRequest) -> Dict[str, Any]:
             capture_output=True,
             text=True,
             timeout=20,
-            cwd=str(repo_root),
+            cwd=str(root),
         )
         raw_output = proc.stdout
     except (subprocess.TimeoutExpired, FileNotFoundError):
@@ -1284,7 +1289,7 @@ async def search_code(req: CodeSearchRequest) -> Dict[str, Any]:
         import re as _re
         pattern = _re.compile(req.query if req.regex else _re.escape(req.query))
         for search_path in search_paths:
-            base = repo_root / search_path
+            base = root / search_path
             for fpath in base.rglob(req.file_glob):
                 if not fpath.is_file():
                     continue
@@ -1293,7 +1298,7 @@ async def search_code(req: CodeSearchRequest) -> Dict[str, Any]:
                     for lineno, line in enumerate(lines, 1):
                         if pattern.search(line):
                             results.append({
-                                "file": str(fpath.relative_to(repo_root)),
+                                "file": str(fpath.relative_to(root)),
                                 "line": lineno,
                                 "text": line,
                             })
@@ -1404,13 +1409,13 @@ async def create_branch(req: CreateBranchRequest) -> Dict[str, Any]:
             detail="approval_token required for dry_run=False.",
         )
 
-    repo_root = _BranchPath(__file__).parent.parent.parent.parent
+    root = repo_root()
 
     # Get current branches for dry-run report
     try:
         branch_list_r = subprocess.run(
             ["git", "branch", "-a"],
-            capture_output=True, text=True, timeout=10, cwd=str(repo_root),
+            capture_output=True, text=True, timeout=10, cwd=str(root),
         )
         existing = branch_list_r.stdout
     except Exception:
@@ -1443,7 +1448,7 @@ async def create_branch(req: CreateBranchRequest) -> Dict[str, Any]:
     try:
         create_r = subprocess.run(
             ["git", "checkout", "-b", req.branch_name, req.base_branch],
-            capture_output=True, text=True, timeout=15, cwd=str(repo_root),
+            capture_output=True, text=True, timeout=15, cwd=str(root),
         )
         if create_r.returncode != 0:
             return {
@@ -1524,13 +1529,13 @@ async def git_push_workflow(req: GitPushRequest) -> Dict[str, Any]:
     import subprocess
     from pathlib import Path as _PushPath
 
-    repo_root = _PushPath(__file__).parent.parent.parent.parent
+    root = repo_root()
 
     # Determine current branch if not specified
     try:
         branch_r = subprocess.run(
             ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-            capture_output=True, text=True, timeout=5, cwd=str(repo_root),
+            capture_output=True, text=True, timeout=5, cwd=str(root),
         )
         current_branch = branch_r.stdout.strip()
     except Exception:
@@ -1556,7 +1561,7 @@ async def git_push_workflow(req: GitPushRequest) -> Dict[str, Any]:
     try:
         diff_r = subprocess.run(
             ["git", "diff", "HEAD"],
-            capture_output=True, text=True, timeout=10, cwd=str(repo_root),
+            capture_output=True, text=True, timeout=10, cwd=str(root),
         )
         diff_text = diff_r.stdout
     except Exception:
@@ -1575,7 +1580,7 @@ async def git_push_workflow(req: GitPushRequest) -> Dict[str, Any]:
     try:
         log_r = subprocess.run(
             ["git", "log", "--oneline", f"{req.remote}/{target_branch}..{target_branch}"],
-            capture_output=True, text=True, timeout=10, cwd=str(repo_root),
+            capture_output=True, text=True, timeout=10, cwd=str(root),
         )
         commits_to_push = log_r.stdout.strip()
     except Exception:
@@ -1597,7 +1602,7 @@ async def git_push_workflow(req: GitPushRequest) -> Dict[str, Any]:
                 push_cmd.insert(2, "--force")
             dry_r = subprocess.run(
                 push_cmd,
-                capture_output=True, text=True, timeout=20, cwd=str(repo_root),
+                capture_output=True, text=True, timeout=20, cwd=str(root),
             )
             dry_output = (dry_r.stdout + dry_r.stderr)[:2000]
         except Exception as exc:
@@ -1644,7 +1649,7 @@ async def git_push_workflow(req: GitPushRequest) -> Dict[str, Any]:
     try:
         push_r = subprocess.run(
             push_cmd,
-            capture_output=True, text=True, timeout=60, cwd=str(repo_root),
+            capture_output=True, text=True, timeout=60, cwd=str(root),
         )
         pushed = push_r.returncode == 0
         rollback = (
@@ -1692,10 +1697,10 @@ async def get_files_index(
     No file content is returned. Allowlisted directories only.
     """
     import subprocess
-    from pathlib import Path as _IdxPath
+    from openjarvis.plan9.workspace_root import workspace_index_summary, workspace_root
 
-    repo_root = _IdxPath(__file__).parent.parent.parent.parent
-    allowed_roots = ("src/", "tests/", "docs/", "configs/")
+    root = workspace_root()
+    allowed_roots = workspace_allowlist_roots()
 
     # Validate path_prefix
     if path_prefix:
@@ -1706,14 +1711,14 @@ async def get_files_index(
                 status_code=403,
                 detail=f"Path prefix {path_prefix!r} not in allowlist {allowed_roots}",
             )
-        search_root = repo_root / path_prefix
+        search_root = root / path_prefix
     else:
         search_root = None
 
     # Collect files
     files = []
     for allowed in allowed_roots:
-        base = repo_root / allowed
+        base = root / allowed.rstrip("/")
         if not base.exists():
             continue
         # Apply path_prefix filter
@@ -1728,7 +1733,7 @@ async def get_files_index(
                     continue
                 try:
                     stat = fpath.stat()
-                    rel = str(fpath.relative_to(repo_root))
+                    rel = str(fpath.relative_to(root))
                     files.append({
                         "path": rel,
                         "size_bytes": stat.st_size,
@@ -1749,7 +1754,7 @@ async def get_files_index(
         try:
             status_r = subprocess.run(
                 ["git", "status", "--short"],
-                capture_output=True, text=True, timeout=10, cwd=str(repo_root),
+                capture_output=True, text=True, timeout=10, cwd=str(root),
             )
             for line in status_r.stdout.splitlines():
                 if len(line) >= 3:
@@ -1763,11 +1768,14 @@ async def get_files_index(
         for f in files:
             f["git_status"] = git_status_map.get(f["path"], "")
 
+    summary = workspace_index_summary(root)
     return {
         "total": len(files),
         "truncated": len(files) >= max_files,
         "path_prefix": path_prefix,
         "glob_pattern": glob_pattern,
+        "workspace_root": summary["workspace_root"],
+        "indexed_file_count": summary["indexed_file_count"],
         "files": files,
     }
 

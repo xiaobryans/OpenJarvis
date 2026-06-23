@@ -23,8 +23,11 @@ BLOCKED_BASENAMES = frozenset({
 })
 
 
+from openjarvis.plan9.workspace_root import workspace_root
+
+
 def repo_root() -> Path:
-    return Path(__file__).parent.parent.parent.parent
+    return workspace_root()
 
 
 def get_approval_engine() -> ApprovalEngine:
