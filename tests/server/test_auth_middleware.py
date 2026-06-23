@@ -52,7 +52,9 @@ class TestAuthMiddleware:
     def test_rejects_missing_auth_header(self, client):
         resp = client.get("/v1/models")
         assert resp.status_code == 401
-        assert "missing" in resp.json()["detail"].lower()
+        data = resp.json()
+        assert "missing" in data["detail"].lower()
+        assert data.get("auth_reason") == "missing_authorization_header"
 
     def test_rejects_wrong_key(self, client):
         resp = client.get(
@@ -60,7 +62,9 @@ class TestAuthMiddleware:
             headers={"Authorization": "Bearer wrong"},
         )
         assert resp.status_code == 401
-        assert "invalid" in resp.json()["detail"].lower()
+        data = resp.json()
+        assert "invalid" in data["detail"].lower()
+        assert data.get("auth_reason") == "token_mismatch"
 
     def test_accepts_valid_key(self, client):
         resp = client.get(

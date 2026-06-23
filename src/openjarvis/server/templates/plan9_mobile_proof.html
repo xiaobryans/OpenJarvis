@@ -8,6 +8,9 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Jarvis">
+  <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
   <link rel="manifest" href="/manifest.webmanifest">
   <title>Jarvis Mobile — Plan 9 Proof</title>
   <style>
@@ -88,6 +91,19 @@
   <h1>Jarvis Mobile</h1>
   <p class="subtitle">Plan 9 proof — cloud target: <span id="cloud-target"></span></p>
 
+  <div class="card" style="border-color: var(--accent);">
+    <h2>Build Marker (verify latest deploy)</h2>
+    <div class="status-row">
+      <span class="status-label">Mobile build</span>
+      <span class="status-value" id="build-commit">{{MOBILE_BUILD_COMMIT}}</span>
+    </div>
+    <div class="status-row">
+      <span class="status-label">Auth normalization</span>
+      <span class="status-value">{{AUTH_NORM_VERSION}}</span>
+    </div>
+    <p class="hint">If you see &quot;AWS Always-On&quot; tabs, you are on the React app — not this cloud proof page. Open a fresh Safari tab to this exact URL with <code>?v={{MOBILE_BUILD_COMMIT}}</code>.</p>
+  </div>
+
   <div class="card">
     <h2>Auth &amp; API Key</h2>
     <div class="status-row">
@@ -97,6 +113,10 @@
     <div class="status-row">
       <span class="status-label">Auth verdict</span>
       <span class="status-value"><span id="auth-verdict-badge" class="badge badge-hold">NOT_TESTED</span></span>
+    </div>
+    <div class="status-row">
+      <span class="status-label">Auth failure reason</span>
+      <span class="status-value" id="auth-failure-reason">—</span>
     </div>
     <p class="hint">Enter raw OPENJARVIS_API_KEY from AWS Secrets Manager (cloud). Saved in localStorage only — never displayed. Do not prefix with &quot;Bearer&quot;.</p>
     <div class="status-row">
@@ -257,18 +277,27 @@ function renderFailures() {
   const el = document.getElementById('auth-failures');
   if (!endpointFailures.length) { el.innerHTML = ''; return; }
   el.innerHTML = endpointFailures.map(f =>
-    '<div>' + f.path + ' → HTTP ' + f.status + '</div>'
+    '<div>' + f.path + ' → HTTP ' + f.status +
+    (f.authReason ? ' (' + f.authReason + ')' : '') + '</div>'
   ).join('');
+}
+
+function setAuthFailureReason(code) {
+  document.getElementById('auth-failure-reason').textContent = code || '—';
+}
+
+function authReasonFromBody(body) {
+  return body && body.auth_reason ? body.auth_reason : '';
 }
 
 async function apiFetch(path, auth) {
   const headers = { Accept: 'application/json' };
   const key = getApiKey();
   if (auth && key) headers['Authorization'] = 'Bearer ' + normalizeApiKey(key);
-  const r = await fetch(path, { headers });
+  const r = await fetch(path, { headers, cache: 'no-store' });
   let body = null;
   try { body = await r.json(); } catch (_) { body = null; }
-  return { status: r.status, ok: r.ok, body };
+  return { status: r.status, ok: r.ok, body, authReason: authReasonFromBody(body) };
 }
 
 function summarizeJson(data, maxLen) {
@@ -289,8 +318,9 @@ async function fetchPanel(name) {
   try {
     const res = await apiFetch(cfg.path, cfg.auth);
     if (cfg.auth && (res.status === 401 || res.status === 403)) {
-      endpointFailures.push({ path: cfg.path, status: res.status });
-      el.textContent = 'HTTP ' + res.status + ' — auth failed';
+      endpointFailures.push({ path: cfg.path, status: res.status, authReason: res.authReason });
+      if (res.authReason) setAuthFailureReason(res.authReason);
+      el.textContent = 'HTTP ' + res.status + ' — auth failed' + (res.authReason ? ' (' + res.authReason + ')' : '');
       panelLoaded[name] = false;
       return;
     }
@@ -384,14 +414,17 @@ async function testApiKey() {
   try {
     const res = await apiFetch('/v1/plan9/registry', true);
     if (res.status === 200) {
+      setAuthFailureReason('');
       out.textContent = 'Test OK: GET /v1/plan9/registry → HTTP 200\nHeader: ' + authHeaderLabel();
       setAuthVerdict('AUTHENTICATED');
       await refreshAll();
     } else if (res.status === 401 || res.status === 403) {
+      setAuthFailureReason(res.authReason || 'token_mismatch');
       out.textContent = 'Test FAILED: GET /v1/plan9/registry → HTTP ' + res.status +
+        '\nAuth failure reason: ' + (res.authReason || 'unknown') +
         '\nHeader: ' + authHeaderLabel() +
-        '\nTip: use raw cloud OPENJARVIS_API_KEY only (no Bearer prefix). Clear key and re-enter if unsure.';
-      endpointFailures = [{ path: '/v1/plan9/registry', status: res.status }];
+        '\nTip: use raw cloud OPENJARVIS_API_KEY from AWS Secrets Manager (not MacBook .env). Clear key and re-enter.';
+      endpointFailures = [{ path: '/v1/plan9/registry', status: res.status, authReason: res.authReason }];
       setAuthVerdict('KEY_SET_BUT_AUTH_FAILED');
       renderFailures();
     } else {
@@ -423,6 +456,7 @@ function clearApiKey() {
   localStorage.removeItem(LS_KEY_LEGACY);
   setKeyPresentUi();
   setAuthVerdict('NO_AUTH_KEY');
+  setAuthFailureReason('');
   document.getElementById('test-result').textContent = '';
   endpointFailures = [];
   renderFailures();

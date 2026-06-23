@@ -40,10 +40,23 @@ class TestPlan9MobileProofPage:
         assert "normalizeApiKey" in html
         assert "Raw API key only" in html
 
-    def test_header_mode_diagnostics(self, mobile_client):
+    def test_build_marker_in_html(self, mobile_client, monkeypatch):
+        monkeypatch.setenv("JARVIS_BUILD_COMMIT", "abc1234")
         html = mobile_client.get("/mobile").text
-        assert "header-mode" in html
-        assert "Authorization: Bearer &lt;hidden&gt;" in html
+        assert "Mobile build" in html
+        assert "abc1234" in html
+        assert "Auth normalization: v2" in html or "Auth normalization" in html
+
+    def test_cache_control_headers(self, mobile_client):
+        resp = mobile_client.get("/mobile")
+        cc = resp.headers.get("cache-control", "")
+        assert "no-store" in cc
+        assert "no-cache" in cc
+
+    def test_auth_failure_reason_ui(self, mobile_client):
+        html = mobile_client.get("/mobile").text
+        assert "auth-failure-reason" in html
+        assert "setAuthFailureReason" in html
 
     def test_required_panel_paths(self, mobile_client):
         html = mobile_client.get("/mobile").text

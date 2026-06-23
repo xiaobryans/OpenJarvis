@@ -13,6 +13,14 @@ from starlette.responses import JSONResponse
 logger = logging.getLogger(__name__)
 
 
+def auth_failure_response(reason: str, detail: str) -> JSONResponse:
+    """Return 401 with a non-secret ``auth_reason`` code for mobile diagnostics."""
+    return JSONResponse(
+        {"detail": detail, "auth_reason": reason},
+        status_code=401,
+    )
+
+
 class AuthMiddleware(BaseHTTPMiddleware):
     """Validates ``Authorization: Bearer <key>`` on ``/v1/*`` and ``/api/*`` routes.
 
@@ -39,19 +47,26 @@ class AuthMiddleware(BaseHTTPMiddleware):
         if self._api_key and self._requires_auth(request.url.path):
             auth = request.headers.get("Authorization", "")
             if not auth:
-                return JSONResponse(
-                    {"detail": "Missing Authorization header"},
-                    status_code=401,
+                return auth_failure_response(
+                    "missing_authorization_header",
+                    "Missing Authorization header",
                 )
-            scheme, _, token = auth.partition(" ")
-            token = self._normalize_bearer_token(token)
-            # Constant-time comparison to avoid leaking the key via timing.
-            if scheme.lower() != "bearer" or not secrets.compare_digest(
-                token, self._api_key
-            ):
-                return JSONResponse(
-                    {"detail": "Invalid API key"},
-                    status_code=401,
+            scheme, _, token_raw = auth.partition(" ")
+            if scheme.lower() != "bearer":
+                return auth_failure_response(
+                    "invalid_scheme",
+                    "Authorization scheme must be Bearer",
+                )
+            token = self._normalize_bearer_token(token_raw)
+            if not token:
+                return auth_failure_response(
+                    "empty_token_after_normalization",
+                    "Empty token after normalization",
+                )
+            if not secrets.compare_digest(token, self._api_key):
+                return auth_failure_response(
+                    "token_mismatch",
+                    "Invalid API key",
                 )
         return await call_next(request)
 
@@ -135,7 +150,11 @@ def websocket_authorized(websocket, expected_key: str) -> bool:  # noqa: ANN001
         auth = websocket.headers.get("authorization", "")
         scheme, _, value = auth.partition(" ")
         if scheme.lower() == "bearer":
-            token = value
+            token = AuthMiddleware._normalize_bearer_token(value)
     if not token:
         return False
-    return secrets.compare_digest(token, expected_key)
+    expected = AuthMiddleware._normalize_bearer_token(expected_key)
+    return secrets.compare_digest(token, expected)
+
+
+__all__ = ["AuthMiddleware", "auth_failure_response", "generate_api_key", "check_bind_safety", "websocket_authorized"]

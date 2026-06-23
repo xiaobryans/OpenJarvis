@@ -1230,6 +1230,7 @@ async def health(request: Request):
 
     # Git commit (short hash) — best-effort, never raises
     git_commit = "unknown"
+    build_commit = _os.environ.get("JARVIS_BUILD_COMMIT", "").strip() or None
     try:
         import subprocess as _sp
         result = _sp.run(
@@ -1241,6 +1242,8 @@ async def health(request: Request):
             git_commit = result.stdout.strip()
     except Exception:
         pass
+    if build_commit:
+        git_commit = build_commit
 
     configured_model = getattr(request.app.state, "model", "unknown")
     chat_route_label = getattr(request.app.state, "_chat_route_label", None)
@@ -1263,6 +1266,8 @@ async def health(request: Request):
         "pid": _os.getpid(),
         "version": version,
         "git_commit": git_commit,
+        "jarvis_build_commit": build_commit or git_commit,
+        "mobile_auth_norm": "v2",
         "started_at": started_at,
         "uptime_s": uptime_s,
         "engine": getattr(request.app.state, "engine_name", "unknown"),
