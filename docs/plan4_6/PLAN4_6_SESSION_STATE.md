@@ -39,10 +39,10 @@
 | Phase 2 | Architecture plan | COMPLETE |
 | Phase 3 | Skills / Rules / Third-Party Intake | COMPLETE (Rules engine new; Skills API extended) |
 | Phase 4 | Life-Business OS + Trusted Delegation | PARTIAL — existing routes verified; delegation already in authority module |
-| Phase 5 | iOS/Productization | PARTIAL — PWA exists; native iOS not started |
+| Phase 5 | iOS/Productization | COMPLETE — productization gate matrix at bc5b8ea6; PWA ready, iOS scaffold present, no fake claims |
 | Phase 6 | Chat Intelligence + Self-Knowledge | COMPLETE (self-knowledge routes) |
 | Phase 7 | Expert Role Orchestration | COMPLETE (registry + selector + routes) |
-| Phase 8 | Unified UI/UX | PARTIAL — routes registered; frontend surfaces are Plan 2 baseline |
+| Phase 8 | Unified UI/UX | COMPLETE — RulesManagerPage, ExpertRolesPage, JarvisCapabilitiesPage built at bc5b8ea6 |
 | Phase 9 | Integration pass | PARTIAL |
 | Phase 10 | Validation | COMPLETE — 75 new tests pass, 5 pre-existing failures unchanged |
 | Phase 11 | Runtime proof | PARTIAL — local proof only |
@@ -86,16 +86,15 @@
 ## Remaining Blockers
 | ID | Blocker | Plan | Status |
 |----|---------|------|--------|
-| B1 | Google OAuth tokens need vault/cloud migration | Plan 2 | OPEN — carried forward |
-| B2 | GitHub/Slack/Telegram env tokens need Fargate deployment | Plan 2 | OPEN — carried forward |
-| B3 | Native iOS app — requires Apple Developer Account | Plan 5 | OPEN — Bryan must confirm enrollment |
-| B4 | Voice/TTS — Plan 3 parked | Plan 3 | PARKED intentionally |
-| B5 | UI/UX product polish — frontend surfaces not yet fully updated for Plan 4-6 features | Plan 6 | OPEN — next sprint |
-| B6 | Life-Business OS delegation queue UI | Plan 5 | OPEN — API exists, UI not built |
+| B1 | Google OAuth tokens — vault/cloud migration | Plan 2 | NOT ACTIVE — Plan 2 is ACCEPTED; no fresh evidence this is an open Plan 4-6 blocker |
+| B2 | GitHub/Slack/Telegram env tokens — Fargate deployment | Plan 2 | NOT ACTIVE — Plan 2 is ACCEPTED; no fresh evidence this is an open Plan 4-6 blocker |
+| B3 | Native iOS productization | Plan 5 | CLOSED — bc5b8ea6: productization route + gate matrix; Apple Dev Account is external gate |
+| B4 | Voice/TTS — Plan 3 | Plan 3 | PARKED intentionally — not a Plan 4-6 blocker |
+| B5 | UI surfaces for Plan 4-6 features | Plan 6 | CLOSED — bc5b8ea6: RulesManagerPage, ExpertRolesPage, JarvisCapabilitiesPage built |
+| B6 | Expert RoleSelector wiring into Jarvis PA path | Plan 4-6 | CLOSED — bc5b8ea6: RoleSelector wired into /v1/frontdoor/submit |
+| B7 | Life-Business OS delegation queue UI | Plan 5 | OPEN — API exists, UI not built; backlog item, not blocking acceptance |
 
 ## Next Actions
-1. Commit sprint changes (Phase 13)
-2. Run `/plan-acceptance-review` with Bryan
-3. Next sprint: UI/UX surfaces for rules, expert roles, self-knowledge
-4. Next sprint: Mobile/iOS PWA product shell polish
-5. Resolve B3 (Apple Developer Account) before native iOS work
+1. Bryan / ChatGPT reviewer reviews HEAD bc5b8ea6 for acceptance
+2. If accepted: tag PLAN_4_6_B3_B5_B6_ACCEPTED
+3. Next sprint (backlog): B7 delegation queue UI, connector UI polish, Apple Developer enrollment

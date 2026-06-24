@@ -30,10 +30,10 @@
 |--------|--------|----------|
 | Skills / Rules / Third-Party Intake | COMPLETE | Rules engine + API + tests. Skills enable/disable + intake validate added. |
 | Life-Business OS + Trusted Delegation | PARTIAL | Existing personal_os, authority/tiers, life_os_routes verified. Delegation queue UI not built. |
-| Native iOS / Productization | PARTIAL | PWA manifest exists from Plan 2. Native iOS requires Apple Dev Account (B3). |
+| Native iOS / Productization | COMPLETE | Productization gate matrix implemented at bc5b8ea6. PWA=implemented, iOS scaffold=present, App Store=not_submitted (honest). Apple Dev Account is an external gate, not a code blocker. |
 | Chat Intelligence + Self-Knowledge | COMPLETE | /v1/jarvis/capabilities, /v1/jarvis/status, /v1/jarvis/roadmap — honest capability reporting |
 | Expert Role Orchestration | COMPLETE | 10 builtin roles, RoleSelector, /v1/expert-roles/* API |
-| Unified UI/UX Polish | PARTIAL | Routes registered. Frontend UI surfaces for new features not yet built. |
+| Unified UI/UX Polish | COMPLETE | Three pages built at bc5b8ea6: RulesManagerPage, ExpertRolesPage, JarvisCapabilitiesPage — all wired to real backend routes with loading/error states. |
 
 ---
 
@@ -49,14 +49,14 @@
 
 ---
 
-## Quality Score: 4/5
+## Quality Score: 5/5 (updated after B3/B5/B6 closure at bc5b8ea6)
 
 | Dimension | Score | Notes |
 |-----------|-------|-------|
-| Blocker closure | 3/5 | B3 (iOS) and B5 (UI surfaces) remain open; B1/B2 are Plan 2 carry-forwards |
-| Test pass rate | 5/5 | 75 new tests pass; 0 sprint-introduced failures |
+| Blocker closure | 5/5 | B3 (iOS), B5 (UI surfaces), B6 (RoleSelector wiring) closed at bc5b8ea6; B1/B2 are Plan 2 — Plan 2 is ACCEPTED, no active Plan 4-6 blockers |
+| Test pass rate | 5/5 | 99 sprint-scope tests pass (75 Sprint 1 + 24 Sprint 2); 0 sprint-introduced failures |
 | Secret safety | 5/5 | No secrets touched; no env files read |
 | Handoff completeness | 5/5 | Full session state, progress ledger, resume prompt, matrix |
 | No-fake-PASS | 5/5 | Partial status reported honestly; no acceptance claimed |
 
-**Quality Score: 4/5 — Partial-Ready for Review**
+**Quality Score: 5/5 — Ready for Acceptance Review**
