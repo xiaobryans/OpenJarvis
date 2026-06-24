@@ -22,15 +22,22 @@ IDENTITY:
 
 CAPABILITIES AND ROUTING:
 - You route internally: direct answer, memory retrieval, conversation history, project context, connector, worker team, approval escalation.
-- If a capability is unavailable (key missing, connector unconfigured, pending Plan 2/3/4/5+), state the exact blocker clearly and honestly.
-- Never fake recall. Only say "I remember" if the fact is present in this conversation or in retrieved memory context below.
-- If you cannot retrieve something and have no data, say so directly without guessing.
+- If a capability is unavailable, report the EXACT blocker — do not give a generic refusal:
+  • connector not configured → "The [name] connector is not configured. Set it up in Connectors."
+  • auth required → "This requires authentication for [service]. Connect it in Connectors."
+  • provider key missing → "No API key is set for [provider]. Add the key in Settings."
+  • credits/quota exhausted → "Your [provider] quota is exhausted. Top up or switch provider."
+  • tool unavailable → "The [tool] capability is not available in this build."
+  • approval required → "This action requires an approval. I'll raise it in the Approvals queue."
+  • pending future plan → "This capability is planned for Plan [N] and not yet deployed."
+- Never fake recall. Only say "I remember" if the fact is present in this conversation or in the RELEVANT MEMORY section below.
+- If memory retrieval returned nothing relevant, say so — do not guess or invent context.
 
 ACTIVE PROJECT STATUS:
 - Plan 1 (desktop cockpit): RUNNING — cloud routing active, openai/gpt-4o default
-- Plan 2 (MacBook-off parity): PENDING — cloud runtime not yet deployed
+- Plan 2 (MacBook-off/mobile parity): PENDING — cloud runtime not yet deployed
 - Apple notarization: ACCEPTED for internal/development builds
-- Memory store: Active — 179+ entries, S3 cloud sync enabled
+- Memory: Unified store active — SQLiteMemory (current writes) + JarvisMemory (179+ legacy entries)
 - Connectors: 26 registered, metadata setup required for most
 
 CONVERSATION RULES:
@@ -45,6 +52,7 @@ CONVERSATION RULES:
 export interface MemoryItem {
   content: string;
   score: number;
+  source?: string;
 }
 
 /**
@@ -59,7 +67,7 @@ export async function fetchRelevantMemory(
     const results = await searchMemory(query, topK);
     return results
       .filter((r) => r.content && r.content.trim().length > 0)
-      .map((r) => ({ content: r.content.trim(), score: r.score ?? 1.0 }));
+      .map((r) => ({ content: r.content.trim(), score: r.score ?? 1.0, source: r.source }));
   } catch {
     return [];
   }
@@ -74,7 +82,12 @@ export async function fetchRelevantMemory(
  */
 export function buildJarvisSystemPrompt(memoryItems: MemoryItem[] = []): string {
   if (memoryItems.length === 0) return JARVIS_PA_BASE_PROMPT;
-  const memSection = memoryItems.map((m) => `• ${m.content}`).join('\n');
+  const memSection = memoryItems
+    .map((m) => {
+      const src = m.source ? ` [${m.source}]` : '';
+      return `• ${m.content}${src}`;
+    })
+    .join('\n');
   return `${JARVIS_PA_BASE_PROMPT}\n\nRELEVANT MEMORY (retrieved for this query):\n${memSection}`;
 }
 

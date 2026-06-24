@@ -199,53 +199,74 @@ async def memory_store(req: MemoryStoreRequest, request: Request):
 
 @memory_router.post("/search")
 async def memory_search(req: MemorySearchRequest, request: Request):
-    """Search memory for relevant content.
+    """Search all memory sources and return merged, deduplicated results.
 
-    Tries the configured backend (Rust-backed SQLite) first; falls back to
-    JarvisMemory (pure-Python implementation) when the Rust extension is not
-    installed so the Jarvis PA context pipeline can still retrieve memory.
+    Queries SQLiteMemory (Rust-backed, current writes) and JarvisMemory
+    (legacy Python store, 179+ entries) in parallel. SQLiteMemory results
+    take priority; JarvisMemory fills remaining unique entries. If one source
+    fails a non-secret diagnostic flag is included — the other source's
+    results are still returned.
     """
-    # Catch the 503 raised when the Rust extension is unavailable so we can fall
-    # back gracefully rather than surfacing an error to the Jarvis PA pipeline.
+    sqlite_items: list = []
+    jarvis_items: list = []
+    sqlite_error: str | None = None
+    jarvis_error: str | None = None
+
+    # --- SQLiteMemory (current backend) ---
     try:
         backend = _get_memory_backend(request)
+        if backend is not None:
+            results = backend.retrieve(req.query, top_k=req.top_k)
+            sqlite_items = [
+                {
+                    "content": r.content,
+                    "score": getattr(r, "score", 0.0),
+                    "source": "sqlite",
+                    "metadata": getattr(r, "metadata", {}) or {},
+                }
+                for r in results
+            ]
     except HTTPException:
-        backend = None
+        sqlite_error = "sqlite_unavailable"
+    except Exception as exc:
+        sqlite_error = f"{type(exc).__name__}: {str(exc)[:80]}"
 
-    if backend is None:
-        # Fall back to JarvisMemory (Python implementation, always available)
-        try:
-            from openjarvis.memory.store import JarvisMemory  # noqa: PLC0415
-
-            mem = JarvisMemory()
-            raw = mem.search(req.query, limit=req.top_k)
-            return {
-                "results": [
-                    {
-                        "content": r.content,
-                        "score": 1.0,
-                        "metadata": getattr(r, "metadata", {}) or {},
-                    }
-                    for r in raw
-                ],
-                "source": "jarvis_memory",
-            }
-        except Exception:
-            return {"results": []}
-
+    # --- JarvisMemory (legacy Python store — always queried) ---
     try:
-        results = backend.retrieve(req.query, top_k=req.top_k)
-        items = [
+        from openjarvis.memory.store import JarvisMemory  # noqa: PLC0415
+
+        mem = JarvisMemory()
+        raw = mem.search(req.query, limit=req.top_k)
+        jarvis_items = [
             {
                 "content": r.content,
-                "score": getattr(r, "score", 0.0),
-                "metadata": getattr(r, "metadata", {}),
+                "score": 0.5,
+                "source": "jarvis_memory",
+                "metadata": {
+                    "kind": getattr(r, "kind", "") or "",
+                    "namespace": getattr(r, "namespace", "") or "",
+                    "created_at": str(getattr(r, "created_at", "") or ""),
+                },
             }
-            for r in results
+            for r in raw
         ]
-        return {"results": items}
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+        jarvis_error = f"{type(exc).__name__}: {str(exc)[:80]}"
+
+    # --- Merge: SQLite first (preserves backend ranking), then unique JarvisMemory entries ---
+    seen: set = {item["content"] for item in sqlite_items}
+    merged = list(sqlite_items)
+    for item in jarvis_items:
+        if item["content"] not in seen:
+            merged.append(item)
+            seen.add(item["content"])
+
+    resp: dict = {"results": merged}
+    if sqlite_error:
+        resp["sqlite_source_error"] = sqlite_error
+    if jarvis_error:
+        resp["jarvis_memory_source_error"] = jarvis_error
+    return resp
 
 
 @memory_router.get("/stats")

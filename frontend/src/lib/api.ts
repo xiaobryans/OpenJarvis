@@ -957,6 +957,7 @@ export async function submitSavings(data: SavingsSubmission): Promise<boolean> {
 export interface MemorySearchResult {
   content: string;
   score: number;
+  source?: string;
   metadata: Record<string, unknown>;
 }
 
