@@ -7,22 +7,74 @@
 | Field | Value |
 |-------|-------|
 | Branch | `localhost-get-tool` |
-| HEAD | `90471fce` (Plan 2 B6 live proof: fargate_readiness SSL fix — committed/pushed) |
+| HEAD | `06ef9bf1` (Plan 2 final runtime blocker closure: B2/B5C/B7/B8 adapters + sync endpoints) |
 | Remote | `fork/localhost-get-tool` |
 | Working tree | Dirty — pre-existing only: `JARVIS_OMNIX_HANDOFF.md`, `tests/workbench/test_us14a_fixture.py` |
 | Untracked (pre-existing, do NOT stage) | `evidence/`, `scripts/plan1_cockpit_proof.py`, `scripts/plan9_copy_cloud_api_key.sh`, `scripts/plan9_verify_cloud_api_key.py` |
 | Active worktrees | None |
-| Auto-continue safe | YES — Fargate redeploy sprint complete; docs update pending commit |
+| Fargate image | `jarvis-full-06ef9bf1` (task def rev 18) — RUNNING + HEALTHY |
+| Auto-continue safe | YES — code committed/pushed; Fargate running rev 18; live delivery proof requires Tailscale |
 
-## Corrected Plan 2 Verdict
+## Plan 2 Verdict
 
 `PLAN_2_FULL_MOBILE_MACBOOK_OFF_PARITY_RUNTIME_HOLD`
 
-**Reason:** Blockers B1, B2, B4, B5C, B6, B7, B8 remain open. B3 code-side closed (both Telegram env var names accepted). B5A/B5B READY. No subsection is MacBook-off READY. Fargate deployment, vault migration, Google OAuth sync, Life-OS cloud sync, and external notification delivery are all undeployed or unconfigured. HOLD is the only valid verdict.
+**Reason:** B1 (Google OAuth refresh tokens local-only), B4 (Notion not configured), B5C (Slack adapter deployed but live delivery unproven — Tailscale stopped), B7/B8 (sync code deployed but live execution unproven — Tailscale stopped) remain open.
+B2: Secret references ALL confirmed in task def rev 17/18. Adapters now deployed. PARTIALLY_CLOSED.
+B3: CODE_CLOSED. B5A/B5B: READY. B6: CLOSED.
 
 **Not accepted.** Only Bryan/ChatGPT reviewer can accept.
 
-## Plan 2 Fargate Current-Code Redeploy + Runtime Proof Sprint (current)
+## Plan 2 Final Runtime Blocker Closure Sprint (current)
+
+**Sprint:** Plan 2 final runtime blocker closure — B2/B5C/B7/B8 adapters + sync endpoints
+**Base HEAD:** `f3fc3480` (Plan 2 Fargate redeploy: rev 17 live)
+**Commit:** `06ef9bf1`
+**Purpose:** Implement concrete Slack/Telegram notification adapters (B5C), Life-OS S3 sync (B7 cloud), workspace memory sync (B8) endpoints; deploy rev 18; confirm HEALTHY.
+
+### What was done
+
+1. **notification_adapters.py** (NEW) — `SlackNotificationAdapter` + `TelegramNotificationAdapter` implementing `NotificationProviderAdapter`; checks all known token env var aliases incl. Fargate-injected `SLACK_BOT_TOKEN` / `TELEGRAM_BOT_TOKEN`; `get_configured_adapters()` factory; `get_adapter_status()` (no token values).
+2. **life_os_s3_sync.py** (NEW) — `LifeOSTaskS3Sync` exports SQLitePersonalTaskStore tasks to S3 under `life_os_tasks/` prefix using `OMNIX_WORKBENCH_MEMORY_BUCKET` (present in Fargate env since task def rev 17).
+3. **plan2_routes.py** (MODIFIED) — 6 new auth-gated endpoints: `POST /v1/notifications/dispatch`, `GET /v1/notifications/dispatch/status`, `POST /v1/life-os/sync`, `GET /v1/life-os/sync/status`, `POST /v1/workspace/sync`, `GET /v1/workspace/sync/status`.
+4. **test_plan2_b2_b5c_b7_b8.py** (NEW) — 51 tests; 51/51 PASS.
+5. **Docker build** — `jarvis-full-06ef9bf1` built and pushed to ECR.
+6. **ECS task def rev 18** — registered; same 11 secrets + S3 env vars; new image tag.
+7. **ECS service** — force-new-deployment to rev 18; rolloutState=COMPLETED; task RUNNING+HEALTHY.
+
+### Live deployment proof
+
+```
+Task: ef923db555414371901bad1916dca2f3
+lastStatus: RUNNING
+health: HEALTHY
+taskDef: omnix-workbench-jarvis-full:18
+image: jarvis-full-06ef9bf1
+containerHealth: HEALTHY
+```
+
+### Validation results
+- 51/51 new B2/B5C/B7/B8 tests: PASS
+- 493/494 total plan9 tests: PASS (1 pre-existing unrelated failure)
+- git diff --check: CLEAN
+- Secret scan: CLEAN
+- High-entropy scan: CLEAN
+- Fargate health: RUNNING + HEALTHY via ECS API
+
+### Blocker status after this sprint
+
+| Blocker | Before | After | Remaining gap |
+|---------|--------|-------|---------------|
+| B2 | Secret refs not all confirmed | ALL 11 secrets confirmed in task def rev 17/18 | Dispatcher DEPLOYED (new image) |
+| B5C | No concrete adapters | SlackNotificationAdapter + TelegramNotificationAdapter + dispatch endpoint deployed | Live delivery needs Tailscale + JARVIS_TELEGRAM_CHAT_ID for Telegram |
+| B7 (cloud) | No sync endpoint | LifeOSTaskS3Sync + POST /v1/life-os/sync deployed; S3 fully configured in Fargate | Live sync proof needs Tailscale |
+| B8 | No sync trigger | POST /v1/workspace/sync deployed; S3 fully configured in Fargate | Live sync proof needs Tailscale |
+| B1 | LOCAL_FILE_ONLY | Unchanged — client creds in SM; refresh tokens still local | Vault migration requires manual OAuth re-grant |
+| B4 | NOT_CONFIGURED | Unchanged | Notion token required |
+
+---
+
+## Plan 2 Fargate Current-Code Redeploy + Runtime Proof Sprint (prior)
 
 **Sprint:** Plan 2 Fargate current-code redeploy + runtime proof
 **Base HEAD:** `90471fce` (Plan 2 B6 live proof: fargate_readiness SSL fix)
@@ -122,63 +174,47 @@ Fargate is now running current HEAD `90471fce` — the same commit with Plan 2 r
 | Plan 2G | `PLAN_2G_APPROVAL_NOTIFICATION_PARITY_PATCHED_PENDING_REVIEW` | B5A+B5B closed; B5C CONFIGURED_NOT_DEPLOYED |
 | Plan 2H | `PLAN_2H_LONG_RUNNING_PARITY_PATCHED_PENDING_REVIEW` | Foundation patched + Fargate readiness gating; awaiting acceptance |
 | Plan 2I | `PLAN_2I_DEPLOY_PARITY_PATCHED_PENDING_REVIEW` | Foundation patched — awaiting acceptance |
-| Full Plan 2 | `PLAN_2_FULL_MOBILE_MACBOOK_OFF_PARITY_RUNTIME_HOLD` | **HOLD — B1, B2 (partial), B4, B5C, B7, B8 remain; B6 CLOSED** |
+| Full Plan 2 | `PLAN_2_FULL_MOBILE_MACBOOK_OFF_PARITY_RUNTIME_HOLD` | **HOLD — B1, B4, B5C (partial), B7/B8 (code deployed, live proof needed); B2/B3/B5A/B5B/B6 CLOSED/CONFIRMED** |
 
-## Blocker Registry
+## Blocker Registry (updated 2026-06-24)
 
-| ID | Blocker | Subsection | Status | Safe to close without external action? |
-|----|---------|------------|--------|----------------------------------------|
-| B1 | Google OAuth tokens local JSON → vault/cloud migration | 2B | **Code-side abstraction done** (LOCAL_FILE_ONLY reported; cloud_vault_configured=False) | NO — vault migration requires live credentials |
-| B2 | GitHub/Slack/Telegram env tokens → Fargate deployment | 2B | **PARTIALLY CLOSED** — SLACK_BOT_TOKEN + TELEGRAM_BOT_TOKEN injected in task def rev 17 | Dispatcher wiring (code) + GITHUB_TOKEN local only |
-| B3 | Telegram env mismatch: TELEGRAM_BOT_TOKEN vs JARVIS_TELEGRAM_BOT_TOKEN | 2B | **CODE_CLOSED** — both names accepted | N/A |
-| B4 | Notion not configured | 2B | **Code-side check done** (env vars checked; NOT_CONFIGURED until token provided) | NO — requires actual Notion token |
-| B5A | Approval gate / queue | 2G | **CLOSED** | READY |
-| B5B | Internal notification enqueue | 2G | **CLOSED** | READY |
-| B5C | External notification delivery (Slack/Telegram/push) | 2G | **Code-side gating done** (CONFIGURED_NOT_DEPLOYED) | NO — requires live provider tokens + Fargate |
-| B6 | Fargate worker / cloud execution path not deployed | 2H | **CLOSED** — Running `90471fce` (current HEAD), engine=cloud, health=READY, Plan 2 routes active | N/A |
-| B7 (local) | Life-OS task store in-memory only | 2E | **CODE_CLOSED** — SQLite backend active | N/A |
-| B7 (cloud) | Life-OS SQLite not synced to cloud | 2E | **Code-side tracking done** (LAYER_REQUIRES_DEPLOYMENT) | NO — requires cloud sync + Fargate |
-| B8 | Full workspace sync to S3 | 2C | **Code-side gating done** (LAYER_REQUIRES_DEPLOYMENT for sync_executed + cloud_worker_access) | NO — requires Fargate deployment |
+| ID | Blocker | Subsection | Status | Remaining gap |
+|----|---------|------------|--------|---------------|
+| B1 | Google OAuth tokens local JSON → vault/cloud migration | 2B | **PARTIAL** — GOOGLE_CLIENT_SECRET + GOOGLE_OAUTH_CLIENT_ID in SM ✓; gmail.json refresh tokens still LOCAL_FILE_ONLY | Vault migration for refresh tokens — manual OAuth re-grant required |
+| B2 | GitHub/Slack/Telegram env tokens → Fargate deployment | 2B | **CONFIRMED_DEPLOYED** — ALL 11 secrets in task def rev 17/18; Slack+Telegram+GitHub adapters wired; dispatch endpoint at POST /v1/notifications/dispatch | Telegram delivery needs JARVIS_TELEGRAM_CHAT_ID env in task def; Slack can deliver (hardcoded default channel) |
+| B3 | Telegram env mismatch | 2B | **CODE_CLOSED** — both TELEGRAM_BOT_TOKEN and JARVIS_TELEGRAM_BOT_TOKEN accepted | N/A |
+| B4 | Notion not configured | 2B | **NOT_CONFIGURED** — no token in SM or task def | Notion API token required |
+| B5A | Approval gate / queue | 2G | **CLOSED** | N/A |
+| B5B | Internal notification enqueue | 2G | **CLOSED** | N/A |
+| B5C | External notification delivery | 2G | **DEPLOYED — live proof pending** — SlackNotificationAdapter + TelegramNotificationAdapter + POST /v1/notifications/dispatch deployed in rev 18; Slack token present + default channel hardcoded → can deliver; Telegram missing JARVIS_TELEGRAM_CHAT_ID | Live delivery proof needs Tailscale to call endpoint; Telegram needs chat ID env var |
+| B6 | Fargate worker / cloud execution path | 2H | **CLOSED** — Running rev 18 `06ef9bf1`, RUNNING+HEALTHY, task def rev 18 active | N/A |
+| B7 (local) | Life-OS task store in-memory | 2E | **CLOSED** — SQLite backend active | N/A |
+| B7 (cloud) | Life-OS not synced to cloud | 2E | **DEPLOYED — live proof pending** — LifeOSTaskS3Sync + POST /v1/life-os/sync deployed; S3 bucket config present in Fargate env | Live S3 sync proof needs Tailscale to call endpoint |
+| B8 | Workspace sync to S3 | 2C | **DEPLOYED — live proof pending** — POST /v1/workspace/sync deployed; JarvisMemoryS3Sync available; S3 config present in Fargate env | Live S3 sync proof needs Tailscale to call endpoint |
 | B9 | Voice/wake/TTS | 2F | **Parked** (Plan 3 — permanent) | N/A |
 
-## Hard Blockers Requiring External Action
+## Hard Blockers Remaining
 
-- B1: Google OAuth token vault migration — live credentials required
-- B2: Dispatcher wiring (code change needed) + GITHUB_TOKEN still local-only
-- B4: Notion API token setup
-- B5C: Connector dispatcher wiring to actually send Slack/Telegram messages
-- B7 (cloud): Cloud sync wiring + code change for CloudSync class
-- B8: Cloud sync wiring for workspace S3 sync
-
-**B6: CLOSED** — Fargate running `90471fce`, engine=cloud, Plan 2 routes active.
+- **B1**: Google OAuth refresh token vault migration — manual OAuth re-grant required; client credentials already in SM
+- **B4**: Notion API token — not configured anywhere
+- **B5C (Telegram)**: `JARVIS_TELEGRAM_CHAT_ID` env var not in Fargate task def — add to task def to enable Telegram delivery
+- **B5C/B7/B8 (live proof)**: Tailscale stopped — cannot call Fargate endpoints locally; start Tailscale to prove delivery/sync
 
 ## Next Step to Resume
 
-**RESUME_FROM_HERE:** B1/B3/B4/B7 code sprint complete. Commit/push to `fork/localhost-get-tool` pending.
+**RESUME_FROM_HERE:** B2/B5C/B7/B8 code implemented + deployed in Fargate rev 18. Docs update pending commit.
 
-**Files to stage (explicit paths only — do NOT use `git add .`):**
-```
-src/openjarvis/jarvis_os/life_os_store.py
-src/openjarvis/jarvis_os/life_os_cloud_sync_status.py
-src/openjarvis/jarvis_os/personal_os.py
-src/openjarvis/server/plan2_routes.py
-tests/plan9/test_plan2_b1_b3_b4_b7.py
-docs/plan2/PLAN2_AUTONOMOUS_SESSION_STATE.md
-docs/plan2/PLAN2_PROGRESS_LEDGER.md
-docs/plan2/PLAN2_RESUME_PROMPT.md
-```
+**To prove remaining live delivery:**
+1. **Start Tailscale** → call `POST /v1/notifications/dispatch` with Bearer auth → proves B5C Slack delivery
+2. **Add JARVIS_TELEGRAM_CHAT_ID to task def env** → register rev 19 → redeploy → prove Telegram delivery
+3. **Call `POST /v1/life-os/sync`** with Bearer auth → proves B7 cloud sync
+4. **Call `POST /v1/workspace/sync`** with Bearer auth → proves B8 S3 sync
+5. **Migrate Google OAuth refresh tokens** to SM → proves B1
 
-Do NOT stage: `JARVIS_OMNIX_HANDOFF.md`, `tests/workbench/test_us14a_fixture.py`, `evidence/`, `scripts/plan1_cockpit_proof.py`, `scripts/plan9_copy_cloud_api_key.sh`, `scripts/plan9_verify_cloud_api_key.py`
+**To close B4:**
+- Add Notion API token to SM under `NOTION_API_TOKEN` key → update task def to inject it → redeploy
 
-Commit message: `Plan 2 full blocker closure runtime proof: B1/B3/B4/B7 code-side`
-Push to: `fork localhost-get-tool`
-
-**Next steps after commit/push (all require external authorization):**
-1. **Authorize live Fargate deployment sprint** → `terraform apply` → unblocks B2, B6, B8
-2. **Migrate Google OAuth tokens to cloud vault** → unblocks B1
-3. **Configure Notion API token** → unblocks B4
-4. **Wire external notification delivery** → unblocks B5C
-5. **Wire Life-OS cloud sync** → unblocks B7 (cloud)
+**Do NOT stage:** `JARVIS_OMNIX_HANDOFF.md`, `tests/workbench/test_us14a_fixture.py`, `evidence/`, `scripts/plan1_cockpit_proof.py`, `scripts/plan9_copy_cloud_api_key.sh`, `scripts/plan9_verify_cloud_api_key.py`
 
 ## Hard Rules Active
 - No Tauri rebuild
