@@ -42,6 +42,41 @@ router = APIRouter()
 # ---------------------------------------------------------------------------
 # Plan 2 status vocabulary
 # ---------------------------------------------------------------------------
+# NOTE: public endpoint safety — the following whitelist controls exactly which
+# fields are sent to unauthenticated callers.  Do NOT add *_present, *_configured,
+# blockers[], notes[], or any dynamic boolean that reveals key/secret presence.
+_PUBLIC_SUBSECTION_KEYS: frozenset[str] = frozenset({
+    "subsection",
+    "name",
+    "desktop_status",
+    "mobile_status",
+    "macbook_off_status",
+    "auth_status",
+    "key_routes",
+    # 2F vocab only — static strings, not booleans
+    "wake_word_tts_status",
+    "wake_word_tts_plan",
+    # 2I vocab only — static strings, not booleans
+    "tauri_signing_status",
+    "ecs_deploy_status",
+})
+
+
+def _public_subsection(d: Dict[str, Any]) -> Dict[str, Any]:
+    """Return only public-safe fields from a subsection status dict.
+
+    Strips: *_present, *_configured booleans; blockers (contain secret names);
+    notes (contain local paths and env var names); dynamic auth_status suffixes
+    that reveal whether the API key is currently configured.
+    """
+    result = {k: v for k, v in d.items() if k in _PUBLIC_SUBSECTION_KEYS}
+    # Normalize auth_status: remove "— key configured" suffix that reveals key presence
+    if "auth_status" in result:
+        s = result["auth_status"]
+        for suffix in (" — key configured", " — key set", "— key configured"):
+            s = s.replace(suffix, "")
+        result["auth_status"] = s.strip()
+    return result
 
 READY = "READY"
 LOCAL_ONLY = "LOCAL_ONLY"
@@ -485,9 +520,12 @@ async def get_mobile_parity_status() -> Dict[str, Any]:
     """Plan 2 — honest per-subsection mobile/MacBook-off parity status.
 
     Public endpoint (no auth required) — mobile can check without credentials.
-    Returns honest states only. Does not fake readiness.
+    Returns coarse public-safe status only.  All secret/key presence booleans,
+    specific blocker strings containing env-var names, and notes containing
+    internal paths are stripped via _public_subsection() before serialisation.
+    Does not fake readiness.
     """
-    subsections = [
+    subsections_full = [
         _status_2a_workbench(),
         _status_2b_connectors(),
         _status_2c_files(),
@@ -499,13 +537,12 @@ async def get_mobile_parity_status() -> Dict[str, Any]:
         _status_2i_deploy(),
     ]
 
-    cloud_keys = _cloud_keys_present()
-    api_key_configured = _api_key_configured()
-    aws_ready = _aws_configured()
+    # Compute counts from full internal data before stripping
+    mobile_ready = sum(1 for s in subsections_full if s.get("mobile_status") == READY)
+    macbook_off_ready = sum(1 for s in subsections_full if s.get("macbook_off_status") == READY)
 
-    # Count honest states
-    mobile_ready = sum(1 for s in subsections if s.get("mobile_status") == READY)
-    macbook_off_ready = sum(1 for s in subsections if s.get("macbook_off_status") == READY)
+    # Strip all sensitive fields before returning to unauthenticated caller
+    public_subsections = [_public_subsection(s) for s in subsections_full]
 
     return {
         "plan": "Plan 2 — Full Mobile MacBook-Off Parity Runtime",
@@ -515,31 +552,29 @@ async def get_mobile_parity_status() -> Dict[str, Any]:
         "sprint_verdict": "PLAN_2A_MOBILE_MACBOOK_OFF_FOUNDATION_PATCHED_PENDING_REVIEW",
         "matrix_path": _MATRIX_PATH,
         "plan1_verdict": "PLAN_1_DUAL_PLATFORM_JARVIS_NEURAL_COMMAND_CENTER_ACCEPTED",
+        # global: static text only — no key presence booleans, no infra details
         "global": {
-            "api_key_configured": api_key_configured,
-            "cloud_model_keys": cloud_keys,
-            "aws_configured": aws_ready,
-            "memory_bucket_configured": _memory_bucket_configured(),
-            "telegram_present": _telegram_present(),
-            "slack_present": _slack_present(),
-            "local_db_accessible": _db_accessible(),
             "macbook_off_global_blocker": (
                 "Primary data stores (memory, approvals, life-os, connector tokens) are "
                 "local SQLite — cloud sync required for MacBook-off parity across all subsections."
             ),
         },
         "summary": {
-            "total_subsections": len(subsections),
+            "total_subsections": len(subsections_full),
             "mobile_ready": mobile_ready,
             "macbook_off_ready": macbook_off_ready,
-            "mobile_cloud_required": sum(1 for s in subsections if s.get("mobile_status") == CLOUD_REQUIRED),
-            "macbook_off_pending": sum(1 for s in subsections if s.get("macbook_off_status") == MACBOOK_OFF_PENDING),
-            "parked": sum(1 for s in subsections if s.get("mobile_status") == PARKED),
+            "mobile_cloud_required": sum(
+                1 for s in subsections_full if s.get("mobile_status") == CLOUD_REQUIRED
+            ),
+            "macbook_off_pending": sum(
+                1 for s in subsections_full if s.get("macbook_off_status") == MACBOOK_OFF_PENDING
+            ),
+            "parked": sum(1 for s in subsections_full if s.get("mobile_status") == PARKED),
         },
         "parity_definition": (
             "Whatever Jarvis can do on MacBook/desktop should eventually be operable from "
             "phone/mobile while the MacBook is off, subject only to real platform, security, "
             "connector, permission, cost, and approval limits."
         ),
-        "subsections": subsections,
+        "subsections": public_subsections,
     }
