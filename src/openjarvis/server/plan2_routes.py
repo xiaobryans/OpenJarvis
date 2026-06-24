@@ -1606,3 +1606,294 @@ async def get_cloud_worker_detail(
             "Wire external notification delivery from Fargate for B5C",
         ],
     }
+
+
+# ---------------------------------------------------------------------------
+# B5C — External notification dispatch (auth-gated)
+# ---------------------------------------------------------------------------
+
+@router.post("/v1/notifications/dispatch")
+async def dispatch_pending_notifications(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(_bearer_scheme),
+) -> Dict[str, Any]:
+    """B5C — Dispatch all pending approval notification events to external providers.
+
+    AUTH REQUIRED (Bearer token). Reads pending events from NotificationQueue
+    and routes to configured provider adapters (Slack / Telegram).
+
+    Returns aggregate dispatch result — no secret values, no token values.
+    """
+    api_key = os.environ.get("OPENJARVIS_API_KEY", "").strip()
+    if api_key:
+        import secrets as _secrets
+        token = credentials.credentials if credentials else ""
+        if not token or not _secrets.compare_digest(token.strip(), api_key):
+            raise HTTPException(status_code=401, detail="Invalid or missing API key")
+
+    # Get configured adapters from env (presence-only — no token values logged)
+    try:
+        from openjarvis.authority.notification_adapters import (
+            get_configured_adapters,
+            get_adapter_status,
+        )
+        adapters = get_configured_adapters()
+        adapter_status = get_adapter_status()
+    except Exception as exc:
+        return {
+            "ok": False,
+            "b5c_status": "ADAPTER_LOAD_FAILED",
+            "detail": f"Could not load notification adapters: {type(exc).__name__}",
+            "dispatch_result": None,
+        }
+
+    # Get queue
+    try:
+        from openjarvis.authority.notification_queue import NotificationQueue
+        queue = NotificationQueue()
+    except Exception as exc:
+        return {
+            "ok": False,
+            "b5c_status": "QUEUE_UNAVAILABLE",
+            "detail": f"NotificationQueue unavailable: {type(exc).__name__}",
+            "dispatch_result": None,
+        }
+
+    # Dispatch
+    try:
+        from openjarvis.authority.notification_dispatcher import NotificationDispatcher
+        dispatcher = NotificationDispatcher(providers=adapters)
+        result = dispatcher.dispatch_pending(queue)
+        dispatch_dict = result.to_dict()
+    except Exception as exc:
+        return {
+            "ok": False,
+            "b5c_status": "DISPATCH_FAILED",
+            "detail": f"Dispatch raised: {type(exc).__name__}",
+            "dispatch_result": None,
+        }
+
+    configured_count = adapter_status.get("configured_count", 0)
+    if configured_count == 0:
+        b5c_status = "NOT_CONFIGURED"
+        detail = "No external notification providers configured. Slack requires SLACK_BOT_TOKEN; Telegram requires TELEGRAM_BOT_TOKEN + JARVIS_TELEGRAM_CHAT_ID."
+    elif result.delivered > 0:
+        b5c_status = "DELIVERED"
+        detail = f"Dispatched {result.delivered} of {result.total_events} pending events."
+    elif result.total_events == 0:
+        b5c_status = "NO_PENDING_EVENTS"
+        detail = "No pending approval notification events in queue."
+    else:
+        b5c_status = "DELIVERY_FAILED"
+        detail = f"Dispatch attempted {result.total_events} events; {result.failed} failed, {result.not_configured} not_configured."
+
+    return {
+        "ok": result.delivered > 0 or result.total_events == 0,
+        "b5c_status": b5c_status,
+        "detail": detail,
+        "adapters": adapter_status,
+        "dispatch_result": dispatch_dict,
+        "auth_required": True,
+    }
+
+
+@router.get("/v1/notifications/dispatch/status")
+async def get_dispatch_status(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(_bearer_scheme),
+) -> Dict[str, Any]:
+    """B5C — Return adapter and queue status without dispatching. AUTH REQUIRED."""
+    api_key = os.environ.get("OPENJARVIS_API_KEY", "").strip()
+    if api_key:
+        import secrets as _secrets
+        token = credentials.credentials if credentials else ""
+        if not token or not _secrets.compare_digest(token.strip(), api_key):
+            raise HTTPException(status_code=401, detail="Invalid or missing API key")
+
+    try:
+        from openjarvis.authority.notification_adapters import get_adapter_status
+        adapter_status = get_adapter_status()
+    except Exception as exc:
+        adapter_status = {"error": type(exc).__name__}
+
+    try:
+        from openjarvis.authority.notification_queue import NotificationQueue
+        queue = NotificationQueue()
+        pending_count = queue.count_queued()
+    except Exception:
+        pending_count = -1
+
+    return {
+        "auth_required": True,
+        "b5c_adapters": adapter_status,
+        "pending_events_count": pending_count,
+        "dispatch_endpoint": "POST /v1/notifications/dispatch",
+    }
+
+
+# ---------------------------------------------------------------------------
+# B7 — Life-OS cloud sync (auth-gated)
+# ---------------------------------------------------------------------------
+
+@router.post("/v1/life-os/sync")
+async def trigger_life_os_sync(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(_bearer_scheme),
+) -> Dict[str, Any]:
+    """B7 — Export Life-OS tasks from SQLite to S3. AUTH REQUIRED.
+
+    Pushes all SQLitePersonalTaskStore entries to S3 under life_os_tasks/ prefix.
+    Uses OMNIX_WORKBENCH_MEMORY_BUCKET from environment (Fargate env var).
+    Returns sync result — no secret values, no full bucket names.
+    """
+    api_key = os.environ.get("OPENJARVIS_API_KEY", "").strip()
+    if api_key:
+        import secrets as _secrets
+        token = credentials.credentials if credentials else ""
+        if not token or not _secrets.compare_digest(token.strip(), api_key):
+            raise HTTPException(status_code=401, detail="Invalid or missing API key")
+
+    try:
+        from openjarvis.jarvis_os.life_os_s3_sync import LifeOSTaskS3Sync
+        sync = LifeOSTaskS3Sync()
+        result = sync.push()
+        return {
+            "ok": result.success,
+            "b7_sync_status": "SYNCED" if result.success else "SYNC_FAILED",
+            "auth_required": True,
+            "sync_result": result.to_dict(),
+        }
+    except Exception as exc:
+        return {
+            "ok": False,
+            "b7_sync_status": "SYNC_ERROR",
+            "auth_required": True,
+            "sync_result": None,
+            "detail": f"Life-OS sync raised: {type(exc).__name__}",
+        }
+
+
+@router.get("/v1/life-os/sync/status")
+async def get_life_os_sync_status(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(_bearer_scheme),
+) -> Dict[str, Any]:
+    """B7 — Return Life-OS S3 sync readiness without performing a sync. AUTH REQUIRED."""
+    api_key = os.environ.get("OPENJARVIS_API_KEY", "").strip()
+    if api_key:
+        import secrets as _secrets
+        token = credentials.credentials if credentials else ""
+        if not token or not _secrets.compare_digest(token.strip(), api_key):
+            raise HTTPException(status_code=401, detail="Invalid or missing API key")
+
+    try:
+        from openjarvis.jarvis_os.life_os_s3_sync import LifeOSTaskS3Sync
+        sync = LifeOSTaskS3Sync()
+        readiness = sync.get_sync_readiness()
+        return {
+            "auth_required": True,
+            "b7_cloud_sync": readiness,
+            "sync_endpoint": "POST /v1/life-os/sync",
+        }
+    except Exception as exc:
+        return {
+            "auth_required": True,
+            "b7_cloud_sync": {"status": "ERROR", "detail": type(exc).__name__},
+            "sync_endpoint": "POST /v1/life-os/sync",
+        }
+
+
+# ---------------------------------------------------------------------------
+# B8 — Workspace / memory sync to S3 (auth-gated)
+# ---------------------------------------------------------------------------
+
+@router.post("/v1/workspace/sync")
+async def trigger_workspace_sync(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(_bearer_scheme),
+) -> Dict[str, Any]:
+    """B8 — Trigger workspace memory sync to S3 from the Fargate worker. AUTH REQUIRED.
+
+    Calls JarvisMemoryS3Sync to push raw/distilled memory entries to S3.
+    Uses OMNIX_WORKBENCH_MEMORY_BUCKET from environment.
+    Returns sync result — no secret values, no full bucket names.
+    """
+    api_key = os.environ.get("OPENJARVIS_API_KEY", "").strip()
+    if api_key:
+        import secrets as _secrets
+        token = credentials.credentials if credentials else ""
+        if not token or not _secrets.compare_digest(token.strip(), api_key):
+            raise HTTPException(status_code=401, detail="Invalid or missing API key")
+
+    try:
+        from openjarvis.memory.cloud_sync import JarvisMemoryS3Sync
+        sync = JarvisMemoryS3Sync()
+
+        # Get workspace sync layer status first
+        from openjarvis.memory.workspace_sync_status import get_workspace_sync_status
+        ws_status = get_workspace_sync_status()
+
+        # Attempt S3 status check (non-destructive)
+        sync_status = sync.get_status()
+
+        if not sync_status.available:
+            return {
+                "ok": False,
+                "b8_sync_status": "NOT_CONFIGURED",
+                "auth_required": True,
+                "workspace_layers": ws_status.to_dict(),
+                "s3_status": sync_status.to_dict(),
+                "detail": "S3 not reachable from this worker — check bucket config and IAM role.",
+            }
+
+        # S3 is reachable — push memory entries as workspace sync proof
+        from openjarvis.jarvis_memory import JarvisMemory
+        try:
+            memory = JarvisMemory()
+            raw = memory.list_all_raw() if hasattr(memory, "list_all_raw") else []
+            distilled = memory.list_all_distilled() if hasattr(memory, "list_all_distilled") else []
+        except Exception:
+            raw, distilled = [], []
+
+        raw_result = sync.push_raw(raw)
+        dist_result = sync.push_distilled(distilled)
+
+        any_ok = raw_result.success or dist_result.success
+        return {
+            "ok": any_ok,
+            "b8_sync_status": "SYNCED" if any_ok else "SYNC_FAILED",
+            "auth_required": True,
+            "workspace_layers": ws_status.to_dict(),
+            "raw_sync": raw_result.to_dict(),
+            "distilled_sync": dist_result.to_dict(),
+        }
+    except Exception as exc:
+        return {
+            "ok": False,
+            "b8_sync_status": "SYNC_ERROR",
+            "auth_required": True,
+            "detail": f"Workspace sync raised: {type(exc).__name__}",
+        }
+
+
+@router.get("/v1/workspace/sync/status")
+async def get_workspace_sync_status_detail(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(_bearer_scheme),
+) -> Dict[str, Any]:
+    """B8 — Return workspace sync readiness status without syncing. AUTH REQUIRED."""
+    api_key = os.environ.get("OPENJARVIS_API_KEY", "").strip()
+    if api_key:
+        import secrets as _secrets
+        token = credentials.credentials if credentials else ""
+        if not token or not _secrets.compare_digest(token.strip(), api_key):
+            raise HTTPException(status_code=401, detail="Invalid or missing API key")
+
+    try:
+        from openjarvis.memory.workspace_sync_status import get_workspace_sync_status
+        ws_status = get_workspace_sync_status()
+        return {
+            "auth_required": True,
+            "b8_workspace_sync": ws_status.to_dict(),
+            "sync_endpoint": "POST /v1/workspace/sync",
+        }
+    except Exception as exc:
+        return {
+            "auth_required": True,
+            "b8_workspace_sync": {"status": "ERROR", "detail": type(exc).__name__},
+            "sync_endpoint": "POST /v1/workspace/sync",
+        }
