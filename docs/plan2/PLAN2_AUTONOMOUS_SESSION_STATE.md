@@ -7,25 +7,92 @@
 | Field | Value |
 |-------|-------|
 | Branch | `localhost-get-tool` |
-| HEAD | `06ef9bf1` (Plan 2 final runtime blocker closure: B2/B5C/B7/B8 adapters + sync endpoints) |
-| Remote | `fork/localhost-get-tool` |
+| HEAD | `b8cb53bf` (Fix B8 workspace sync: correct JarvisMemory import path and MemoryEntry serialization) |
+| Remote | `fork/localhost-get-tool` (push pending — after this update) |
 | Working tree | Dirty — pre-existing only: `JARVIS_OMNIX_HANDOFF.md`, `tests/workbench/test_us14a_fixture.py` |
 | Untracked (pre-existing, do NOT stage) | `evidence/`, `scripts/plan1_cockpit_proof.py`, `scripts/plan9_copy_cloud_api_key.sh`, `scripts/plan9_verify_cloud_api_key.py` |
 | Active worktrees | None |
-| Fargate image | `jarvis-full-06ef9bf1` (task def rev 18) — RUNNING + HEALTHY |
-| Auto-continue safe | YES — code committed/pushed; Fargate running rev 18; live delivery proof requires Tailscale |
+| Fargate image | `jarvis-full-b8cb53bf` (task def rev 19) — RUNNING + HEALTHY + ECS Exec ENABLED |
+| Auto-continue safe | YES — all live proofs complete; B1 vault migration is the only remaining open blocker |
 
 ## Plan 2 Verdict
 
 `PLAN_2_FULL_MOBILE_MACBOOK_OFF_PARITY_RUNTIME_HOLD`
 
-**Reason:** B1 (Google OAuth refresh tokens local-only), B4 (Notion not configured), B5C (Slack adapter deployed but live delivery unproven — Tailscale stopped), B7/B8 (sync code deployed but live execution unproven — Tailscale stopped) remain open.
-B2: Secret references ALL confirmed in task def rev 17/18. Adapters now deployed. PARTIALLY_CLOSED.
-B3: CODE_CLOSED. B5A/B5B: READY. B6: CLOSED.
+**Reason:** B1 (Google OAuth refresh tokens local-only — vault migration requires manual OAuth re-grant) is the single remaining open blocker.
+All other blockers: B2 CLOSED, B3 CLOSED, B4 LIVE_PROVEN, B5A READY, B5B READY, B5C LIVE_PROVEN (Slack + Telegram both), B6 CLOSED, B7 LIVE_PROVEN, B8 LIVE_PROVEN.
 
 **Not accepted.** Only Bryan/ChatGPT reviewer can accept.
 
-## Plan 2 Final Runtime Blocker Closure Sprint (current)
+## Plan 2 Live Proof Sprint — B4/B5C/B7/B8 via ECS Exec (current)
+
+**Sprint:** Plan 2 live proof — B4 Notion, B5C Slack+Telegram, B7 Life-OS, B8 Workspace via ECS Exec
+**Base HEAD:** `03630202` → fixes → `b8cb53bf`
+**Fargate:** task def rev 19, image `jarvis-full-b8cb53bf`, task `f4b726323916494ba9950952eedea901`
+**ECS Exec:** ENABLED (ssmmessages IAM perms added to task role; force-new-deployment)
+**JARVIS_TELEGRAM_CHAT_ID:** discovered via `getUpdates` inside container; added to task def rev 19 environment
+**NOTION_API_KEY:** added to task def rev 19 secrets (valueFrom Secrets Manager ARN); API live-proven
+
+### What was done
+
+1. **IAM task role update** — added `ssmmessages:CreateControlChannel/DataChannel/OpenControlChannel/OpenDataChannel` to `omnix-workbench-ecs-task-policy`; required for ECS Exec.
+2. **ECS service** — `enable-execute-command=true` + force-new-deployment on rev 18 → rev 19.
+3. **Telegram chat ID discovery** — used `getUpdates` via ECS Exec on rev 18 task; chat type: private; ID captured without printing token.
+4. **task def rev 19** — new image `jarvis-full-b8cb53bf`; NOTION_API_KEY added to secrets; JARVIS_TELEGRAM_CHAT_ID added to environment (public identifier, not a secret).
+5. **B8 import fix** — `plan2_routes.py` corrected: `openjarvis.jarvis_memory` → `openjarvis.memory.store`; `MemoryEntry` objects serialized via `.to_dict()` before `push_raw()`.
+6. **Docker build** — `jarvis-full-b8cb53bf` built and pushed to ECR.
+7. **Rev 19 deployment** — registered task def rev 19; service updated; task RUNNING + HEALTHY + ExecAgent RUNNING.
+
+### Live Proof Results (via ECS Exec on rev 19 task f4b726323916494ba9950952eedea901)
+
+| Blocker | Proof Command | Result |
+|---------|---------------|--------|
+| B5C Slack | `SlackNotificationAdapter.send()` | **SLACK_DELIVERED: True** |
+| B5C Telegram | `TelegramNotificationAdapter.send()` (with JARVIS_TELEGRAM_CHAT_ID=discovery) | **TG_DELIVERED: True** |
+| B7 Life-OS | `POST /v1/life-os/sync` | **b7_sync_status: SYNCED**, 0 tasks → `life_os_tasks/tasks.jsonl` in 219ms |
+| B8 Workspace | `POST /v1/workspace/sync` | **b8_sync_status: SYNCED**, 127 raw entries → `jarvis_memory/raw_entries.jsonl` in 279ms |
+| B4 Notion | Notion API `/v1/users/me` | **REACHABLE_AND_AUTHENTICATED**, user_type=bot, len=50 key |
+
+### B1 Google OAuth — Exact Blocker Statement
+
+**Status:** No vault migration exists in the repo. Manual step required:
+
+1. User (Bryan) re-grants Google OAuth via browser for each connector (Gmail, GCalendar, GDrive, GContacts, GTasks)
+2. Resulting refresh tokens stored in AWS Secrets Manager under the existing secrets key
+3. `src/openjarvis/connectors/google_auth.py` updated to read refresh tokens from Secrets Manager instead of local files (`~/.openjarvis/connectors/google.json` etc.)
+4. New Fargate task def revision referencing the new secret keys
+5. ECS service redeployment
+
+**No automated path exists.** `_google_oauth_local_status()` returns `LOCAL_FILE_ONLY, cloud_vault_configured=False` as designed. This is a human-action blocker.
+
+### Blocker registry after this sprint
+
+| Blocker | Before | After | Status |
+|---------|--------|-------|--------|
+| B1 Google OAuth | LOCAL_FILE_ONLY | Unchanged — vault migration not implemented | **OPEN — manual vault migration required** |
+| B2 Env vars | Secret refs confirmed | Unchanged (CLOSED) | CLOSED |
+| B3 Telegram alias | Code CLOSED | Unchanged | CLOSED |
+| B4 Notion | NOT_CONFIGURED | NOTION_API_KEY in task def rev 19; API live-proven | **LIVE_PROVEN** |
+| B5A GitHub | Ready | Unchanged | READY |
+| B5B Slack DM | Ready | Unchanged | READY |
+| B5C Slack notification | Deployed, unproven | **LIVE_PROVEN — SLACK_DELIVERED: True** | **LIVE_PROVEN** |
+| B5C Telegram notification | No chat ID | JARVIS_TELEGRAM_CHAT_ID discovered + injected; **LIVE_PROVEN — TG_DELIVERED: True** | **LIVE_PROVEN** |
+| B6 Fargate readiness | CLOSED | Unchanged | CLOSED |
+| B7 Life-OS cloud sync | Deployed, unproven | **LIVE_PROVEN — 0 tasks → S3 in 219ms** | **LIVE_PROVEN** |
+| B8 Workspace sync | SYNC_ERROR (wrong import) | Fixed import; **LIVE_PROVEN — 127 entries → S3 in 279ms** | **LIVE_PROVEN** |
+
+### Next step to resume
+
+B1 Google OAuth vault migration — Bryan must:
+1. Run OAuth re-grant flow for each Google connector via browser
+2. Upload refresh tokens to AWS Secrets Manager
+3. Update `google_auth.py` vault path
+4. New task def revision + redeploy
+5. Prove Google connector connectivity from Fargate
+
+---
+
+## Plan 2 Final Runtime Blocker Closure Sprint (prior)
 
 **Sprint:** Plan 2 final runtime blocker closure — B2/B5C/B7/B8 adapters + sync endpoints
 **Base HEAD:** `f3fc3480` (Plan 2 Fargate redeploy: rev 17 live)
