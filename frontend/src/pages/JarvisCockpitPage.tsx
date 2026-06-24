@@ -31,7 +31,7 @@ import { OrgChainPanel } from '../components/OrgChainPanel';
 import { CockpitCommandPalette } from '../components/CockpitCommandPalette';
 import type { OrgHierarchyData, OrgChainFetchState } from '../components/OrgChainPanel';
 import type { FocusMode } from '../components/CockpitCommandPalette';
-import { apiFetch, checkHealth } from '../lib/api';
+import { apiFetch, checkHealth, getBase } from '../lib/api';
 import type { TurnPhase } from '../hooks/useVoiceTurn';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -233,13 +233,30 @@ function SectionHeading({ children }: { children: React.ReactNode }) {
 }
 
 function BackendError({ endpoint, target, httpStatus, detail, lastOk }: { endpoint: string; target: string; httpStatus?: number; detail?: string; lastOk?: string }) {
+  // Map HTTP status to an honest, actionable label instead of raw error color
+  const isAuthError = httpStatus === 401 || httpStatus === 403;
+  const isNotFound = httpStatus === 404;
+  const isServerErr = httpStatus != null && httpStatus >= 500;
+  const isNetworkErr = httpStatus == null;
+
+  const label = isAuthError ? 'AUTH REQUIRED'
+    : isNotFound ? 'NOT CONFIGURED'
+    : isServerErr ? 'SERVICE UNAVAILABLE'
+    : isNetworkErr ? 'UNAVAILABLE'
+    : `HTTP ${httpStatus}`;
+
+  const labelColor = isAuthError ? 'rgba(251,191,36,0.85)'   // amber — config needed
+    : isNotFound ? 'rgba(148,163,184,0.7)'                    // slate — not configured
+    : 'rgba(248,113,113,0.85)';                               // red — actual failure
+
   return (
-    <div style={{ color: '#ef4444', fontSize: 10 }}>
-      <div>⚠ <code style={{ fontSize: 9 }}>{endpoint}</code></div>
-      <div style={{ color: '#9ca3af' }}>Target: {target}</div>
-      {httpStatus != null && <div>HTTP: {httpStatus}</div>}
-      {detail && <div style={{ color: '#fca5a5' }}>{detail}</div>}
-      {lastOk && <div style={{ color: '#9ca3af' }}>Last OK: {lastOk}</div>}
+    <div style={{ fontSize: 10, color: 'rgba(148,163,184,0.6)' }}>
+      <div style={{ color: labelColor, fontWeight: 600, marginBottom: 1 }}>
+        {label}
+      </div>
+      <div><code style={{ fontSize: 9, color: 'rgba(148,163,184,0.5)' }}>{endpoint}</code></div>
+      {detail && !isAuthError && <div style={{ color: 'rgba(248,113,113,0.7)', marginTop: 1 }}>{detail}</div>}
+      {lastOk && <div style={{ color: 'rgba(148,163,184,0.5)' }}>Last OK: {lastOk}</div>}
     </div>
   );
 }
@@ -1236,7 +1253,7 @@ function ApprovalSurface({ approvalItems, pendingApprovals, fetchState, apiTarge
 
       {/* Pending approvals list */}
       {fetchState.approvals?.status === 'error' ? (
-        <BackendError endpoint="/v1/authority/approvals/pending" target={apiTarget} />
+        <BackendError endpoint="/v1/authority/approvals/pending" target={apiTarget} httpStatus={fetchState.approvals?.httpStatus} detail={fetchState.approvals?.detail} />
       ) : pendingApprovals === 0 ? (
         <div style={{ padding: '40px 0', textAlign: 'center', fontSize: 11, color: 'rgba(80,120,160,0.4)' }}>
           <div style={{ fontSize: 24, marginBottom: 8 }}>✓</div>
@@ -1319,7 +1336,7 @@ function WorkbenchSurface({ workflowStatus, macWorkerStatus, orchestration, fetc
           {workflowStatus
             ? <Row label={workflowStatus.workflow_id ?? 'Last run'} value={workflowStatus.status ?? '—'} status={workflowStatus.status === 'COMPLETE' ? 'ok' : 'warn'} />
             : fetchState.workflow?.status === 'error'
-              ? <BackendError endpoint="/v1/coding/workflow/status" target={apiTarget} />
+              ? <BackendError endpoint="/v1/coding/workflow/status" target={apiTarget} httpStatus={fetchState.workflow?.httpStatus} detail={fetchState.workflow?.detail} />
               : <Row label="Status" value="No workflow run yet" status="warn" />
           }
           <button onClick={() => onExpand('workbench')} style={{ marginTop: 8, fontSize: 9, color: 'rgba(34,211,238,0.4)', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>details →</button>
@@ -1334,7 +1351,7 @@ function WorkbenchSurface({ workflowStatus, macWorkerStatus, orchestration, fetc
               <Row label="Running" value={macWorkerStatus.running} />
               <Row label="Failed" value={macWorkerStatus.failed} status={macWorkerStatus.failed > 0 ? 'warn' : 'ok'} />
             </>
-          ) : <BackendError endpoint="/v1/mac-worker/status" target={apiTarget} />}
+          ) : <BackendError endpoint="/v1/mac-worker/status" target={apiTarget} httpStatus={fetchState.macWorker?.httpStatus} detail={fetchState.macWorker?.detail} />}
         </div>
 
         {/* Orchestration policy */}
@@ -1391,7 +1408,7 @@ function AuditSurface({ logs, auditEntries, auditCount, fetchState, apiTarget, i
         <div style={{ background: 'rgba(8,14,28,0.85)', border: '1px solid rgba(34,211,238,0.1)', borderRadius: 12, padding: '12px 14px', gridColumn: isNarrow ? 'auto' : '1/-1' }}>
           <div style={{ fontSize: 11, fontWeight: 600, color: 'rgba(160,200,240,0.8)', marginBottom: 8 }}>📜 Recent Events ({auditCount} total)</div>
           {fetchState.audit?.status === 'error'
-            ? <BackendError endpoint="/v1/authority/audit" target={apiTarget} />
+            ? <BackendError endpoint="/v1/authority/audit" target={apiTarget} httpStatus={fetchState.audit?.httpStatus} detail={fetchState.audit?.detail} />
             : auditEntries.length === 0
               ? <div style={{ fontSize: 10, color: 'rgba(100,140,180,0.4)', padding: '8px 0' }}>No audit events captured yet.</div>
               : auditEntries.map((e, i) => (
@@ -1449,7 +1466,7 @@ function MemorySurface({ memStatus, memLastRefresh, syncBusy, syncResult, apiOk,
             </>
           ) : (
             fetchState.memory?.status === 'error'
-              ? <BackendError endpoint="/v1/memory/status" target={apiTarget} lastOk={memLastRefresh} />
+              ? <BackendError endpoint="/v1/memory/status" target={apiTarget} httpStatus={fetchState.memory?.httpStatus} detail={fetchState.memory?.detail} lastOk={memLastRefresh} />
               : <div style={{ fontSize: 10, color: 'rgba(100,140,180,0.4)' }}>Loading…</div>
           )}
         </div>
@@ -1821,8 +1838,10 @@ export function JarvisCockpitPage() {
   }, []);
 
   useEffect(() => {
-    const baseUrl: string = (typeof window !== 'undefined' && (localStorage.getItem('oj-server-url') ?? '')) || 'localhost:8000';
-    setApiTarget(baseUrl);
+    // Use the canonical API base URL (from Tauri Rust command or env fallback).
+    // Previously used localStorage 'oj-server-url' which defaulted to the
+    // protocol-less string 'localhost:8000' causing confusion.
+    setApiTarget(getBase() || 'http://127.0.0.1:8000');
     const check = () => checkHealth().then(ok => { setApiOk(ok); if (ok) fetchAll(ok); });
     check();
     const interval = setInterval(check, 30000);
@@ -1855,8 +1874,17 @@ export function JarvisCockpitPage() {
     setTimeout(() => inputRef.current?.focus(), 60);
     try {
       const res = await apiFetch('/v1/chat/completions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: model || 'default', messages: [{ role: 'user', content: msg }], stream: false }) });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        const errMsg = res.status === 401 ? 'AUTH REQUIRED — API key not configured'
+          : res.status === 403 ? 'Forbidden'
+          : (errData as { detail?: string }).detail || `Server error ${res.status}`;
+        setLastReply(`Error: ${errMsg}`);
+        setPhase('error');
+        return;
+      }
       const data = await res.json();
-      const reply: string = data?.choices?.[0]?.message?.content ?? data?.error ?? 'No reply.';
+      const reply: string = data?.choices?.[0]?.message?.content ?? (data as { error?: string }).error ?? 'No reply.';
       setLastReply(reply.slice(0, 800));
       setPhase('speaking');
       setTimeout(() => setPhase('idle'), 3000);
@@ -1972,7 +2000,7 @@ export function JarvisCockpitPage() {
                 <Row label="Parked" value={plan9.parked} />
                 <Row label="Last checked" value={plan9LastRefresh || '—'} />
               </>
-            ) : <BackendError endpoint="/v1/parity/status" target={apiTarget} />}
+            ) : <BackendError endpoint="/v1/parity/status" target={apiTarget} httpStatus={fetchState.parity?.httpStatus} detail={fetchState.parity?.detail} />}
             <SectionHeading>Pending Approvals</SectionHeading>
             {pendingApprovals === 0
               ? <Row label="Approvals" value="None pending" status="ok" />
@@ -1996,7 +2024,7 @@ export function JarvisCockpitPage() {
                 <Row label="Running" value={macWorkerStatus.running} />
                 <Row label="Failed" value={macWorkerStatus.failed} status={macWorkerStatus.failed > 0 ? 'warn' : 'ok'} />
               </>
-            ) : <BackendError endpoint="/v1/mac-worker/status" target={apiTarget} />}
+            ) : <BackendError endpoint="/v1/mac-worker/status" target={apiTarget} httpStatus={fetchState.macWorker?.httpStatus} detail={fetchState.macWorker?.detail} />}
           </Overlay>
         );
       case 'authority':
@@ -2037,7 +2065,7 @@ export function JarvisCockpitPage() {
           <Overlay title="Connectors" icon="🔌" onClose={() => setExpandedPanel(null)}>
             <SectionHeading>Connector Status</SectionHeading>
             {connectors.length === 0
-              ? <BackendError endpoint="/v1/connectors" target={apiTarget} />
+              ? <BackendError endpoint="/v1/connectors" target={apiTarget} httpStatus={fetchState.connectors?.httpStatus} detail={fetchState.connectors?.detail} />
               : connectors.map(c => <Row key={c.name} label={c.name} value={c.endpoint ?? (c.connected ? 'connected' : 'disconnected')} status={c.connected ? 'ok' : 'error'} />)
             }
           </Overlay>
@@ -2047,7 +2075,7 @@ export function JarvisCockpitPage() {
           <Overlay title="Agent Roster" icon="🤖" onClose={() => setExpandedPanel(null)}>
             <SectionHeading>Plan 9 Manager Domains ({agents.length})</SectionHeading>
             {agents.length === 0
-              ? <BackendError endpoint="/v1/capabilities/status" target={apiTarget} lastOk={plan9LastRefresh} />
+              ? <BackendError endpoint="/v1/capabilities/status" target={apiTarget} httpStatus={fetchState.capabilities?.httpStatus} detail={fetchState.capabilities?.detail} lastOk={plan9LastRefresh} />
               : agents.map(a => <Row key={a.id} label={a.name} value={a.domain} status="ok" />)
             }
             <SectionHeading>Registry Summary</SectionHeading>
@@ -2057,7 +2085,7 @@ export function JarvisCockpitPage() {
                 <Row label="Total workers" value={registry.total_workers} status="ok" />
                 <Row label="Total roles" value={registry.total_roles} status="ok" />
               </>
-            ) : <BackendError endpoint="/v1/plan9/registry" target={apiTarget} />}
+            ) : <BackendError endpoint="/v1/plan9/registry" target={apiTarget} httpStatus={fetchState.registry?.httpStatus} detail={fetchState.registry?.detail} />}
           </Overlay>
         );
       case 'memory':
@@ -2071,7 +2099,7 @@ export function JarvisCockpitPage() {
                 {memStatus.bucket && <Row label="S3 bucket" value={memStatus.bucket} />}
                 <Row label="Rust extension" value={memStatus.rust_available ? 'Installed' : 'Not installed'} status={memStatus.rust_available ? 'ok' : 'warn'} />
               </>
-            ) : <BackendError endpoint="/v1/memory/status" target={apiTarget} lastOk={memLastRefresh} />}
+            ) : <BackendError endpoint="/v1/memory/status" target={apiTarget} httpStatus={fetchState.memory?.httpStatus} detail={fetchState.memory?.detail} lastOk={memLastRefresh} />}
             <SectionHeading>Cross-Device Sync</SectionHeading>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
               {(['push', 'pull', 'both'] as const).map(mode => (
@@ -2095,7 +2123,7 @@ export function JarvisCockpitPage() {
                 <Row label="Parked" value={plan9.parked} />
                 <Row label="Last checked" value={plan9LastRefresh || '—'} />
               </>
-            ) : <BackendError endpoint="/v1/parity/status" target={apiTarget} />}
+            ) : <BackendError endpoint="/v1/parity/status" target={apiTarget} httpStatus={fetchState.parity?.httpStatus} detail={fetchState.parity?.detail} />}
             <SectionHeading>Runtime Proof</SectionHeading>
             {runtimeProof ? (
               <>
@@ -2131,7 +2159,7 @@ export function JarvisCockpitPage() {
                 <Row label="Role declarations" value={routingStatus.role_declaration_count} status="ok" />
                 <Row label="Active policy" value={routingStatus.active_routing_policy} status="ok" />
               </>
-            ) : <BackendError endpoint="/v1/model-routing/status" target={apiTarget} />}
+            ) : <BackendError endpoint="/v1/model-routing/status" target={apiTarget} httpStatus={fetchState.routing?.httpStatus} detail={fetchState.routing?.detail} />}
             <SectionHeading>PA Front-Door Route</SectionHeading>
             {routingStatus && (
               <>

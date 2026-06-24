@@ -20,14 +20,27 @@ export const isTauri = () => typeof window !== 'undefined' && !!window.__TAURI_I
 // source of truth for JARVIS_PORT.
 let _tauriApiBase: string | null = null;
 
-/** Pre-fetch the API base URL from the Tauri backend (call once at init). */
+// Cached local API key from ~/.openjarvis/config.toml, read via Rust command.
+// This is the Bearer token required by AuthMiddleware when api_key is set.
+// Null = not yet fetched. Empty string = no key configured (auth disabled).
+let _tauriApiKey: string | null = null;
+
+/** Pre-fetch the API base URL and local auth key from the Tauri backend (call once at init). */
 export async function initApiBase(): Promise<void> {
   if (!isTauri()) return;
+  const { invoke } = await import('@tauri-apps/api/core');
   try {
-    const { invoke } = await import('@tauri-apps/api/core');
     _tauriApiBase = await invoke<string>('get_api_base');
   } catch {
     // Command may not exist on older builds; fall through to default.
+  }
+  try {
+    // Read the local server API key (from config.toml [server.auth] api_key).
+    // Without this, all /v1/* requests get 401 when the backend enforces auth.
+    const key = await invoke<string>('get_local_api_key');
+    _tauriApiKey = key ?? '';
+  } catch {
+    _tauriApiKey = '';
   }
 }
 
@@ -54,10 +67,14 @@ export const getBase = (): string => {
 
 // Resolve the local server API key (OPENJARVIS_API_KEY). When `jarvis serve`
 // is started with a key, AuthMiddleware 401s every /v1 and /api request that
-// lacks a Bearer token — so the frontend must send it (#266). Sourced from the
-// same settings blob as the API URL, with an optional build-time env override.
+// lacks a Bearer token — so the frontend must send it (#266). Priority:
+//   1. Tauri: key from ~/.openjarvis/config.toml (read via get_local_api_key)
+//   2. localStorage openjarvis-settings.apiKey (manual user override)
+//   3. VITE_OPENJARVIS_API_KEY build-time env var
 // Returns '' when unset, so a keyless local server keeps working unchanged.
 export const getApiKey = (): string => {
+  // In the packaged desktop app, use the key from config.toml loaded at init.
+  if (isTauri() && _tauriApiKey) return _tauriApiKey;
   try {
     const raw = localStorage.getItem('openjarvis-settings');
     if (raw) {
@@ -134,7 +151,10 @@ export async function fetchModels(): Promise<ModelInfo[]> {
   if (isTauri()) {
     try {
       const result = await tauriInvoke<{ data?: ModelInfo[] }>('fetch_models');
-      return result?.data || [];
+      // Only use Tauri path result when it contains actual model data.
+      // If the backend required auth, fetch_models returns a 401 JSON without
+      // a 'data' field — fall through to apiFetch which sends the Bearer token.
+      if (result?.data && result.data.length > 0) return result.data;
     } catch {
       // Fall through to fetch
     }

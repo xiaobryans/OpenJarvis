@@ -166,16 +166,19 @@ export function InputArea() {
   const sendMessage = useCallback(async () => {
     const content = input.trim();
     if (!content || streamState.isStreaming) return;
+    // Fall back to 'default' when selectedModel is empty so chat works while
+    // model list is still loading (race condition on first launch) or when the
+    // API key was missing and models couldn't be fetched yet.
+    const effectiveModel = selectedModel || 'default';
     if (!selectedModel) {
-      toast.error('Pick a model first (⌘K)');
-      return;
+      // Model list may not have loaded yet — proceed with fallback silently.
     }
 
     setInput('');
 
     let convId = activeId;
     if (!convId) {
-      convId = createConversation(selectedModel);
+      convId = createConversation(effectiveModel);
     }
 
     const userMsg: ChatMessage = {
@@ -236,7 +239,7 @@ export function InputArea() {
       category: 'chat',
       message: deepResearch
         ? `Research: "${content.slice(0, 80)}${content.length > 80 ? '...' : ''}"`
-        : `Request: "${content.slice(0, 80)}${content.length > 80 ? '...' : ''}" → ${selectedModel}`,
+        : `Request: "${content.slice(0, 80)}${content.length > 80 ? '...' : ''}" → ${effectiveModel}`,
     });
 
     try {
@@ -362,7 +365,7 @@ export function InputArea() {
         }
       } else {
       for await (const sseEvent of streamChat(
-        { model: selectedModel, messages: apiMessages, stream: true, temperature, max_tokens: maxTokens },
+        { model: effectiveModel, messages: apiMessages, stream: true, temperature, max_tokens: maxTokens },
         controller.signal,
       )) {
         const eventName = sseEvent.event;
@@ -373,7 +376,7 @@ export function InputArea() {
           setStreamState({ phase: 'Generating...' });
           useAppStore.getState().addLogEntry({
             timestamp: Date.now(), level: 'info', category: 'chat',
-            message: `Generating with ${selectedModel}...`,
+            message: `Generating with ${effectiveModel}...`,
           });
         } else if (eventName === 'tool_call_start') {
           try {
@@ -460,10 +463,10 @@ export function InputArea() {
       }
       const totalMs = Date.now() - startTime;
       const _CLOUD_PREFIXES = ['gpt-', 'o1-', 'o3-', 'o4-', 'claude-', 'gemini-', 'openrouter/', 'MiniMax-', 'chatgpt-'];
-      const engineLabel = _CLOUD_PREFIXES.some(p => selectedModel.startsWith(p)) ? 'cloud' : 'ollama';
+      const engineLabel = _CLOUD_PREFIXES.some(p => effectiveModel.startsWith(p)) ? 'cloud' : 'ollama';
       const telemetry: MessageTelemetry = {
         engine: engineLabel,
-        model_id: selectedModel,
+        model_id: effectiveModel,
         total_ms: totalMs,
         ttft_ms: ttftMs,
         tokens_per_sec: usage?.completion_tokens
@@ -630,7 +633,7 @@ export function InputArea() {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder={selectedModel ? 'Message OpenJarvis...' : 'Pick a model first (⌘K)...'}
+          placeholder={selectedModel ? 'Message OpenJarvis...' : (modelLoading ? 'Loading model list…' : 'Message OpenJarvis…')}
           rows={1}
           className="flex-1 bg-transparent outline-none resize-none text-sm leading-relaxed"
           style={{ color: 'var(--color-text)', maxHeight: '200px' }}
@@ -664,8 +667,8 @@ export function InputArea() {
             {/* Manual dictation mic hidden — primary voice UX is wake-word VoiceOverlay */}
             <button
               onClick={sendMessage}
-              disabled={!input.trim() || modelLoading || !selectedModel}
-              title={selectedModel ? 'Send message' : 'Pick a model first (⌘K)'}
+              disabled={!input.trim() || modelLoading}
+              title="Send message"
               className="p-2 rounded-xl transition-colors shrink-0 cursor-pointer disabled:opacity-30 disabled:cursor-default"
               style={{
                 background: input.trim() ? 'var(--color-accent)' : 'var(--color-bg-tertiary)',

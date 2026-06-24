@@ -1448,6 +1448,36 @@ fn get_api_base() -> String {
     api_base()
 }
 
+/// Return the local server API key so the frontend can attach it as a
+/// Bearer token on every /v1/* request.  Reads from:
+///   1. ~/.openjarvis/config.toml  [server.auth] api_key
+///   2. OPENJARVIS_API_KEY environment variable
+/// Returns an empty string when no key is configured (auth disabled).
+#[tauri::command]
+fn get_local_api_key() -> String {
+    // 1. config.toml
+    let path = std::path::PathBuf::from(home_dir())
+        .join(".openjarvis")
+        .join("config.toml");
+    if let Ok(content) = std::fs::read_to_string(&path) {
+        if let Ok(doc) = content.parse::<toml_edit::DocumentMut>() {
+            if let Some(key) = doc
+                .get("server")
+                .and_then(|s| s.get("auth"))
+                .and_then(|a| a.get("api_key"))
+                .and_then(|k| k.as_str())
+            {
+                let key = key.trim().to_string();
+                if !key.is_empty() {
+                    return key;
+                }
+            }
+        }
+    }
+    // 2. env var fallback
+    std::env::var("OPENJARVIS_API_KEY").unwrap_or_default()
+}
+
 #[tauri::command]
 async fn start_backend(
     backend: tauri::State<'_, SharedBackend>,
@@ -2587,6 +2617,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_setup_status,
             get_api_base,
+            get_local_api_key,
             start_backend,
             stop_backend,
             check_health,

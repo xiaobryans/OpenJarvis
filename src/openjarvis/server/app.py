@@ -207,13 +207,11 @@ def create_app(
             "https://tauri.localhost",
         ]
     )
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=_origins,
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+    # NOTE: CORSMiddleware is intentionally registered here but will be
+    # re-added as the outermost middleware after AuthMiddleware so that CORS
+    # headers appear on every response — including 401 rejections from Auth.
+    # The _origins list is captured in the closure and used below.
+    _cors_origins_for_outer = _origins
 
     # Store dependencies in app state
     app.state.engine = engine
@@ -343,7 +341,7 @@ def create_app(
     except Exception as exc:
         logger.debug("Security middleware init skipped: %s", exc)
 
-    # API key authentication middleware
+    # API key authentication middleware (added before CORS so CORS is outermost)
     if api_key:
         try:
             from openjarvis.server.auth_middleware import AuthMiddleware
@@ -351,6 +349,21 @@ def create_app(
             app.add_middleware(AuthMiddleware, api_key=api_key)
         except Exception as exc:
             logger.debug("Auth middleware init skipped: %s", exc)
+
+    # CORSMiddleware added last so it is the outermost layer — this ensures
+    # CORS headers are present on ALL responses, including 401s from Auth,
+    # so WebKit (Tauri WKWebView) does not throw "TypeError: Load failed"
+    # when the frontend makes cross-origin requests that get rejected.
+    try:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=_cors_origins_for_outer,
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+    except Exception as exc:
+        logger.debug("CORS middleware re-registration skipped: %s", exc)
 
     # Mount webhook routes (always — SendBlue may be configured dynamically)
     if webhook_config:
