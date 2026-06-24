@@ -1,0 +1,320 @@
+{
+  "plan": "Plan 2 — Full Mobile MacBook-Off Parity Runtime",
+  "subsection": "2B — Connector / Task Parity",
+  "sprint": "Plan 2B Foundation",
+  "sprint_verdict_target": "PLAN_2B_CONNECTOR_TASK_PARITY_FOUNDATION_PATCHED_PENDING_REVIEW",
+  "generated_at": "2026-06-24",
+  "based_on_commit": "d82943b1",
+  "plan2a_verdict": "PLAN_2A_MOBILE_MACBOOK_OFF_FOUNDATION_ACCEPTED_PENDING_FINAL_TAURI_REBUILD",
+
+  "token_storage_model": {
+    "google_oauth": {
+      "storage": "local_file",
+      "path_pattern": "~/.openjarvis/connectors/{connector}.json",
+      "cloud_safe": false,
+      "vault_backed": false,
+      "migration_needed": "Secure export to cloud secrets manager (AWS SSM/Secrets Manager or equivalent)"
+    },
+    "github_token": {
+      "storage": "env_var",
+      "env_var": "GITHUB_TOKEN",
+      "cloud_safe": true,
+      "vault_backed": false,
+      "note": "Env var can be set on Fargate; but not currently deployed with token"
+    },
+    "slack_token": {
+      "storage": "both_env_and_file",
+      "env_vars": ["OPENCLAW_SLACK_BOT_TOKEN", "SLACK_BOT_TOKEN", "SLACK_USER_TOKEN"],
+      "file_path": "~/.openjarvis/connectors/slack.json",
+      "cloud_safe": true,
+      "vault_backed": false,
+      "note": "Env vars can be set on Fargate; file token is local-only"
+    },
+    "notion_token": {
+      "storage": "local_file",
+      "path_pattern": "~/.openjarvis/connectors/notion.json",
+      "cloud_safe": false,
+      "vault_backed": false,
+      "configured": false
+    },
+    "telegram_token": {
+      "storage": "env_var",
+      "env_var": "TELEGRAM_BOT_TOKEN",
+      "cloud_safe": true,
+      "vault_backed": false,
+      "note": "TELEGRAM_BOT_TOKEN present in .env; connector diag looks for JARVIS_TELEGRAM_BOT_TOKEN — mismatch"
+    }
+  },
+
+  "connectors": [
+    {
+      "connector_id": "gmail",
+      "display_name": "Gmail",
+      "provider": "Google",
+      "token_storage": "local_file",
+      "token_file": "~/.openjarvis/connectors/gmail.json",
+      "token_location": "local_only",
+      "cloud_safe_token": false,
+      "vault_backed": false,
+      "desktop_status": "READY",
+      "mobile_status": "LOCAL_ONLY",
+      "macbook_off_status": "MACBOOK_OFF_PENDING",
+      "is_connected_locally": true,
+      "auth_required": "Google OAuth 2.0 (access + refresh token)",
+      "oauth_provider": "google",
+      "scopes": ["gmail.modify"],
+      "actions_available": [
+        "GET /v1/connectors/gmail — list/read emails",
+        "POST /v1/connectors/gmail/sync — sync inbox"
+      ],
+      "outbound_send": false,
+      "approval_required_for": ["email_send (if implemented)", "email_archive"],
+      "notification_required": false,
+      "exact_blocker": "Google OAuth token stored in local JSON file — not accessible from Fargate without vault sync",
+      "next_implementation_step": "Export Google OAuth token to cloud secrets manager; load from vault on Fargate",
+      "proof_for_acceptance": "GET /v1/connectors/gmail from iPhone returns email data while MacBook is off"
+    },
+    {
+      "connector_id": "gcalendar",
+      "display_name": "Google Calendar",
+      "provider": "Google",
+      "token_storage": "local_file",
+      "token_file": "~/.openjarvis/connectors/gcalendar.json",
+      "token_location": "local_only",
+      "cloud_safe_token": false,
+      "vault_backed": false,
+      "desktop_status": "READY",
+      "mobile_status": "LOCAL_ONLY",
+      "macbook_off_status": "MACBOOK_OFF_PENDING",
+      "is_connected_locally": true,
+      "auth_required": "Google OAuth 2.0 (shared google.json token)",
+      "oauth_provider": "google",
+      "scopes": ["calendar"],
+      "actions_available": [
+        "GET /v1/connectors/gcalendar — list calendar events",
+        "POST /v1/connectors/gcalendar/sync — sync calendar"
+      ],
+      "outbound_send": false,
+      "approval_required_for": ["event_create", "event_modify"],
+      "notification_required": false,
+      "exact_blocker": "Google OAuth token stored in local JSON file — same blocker as Gmail",
+      "next_implementation_step": "Same as Gmail — shared Google OAuth vault migration",
+      "proof_for_acceptance": "GET /v1/connectors/gcalendar from iPhone returns calendar data while MacBook is off"
+    },
+    {
+      "connector_id": "gdrive",
+      "display_name": "Google Drive",
+      "provider": "Google",
+      "token_storage": "local_file",
+      "token_file": "~/.openjarvis/connectors/gdrive.json",
+      "token_location": "local_only",
+      "cloud_safe_token": false,
+      "vault_backed": false,
+      "desktop_status": "READY",
+      "mobile_status": "LOCAL_ONLY",
+      "macbook_off_status": "MACBOOK_OFF_PENDING",
+      "is_connected_locally": true,
+      "auth_required": "Google OAuth 2.0 (drive.readonly scope)",
+      "oauth_provider": "google",
+      "scopes": ["drive.readonly"],
+      "actions_available": [
+        "GET /v1/connectors/gdrive — list/read drive files",
+        "POST /v1/connectors/gdrive/sync — sync drive index"
+      ],
+      "outbound_send": false,
+      "approval_required_for": ["file_write", "file_delete"],
+      "notification_required": false,
+      "exact_blocker": "Google OAuth token stored in local JSON file — same blocker as Gmail",
+      "next_implementation_step": "Same as Gmail — shared Google OAuth vault migration",
+      "proof_for_acceptance": "GET /v1/connectors/gdrive from iPhone lists drive files while MacBook is off"
+    },
+    {
+      "connector_id": "github",
+      "display_name": "GitHub",
+      "provider": "GitHub",
+      "token_storage": "env_var_primary",
+      "env_var": "GITHUB_TOKEN",
+      "token_location": "env_var_local",
+      "cloud_safe_token": true,
+      "vault_backed": false,
+      "desktop_status": "READY",
+      "mobile_status": "CLOUD_REQUIRED",
+      "macbook_off_status": "CLOUD_REQUIRED",
+      "is_connected_locally": true,
+      "auth_required": "GitHub personal access token (env var)",
+      "oauth_provider": null,
+      "scopes": ["repo:read"],
+      "actions_available": [
+        "GET /v1/connectors/github — repo info, issues, PRs",
+        "POST /v1/frontdoor/submit (intent: coding) — coding task via frontdoor"
+      ],
+      "outbound_send": false,
+      "approval_required_for": ["git_push", "pr_create", "merge"],
+      "notification_required": false,
+      "exact_blocker": "GITHUB_TOKEN env var not yet deployed to Fargate; Fargate backend token env missing",
+      "next_implementation_step": "Add GITHUB_TOKEN to Fargate task definition env vars (or AWS Secrets Manager)",
+      "proof_for_acceptance": "GET /v1/connectors/github from iPhone returns repo data while MacBook is off"
+    },
+    {
+      "connector_id": "slack",
+      "display_name": "Slack",
+      "provider": "Slack",
+      "token_storage": "env_var_and_file",
+      "env_vars": ["OPENCLAW_SLACK_BOT_TOKEN", "SLACK_BOT_TOKEN", "SLACK_USER_TOKEN"],
+      "file_path": "~/.openjarvis/connectors/slack.json",
+      "token_location": "env_var_local",
+      "cloud_safe_token": true,
+      "vault_backed": false,
+      "desktop_status": "READY",
+      "mobile_status": "CLOUD_REQUIRED",
+      "macbook_off_status": "CLOUD_REQUIRED",
+      "is_connected_locally": true,
+      "auth_required": "Slack bot token (env var) or xoxp- user token",
+      "oauth_provider": "slack_oauth",
+      "scopes": ["channels:read", "chat:write"],
+      "actions_available": [
+        "GET /v1/connectors/slack/status — Slack bot status",
+        "POST /v1/notify/send (approval-gated) — send notification"
+      ],
+      "outbound_send": true,
+      "approval_required_for": ["message_send", "channel_post"],
+      "notification_required": true,
+      "exact_blocker": "Slack env var tokens not deployed to Fargate; xoxp- file token is local-only; outbound send is always approval-gated",
+      "next_implementation_step": "Add Slack bot token to Fargate env; wire outbound send through approval gate; verify mobile can trigger Slack notification after Bryan approves",
+      "proof_for_acceptance": "POST notification via /v1/notify triggers Slack message to confirmed channel after approval; triggered from iPhone"
+    },
+    {
+      "connector_id": "notion",
+      "display_name": "Notion",
+      "provider": "Notion",
+      "token_storage": "local_file",
+      "token_file": "~/.openjarvis/connectors/notion.json",
+      "token_location": "not_configured",
+      "cloud_safe_token": false,
+      "vault_backed": false,
+      "desktop_status": "NOT_CONFIGURED",
+      "mobile_status": "NOT_CONFIGURED",
+      "macbook_off_status": "NOT_CONFIGURED",
+      "is_connected_locally": false,
+      "auth_required": "Notion internal integration token (manual setup required)",
+      "oauth_provider": null,
+      "scopes": ["read_content"],
+      "actions_available": [
+        "GET /v1/connectors/notion — list/read pages (once connected)"
+      ],
+      "outbound_send": false,
+      "approval_required_for": ["page_write", "database_write"],
+      "notification_required": false,
+      "exact_blocker": "Notion integration token not created — notion.json absent; manual setup required at notion.so/my-integrations",
+      "next_implementation_step": "Create Notion internal integration at notion.so, paste token via /v1/connectors/notion/connect",
+      "proof_for_acceptance": "GET /v1/connectors/notion returns page list"
+    },
+    {
+      "connector_id": "telegram",
+      "display_name": "Telegram",
+      "provider": "Telegram",
+      "token_storage": "env_var",
+      "env_var": "TELEGRAM_BOT_TOKEN",
+      "token_location": "env_var_local",
+      "cloud_safe_token": true,
+      "vault_backed": false,
+      "desktop_status": "DEGRADED",
+      "mobile_status": "CLOUD_REQUIRED",
+      "macbook_off_status": "CLOUD_REQUIRED",
+      "is_connected_locally": true,
+      "auth_required": "Telegram bot token (env var)",
+      "oauth_provider": null,
+      "scopes": ["send_message"],
+      "actions_available": [
+        "POST /v1/notify/send (approval-gated) — send Telegram notification"
+      ],
+      "outbound_send": true,
+      "approval_required_for": ["message_send"],
+      "notification_required": true,
+      "exact_blocker": "TELEGRAM_BOT_TOKEN present but connector diagnostics look for JARVIS_TELEGRAM_BOT_TOKEN — var name mismatch. Fargate does not have token deployed. No auto-trigger on approval events.",
+      "next_implementation_step": "Resolve env var name mapping (TELEGRAM_BOT_TOKEN → JARVIS_TELEGRAM_BOT_TOKEN); wire auto-trigger on new pending approval; deploy token to Fargate",
+      "proof_for_acceptance": "New pending approval queued → Telegram notification sent to confirmed chat; Bryan can respond to approve/deny"
+    },
+    {
+      "connector_id": "workbench_task_queue",
+      "display_name": "Workbench / Coding Task Queue",
+      "provider": "internal",
+      "token_storage": "none",
+      "token_location": "not_applicable",
+      "cloud_safe_token": true,
+      "vault_backed": false,
+      "desktop_status": "READY",
+      "mobile_status": "CLOUD_REQUIRED",
+      "macbook_off_status": "MACBOOK_OFF_PENDING",
+      "is_connected_locally": true,
+      "auth_required": "Bearer token (OPENJARVIS_API_KEY)",
+      "oauth_provider": null,
+      "actions_available": [
+        "POST /v1/workbench/plan — create task plan",
+        "POST /v1/workbench/execute — execute plan",
+        "POST /v1/mac-worker/queue — submit Mac-only task to queue",
+        "GET  /v1/mac-worker/status — queue status",
+        "POST /v1/frontdoor/submit — universal task entry"
+      ],
+      "outbound_send": false,
+      "approval_required_for": ["execute_with_side_effects", "git_push", "terminal_exec"],
+      "notification_required": true,
+      "exact_blocker": "Mac worker queue executes only when MacBook is online; no Fargate worker process; no push notification for completion status",
+      "next_implementation_step": "Deploy Fargate worker for cloud-safe task execution; wire completion notifications",
+      "proof_for_acceptance": "POST /v1/workbench/plan from iPhone creates plan; execution completes while MacBook off; result returned to iPhone"
+    }
+  ],
+
+  "task_action_classification": {
+    "READONLY": {
+      "description": "Safe read operations, no approval needed",
+      "examples": ["GET /v1/connectors/*/status", "GET /v1/memory/status", "GET /v1/approvals/pending"],
+      "mobile_safe": true,
+      "macbook_off_safe": true
+    },
+    "APPROVAL_REQUIRED": {
+      "description": "Any outbound send, write, or state-changing operation",
+      "examples": ["Slack message send", "Telegram notification", "git push", "email send", "calendar event create"],
+      "mobile_safe": true,
+      "macbook_off_safe": true,
+      "gate": "Must pass through Jarvis PA approval flow"
+    },
+    "DESTRUCTIVE_GATED": {
+      "description": "Hard-gated operations requiring explicit Bryan approval",
+      "examples": ["PR merge", "file delete", "email trash", "database write"],
+      "mobile_safe": false,
+      "macbook_off_safe": false,
+      "gate": "Hard gate — Bryan explicit approval required, logged"
+    },
+    "MAC_REQUIRED": {
+      "description": "Operations requiring MacBook + local toolchain",
+      "examples": ["Tauri rebuild", "codesign", "local keychain access", "Xcode operations"],
+      "mobile_safe": false,
+      "macbook_off_safe": false,
+      "queued_when_offline": true
+    },
+    "CLOUD_SAFE": {
+      "description": "Can run on Fargate backend without MacBook",
+      "examples": ["Chat completions", "memory read/write", "approval action", "workbench plan create"],
+      "mobile_safe": true,
+      "macbook_off_safe": true,
+      "requires": "Fargate backend running + auth token"
+    },
+    "CONNECTOR_GATED": {
+      "description": "Requires connector OAuth token accessible in execution context",
+      "examples": ["Gmail read", "Calendar sync", "GDrive list", "GitHub repo read"],
+      "mobile_safe": true,
+      "macbook_off_safe": false,
+      "blocker": "OAuth tokens local-only; vault migration required for MacBook-off"
+    }
+  },
+
+  "macbook_off_summary": {
+    "connectors_ready": [],
+    "connectors_cloud_required": ["github", "slack", "telegram"],
+    "connectors_macbook_off_pending": ["gmail", "gcalendar", "gdrive"],
+    "connectors_not_configured": ["notion"],
+    "global_blocker": "Google OAuth tokens (Gmail/Calendar/GDrive) stored in local JSON files — no cloud vault migration implemented. Fargate cannot access local ~/.openjarvis/connectors/ files.",
+    "next_milestone": "Cloud vault integration for Google OAuth tokens (AWS Secrets Manager or equivalent)"
+  }
+}
