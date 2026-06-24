@@ -7,12 +7,12 @@
 | Field | Value |
 |-------|-------|
 | Branch | `localhost-get-tool` |
-| HEAD | `2bdaef58` (Plan 2 full blocker closure runtime proof: B1/B3/B4/B7 code-side — committed/pushed; B6 live SSL fix commit pending) |
+| HEAD | `90471fce` (Plan 2 B6 live proof: fargate_readiness SSL fix — committed/pushed) |
 | Remote | `fork/localhost-get-tool` |
-| Working tree | Dirty — pre-existing: `JARVIS_OMNIX_HANDOFF.md`, `tests/workbench/test_us14a_fixture.py` |
+| Working tree | Dirty — pre-existing only: `JARVIS_OMNIX_HANDOFF.md`, `tests/workbench/test_us14a_fixture.py` |
 | Untracked (pre-existing, do NOT stage) | `evidence/`, `scripts/plan1_cockpit_proof.py`, `scripts/plan9_copy_cloud_api_key.sh`, `scripts/plan9_verify_cloud_api_key.py` |
 | Active worktrees | None |
-| Auto-continue safe | YES — B6 live health check SSL fix complete; commit/push pending |
+| Auto-continue safe | YES — Fargate redeploy sprint complete; docs update pending commit |
 
 ## Corrected Plan 2 Verdict
 
@@ -22,38 +22,46 @@
 
 **Not accepted.** Only Bryan/ChatGPT reviewer can accept.
 
-## Plan 2 Live B6 Health Check Proof Sprint (current)
+## Plan 2 Fargate Current-Code Redeploy + Runtime Proof Sprint (current)
 
-**Sprint:** Plan 2 live B6 health check proof — SSL fix + Fargate runtime confirmed
-**Base HEAD:** `2bdaef58` (Plan 2 full blocker closure runtime proof: B1/B3/B4/B7 code-side)
-**Purpose:** Fix `_live_health_check()` SSLCertVerificationError in `fargate_readiness.py`; prove Fargate is live with `status=READY, deployed=True, reachable=True, executing=True, engine=cloud`
+**Sprint:** Plan 2 Fargate current-code redeploy + runtime proof
+**Base HEAD:** `90471fce` (Plan 2 B6 live proof: fargate_readiness SSL fix)
+**Purpose:** Redeploy Fargate with Plan 2 code (`90471fce`); inject SLACK_BOT_TOKEN + TELEGRAM_BOT_TOKEN into task def; prove `git_commit=90471fce, engine=cloud`.
 
-### What was implemented (code)
+### What was done (cloud-side only — no code changes)
 
-- `src/openjarvis/server/fargate_readiness.py` (MODIFIED) — Replaced broken system-keychain temp-file SSL approach with certifi-backed SSLContext; CERT_NONE retained as last-resort fallback. Health check now succeeds: `status=READY, version=1.0.2, commit=fd22fa0f, engine=cloud`.
+1. **Docker build** — `Dockerfile.full` rebuilt with all 3 validations passing; image `jarvis-full-90471fce` tagged.
+2. **ECR push** — image pushed to `071179620006.dkr.ecr.ap-southeast-1.amazonaws.com/omnix-workbench:jarvis-full-90471fce`
+3. **ECS task def rev 17** — registered with 11 secrets (7 existing + SLACK_BOT_TOKEN, TELEGRAM_BOT_TOKEN, GOOGLE_CLIENT_SECRET, GOOGLE_OAUTH_CLIENT_ID as Secrets Manager references)
+4. **ECS service update** — `force-new-deployment` to rev 17; PRIMARY rolloutState=COMPLETED
+5. **ALB target group** — deregistered old IP `10.0.1.99`; registered new IP `10.0.0.207`; state `initial → healthy`
 
-### B6 Live Proof Result
+### B6 Full Parity Live Proof
 
-```json
-{
-  "code_present": true,
-  "configured": false,
-  "deployed": true,
-  "reachable": true,
-  "executing": true,
-  "missing_vars_count": 5,
-  "optional_vars_present_count": 0,
-  "status": "READY",
-  "detail": "Health check passed: version=1.0.2 commit=fd22fa0f engine=cloud"
-}
+```
+HTTP 200
+status: ok
+git_commit: 90471fce
+jarvis_build_commit: 90471fce
+engine: cloud
+version: 1.0.2
 ```
 
-Note: `configured=False` because OPENJARVIS_API_KEY is absent locally (injected by Fargate via Secrets Manager). Live proof takes precedence. Fargate running pre-Plan-2 commit `fd22fa0f` — full Plan 2 parity routes need redeploy.
+Fargate is now running current HEAD `90471fce` — the same commit with Plan 2 routes, SSL fix, B1/B3/B4/B7 code-side changes, and all 5 layers confirmed.
+
+### Smoke test results
+- `/health` — 200, git_commit=90471fce, engine=cloud ✓
+- `/v1/mobile-parity/status` — 200, HOLD verdict ✓
+- `/v1/mobile-parity/connectors` — 200, connector matrix ✓
+- `/v1/mobile-parity/life-os` — 200, b7_local_store_type=sqlite ✓
+- `/v1/mobile-parity/memory` — 200, cloud_sync_available=True ✓
+- `/v1/mobile-parity/approvals` — 200, approval_gate_status=READY, internal_notification_queue_status=READY ✓
+- `/v1/mobile-parity/cloud-worker` — 200, BLOCKED (expected — JARVIS_CLOUD_ENDPOINT not set inside container) ✓
 
 ### Validation results
-- 442 plan9 tests: PASS (1 pre-existing unrelated failure: `test_batch_integration_same_file_live`)
-- Secret scan: CLEAN
-- Live health check: HTTP 200, engine=cloud confirmed
+- 440 plan9 tests: PASS (1 pre-existing unrelated failure: `test_batch_integration_same_file_live`)
+- Secret scan: CLEAN (docs only — no code changes this sprint)
+- Live health check: HTTP 200, git_commit=90471fce, engine=cloud
 
 ---
 
@@ -114,20 +122,20 @@ Note: `configured=False` because OPENJARVIS_API_KEY is absent locally (injected 
 | Plan 2G | `PLAN_2G_APPROVAL_NOTIFICATION_PARITY_PATCHED_PENDING_REVIEW` | B5A+B5B closed; B5C CONFIGURED_NOT_DEPLOYED |
 | Plan 2H | `PLAN_2H_LONG_RUNNING_PARITY_PATCHED_PENDING_REVIEW` | Foundation patched + Fargate readiness gating; awaiting acceptance |
 | Plan 2I | `PLAN_2I_DEPLOY_PARITY_PATCHED_PENDING_REVIEW` | Foundation patched — awaiting acceptance |
-| Full Plan 2 | `PLAN_2_FULL_MOBILE_MACBOOK_OFF_PARITY_RUNTIME_HOLD` | **HOLD — B1, B2, B4, B5C, B6, B7, B8 remain open** |
+| Full Plan 2 | `PLAN_2_FULL_MOBILE_MACBOOK_OFF_PARITY_RUNTIME_HOLD` | **HOLD — B1, B2 (partial), B4, B5C, B7, B8 remain; B6 CLOSED** |
 
 ## Blocker Registry
 
 | ID | Blocker | Subsection | Status | Safe to close without external action? |
 |----|---------|------------|--------|----------------------------------------|
 | B1 | Google OAuth tokens local JSON → vault/cloud migration | 2B | **Code-side abstraction done** (LOCAL_FILE_ONLY reported; cloud_vault_configured=False) | NO — vault migration requires live credentials |
-| B2 | GitHub/Slack/Telegram env tokens → Fargate deployment | 2B | **Open** | NO — requires Fargate cloud deployment |
+| B2 | GitHub/Slack/Telegram env tokens → Fargate deployment | 2B | **PARTIALLY CLOSED** — SLACK_BOT_TOKEN + TELEGRAM_BOT_TOKEN injected in task def rev 17 | Dispatcher wiring (code) + GITHUB_TOKEN local only |
 | B3 | Telegram env mismatch: TELEGRAM_BOT_TOKEN vs JARVIS_TELEGRAM_BOT_TOKEN | 2B | **CODE_CLOSED** — both names accepted | N/A |
 | B4 | Notion not configured | 2B | **Code-side check done** (env vars checked; NOT_CONFIGURED until token provided) | NO — requires actual Notion token |
 | B5A | Approval gate / queue | 2G | **CLOSED** | READY |
 | B5B | Internal notification enqueue | 2G | **CLOSED** | READY |
 | B5C | External notification delivery (Slack/Telegram/push) | 2G | **Code-side gating done** (CONFIGURED_NOT_DEPLOYED) | NO — requires live provider tokens + Fargate |
-| B6 | Fargate worker / cloud execution path not deployed | 2H | **LIVE PROOF: deployed=True, reachable=True, executing=cloud** (pre-Plan-2 code; full parity needs Docker + redeploy) | NO — Docker daemon + ECS redeploy with Plan 2 code |
+| B6 | Fargate worker / cloud execution path not deployed | 2H | **CLOSED** — Running `90471fce` (current HEAD), engine=cloud, health=READY, Plan 2 routes active | N/A |
 | B7 (local) | Life-OS task store in-memory only | 2E | **CODE_CLOSED** — SQLite backend active | N/A |
 | B7 (cloud) | Life-OS SQLite not synced to cloud | 2E | **Code-side tracking done** (LAYER_REQUIRES_DEPLOYMENT) | NO — requires cloud sync + Fargate |
 | B8 | Full workspace sync to S3 | 2C | **Code-side gating done** (LAYER_REQUIRES_DEPLOYMENT for sync_executed + cloud_worker_access) | NO — requires Fargate deployment |
@@ -136,12 +144,13 @@ Note: `configured=False` because OPENJARVIS_API_KEY is absent locally (injected 
 ## Hard Blockers Requiring External Action
 
 - B1: Google OAuth token vault migration — live credentials required
-- B2: Fargate environment variable injection
+- B2: Dispatcher wiring (code change needed) + GITHUB_TOKEN still local-only
 - B4: Notion API token setup
-- B5C: Fargate worker + live Slack/Telegram provider tokens
-- B6: Live Fargate worker deployment (`terraform apply`)
-- B7 (cloud): Cloud sync + Fargate runtime
-- B8: Fargate worker for sync execution
+- B5C: Connector dispatcher wiring to actually send Slack/Telegram messages
+- B7 (cloud): Cloud sync wiring + code change for CloudSync class
+- B8: Cloud sync wiring for workspace S3 sync
+
+**B6: CLOSED** — Fargate running `90471fce`, engine=cloud, Plan 2 routes active.
 
 ## Next Step to Resume
 

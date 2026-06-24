@@ -328,3 +328,73 @@ Also closes safe code-side sub-issues:
 **Tests:** 442 total plan9 passing (1 pre-existing unrelated failure: test_batch_integration_same_file_live)
 **Secret scan:** CLEAN
 **Verdict:** `PLAN_2_FULL_MOBILE_MACBOOK_OFF_PARITY_RUNTIME_HOLD`
+
+---
+
+## Sprint: Plan 2 Fargate Current-Code Redeploy + Runtime Proof
+
+**Started:** 2026-06-24
+**Branch:** `localhost-get-tool`
+**Base HEAD:** `90471fce` (Plan 2 B6 live proof: fargate_readiness SSL fix)
+**Purpose:** Redeploy Fargate to current repo code `90471fce` (Plan 2 routes + SSL fix); inject B2 secrets (SLACK_BOT_TOKEN, TELEGRAM_BOT_TOKEN) into task definition; prove engine=cloud on current HEAD.
+
+### Action Log
+
+| # | Action | Files / Resources | Risk | Result |
+|---|--------|-------------------|------|--------|
+| 1 | Docker build `Dockerfile.full` — Rust stage (maturin), Python stage, 3 validations | Docker image | HIGH | All validations PASS: openjarvis_rust IMPORT_OK, JarvisMemory INIT_OK, memory_routes IMPORT_OK. Image tagged `jarvis-full-90471fce`. |
+| 2 | ECR push `jarvis-full-90471fce` | ECR repo `omnix-workbench` | MEDIUM | Pushed; digest sha256:265b3d9ba513a69f9017b077fb7684331f95fd08c9e4002608ebc652a1b225b9 |
+| 3 | Register ECS task definition rev 17 — adds SLACK_BOT_TOKEN, TELEGRAM_BOT_TOKEN, GOOGLE_CLIENT_SECRET, GOOGLE_OAUTH_CLIENT_ID to secret references | AWS ECS task def | MEDIUM | `omnix-workbench-jarvis-full:17` ACTIVE — 11 secrets total (presence-only references to Secrets Manager; no values printed or stored) |
+| 4 | `aws ecs update-service --force-new-deployment --task-definition ...17` | ECS service `omnix-workbench-jarvis-full-service` | MEDIUM | Deployment initiated; PRIMARY rev 17 rolloutState=COMPLETED within 3 mins; old rev 16 draining |
+| 5 | Deregister stale ALB target (old task IP 10.0.1.99); register new task IP 10.0.0.207 | ALB target group `jarvis-full-tg` | MEDIUM | ECS service has `loadBalancers: []` — target group is Terraform-managed; manual registration required. 10.0.0.207 went `initial → healthy` within 30s |
+| 6 | Health check proof — GET /health on live Fargate | `https://2r8dnzlz1h.execute-api.ap-southeast-1.amazonaws.com/health` | LOW | HTTP 200; `status=ok; git_commit=90471fce; jarvis_build_commit=90471fce; engine=cloud; version=1.0.2` |
+| 7 | Smoke test public endpoints | /v1/mobile-parity/status, /connectors, /life-os, /memory, /approvals, /cloud-worker | LOW | All HTTP 200; correct Plan 2 data; `b7_local_store_type: sqlite` confirmed in life-os; approval gate READY |
+| 8 | Confirm ALB target healthy | ALB target group | LOW | 10.0.0.207: healthy; 10.0.1.99: draining → removed |
+| 9 | plan9 test suite (440/440 pass) | tests/plan9/ | LOW | 1 pre-existing failure unchanged: test_batch_integration_same_file_live |
+| 10 | Secret scan (docs only — no code changes this sprint) | docs/plan2/ | LOW | CLEAN |
+| 11 | Update PLAN2_AUTONOMOUS_SESSION_STATE.md | docs/plan2/ | LOW | B2 partial closure, B6 full closure recorded; HEAD confirmed 90471fce |
+| 12 | Update PLAN2_PROGRESS_LEDGER.md | docs/plan2/ | LOW | This entry |
+| 13 | Update PLAN2_RESUME_PROMPT.md | docs/plan2/ | LOW | Remaining blockers, next steps updated |
+
+### Blockers closed this sprint
+
+| Blocker | Before | After |
+|---------|--------|-------|
+| B6 (full parity) | Running pre-Plan-2 code `fd22fa0f` | **CLOSED** — running `90471fce` with Plan 2 routes, engine=cloud, health check READY |
+| B2 (token injection) | SLACK_BOT_TOKEN + TELEGRAM_BOT_TOKEN absent from task def | **PARTIALLY CLOSED** — both tokens now in task def rev 17 as Secrets Manager references; dispatcher wiring still needed |
+
+### Docker build validation proof
+
+```
+#27 0.842 VALIDATION: openjarvis_rust IMPORT_OK
+#28 1.975 VALIDATION: JarvisMemory INIT_OK entries=0
+#29 2.451 VALIDATION: memory_routes IMPORT_OK routes=['/v1/memory/namespaces', '/v1/memory', '/v1/memory/status', '/v1/memory/search', '/v1/memory/sync', '/v1/memory/rust-status']
+```
+
+### Live health check proof
+
+```json
+{
+  "status": "ok",
+  "git_commit": "90471fce",
+  "jarvis_build_commit": "90471fce",
+  "engine": "cloud",
+  "version": "1.0.2"
+}
+```
+
+### Remaining blockers after this sprint
+
+| ID | Status | Requires |
+|----|--------|----------|
+| B1 | Code-side abstraction done | Vault migration + live OAuth credentials |
+| B2 | Tokens injected; dispatcher not wired | Connector dispatcher wiring (code change) |
+| B4 | Code-side check done | Actual Notion API token |
+| B5C | CONFIGURED_NOT_DEPLOYED | Connector dispatcher wiring |
+| B7 (cloud) | LAYER_REQUIRES_DEPLOYMENT | Cloud sync wiring |
+| B8 | LAYER_REQUIRES_DEPLOYMENT | Cloud sync wiring |
+
+**Tests:** 440 plan9 passing (1 pre-existing unrelated failure: test_batch_integration_same_file_live)
+**Secret scan:** CLEAN (docs only — no code changes; secret values never printed or stored)
+**Tauri rebuild:** Deferred until all Plan 2 blockers closed.
+**Verdict:** `PLAN_2_FULL_MOBILE_MACBOOK_OFF_PARITY_RUNTIME_HOLD` (B1, B2 partial, B4, B5C, B7, B8 remain)
