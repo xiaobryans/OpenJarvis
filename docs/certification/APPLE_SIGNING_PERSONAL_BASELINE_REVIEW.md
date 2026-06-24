@@ -1,17 +1,54 @@
 # Apple Signing Personal Baseline Review
 
 **Sprint date:** 2026-06-22  
-**Plan 9 baseline:** `PLAN_9_FULL_ACCEPTED` · `JARVIS_REPLACEMENT_ACCEPTED`  
-**Branch:** `localhost-get-tool` · **HEAD:** `fd22fa0f`  
+**Notarization closure date:** 2026-06-24
+**Plan 9 baseline:** `PLAN_9_FULL_ACCEPTED` · `JARVIS_REPLACEMENT_ACCEPTED`
+**Branch:** `localhost-get-tool` · **Baseline HEAD:** `9bc9778d`
 **Scope:** Personal-use macOS installability only (not App Store, not public release)
 
 ---
 
-## Verdict
+## Final Verdict
 
-**`APPLE_SIGNING_PERSONAL_BASELINE_HOLD`**
+**`APPLE_SIGNING_PERSONAL_BASELINE_ACCEPT_PENDING_REVIEW`**
 
-Signing pipeline scaffolding is in place. This machine cannot complete Developer ID sign + notarize yet.
+Developer ID codesign + Apple notarization + Gatekeeper acceptance fully proven on physical Mac.
+
+---
+
+## Notarization Proof (2026-06-24)
+
+| Check | Result |
+|-------|--------|
+| Submission ID | `11ca2087-fdb9-49d8-a3b3-b203a0bbb93f` |
+| Keychain profile | `OpenJarvisNotary` |
+| Apple notary status | **Accepted** |
+| `xcrun stapler staple /Applications/OpenJarvis.app` | **Success** |
+| `xcrun stapler validate /Applications/OpenJarvis.app` | **Success** |
+| `codesign --verify --deep --strict` | **valid on disk · satisfies Designated Requirement** |
+| `TeamIdentifier` | `TQL4A44WDJ` |
+| `spctl --assess --type execute --verbose=4` | **accepted · source=Notarized Developer ID** |
+| App opened | Yes — no Gatekeeper warning |
+| `/health` `status` | `ok` |
+| `/health` `backend_source` | `desktop_app` |
+| `/health` `version` | `1.0.2` |
+| `/health` `git_commit` | `9bc9778d` |
+| `/health` `jarvis_build_commit` | `9bc9778d` |
+
+**Plan 9 runtime regression:** None — backend starts from installed signed app, all health fields match accepted baseline.
+
+### Script patch in this commit
+
+`scripts/build-sign-personal.sh` was updated to:
+- Accept `APPLE_NOTARY_KEYCHAIN_PROFILE` / `APPLE_KEYCHAIN_PROFILE` as Option A (preferred)
+- Accept Command Line Tools `notarytool`/`stapler` without requiring full Xcode
+- Prefer `xcrun notarytool submit … --keychain-profile` over Apple ID/password flow
+- Preserve all prior Option B (Apple ID) and Option C (API key) credential flows
+- Emit `APPLE_NOTARIZATION_CREDENTIALS_HOLD` with setup instructions on missing creds
+
+### Previous hold (now closed)
+
+`APPLE_SIGNING_PERSONAL_BASELINE_HOLD` — was waiting on Developer ID certificate, credentials, and notarization toolchain. All closed.
 
 ---
 
