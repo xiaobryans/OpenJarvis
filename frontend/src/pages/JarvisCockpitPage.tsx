@@ -539,33 +539,8 @@ function ModuleCard({ mod, onClick, fetchErr }: { mod: ModuleEntry; onClick: () 
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Cinematic building blocks — orb rings, state badge, org arc
+// Mission building blocks — state badge, org arc (mobile), mission core (SVG orbital mesh)
 // ─────────────────────────────────────────────────────────────────────────────
-
-function OrbRings({ phase, isNarrow }: { phase: TurnPhase; isNarrow: boolean }) {
-  const variant =
-    phase === 'waiting_for_silence' ? 'j-rings-amber' :
-    phase === 'error' ? 'j-rings-error' :
-    (phase === 'thinking' || phase === 'transcribing') ? 'j-rings-processing' :
-    '';
-  if (isNarrow) {
-    // Ring sizes relative to 160px orb (1.25x outer halo = 200px) — rings start beyond that
-    return (
-      <div className={variant} style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
-        <div className="j-ring j-ring-1" style={{ width: 250, height: 250 }} />
-        <div className="j-ring j-ring-2" style={{ width: 316, height: 316 }} />
-      </div>
-    );
-  }
-  // Ring sizes relative to 260px orb (1.25x outer halo = 325px) — rings start beyond that
-  return (
-    <div className={variant} style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
-      <div className="j-ring j-ring-1" style={{ width: 370, height: 370 }} />
-      <div className="j-ring j-ring-2" style={{ width: 470, height: 470 }} />
-      <div className="j-ring j-ring-3" style={{ width: 600, height: 600 }} />
-    </div>
-  );
-}
 
 function StateBadge({ phase }: { phase: TurnPhase }) {
   const cfg: Record<TurnPhase, { label: string; color: string; bg: string }> = {
@@ -637,6 +612,212 @@ function OrgArc({ registry, onOrgChain, orgFetchOk, isNarrow }: {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// MissionCore — SVG orbital mesh cockpit composition
+//
+// Desktop: large orb (280px) at center of 740×560 SVG canvas.
+//   5 chain nodes (PA, COS/GM, M×N, W×N, REV) positioned at geometric angles
+//   on an orbit ring (r=230). SVG draws the ring + spoke lines + BRYAN label.
+//   Absolutely-positioned div chips overlay at matching pixel coordinates.
+//
+// Mobile: vertical stack — orb + CSS rings + state badge + org arc row.
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface MissionCoreProps {
+  phase: TurnPhase;
+  registry: RegistryStatus | null;
+  onOrgChain: () => void;
+  orgFetchOk: boolean;
+  isNarrow: boolean;
+}
+
+function MissionCore({ phase, registry, onOrgChain, orgFetchOk, isNarrow }: MissionCoreProps) {
+  const ORB_SIZE = isNarrow ? 180 : 280;
+
+  // Phase → accent color for rings, spokes, badges
+  const phaseColor =
+    phase === 'waiting_for_silence' ? '#f59e0b' :
+    phase === 'error'               ? '#ef4444' :
+    phase === 'thinking' || phase === 'transcribing' ? '#a78bfa' :
+    phase === 'speaking'            ? '#3ddc97' :
+    '#22d3ee';
+
+  const stateLabel =
+    phase === 'waiting_for_silence' ? 'APPROVAL PENDING' :
+    phase === 'error'               ? 'ERROR' :
+    phase === 'thinking' || phase === 'transcribing' ? 'PROCESSING' :
+    phase === 'speaking'            ? 'RESPONDING' :
+    phase === 'recording'           ? 'RECORDING' :
+    'READY';
+
+  // ── Mobile: vertical stack ────────────────────────────────────────────────
+  if (isNarrow) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1, justifyContent: 'center', overflow: 'hidden', paddingBottom: 8 }}>
+        <div style={{ position: 'relative', width: 340, height: 340, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          {/* CSS depth rings for mobile */}
+          <div style={{ position: 'absolute', top: '50%', left: '50%', width: 252, height: 252, borderRadius: '50%', border: `1px solid ${phaseColor}44`, animation: 'j-ring-breathe 3.6s ease-in-out infinite', pointerEvents: 'none', transform: 'translate(-50%,-50%) scale(0.97)' }} />
+          <div style={{ position: 'absolute', top: '50%', left: '50%', width: 318, height: 318, borderRadius: '50%', border: `1px solid ${phaseColor}22`, animation: 'j-ring-breathe 5.2s ease-in-out infinite', animationDelay: '-2s', pointerEvents: 'none', transform: 'translate(-50%,-50%) scale(0.97)' }} />
+          <LivingOrb phase={phase} voiceEnabled={true} size={ORB_SIZE} />
+        </div>
+        <StateBadge phase={phase} />
+        <OrgArc registry={registry} onOrgChain={onOrgChain} orgFetchOk={orgFetchOk} isNarrow={true} />
+      </div>
+    );
+  }
+
+  // ── Desktop: SVG orbital mesh ─────────────────────────────────────────────
+  const W = 740;
+  const H = 560;
+  const CX = W / 2;    // 370
+  const CY = 275;      // slightly above center — leaves visual room above PA node
+  const ORBIT_R = 230; // ring radius; LivingOrb outer halo ≈ 175px → 55px spokes
+
+  const toRad = (deg: number): number => (deg * Math.PI) / 180;
+  const ORB_HALO_R = ORB_SIZE * 0.5 * 1.28; // ≈ 179px, matches LivingOrb outer halo
+
+  interface ChainNode { key: string; label: string; sub: string; color: string; angle: number; }
+  const CHAIN: ChainNode[] = [
+    { key: 'pa',  label: 'PA',     sub: 'user-facing',  color: '#22d3ee', angle: -90 },
+    { key: 'cos', label: 'COS/GM', sub: 'coordinator',  color: '#a78bfa', angle: -18 },
+    { key: 'mgr', label: `M×${registry?.total_managers ?? '?'}`, sub: 'managers', color: '#34d399', angle: 54 },
+    { key: 'wkr', label: `W×${registry?.total_workers ?? '?'}`,  sub: 'workers',  color: '#60a5fa', angle: 126 },
+    { key: 'rev', label: 'REV',    sub: 'independent',  color: '#fb923c', angle: 198 },
+  ];
+
+  interface PlacedNode extends ChainNode { px: number; py: number; sx: number; sy: number; }
+  const placed: PlacedNode[] = CHAIN.map(n => ({
+    ...n,
+    px: CX + ORBIT_R    * Math.cos(toRad(n.angle)),
+    py: CY + ORBIT_R    * Math.sin(toRad(n.angle)),
+    sx: CX + ORB_HALO_R * Math.cos(toRad(n.angle)), // spoke starts at orb halo edge
+    sy: CY + ORB_HALO_R * Math.sin(toRad(n.angle)),
+  }));
+
+  return (
+    <div style={{ position: 'relative', width: W, height: H, flexShrink: 0 }}>
+
+      {/* ── SVG: rings, spokes, labels, cockpit frame ─────────────── */}
+      <svg
+        width={W} height={H}
+        style={{ position: 'absolute', inset: 0, pointerEvents: 'none', overflow: 'visible' }}
+      >
+        {/* Outermost scan ring — dashed */}
+        <circle cx={CX} cy={CY} r={ORBIT_R + 52} fill="none"
+          stroke={phaseColor} strokeOpacity="0.05" strokeWidth="1"
+          strokeDasharray="5 13" />
+
+        {/* Main orbital ring */}
+        <circle cx={CX} cy={CY} r={ORBIT_R} fill="none"
+          stroke={phaseColor} strokeOpacity="0.22" strokeWidth="1" />
+
+        {/* Inner ring (between halo and orbit) */}
+        <circle cx={CX} cy={CY} r={Math.round((ORBIT_R + ORB_HALO_R) / 2)} fill="none"
+          stroke={phaseColor} strokeOpacity="0.07" strokeWidth="1" />
+
+        {/* Spoke lines: orb halo edge → each node */}
+        {placed.map(n => (
+          <line key={`spoke-${n.key}`}
+            x1={n.sx} y1={n.sy}
+            x2={n.px} y2={n.py}
+            stroke={n.color} strokeOpacity="0.35" strokeWidth="1"
+            strokeDasharray="4 5"
+          />
+        ))}
+
+        {/* BRYAN origin label above PA */}
+        <text
+          x={CX} y={16}
+          fill={phaseColor} fillOpacity="0.38"
+          fontSize="8" fontFamily="monospace" letterSpacing="5"
+          textAnchor="middle"
+        >BRYAN</text>
+        <line
+          x1={CX} y1={20} x2={CX} y2={42}
+          stroke={phaseColor} strokeOpacity="0.20" strokeWidth="1"
+        />
+
+        {/* State label just below orb */}
+        <text
+          x={CX} y={CY + ORB_SIZE / 2 + 26}
+          fill={phaseColor} fillOpacity="0.82"
+          fontSize="9" fontFamily="monospace" letterSpacing="3"
+          textAnchor="middle" fontWeight="700"
+        >{stateLabel}</text>
+
+        {/* Cockpit frame corner ticks */}
+        <g stroke={phaseColor} strokeOpacity="0.12" strokeWidth="1">
+          <line x1={10} y1={22} x2={10} y2={42} /><line x1={6}   y1={22} x2={26}   y2={22} />
+          <line x1={W-10} y1={22} x2={W-10} y2={42} /><line x1={W-6} y1={22} x2={W-26} y2={22} />
+          <line x1={10} y1={H-22} x2={10} y2={H-42} /><line x1={6}   y1={H-22} x2={26}   y2={H-22} />
+          <line x1={W-10} y1={H-22} x2={W-10} y2={H-42} /><line x1={W-6} y1={H-22} x2={W-26} y2={H-22} />
+        </g>
+      </svg>
+
+      {/* ── LivingOrb centered ────────────────────────────────────── */}
+      <div style={{
+        position: 'absolute',
+        left: CX - ORB_SIZE / 2,
+        top: CY - ORB_SIZE / 2,
+        pointerEvents: 'none',
+      }}>
+        <LivingOrb phase={phase} voiceEnabled={true} size={ORB_SIZE} />
+      </div>
+
+      {/* ── Orbital node chips ────────────────────────────────────── */}
+      {placed.map(n => (
+        <div key={n.key} style={{
+          position: 'absolute',
+          left: n.px,
+          top: n.py,
+          transform: 'translate(-50%, -50%)',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: 3,
+        }}>
+          <div style={{
+            padding: '4px 12px',
+            borderRadius: 100,
+            border: `1px solid ${n.color}55`,
+            background: `${n.color}14`,
+            color: n.color,
+            fontSize: 10,
+            fontWeight: 700,
+            letterSpacing: '0.06em',
+            fontFamily: 'var(--font-hud, monospace)',
+            boxShadow: `0 0 16px ${n.color}26`,
+            whiteSpace: 'nowrap',
+          }}>
+            {n.label}
+          </div>
+          <div style={{
+            fontSize: 8,
+            color: 'rgba(100,145,185,0.44)',
+            fontFamily: 'var(--font-hud, monospace)',
+            letterSpacing: '0.03em',
+            whiteSpace: 'nowrap',
+          }}>
+            {n.sub}
+          </div>
+        </div>
+      ))}
+
+      {/* Full org chain link */}
+      {orgFetchOk && (
+        <button onClick={onOrgChain} style={{
+          position: 'absolute', bottom: 10, right: 14,
+          fontSize: 8, color: `${phaseColor}60`,
+          background: 'none', border: 'none', cursor: 'pointer',
+          textDecoration: 'underline', fontFamily: 'var(--font-hud, monospace)',
+        }}>
+          full org →
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Mode work surfaces
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -661,10 +842,6 @@ interface MissionSurfaceProps {
 }
 
 function MissionSurface({ phase, apiOk, input, sending, lastReply, onInputChange, onKeyDown, onSubmit, pendingApprovals, orgHierarchy: _orgHierarchy, orgFetchOk, registry, routingStatus, onExpandPanel, onMode, isNarrow }: MissionSurfaceProps) {
-  const orbSize = isNarrow ? 160 : 260;
-  // Container must fit within hero area (viewport − topbar − console ≈ 630px)
-  // leaving room for state badge + org arc (~90px)
-  const orbContainerSize = isNarrow ? 320 : 520;
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', position: 'relative' }}>
 
@@ -688,35 +865,25 @@ function MissionSurface({ phase, apiOk, input, sending, lastReply, onInputChange
         </button>
       )}
 
-      {/* ── HERO: orb + rings + state badge + org arc ─────────────── */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', position: 'relative', paddingTop: isNarrow ? 8 : 4, paddingBottom: 4, minHeight: 0 }}>
-
-        {/* Orb + rings centered container */}
-        <div style={{ position: 'relative', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', width: orbContainerSize, height: orbContainerSize }}>
-          <OrbRings phase={phase} isNarrow={isNarrow} />
-          <LivingOrb phase={phase} voiceEnabled={true} size={orbSize} />
-        </div>
-
-        {/* State badge */}
-        <StateBadge phase={phase} />
-
-        {/* Org chain arc */}
-        <OrgArc
+      {/* ── HERO: orbital mesh cockpit ────────────────────────────── */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', position: 'relative', minHeight: 0 }}>
+        <MissionCore
+          phase={phase}
           registry={registry}
           onOrgChain={() => onExpandPanel('org-chain')}
           orgFetchOk={orgFetchOk}
           isNarrow={isNarrow}
         />
-
-        {/* Reply panel — glass morphism */}
+        {/* Reply panel — glass, shown below mesh when present */}
         {lastReply && (
           <div
             className="j-glass"
             style={{
-              marginTop: 14, width: '100%', maxWidth: isNarrow ? '100%' : 500,
-              fontSize: 12, lineHeight: 1.7, padding: '10px 16px',
+              marginTop: 8, flexShrink: 0,
+              width: isNarrow ? 'calc(100% - 20px)' : 520,
+              fontSize: 12, lineHeight: 1.7, padding: '8px 14px',
               color: 'rgba(160,215,185,0.92)',
-              maxHeight: isNarrow ? 80 : 110, overflowY: 'auto', flexShrink: 0,
+              maxHeight: isNarrow ? 70 : 80, overflowY: 'auto',
             }}
           >
             {lastReply}
@@ -726,7 +893,6 @@ function MissionSurface({ phase, apiOk, input, sending, lastReply, onInputChange
 
       {/* ── COMMAND CONSOLE ───────────────────────────────────────── */}
       <div style={{ flexShrink: 0, padding: isNarrow ? '0 10px 12px' : '0 28px 20px' }}>
-        {/* PA model hint (desktop) */}
         {!isNarrow && routingStatus && (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 6, fontSize: 9, color: 'rgba(60,100,140,0.4)', fontFamily: 'var(--font-hud, monospace)' }}>
             <span>{routingStatus.pa_front_door_model}</span>
@@ -736,12 +902,7 @@ function MissionSurface({ phase, apiOk, input, sending, lastReply, onInputChange
             <button onClick={() => onExpandPanel('routing')} style={{ background: 'none', border: 'none', color: 'rgba(34,211,238,0.28)', fontSize: 9, cursor: 'pointer', textDecoration: 'underline', fontFamily: 'inherit' }}>routing →</button>
           </div>
         )}
-
-        {/* Input console — glass panel */}
-        <div
-          className="j-glass"
-          style={{ display: 'flex', alignItems: 'flex-end', gap: 8, padding: '10px 14px' }}
-        >
+        <div className="j-glass" style={{ display: 'flex', alignItems: 'flex-end', gap: 8, padding: '10px 14px' }}>
           <textarea
             rows={1}
             value={input}
@@ -769,8 +930,6 @@ function MissionSurface({ phase, apiOk, input, sending, lastReply, onInputChange
             {sending ? '…' : '↑'}
           </button>
         </div>
-
-        {/* Console footer */}
         <div style={{ marginTop: 5, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontSize: 9, color: 'rgba(50,90,130,0.40)', fontFamily: 'var(--font-hud, monospace)', letterSpacing: '0.04em' }}>
           Bryan → Jarvis PA · all interactions through Jarvis only
         </div>
