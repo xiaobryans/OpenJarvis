@@ -1,5 +1,5 @@
 /**
- * CockpitCommandPalette — ⌘K quick-navigation overlay.
+ * CockpitCommandPalette — ⌘⇧K quick-navigation overlay.
  *
  * Design invariants:
  *   - No unsafe actions exposed without approval gates.

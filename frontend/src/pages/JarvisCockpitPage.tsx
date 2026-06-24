@@ -375,7 +375,8 @@ function TopStatusBar({ apiOk, model, version, gitCommit, apiTarget, plan9, pend
             fontFamily: 'var(--font-hud, monospace)', letterSpacing: '0.06em',
             boxShadow: '0 0 6px rgba(34,211,238,0.08)',
           }}
-        >⌘K</button>
+          title="Command Palette (⌘⇧K)"
+        >⌘⇧K</button>
       </div>
     </div>
   );
@@ -767,6 +768,244 @@ function MissionCore({ phase, registry, onOrgChain, orgFetchOk, isNarrow }: Miss
 // Mode work surfaces
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ─── Mission right panel — live system state (desktop only) ──────────────────
+interface MissionRightPanelProps {
+  apiOk: boolean | null;
+  model: string;
+  connectorLive: number;
+  connectorTotal: number;
+  pendingApprovals: number;
+  registry: RegistryStatus | null;
+  auditEntries: { action_type?: string; execution_status?: string; actor?: string }[];
+  routingStatus: RoutingStatus | null;
+  onOrgChain: () => void;
+  onMode: (m: FocusMode) => void;
+}
+
+function MissionRightPanel({ apiOk, model, connectorLive, connectorTotal, pendingApprovals, registry, auditEntries, routingStatus, onOrgChain, onMode }: MissionRightPanelProps) {
+  const dot = (ok: boolean | null) => (
+    <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: ok === true ? '#3ddc97' : ok === false ? '#ef4444' : '#f59e0b', flexShrink: 0 }} />
+  );
+  const modelShort = routingStatus?.pa_front_door_model ?? model;
+  const providerCount = routingStatus?.provider_count ?? 0;
+
+  return (
+    <div style={{
+      width: 200, flexShrink: 0,
+      borderLeft: '1px solid rgba(34,211,238,0.07)',
+      background: 'rgba(2,5,14,0.82)',
+      backdropFilter: 'blur(12px)',
+      overflowY: 'auto',
+      padding: '14px 10px 14px 12px',
+      display: 'flex', flexDirection: 'column', gap: 16,
+      fontFamily: 'var(--font-hud, monospace)',
+    }}>
+
+      {/* System */}
+      <section>
+        <div style={{ fontSize: 8, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'rgba(34,211,238,0.35)', marginBottom: 6 }}>System</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 10, color: 'rgba(160,200,240,0.7)' }}>
+            {dot(apiOk)} <span style={{ flex: 1 }}>API</span>
+            <span style={{ color: apiOk ? '#3ddc97' : '#ef4444', fontSize: 9 }}>{apiOk === true ? 'OK' : apiOk === false ? 'ERR' : '…'}</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 10, color: 'rgba(160,200,240,0.7)' }}>
+            {dot(true)} <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 110, fontSize: 9 }}>{modelShort.split('/').pop()?.slice(0, 20) ?? modelShort}</span>
+          </div>
+          {connectorTotal > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 10, color: 'rgba(160,200,240,0.7)' }}>
+              {dot(connectorLive === connectorTotal ? true : connectorLive > 0 ? null : false)} <span style={{ flex: 1 }}>Connectors</span>
+              <span style={{ color: connectorLive === connectorTotal ? '#3ddc97' : '#f59e0b', fontSize: 9 }}>{connectorLive}/{connectorTotal}</span>
+            </div>
+          )}
+          {providerCount > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 9, color: 'rgba(100,140,180,0.5)' }}>
+              <span style={{ width: 6 }} /> <span>{providerCount} providers</span>
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* Approval alert */}
+      {pendingApprovals > 0 && (
+        <button
+          onClick={() => onMode('approvals')}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 6, padding: '7px 10px',
+            background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.3)',
+            borderRadius: 7, cursor: 'pointer', textAlign: 'left',
+          }}
+        >
+          <span style={{ fontSize: 12 }}>🛑</span>
+          <span style={{ fontSize: 9, color: '#f59e0b', fontWeight: 700, letterSpacing: '0.04em' }}>
+            {pendingApprovals} PENDING
+          </span>
+        </button>
+      )}
+
+      {/* Canonical chain */}
+      <section>
+        <div style={{ fontSize: 8, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'rgba(34,211,238,0.35)', marginBottom: 6 }}>Canonical Chain</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+          {[
+            { icon: '🔷', label: 'Jarvis PA', sub: 'user-facing', color: '#22d3ee' },
+            { icon: '↕', label: '', sub: '', color: 'rgba(60,100,140,0.3)', connector: true },
+            { icon: '🎛', label: 'COS / GM', sub: 'coordinator', color: '#a78bfa' },
+            { icon: '↕', label: '', sub: '', color: 'rgba(60,100,140,0.3)', connector: true },
+            { icon: '📋', label: `Managers ×${registry?.total_managers ?? '?'}`, sub: 'domain owners', color: '#34d399' },
+            { icon: '↕', label: '', sub: '', color: 'rgba(60,100,140,0.3)', connector: true },
+            { icon: '⚙', label: `Workers ×${registry?.total_workers ?? '?'}`, sub: 'execution', color: '#60a5fa' },
+            { icon: '↕', label: '', sub: '', color: 'rgba(60,100,140,0.3)', connector: true },
+            { icon: '🔍', label: 'Reviewer', sub: 'independent', color: '#fb923c' },
+          ].map((row, i) =>
+            row.connector ? (
+              <div key={i} style={{ paddingLeft: 6, fontSize: 9, color: 'rgba(60,100,140,0.3)', lineHeight: '1.1' }}>│</div>
+            ) : (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                <span style={{ fontSize: 10, flexShrink: 0 }}>{row.icon}</span>
+                <div>
+                  <div style={{ fontSize: 9, color: row.color, lineHeight: '1.2' }}>{row.label}</div>
+                  <div style={{ fontSize: 8, color: 'rgba(100,140,180,0.45)' }}>{row.sub}</div>
+                </div>
+              </div>
+            )
+          )}
+        </div>
+        <button
+          onClick={onOrgChain}
+          style={{ marginTop: 6, fontSize: 8, color: 'rgba(34,211,238,0.5)', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', padding: 0 }}
+        >
+          full org →
+        </button>
+      </section>
+
+      {/* Recent events */}
+      <section>
+        <div style={{ fontSize: 8, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'rgba(34,211,238,0.35)', marginBottom: 6 }}>Recent</div>
+        {auditEntries.length === 0 ? (
+          <div style={{ fontSize: 9, color: 'rgba(80,120,160,0.4)' }}>System quiet</div>
+        ) : (
+          auditEntries.slice(0, 3).map((e, i) => (
+            <div key={i} style={{ fontSize: 9, color: 'rgba(120,160,200,0.55)', marginBottom: 2, lineHeight: 1.3 }}>
+              <span style={{ color: e.execution_status === 'success' ? '#3ddc97' : e.execution_status === 'failure' ? '#ef4444' : '#f59e0b', marginRight: 4 }}>●</span>
+              {e.action_type ?? 'event'}
+            </div>
+          ))
+        )}
+      </section>
+
+      {/* Quick nav */}
+      <section>
+        <div style={{ fontSize: 8, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'rgba(34,211,238,0.35)', marginBottom: 6 }}>Quick</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+          {(['workbench', 'approvals', 'audit', 'system'] as FocusMode[]).map(m => (
+            <button
+              key={m}
+              onClick={() => onMode(m)}
+              style={{
+                textAlign: 'left', fontSize: 9, padding: '4px 7px',
+                background: 'rgba(34,211,238,0.04)', border: '1px solid rgba(34,211,238,0.08)',
+                borderRadius: 5, color: 'rgba(120,180,220,0.6)', cursor: 'pointer',
+                textTransform: 'capitalize',
+              }}
+            >
+              {m}
+            </button>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+// ─── Chat drawer — collapsible, anchored at bottom of cockpit center ──────────
+interface ChatDrawerProps {
+  input: string;
+  sending: boolean;
+  lastReply: string;
+  apiOk: boolean | null;
+  onInputChange: (v: string) => void;
+  onKeyDown: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
+  onSubmit: () => void;
+  inputRef: React.RefObject<HTMLTextAreaElement | null>;
+  onClose: () => void;
+  isNarrow: boolean;
+}
+
+function ChatDrawer({ input, sending, lastReply, apiOk, onInputChange, onKeyDown, onSubmit, inputRef, onClose, isNarrow }: ChatDrawerProps) {
+  return (
+    <div
+      style={{
+        position: 'absolute', bottom: 0, left: 0,
+        right: isNarrow ? 0 : 200,
+        background: 'rgba(3,7,18,0.97)',
+        backdropFilter: 'blur(18px)',
+        borderTop: '1px solid rgba(34,211,238,0.18)',
+        padding: '10px 16px 14px',
+        zIndex: 20,
+        boxShadow: '0 -16px 48px rgba(0,0,0,0.7), 0 -1px 0 rgba(34,211,238,0.08)',
+      }}
+    >
+      {/* Drag handle + label + close */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+        <span style={{ fontSize: 9, color: 'rgba(34,211,238,0.4)', letterSpacing: '0.06em', fontFamily: 'var(--font-hud, monospace)', flex: 1 }}>
+          BRYAN → JARVIS PA
+        </span>
+        <span style={{ fontSize: 9, color: 'rgba(60,100,140,0.45)', fontFamily: 'var(--font-hud, monospace)' }}>Esc · ⌘K history</span>
+        <button
+          onClick={onClose}
+          style={{ fontSize: 12, color: 'rgba(120,160,200,0.5)', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px' }}
+          title="Close chat (Esc)"
+        >✕</button>
+      </div>
+
+      {/* Last reply */}
+      {lastReply && (
+        <div
+          className="j-glass"
+          style={{
+            marginBottom: 8, fontSize: 11, lineHeight: 1.7, padding: '7px 12px',
+            color: 'rgba(160,215,185,0.9)',
+            maxHeight: 70, overflowY: 'auto',
+          }}
+        >
+          {lastReply}
+        </div>
+      )}
+
+      {/* Input row */}
+      <div className="j-glass" style={{ display: 'flex', alignItems: 'flex-end', gap: 8, padding: '8px 12px' }}>
+        <textarea
+          ref={inputRef}
+          rows={1}
+          value={input}
+          onChange={e => onInputChange(e.target.value)}
+          onKeyDown={onKeyDown}
+          placeholder={apiOk ? 'Ask Jarvis anything… (Enter to send)' : 'Backend unreachable'}
+          disabled={sending || !apiOk}
+          style={{
+            flex: 1, resize: 'none', background: 'transparent', outline: 'none',
+            fontSize: 12, lineHeight: '1.5', color: 'rgba(200,225,255,0.92)',
+            maxHeight: 72, border: 'none', fontFamily: 'var(--font-display, sans-serif)',
+          }}
+        />
+        <button
+          onClick={onSubmit}
+          disabled={sending || !input.trim() || !apiOk}
+          style={{
+            fontSize: 13, padding: '4px 12px', borderRadius: 8, flexShrink: 0,
+            background: sending ? 'rgba(34,211,238,0.07)' : 'rgba(34,211,238,0.18)',
+            color: 'rgba(34,211,238,0.92)', border: '1px solid rgba(34,211,238,0.25)',
+            opacity: sending || !input.trim() || !apiOk ? 0.38 : 1, cursor: 'pointer',
+          }}
+        >
+          {sending ? '…' : '↑'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // — Mission —
 interface MissionSurfaceProps {
   phase: TurnPhase;
@@ -786,9 +1025,36 @@ interface MissionSurfaceProps {
   onMode: (m: FocusMode) => void;
   isNarrow: boolean;
   inputRef: React.RefObject<HTMLTextAreaElement | null>;
+  connectorLive: number;
+  connectorTotal: number;
+  auditEntries: { action_type?: string; execution_status?: string; actor?: string }[];
 }
 
-function MissionSurface({ phase, apiOk, input, sending, lastReply, onInputChange, onKeyDown, onSubmit, pendingApprovals, orgHierarchy: _orgHierarchy, orgFetchOk, registry, routingStatus, onExpandPanel, onMode, isNarrow, inputRef }: MissionSurfaceProps) {
+function MissionSurface({ phase, apiOk, input, sending, lastReply, onInputChange, onKeyDown, onSubmit, pendingApprovals, orgHierarchy: _orgHierarchy, orgFetchOk, registry, routingStatus, onExpandPanel, onMode, isNarrow, inputRef, connectorLive, connectorTotal, auditEntries }: MissionSurfaceProps) {
+  const [chatExpanded, setChatExpanded] = useState(false);
+
+  // Esc closes chat drawer
+  useEffect(() => {
+    if (!chatExpanded) return;
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') setChatExpanded(false); };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [chatExpanded]);
+
+  // Focus textarea when drawer opens
+  useEffect(() => {
+    if (chatExpanded) setTimeout(() => inputRef.current?.focus(), 50);
+  }, [chatExpanded, inputRef]);
+
+  // Auto-expand chat when a reply comes in (so Bryan sees the response)
+  const prevLastReply = React.useRef('');
+  useEffect(() => {
+    if (lastReply && lastReply !== prevLastReply.current) {
+      prevLastReply.current = lastReply;
+      setChatExpanded(true);
+    }
+  }, [lastReply]);
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', position: 'relative' }}>
 
@@ -812,76 +1078,113 @@ function MissionSurface({ phase, apiOk, input, sending, lastReply, onInputChange
         </button>
       )}
 
-      {/* ── HERO: orbital mesh cockpit ────────────────────────────── */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', position: 'relative', minHeight: 0 }}>
-        <MissionCore
-          phase={phase}
-          registry={registry}
-          onOrgChain={() => onExpandPanel('org-chain')}
-          orgFetchOk={orgFetchOk}
-          isNarrow={isNarrow}
-        />
-        {/* Reply panel — glass, shown below mesh when present */}
-        {lastReply && (
-          <div
-            className="j-glass"
-            style={{
-              marginTop: 8, flexShrink: 0,
-              width: isNarrow ? 'calc(100% - 20px)' : 520,
-              fontSize: 12, lineHeight: 1.7, padding: '8px 14px',
-              color: 'rgba(160,215,185,0.92)',
-              maxHeight: isNarrow ? 70 : 80, overflowY: 'auto',
-            }}
-          >
-            {lastReply}
-          </div>
+      {/* ── Main cockpit area (center + right panel) ──────────────── */}
+      <div style={{ flex: 1, display: 'flex', overflow: 'hidden', minHeight: 0 }}>
+
+        {/* Center: Jarvis orbital core */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', position: 'relative', minWidth: 0 }}>
+          <MissionCore
+            phase={phase}
+            registry={registry}
+            onOrgChain={() => onExpandPanel('org-chain')}
+            orgFetchOk={orgFetchOk}
+            isNarrow={isNarrow}
+          />
+        </div>
+
+        {/* Right panel — desktop only */}
+        {!isNarrow && (
+          <MissionRightPanel
+            apiOk={apiOk}
+            model={''}
+            connectorLive={connectorLive}
+            connectorTotal={connectorTotal}
+            pendingApprovals={pendingApprovals}
+            registry={registry}
+            auditEntries={auditEntries}
+            routingStatus={routingStatus}
+            onOrgChain={() => onExpandPanel('org-chain')}
+            onMode={onMode}
+          />
         )}
       </div>
 
-      {/* ── COMMAND CONSOLE ───────────────────────────────────────── */}
-      <div style={{ flexShrink: 0, padding: isNarrow ? '0 10px 12px' : '0 28px 20px' }}>
+      {/* ── Bottom strip ──────────────────────────────────────────── */}
+      <div style={{
+        flexShrink: 0, height: 60,
+        borderTop: '1px solid rgba(34,211,238,0.06)',
+        background: 'rgba(2,4,12,0.70)',
+        backdropFilter: 'blur(8px)',
+        display: 'flex', alignItems: 'center',
+        padding: isNarrow ? '0 12px' : '0 20px',
+        gap: 12,
+      }}>
+        {/* Left: recent event summary */}
+        {!isNarrow && (
+          <div style={{ flex: 1, fontSize: 9, color: 'rgba(80,120,160,0.45)', fontFamily: 'var(--font-hud, monospace)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {auditEntries[0]
+              ? `${auditEntries[0].action_type ?? 'event'} · ${auditEntries[0].execution_status ?? '—'}`
+              : 'System quiet'}
+          </div>
+        )}
+
+        {/* Center: Ask Jarvis pill */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+          <button
+            onClick={() => setChatExpanded(c => !c)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 6,
+              padding: '6px 14px',
+              background: chatExpanded ? 'rgba(34,211,238,0.14)' : 'rgba(34,211,238,0.07)',
+              border: `1px solid ${chatExpanded ? 'rgba(34,211,238,0.35)' : 'rgba(34,211,238,0.18)'}`,
+              borderRadius: 20,
+              color: 'rgba(120,200,230,0.85)',
+              cursor: 'pointer',
+              fontSize: 11,
+              fontFamily: 'var(--font-display, sans-serif)',
+              boxShadow: chatExpanded ? '0 0 12px rgba(34,211,238,0.12)' : 'none',
+              transition: 'all 0.15s ease',
+            }}
+          >
+            <span>↗</span>
+            <span>Ask Jarvis</span>
+            {sending && <span style={{ fontSize: 9, color: 'rgba(34,211,238,0.5)' }}>…</span>}
+          </button>
+          <span style={{ fontSize: 8, color: 'rgba(50,90,130,0.40)', fontFamily: 'var(--font-hud, monospace)' }}>⌘K history</span>
+        </div>
+
+        {/* Right: routing info (desktop only) */}
         {!isNarrow && routingStatus && (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 6, fontSize: 9, color: 'rgba(60,100,140,0.4)', fontFamily: 'var(--font-hud, monospace)' }}>
-            <span>{routingStatus.pa_front_door_model}</span>
+          <div style={{ flex: 1, textAlign: 'right', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8, fontSize: 9, color: 'rgba(60,100,140,0.40)', fontFamily: 'var(--font-hud, monospace)' }}>
+            <span>{routingStatus.pa_front_door_model.split('/').pop()?.slice(0, 16) ?? '—'}</span>
             <span>·</span>
             <span>{routingStatus.provider_count} providers</span>
             <span>·</span>
             <button onClick={() => onExpandPanel('routing')} style={{ background: 'none', border: 'none', color: 'rgba(34,211,238,0.28)', fontSize: 9, cursor: 'pointer', textDecoration: 'underline', fontFamily: 'inherit' }}>routing →</button>
           </div>
         )}
-        <div className="j-glass" style={{ display: 'flex', alignItems: 'flex-end', gap: 8, padding: '10px 14px' }}>
-          <textarea
-            ref={inputRef}
-            rows={1}
-            value={input}
-            onChange={e => onInputChange(e.target.value)}
-            onKeyDown={onKeyDown}
-            placeholder={apiOk ? 'Ask Jarvis anything… (Enter to send)' : 'Backend unreachable — check server URL in Settings'}
-            disabled={sending || !apiOk}
-            style={{
-              flex: 1, resize: 'none', background: 'transparent', outline: 'none',
-              fontSize: 13, lineHeight: '1.5', color: 'rgba(200,225,255,0.92)',
-              maxHeight: 80, border: 'none', fontFamily: 'var(--font-display, sans-serif)',
-            }}
-          />
-          <button
-            onClick={onSubmit}
-            disabled={sending || !input.trim() || !apiOk}
-            style={{
-              fontSize: 14, padding: '5px 14px', borderRadius: 9, flexShrink: 0,
-              background: sending ? 'rgba(34,211,238,0.07)' : 'rgba(34,211,238,0.18)',
-              color: 'rgba(34,211,238,0.92)', border: '1px solid rgba(34,211,238,0.25)',
-              opacity: sending || !input.trim() || !apiOk ? 0.38 : 1, cursor: 'pointer',
-              boxShadow: !sending && input.trim() && apiOk ? '0 0 10px rgba(34,211,238,0.15)' : 'none',
-            }}
-          >
-            {sending ? '…' : '↑'}
-          </button>
-        </div>
-        <div style={{ marginTop: 5, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontSize: 9, color: 'rgba(50,90,130,0.40)', fontFamily: 'var(--font-hud, monospace)', letterSpacing: '0.04em' }}>
-          Bryan → Jarvis PA · all interactions through Jarvis only
-        </div>
+        {isNarrow && (
+          <div style={{ flex: 1, textAlign: 'right', fontSize: 9, color: 'rgba(50,90,130,0.35)', fontFamily: 'var(--font-hud, monospace)' }}>
+            Bryan → PA only
+          </div>
+        )}
       </div>
+
+      {/* ── Chat drawer — slide-up overlay over center area ──────── */}
+      {chatExpanded && (
+        <ChatDrawer
+          input={input}
+          sending={sending}
+          lastReply={lastReply}
+          apiOk={apiOk}
+          onInputChange={onInputChange}
+          onKeyDown={onKeyDown}
+          onSubmit={onSubmit}
+          inputRef={inputRef}
+          onClose={() => setChatExpanded(false)}
+          isNarrow={isNarrow}
+        />
+      )}
     </div>
   );
 }
@@ -1526,10 +1829,13 @@ export function JarvisCockpitPage() {
     return () => clearInterval(interval);
   }, [fetchAll]);
 
-  // ⌘K palette
+  // ⌘⇧K → command palette  (Cmd+K is reserved for TextFallbackPanel at App level)
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'k') { e.preventDefault(); setPaletteOpen(p => !p); }
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'K') {
+        e.preventDefault();
+        setPaletteOpen(p => !p);
+      }
     };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
@@ -1885,6 +2191,9 @@ export function JarvisCockpitPage() {
             onMode={setActiveMode}
             isNarrow={isNarrow}
             inputRef={inputRef}
+            connectorLive={connectorLive}
+            connectorTotal={connectors.length}
+            auditEntries={auditEntries}
           />
         );
       case 'workbench':
