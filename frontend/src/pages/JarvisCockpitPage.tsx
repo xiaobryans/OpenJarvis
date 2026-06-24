@@ -171,6 +171,18 @@ function availBadge(a: ModuleEntry['availability']): { label: string; color: str
   return map[a] ?? { label: a, color: '#6b7280' };
 }
 
+async function parseApprovalActionError(res: Response): Promise<string> {
+  let detail = res.statusText || `HTTP ${res.status}`;
+  try {
+    const j = await res.json();
+    if (typeof j.detail === 'string') detail = j.detail;
+    else if (typeof j.error === 'string') detail = j.error;
+    else if (typeof j.message === 'string') detail = j.message;
+    else if (j.detail != null) detail = JSON.stringify(j.detail);
+  } catch { /* non-json body */ }
+  return detail;
+}
+
 async function fetchTracked(
   path: string,
   onState: (s: PanelFetchState) => void,
@@ -596,6 +608,11 @@ function MissionSurface({ phase, apiOk, input, sending, lastReply, onInputChange
 }
 
 // — Approval mode —
+interface ApprovalBusyState {
+  id: string;
+  action: 'approve' | 'deny';
+}
+
 interface ApprovalSurfaceProps {
   approvalItems: ApprovalItem[];
   pendingApprovals: number;
@@ -603,12 +620,13 @@ interface ApprovalSurfaceProps {
   apiTarget: string;
   onApprove: (id: string) => void;
   onDeny: (id: string) => void;
-  approvalBusy: string | null;
+  approvalBusy: ApprovalBusyState | null;
+  approvalErrors: Record<string, string>;
   auditEntries: { action_type?: string; execution_status?: string }[];
   isNarrow: boolean;
 }
 
-function ApprovalSurface({ approvalItems, pendingApprovals, fetchState, apiTarget, onApprove, onDeny, approvalBusy, auditEntries, isNarrow }: ApprovalSurfaceProps) {
+function ApprovalSurface({ approvalItems, pendingApprovals, fetchState, apiTarget, onApprove, onDeny, approvalBusy, approvalErrors, auditEntries, isNarrow }: ApprovalSurfaceProps) {
   return (
     <div style={{ height: '100%', overflowY: 'auto', padding: isNarrow ? '12px' : '20px 24px' }}>
       {/* Amber header */}
@@ -637,8 +655,12 @@ function ApprovalSurface({ approvalItems, pendingApprovals, fetchState, apiTarge
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {approvalItems.map(a => (
-            <div key={a.id} style={{ background: 'rgba(8,14,28,0.85)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: 12, padding: '12px 14px' }}>
+          {approvalItems.map(a => {
+            const isBusy = approvalBusy?.id === a.id;
+            const busyAction = isBusy ? approvalBusy?.action : null;
+            const itemError = approvalErrors[a.id];
+            return (
+            <div key={a.id} style={{ background: 'rgba(8,14,28,0.85)', border: `1px solid ${itemError ? 'rgba(239,68,68,0.35)' : 'rgba(245,158,11,0.2)'}`, borderRadius: 12, padding: '12px 14px' }}>
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 10 }}>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: 12, color: 'rgba(200,220,255,0.9)', fontWeight: 600 }}>{a.description ?? a.action_type ?? 'Action pending approval'}</div>
@@ -652,21 +674,27 @@ function ApprovalSurface({ approvalItems, pendingApprovals, fetchState, apiTarge
               <div style={{ display: 'flex', gap: 8 }}>
                 <button
                   onClick={() => onApprove(a.id)}
-                  disabled={approvalBusy === a.id}
-                  style={{ flex: 1, padding: '7px', borderRadius: 8, fontSize: 11, fontWeight: 600, background: approvalBusy === a.id ? 'rgba(61,220,151,0.05)' : 'rgba(61,220,151,0.15)', color: '#3ddc97', border: '1px solid rgba(61,220,151,0.3)', cursor: 'pointer', opacity: approvalBusy === a.id ? 0.5 : 1 }}
+                  disabled={isBusy}
+                  style={{ flex: 1, padding: '7px', borderRadius: 8, fontSize: 11, fontWeight: 600, background: isBusy && busyAction === 'approve' ? 'rgba(61,220,151,0.05)' : 'rgba(61,220,151,0.15)', color: '#3ddc97', border: '1px solid rgba(61,220,151,0.3)', cursor: isBusy ? 'wait' : 'pointer', opacity: isBusy ? 0.6 : 1 }}
                 >
-                  {approvalBusy === a.id ? '…' : '✓ Approve'}
+                  {isBusy && busyAction === 'approve' ? 'Approving…' : '✓ Approve'}
                 </button>
                 <button
                   onClick={() => onDeny(a.id)}
-                  disabled={approvalBusy === a.id}
-                  style={{ flex: 1, padding: '7px', borderRadius: 8, fontSize: 11, fontWeight: 600, background: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.25)', cursor: 'pointer', opacity: approvalBusy === a.id ? 0.5 : 1 }}
+                  disabled={isBusy}
+                  style={{ flex: 1, padding: '7px', borderRadius: 8, fontSize: 11, fontWeight: 600, background: isBusy && busyAction === 'deny' ? 'rgba(239,68,68,0.05)' : 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.25)', cursor: isBusy ? 'wait' : 'pointer', opacity: isBusy ? 0.6 : 1 }}
                 >
-                  {approvalBusy === a.id ? '…' : '✗ Deny'}
+                  {isBusy && busyAction === 'deny' ? 'Denying…' : '✗ Deny'}
                 </button>
               </div>
+              {itemError && (
+                <div style={{ marginTop: 8, fontSize: 10, color: '#fca5a5', padding: '6px 8px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 6, lineHeight: 1.4 }}>
+                  ⚠ {itemError}
+                </div>
+              )}
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
@@ -1043,7 +1071,8 @@ export function JarvisCockpitPage() {
   const [gitCommit, setGitCommit] = useState('');
   const [pendingApprovals, setPendingApprovals] = useState(0);
   const [approvalItems, setApprovalItems] = useState<ApprovalItem[]>([]);
-  const [approvalBusy, setApprovalBusy] = useState<string | null>(null);
+  const [approvalBusy, setApprovalBusy] = useState<ApprovalBusyState | null>(null);
+  const [approvalErrors, setApprovalErrors] = useState<Record<string, string>>({});
   const [auditCount, setAuditCount] = useState(0);
   const [auditEntries, setAuditEntries] = useState<{ action_type?: string; execution_status?: string; actor?: string }[]>([]);
   const [workflowStatus, setWorkflowStatus] = useState<{ status?: string; workflow_id?: string; commit_hash?: string } | null>(null);
@@ -1271,23 +1300,59 @@ export function JarvisCockpitPage() {
   }, []);
 
   const handleApprove = useCallback(async (id: string) => {
-    setApprovalBusy(id);
+    setApprovalBusy({ id, action: 'approve' });
+    setApprovalErrors(prev => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
     try {
-      await apiFetch(`/v1/approvals/${id}/approve`, { method: 'POST' });
+      const res = await apiFetch(`/v1/approvals/${id}/approve`, { method: 'POST' });
+      if (!res.ok) {
+        const detail = await parseApprovalActionError(res);
+        setApprovalErrors(prev => ({ ...prev, [id]: `Approve failed (HTTP ${res.status}): ${detail}` }));
+        return;
+      }
       setPendingApprovals(p => Math.max(0, p - 1));
       setApprovalItems(prev => prev.filter(a => a.id !== id));
-    } catch { /* error visible in UI */ }
-    setApprovalBusy(null);
+      setApprovalErrors(prev => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+    } catch (err) {
+      setApprovalErrors(prev => ({ ...prev, [id]: `Approve failed: ${String(err)}` }));
+    } finally {
+      setApprovalBusy(null);
+    }
   }, []);
 
   const handleDeny = useCallback(async (id: string) => {
-    setApprovalBusy(id);
+    setApprovalBusy({ id, action: 'deny' });
+    setApprovalErrors(prev => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
     try {
-      await apiFetch(`/v1/approvals/${id}/deny`, { method: 'POST' });
+      const res = await apiFetch(`/v1/approvals/${id}/deny`, { method: 'POST' });
+      if (!res.ok) {
+        const detail = await parseApprovalActionError(res);
+        setApprovalErrors(prev => ({ ...prev, [id]: `Deny failed (HTTP ${res.status}): ${detail}` }));
+        return;
+      }
       setPendingApprovals(p => Math.max(0, p - 1));
       setApprovalItems(prev => prev.filter(a => a.id !== id));
-    } catch { /* error visible in UI */ }
-    setApprovalBusy(null);
+      setApprovalErrors(prev => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+    } catch (err) {
+      setApprovalErrors(prev => ({ ...prev, [id]: `Deny failed: ${String(err)}` }));
+    } finally {
+      setApprovalBusy(null);
+    }
   }, []);
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -1555,6 +1620,7 @@ export function JarvisCockpitPage() {
             onApprove={handleApprove}
             onDeny={handleDeny}
             approvalBusy={approvalBusy}
+            approvalErrors={approvalErrors}
             auditEntries={auditEntries}
             isNarrow={isNarrow}
           />
