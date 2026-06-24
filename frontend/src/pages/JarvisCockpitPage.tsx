@@ -34,6 +34,7 @@ import type { FocusMode } from '../components/CockpitCommandPalette';
 import { apiFetch, checkHealth, getBase } from '../lib/api';
 import { streamChat } from '../lib/sse';
 import { useAppStore } from '../lib/store';
+import { fetchRelevantMemory, buildJarvisMessages } from '../lib/jarvis-context';
 import type { ChatMessage } from '../types';
 import type { TurnPhase } from '../hooks/useVoiceTurn';
 
@@ -1890,6 +1891,13 @@ export function JarvisCockpitPage() {
       : isCloud(storeSelectedModel) ? storeSelectedModel
       : (model || 'default');
 
+    // Capture prior turns BEFORE adding the current user message to the store
+    // so buildJarvisMessages doesn't duplicate the current turn.
+    const priorTurns = useAppStore.getState().messages;
+
+    // Start memory fetch in parallel while we update UI state
+    const memFetch = fetchRelevantMemory(msg, 3);
+
     // Write user message to shared conversation store so Cmd+K history tallies
     let convId = storeActiveId;
     if (!convId) convId = storeCreateConversation(chatModel);
@@ -1901,11 +1909,23 @@ export function JarvisCockpitPage() {
     };
     storeAddMessage(convId, userMsg);
 
+    // Await memory with 1500ms timeout; proceed without if unavailable
+    let memCtx: Awaited<ReturnType<typeof fetchRelevantMemory>> = [];
+    try {
+      memCtx = await Promise.race([
+        memFetch,
+        new Promise<typeof memCtx>((resolve) => setTimeout(() => resolve([]), 1500)),
+      ]);
+    } catch { /* proceed without memory */ }
+
+    // Build full Jarvis PA context: system prompt + history + memory + current turn
+    const jarvisMessages = buildJarvisMessages(msg, priorTurns, memCtx);
+
     let accumulatedReply = '';
     try {
       // Use streamChat (same authenticated path as Cmd+K) for progressive rendering
       for await (const ev of streamChat(
-        { model: chatModel, messages: [{ role: 'user', content: msg }], stream: true },
+        { model: chatModel, messages: jarvisMessages, stream: true },
       )) {
         // Skip named agent events (inference_start, tool_call_start, etc.) — only handle content
         if (ev.event && ev.event !== 'content' && ev.event !== '') continue;
@@ -1940,6 +1960,7 @@ export function JarvisCockpitPage() {
       };
       storeAddMessage(convId, assistantMsg);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [input, sending, model, storeSelectedModel, routingStatus, storeActiveId, storeCreateConversation, storeAddMessage]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {

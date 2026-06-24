@@ -199,10 +199,40 @@ async def memory_store(req: MemoryStoreRequest, request: Request):
 
 @memory_router.post("/search")
 async def memory_search(req: MemorySearchRequest, request: Request):
-    """Search memory for relevant content."""
-    backend = _get_memory_backend(request)
+    """Search memory for relevant content.
+
+    Tries the configured backend (Rust-backed SQLite) first; falls back to
+    JarvisMemory (pure-Python implementation) when the Rust extension is not
+    installed so the Jarvis PA context pipeline can still retrieve memory.
+    """
+    # Catch the 503 raised when the Rust extension is unavailable so we can fall
+    # back gracefully rather than surfacing an error to the Jarvis PA pipeline.
+    try:
+        backend = _get_memory_backend(request)
+    except HTTPException:
+        backend = None
+
     if backend is None:
-        return {"results": []}
+        # Fall back to JarvisMemory (Python implementation, always available)
+        try:
+            from openjarvis.memory.store import JarvisMemory  # noqa: PLC0415
+
+            mem = JarvisMemory()
+            raw = mem.search(req.query, limit=req.top_k)
+            return {
+                "results": [
+                    {
+                        "content": r.content,
+                        "score": 1.0,
+                        "metadata": getattr(r, "metadata", {}) or {},
+                    }
+                    for r in raw
+                ],
+                "source": "jarvis_memory",
+            }
+        except Exception:
+            return {"results": []}
+
     try:
         results = backend.retrieve(req.query, top_k=req.top_k)
         items = [

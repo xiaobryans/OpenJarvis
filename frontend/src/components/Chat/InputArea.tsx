@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import { useAppStore, generateId } from '../../lib/store';
 import { streamChat, streamResearch } from '../../lib/sse';
 import { apiFetch, fetchSavings, getBase } from '../../lib/api';
+import { fetchRelevantMemory, buildJarvisSystemPrompt } from '../../lib/jarvis-context';
 import { listConnectors, getSyncStatus } from '../../lib/connectors-api';
 import { MicButton } from './MicButton';
 import { useSpeech } from '../../hooks/useSpeech';
@@ -186,12 +187,28 @@ export function InputArea() {
     };
     addMessage(convId, userMsg);
 
-    // Build API messages before adding assistant placeholder
+    // Build API messages before adding assistant placeholder.
+    // currentMessages already includes the just-added user turn.
     const currentMessages = useAppStore.getState().messages;
-    const apiMessages = currentMessages.map((m) => ({
+    const historyMessages = currentMessages.map((m) => ({
       role: m.role,
       content: m.content,
     }));
+
+    // Fetch relevant memory for Jarvis context (1500ms timeout — proceed without on failure)
+    let memItems: Awaited<ReturnType<typeof fetchRelevantMemory>> = [];
+    try {
+      memItems = await Promise.race([
+        fetchRelevantMemory(content, 3),
+        new Promise<typeof memItems>((resolve) => setTimeout(() => resolve([]), 1500)),
+      ]);
+    } catch { /* proceed without memory */ }
+
+    // Build full Jarvis PA messages: system prompt (with memory) + conversation history
+    const apiMessages = [
+      { role: 'system', content: buildJarvisSystemPrompt(memItems) },
+      ...historyMessages,
+    ];
 
     const assistantMsg: ChatMessage = {
       id: generateId(),
