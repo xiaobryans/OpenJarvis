@@ -7,8 +7,8 @@ Never contains secret values, token values, OAuth contents, private keys, or cre
 
 ## Sprint: Plan 2C Closure — File/Workspace/Data Parity
 
-**Started:** 2026-06-24  
-**Branch:** `localhost-get-tool`  
+**Started:** 2026-06-24
+**Branch:** `localhost-get-tool`
 **Base HEAD:** `3274d140`
 
 ### Action Log
@@ -29,7 +29,7 @@ Never contains secret values, token values, OAuth contents, private keys, or cre
 - **Routes added:** `/v1/mobile-parity/status`, `/v1/parity/status`
 - **Matrix:** `docs/plan2/PLAN2_SOURCE_OF_TRUTH_MATRIX.md` (created)
 
-### Plan 2B — Connector/Task Parity Foundation  
+### Plan 2B — Connector/Task Parity Foundation
 - **Verdict:** `PLAN_2B_CONNECTOR_TASK_PARITY_FOUNDATION_PATCHED_PENDING_REVIEW`
 - **Routes added:** `/v1/mobile-parity/connectors`, `/v1/mobile-parity/connectors/detail`
 - **Commit:** `4c90216a`
@@ -64,9 +64,9 @@ Never contains secret values, token values, OAuth contents, private keys, or cre
 
 ## Sprint: Plan 2D-2I Foundation Patches
 
-**Started:** 2026-06-24  
-**Branch:** `localhost-get-tool`  
-**Base HEAD:** `564350c0`  
+**Started:** 2026-06-24
+**Branch:** `localhost-get-tool`
+**Base HEAD:** `564350c0`
 **Final HEAD:** `21ce74ec`
 
 ### Action Log
@@ -87,7 +87,43 @@ Never contains secret values, token values, OAuth contents, private keys, or cre
 | 12 | git add (explicit paths only) | staged files | LOW | Pre-existing dirty files excluded |
 | 13 | git commit + push Plan 2D-2I | localhost-get-tool | MEDIUM | 21ce74ec pushed to fork |
 
-**Blockers resolved this sprint:** None new (all known Fargate/deployment blockers documented)  
-**Tests:** 80 Plan 2 tests total (27 + 21 + 30 + 2)  
-**Secret scan:** CLEAN  
-**Verdict:** PLAN_2_FULL_MOBILE_MACBOOK_OFF_PARITY_RUNTIME_PATCHED_PENDING_REVIEW
+**Blockers resolved this sprint:** None new (all known Fargate/deployment blockers documented)
+**Tests:** 80 Plan 2 tests total (27 + 21 + 30 + 2)
+**Secret scan:** CLEAN
+**Verdict (corrected):** PLAN_2_FULL_MOBILE_MACBOOK_OFF_PARITY_RUNTIME_HOLD
+**Note:** Previous PATCHED_PENDING_REVIEW was inconsistent with open blockers B1-B8. Corrected per reviewer requirement.
+
+---
+
+## Sprint: Plan 2 Reviewer-Correction Sprint
+
+**Started:** 2026-06-24
+**Branch:** `localhost-get-tool`
+**Base HEAD:** `af990db1`
+
+### Purpose
+Correct status semantics inconsistency: previous sprint claimed PATCHED_PENDING_REVIEW while listing 9 open blockers. Per Bryan's acceptance policy, HOLD is the correct verdict when any in-scope blocker remains.
+
+Also closes safe code-side sub-issues:
+- B3 partial: `_telegram_present()` only checked one env var — fixed to check both
+- Public endpoint env var name leakage — sanitized blocker text in files and memory endpoints
+
+### Action Log
+
+| # | Action | Files | Risk | Result |
+|---|--------|-------|------|--------|
+| 1 | Fix `_telegram_present()` to check both TELEGRAM env vars (B3) | plan2_routes.py | LOW | Both TELEGRAM_BOT_TOKEN and JARVIS_TELEGRAM_BOT_TOKEN detected |
+| 2 | Sanitize `_status_2c_files()` blocker: remove env var names from public response | plan2_routes.py | LOW | No env var names in public /v1/mobile-parity/files blockers |
+| 3 | Sanitize `_status_2d_memory()` blockers: remove OMNIX_WORKBENCH_MEMORY_BUCKET and OPENJARVIS_API_KEY from public response | plan2_routes.py | LOW | No env var names in public /v1/mobile-parity/memory blockers |
+| 4 | Update `get_mobile_parity_status()` sprint_verdict to HOLD | plan2_routes.py | LOW | sprint_verdict = PLAN_2_FULL_MOBILE_MACBOOK_OFF_PARITY_RUNTIME_HOLD |
+| 5 | Write 25 enforcement tests for correction sprint | test_plan2_correction_sprint.py | LOW | 25/25 pass |
+| 6 | Update PLAN2_SOURCE_OF_TRUTH_MATRIX.md verdict to HOLD | docs/plan2/ | LOW | Consistent with code |
+| 7 | Update plan2_matrix.json sprint_verdict to HOLD | docs/plan2/ | LOW | Consistent with code |
+| 8 | Rewrite PLAN2_AUTONOMOUS_SESSION_STATE.md with corrected verdict and full blocker registry | docs/plan2/ | LOW | Honest HOLD status, correct HEAD, full blocker classification |
+| 9 | Update PLAN2_PROGRESS_LEDGER.md with correction sprint entries | docs/plan2/ | LOW | Full audit trail |
+
+**Blockers closed this sprint:** B3 (code-side only — config wiring still needed)
+**Blockers remaining:** B1, B2, B4, B5, B6, B7, B8 (all require external credential/deployment actions)
+**Tests:** 25 new + 312 total plan9 passing (1 pre-existing unrelated failure)
+**Secret scan:** CLEAN
+**Corrected verdict:** `PLAN_2_FULL_MOBILE_MACBOOK_OFF_PARITY_RUNTIME_HOLD`

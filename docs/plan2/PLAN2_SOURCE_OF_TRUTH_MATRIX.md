@@ -1,15 +1,16 @@
 # Plan 2 — Full Mobile MacBook-Off Parity Runtime
 ## Source-of-Truth Matrix
 
-**Acceptance target:** `MOBILE_MACBOOK_PARITY_TARGET_LOCKED`  
-**Sprint:** Plan 2A + 2B + 2C + 2D + 2E + 2F + 2G + 2H + 2I Foundation  
-**Sprint verdict target:** `PLAN_2_FULL_MOBILE_MACBOOK_OFF_PARITY_RUNTIME_PATCHED_PENDING_REVIEW`  
-**Based on:** Plan 1 accepted commit `6cc99316`  
-**Plan 1 verdict locked:** `PLAN_1_DUAL_PLATFORM_JARVIS_NEURAL_COMMAND_CENTER_ACCEPTED`  
-**Generated:** 2026-06-24  
-**Last updated:** 2026-06-24 (Plan 2C foundation patch)  
-**Machine-readable artifact:** `docs/plan2/plan2_matrix.json`  
-**Runtime status endpoint:** `GET /v1/mobile-parity/status`  
+**Acceptance target:** `MOBILE_MACBOOK_PARITY_TARGET_LOCKED`
+**Sprint:** Plan 2A + 2B + 2C + 2D + 2E + 2F + 2G + 2H + 2I Foundation
+**Sprint verdict:** `PLAN_2_FULL_MOBILE_MACBOOK_OFF_PARITY_RUNTIME_HOLD`
+**Reason for HOLD:** Blockers B1-B8 remain open — no subsection is MacBook-off READY. Foundation code exists but Fargate deployment, vault migration, OAuth sync, approval auto-trigger, and Life-OS/SQLite cloud sync are all undeployed or unconfigured.
+**Based on:** Plan 1 accepted commit `6cc99316`
+**Plan 1 verdict locked:** `PLAN_1_DUAL_PLATFORM_JARVIS_NEURAL_COMMAND_CENTER_ACCEPTED`
+**Generated:** 2026-06-24
+**Last updated:** 2026-06-24 (correction sprint — status semantics enforcement)
+**Machine-readable artifact:** `docs/plan2/plan2_matrix.json`
+**Runtime status endpoint:** `GET /v1/mobile-parity/status`
 **Plan 2C detail endpoint:** `GET /v1/mobile-parity/files`
 
 ---
@@ -54,15 +55,15 @@ Whatever Jarvis can do on MacBook/desktop should eventually be operable from pho
 | MacBook-off | `CLOUD_REQUIRED` |
 | Auth | Bearer token required |
 
-**Data/storage:** SQLite session store; `OMNIX_WORKBENCH_ARTIFACT_BUCKET` (S3, configured)  
-**Connector dependency:** GitHub (`CROSS_DEVICE_LIVE`); repo clone required for file edit  
+**Data/storage:** SQLite session store; `OMNIX_WORKBENCH_ARTIFACT_BUCKET` (S3, configured)
+**Connector dependency:** GitHub (`CROSS_DEVICE_LIVE`); repo clone required for file edit
 **Known blockers:**
 - No mobile-native IDE shell — coding tasks route through chat/frontdoor
 - `coding_file_edit` is `CLOUD_LIVE` (not cross-device) — requires cloud execution context
 - Terminal exec requires `approval_token`; no push-notification channel for mobile approval yet
 - Fargate backend must be running for MacBook-off execution
 
-**Required next patch:** Mobile task submission form for workbench plans; approval notification routing  
+**Required next patch:** Mobile task submission form for workbench plans; approval notification routing
 **Proof for acceptance:** `POST /v1/workbench/plan` from iPhone Safari returns 200 with `session_id`; status poll returns result
 
 ---
@@ -83,14 +84,14 @@ Whatever Jarvis can do on MacBook/desktop should eventually be operable from pho
 | MacBook-off | `CLOUD_REQUIRED` |
 | Auth | Bearer token + connector OAuth tokens |
 
-**Data/storage:** OAuth tokens stored locally in `~/.openjarvis/` — not synced to cloud  
-**Connector dependency:** Gmail, Calendar, Slack, GitHub: `CROSS_DEVICE_LIVE`. GDrive, Notion: `UNKNOWN_NEEDS_PROOF`  
+**Data/storage:** OAuth tokens stored locally in `~/.openjarvis/` — not synced to cloud
+**Connector dependency:** Gmail, Calendar, Slack, GitHub: `CROSS_DEVICE_LIVE`. GDrive, Notion: `UNKNOWN_NEEDS_PROOF`
 **Known blockers:**
 - OAuth tokens stored locally — not accessible from cloud/Fargate without secure token sync
 - GDrive and Notion connector status unverified (`UNKNOWN_NEEDS_PROOF` in Plan 9 matrix)
 - Connector re-auth from mobile not implemented (OAuth redirect needs HTTPS + callback URL)
 
-**Required next patch:** Secure connector token export to cloud vault; mobile OAuth callback handler  
+**Required next patch:** Secure connector token export to cloud vault; mobile OAuth callback handler
 **Proof for acceptance:** `GET /v1/connectors/status` from iPhone shows authenticated connectors; task routes to connector
 
 ---
@@ -122,8 +123,8 @@ Whatever Jarvis can do on MacBook/desktop should eventually be operable from pho
 | MacBook-off | `MACBOOK_OFF_PENDING` |
 | Auth | Bearer token required (`/v1/mobile-parity/files` is public) |
 
-**Data/storage:** Local filesystem + `OMNIX_WORKBENCH_MEMORY_BUCKET` (S3, configured). Full workspace not synced.  
-**Connector dependency:** `OMNIX_WORKBENCH_ARTIFACT_BUCKET` (S3); `OMNIX_WORKBENCH_STORAGE_PROVIDER` configured  
+**Data/storage:** Local filesystem + `OMNIX_WORKBENCH_MEMORY_BUCKET` (S3, configured). Full workspace not synced.
+**Connector dependency:** `OMNIX_WORKBENCH_ARTIFACT_BUCKET` (S3); `OMNIX_WORKBENCH_STORAGE_PROVIDER` configured
 **Known blockers:**
 - Full workspace sync to S3 not implemented — git-tracked files accessible via repo operations only
 - Mac-only unsynced files remain `QUEUED_MAC_ONLY` per Plan 9 acceptance (permanent exception)
@@ -140,7 +141,7 @@ Whatever Jarvis can do on MacBook/desktop should eventually be operable from pho
 - Full bidirectional workspace sync to S3 is a Fargate deployment concern, not a code blocker — architecture is present
 - Mac-only untracked files remain QUEUED_MAC_ONLY permanently
 
-**Required next patch (Plan 2D):** Memory/context/routing parity  
+**Required next patch (Plan 2D):** Memory/context/routing parity
 **Proof for closure:** `GET /v1/mobile-parity/files` returns `cloud_file_index_available: true` and `s3_artifact_store_status` reflects runtime; 27 tests pass
 
 ---
@@ -163,14 +164,14 @@ Whatever Jarvis can do on MacBook/desktop should eventually be operable from pho
 | MacBook-off | `CLOUD_REQUIRED` |
 | Auth | Bearer token required; `/v1/continuity/macbook-off-status` is public |
 
-**Data/storage:** Primary SQLite (local). Cloud sync: `OMNIX_WORKBENCH_MEMORY_BUCKET` (S3). Semantic: Pinecone (`PINECONE_API_KEY` present).  
-**Connector dependency:** `PINECONE_API_KEY` present; `OMNIX_WORKBENCH_MEMORY_BUCKET` present  
+**Data/storage:** Primary SQLite (local). Cloud sync: `OMNIX_WORKBENCH_MEMORY_BUCKET` (S3). Semantic: Pinecone (`PINECONE_API_KEY` present).
+**Connector dependency:** `PINECONE_API_KEY` present; `OMNIX_WORKBENCH_MEMORY_BUCKET` present
 **Known blockers:**
 - SQLite primary store is local — cloud sync to S3 requires explicit sync trigger
 - Full bidirectional sync not verified post-Plan 9
 - Context injection from cloud memory to cloud-executed tasks not verified
 
-**Required next patch:** Verify cloud memory sync end-to-end; snapshot sync trigger on commit  
+**Required next patch:** Verify cloud memory sync end-to-end; snapshot sync trigger on commit
 **Proof for acceptance:** Memory written on iPhone appears in `GET /v1/memory/retrieve` on desktop within 60s
 
 ---
@@ -191,14 +192,14 @@ Whatever Jarvis can do on MacBook/desktop should eventually be operable from pho
 | MacBook-off | `CLOUD_REQUIRED` |
 | Auth | Bearer token required |
 
-**Data/storage:** SQLite local; no cloud sync implemented for life-os data yet  
-**Connector dependency:** None required for basic task management  
+**Data/storage:** SQLite local; no cloud sync implemented for life-os data yet
+**Connector dependency:** None required for basic task management
 **Known blockers:**
 - Life-OS data (tasks, workstreams, goals) stored in local SQLite — not synced to cloud
 - No push notification for task updates on mobile
 - Mission control real-time updates not streamed to mobile
 
-**Required next patch:** Cloud sync for life-os data store; mobile-optimized task management UI  
+**Required next patch:** Cloud sync for life-os data store; mobile-optimized task management UI
 **Proof for acceptance:** Task created on iPhone visible on desktop; task created on desktop visible on iPhone
 
 ---
@@ -220,14 +221,14 @@ Whatever Jarvis can do on MacBook/desktop should eventually be operable from pho
 | MacBook-off | `MACBOOK_OFF_PENDING` |
 | Auth | Bearer token required |
 
-**Data/storage:** `DEEPGRAM_API_KEY` present; `JARVIS_STT_PROVIDER` configured; `JARVIS_TTS_PROVIDER` configured  
+**Data/storage:** `DEEPGRAM_API_KEY` present; `JARVIS_STT_PROVIDER` configured; `JARVIS_TTS_PROVIDER` configured
 **Known blockers:**
 - Full wake word and TTS is `PARKED` (Plan 3) — **do NOT reopen**
 - Foundation tap-to-speak (browser MediaRecorder → `/v1/voice/transcribe`) not wired in mobile UI
 - Audio permissions require HTTPS on mobile browsers
 - TTS playback requires Web Audio API on mobile — not yet wired
 
-**Required next patch (foundation only):** Wire browser MediaRecorder → `POST /v1/voice/transcribe` in mobile UI  
+**Required next patch (foundation only):** Wire browser MediaRecorder → `POST /v1/voice/transcribe` in mobile UI
 **Proof for acceptance:** Tap-to-speak button captures audio, sends to backend, populates chat input (no wake word, no TTS)
 
 ---
@@ -249,14 +250,14 @@ Whatever Jarvis can do on MacBook/desktop should eventually be operable from pho
 | MacBook-off | `CLOUD_REQUIRED` |
 | Auth | Bearer token required for approval actions |
 
-**Data/storage:** SQLite approval store (local); `TELEGRAM_BOT_TOKEN` present; `SLACK_BOT_TOKEN` present  
+**Data/storage:** SQLite approval store (local); `TELEGRAM_BOT_TOKEN` present; `SLACK_BOT_TOKEN` present
 **Known blockers:**
 - Approval store is local SQLite — not synced to cloud for MacBook-off case
 - Push notifications (Telegram/Slack) exist but not triggered on new pending approvals automatically
 - No polling/WebSocket push from mobile watching for new approvals
 - PWA push notification API not wired
 
-**Required next patch:** Telegram notification trigger on new approval queued; mobile approval polling (30s interval)  
+**Required next patch:** Telegram notification trigger on new approval queued; mobile approval polling (30s interval)
 **Proof for acceptance:** New pending approval on desktop triggers Telegram notification; Bryan approves from iPhone via `POST /v1/approvals/{id}/approve`
 
 ---
@@ -278,15 +279,15 @@ Whatever Jarvis can do on MacBook/desktop should eventually be operable from pho
 | MacBook-off | `MACBOOK_OFF_PENDING` |
 | Auth | Bearer token required |
 
-**Data/storage:** Mac worker queue: local SQLite. Fargate: `OMNIX_WORKBENCH_AWS_PROFILE` + `OMNIX_WORKBENCH_AWS_REGION` configured.  
-**Connector dependency:** AWS ECS Fargate (configured per Plan 4)  
+**Data/storage:** Mac worker queue: local SQLite. Fargate: `OMNIX_WORKBENCH_AWS_PROFILE` + `OMNIX_WORKBENCH_AWS_REGION` configured.
+**Connector dependency:** AWS ECS Fargate (configured per Plan 4)
 **Known blockers:**
 - Mac worker queue processes tasks only when MacBook is online and process is running
 - Cloud execution daemon not deployed to Fargate (only API deployed, not worker process)
 - No long-running job status webhook/push for mobile polling
 - DAG/batch orchestration routes are cloud-safe but require Fargate worker for execution
 
-**Required next patch:** Deploy worker process to Fargate or implement serverless job dispatch; SSE/WebSocket status stream for mobile  
+**Required next patch:** Deploy worker process to Fargate or implement serverless job dispatch; SSE/WebSocket status stream for mobile
 **Proof for acceptance:** Long-running task submitted from iPhone completes while MacBook is off; result visible on iPhone
 
 ---
@@ -309,15 +310,15 @@ Whatever Jarvis can do on MacBook/desktop should eventually be operable from pho
 | MacBook-off | `MACBOOK_OFF_PENDING` |
 | Auth | `APPROVAL_REQUIRED` for all deploy/signing actions |
 
-**Data/storage:** `APPLE_SIGNING_IDENTITY`, `APPLE_TEAM_ID`, `APPLE_APP_SPECIFIC_PASSWORD` present (local keychain)  
-**Connector dependency:** `GITHUB_TOKEN` present; AWS profile configured for ECS deploy  
+**Data/storage:** `APPLE_SIGNING_IDENTITY`, `APPLE_TEAM_ID`, `APPLE_APP_SPECIFIC_PASSWORD` present (local keychain)
+**Connector dependency:** `GITHUB_TOKEN` present; AWS profile configured for ECS deploy
 **Known blockers:**
 - Tauri app build and signing require MacBook with Xcode/codesign — cannot run on Fargate (`QUEUED_MAC_ONLY`)
 - Apple signing certificate in local keychain — not accessible from cloud
 - ECS/Vercel deploy (non-signing) could be triggered from mobile with approval gate — not yet wired
 - Self-upgrade route exists but triggers local script — not safe from mobile without cloud CI
 
-**Required next patch:** Wire cloud ECS deploy to be triggerable from mobile with approval gate; Tauri signing stays `QUEUED_MAC_ONLY`  
+**Required next patch:** Wire cloud ECS deploy to be triggerable from mobile with approval gate; Tauri signing stays `QUEUED_MAC_ONLY`
 **Proof for acceptance:** ECS backend redeployment triggered from iPhone returns 200 after approval; Tauri signing correctly rejected from mobile
 
 ---

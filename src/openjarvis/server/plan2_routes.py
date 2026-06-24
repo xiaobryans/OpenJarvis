@@ -215,7 +215,8 @@ def _github_token_present() -> bool:
 
 
 def _telegram_present() -> bool:
-    return _env_present("TELEGRAM_BOT_TOKEN")
+    # B3 fix: support both canonical and legacy env var names
+    return _env_any("TELEGRAM_BOT_TOKEN", "JARVIS_TELEGRAM_BOT_TOKEN")
 
 
 def _slack_present() -> bool:
@@ -345,7 +346,8 @@ def _status_2c_files() -> Dict[str, Any]:
     if s3_status in ("BLOCKED", "NOT_CONFIGURED"):
         blockers.append(
             f"S3 artifact store: {s3_status} — "
-            "OMNIX_WORKBENCH_ARTIFACT_BUCKET/MEMORY_BUCKET/STATE_TABLE env vars not fully configured."
+            "S3 storage env vars not fully configured "
+            "(see /v1/files/workspace/status (auth-gated) for detail)."
         )
     if not cloud_index_available:
         blockers.append("git not available in this runtime — cloud index unavailable.")
@@ -425,10 +427,10 @@ def _status_2d_memory() -> Dict[str, Any]:
 
     blockers: List[str] = []
     if not has_api_key:
-        blockers.append("OPENJARVIS_API_KEY not set — mobile cannot authenticate to /v1/memory/*")
+        blockers.append("Server API key not set — mobile cannot authenticate to /v1/memory/*")
     if not sync_probe["available"]:
         if not sync_probe["bucket_configured"]:
-            blockers.append("OMNIX_WORKBENCH_MEMORY_BUCKET not configured — cloud sync unavailable")
+            blockers.append("Memory store bucket not configured — cloud sync unavailable")
         else:
             blockers.append(
                 "Cloud memory sync configured but S3 not reachable from this runtime "
@@ -678,10 +680,10 @@ async def get_mobile_parity_status() -> Dict[str, Any]:
 
     return {
         "plan": "Plan 2 — Full Mobile MacBook-Off Parity Runtime",
-        "sprint": "Plan 2A Foundation",
+        "sprint": "Plan 2A-2I Foundation",
         "version": _PLAN2_VERSION,
         "acceptance_target": "MOBILE_MACBOOK_PARITY_TARGET_LOCKED",
-        "sprint_verdict": "PLAN_2A_MOBILE_MACBOOK_OFF_FOUNDATION_PATCHED_PENDING_REVIEW",
+        "sprint_verdict": "PLAN_2_FULL_MOBILE_MACBOOK_OFF_PARITY_RUNTIME_HOLD",
         "matrix_path": _MATRIX_PATH,
         "plan1_verdict": "PLAN_1_DUAL_PLATFORM_JARVIS_NEURAL_COMMAND_CENTER_ACCEPTED",
         # global: static text only — no key presence booleans, no infra details
