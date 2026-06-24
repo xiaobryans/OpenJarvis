@@ -1,8 +1,8 @@
 {
   "plan": "Plan 2 \u2014 Full Mobile MacBook-Off Parity Runtime",
   "acceptance_target": "MOBILE_MACBOOK_PARITY_TARGET_LOCKED",
-  "sprint": "Plan 2A \u2014 Foundation Sprint",
-  "sprint_verdict_target": "PLAN_2C_FILE_WORKSPACE_DATA_PARITY_CLOSED_PENDING_REVIEW",
+  "sprint": "Plan 2A + 2B + 2C + 2D + 2E + 2F + 2G + 2H + 2I Foundation",
+  "sprint_verdict_target": "PLAN_2_FULL_MOBILE_MACBOOK_OFF_PARITY_RUNTIME_PATCHED_PENDING_REVIEW",
   "generated_at": "2026-06-24",
   "based_on_commit": "6cc99316",
   "plan1_verdict": "PLAN_1_DUAL_PLATFORM_JARVIS_NEURAL_COMMAND_CENTER_ACCEPTED",
@@ -132,7 +132,8 @@
         "GET  /v1/memory/retrieve",
         "GET  /v1/continuity/snapshot",
         "GET  /v1/continuity/resume",
-        "GET  /v1/mobile/continuity/status"
+        "GET  /v1/mobile/continuity/status",
+        "GET /v1/mobile-parity/memory (public, sanitized)"
       ],
       "desktop_status": "READY",
       "mobile_status": "CLOUD_REQUIRED",
@@ -146,7 +147,8 @@
         "Context injection from cloud memory to cloud-executed tasks not verified"
       ],
       "required_next_patch": "Verify cloud memory sync works end-to-end (write on mobile, read on desktop and vice versa); snapshot sync trigger",
-      "proof_for_acceptance": "Memory written on iPhone appears in GET /v1/memory/retrieve on desktop within 60s"
+      "proof_for_acceptance": "Memory written on iPhone appears in GET /v1/memory/retrieve on desktop within 60s",
+      "sprint_verdict": "PLAN_2D_MEMORY_CONTEXT_ROUTING_PARITY_PATCHED_PENDING_REVIEW"
     },
     {
       "id": "2E",
@@ -163,7 +165,8 @@
         "GET  /v1/workstreams",
         "POST /v1/workstreams",
         "GET  /v1/goals",
-        "POST /v1/goals"
+        "POST /v1/goals",
+        "GET /v1/mobile-parity/life-os (public, sanitized)"
       ],
       "desktop_status": "READY",
       "mobile_status": "CLOUD_REQUIRED",
@@ -177,7 +180,8 @@
         "Mission control real-time updates not streamed to mobile"
       ],
       "required_next_patch": "Cloud sync for life-os data store; mobile-optimized task management UI",
-      "proof_for_acceptance": "Task created on iPhone visible on desktop; task created on desktop visible on iPhone"
+      "proof_for_acceptance": "Task created on iPhone visible on desktop; task created on desktop visible on iPhone",
+      "sprint_verdict": "PLAN_2E_LIFE_OS_PARITY_PATCHED_PENDING_REVIEW"
     },
     {
       "id": "2F",
@@ -189,7 +193,8 @@
       ],
       "key_routes": [
         "POST /v1/voice/transcribe",
-        "POST /v1/voice/speak"
+        "POST /v1/voice/speak",
+        "GET /v1/mobile-parity/voice (public \u2014 Plan 3 PARKED)"
       ],
       "desktop_status": "LOCAL_ONLY",
       "mobile_status": "NOT_CONFIGURED",
@@ -204,7 +209,8 @@
         "TTS playback requires Web Audio API on mobile \u2014 not yet wired"
       ],
       "required_next_patch": "Wire browser MediaRecorder \u2192 POST /v1/voice/transcribe in mobile UI (foundation only, no wake word)",
-      "proof_for_acceptance": "Tap-to-speak button in mobile UI captures audio, sends to /v1/voice/transcribe, populates chat input"
+      "proof_for_acceptance": "Tap-to-speak button in mobile UI captures audio, sends to /v1/voice/transcribe, populates chat input",
+      "sprint_verdict": "PLAN_2F_VOICE_FOUNDATION_PATCHED_PENDING_REVIEW"
     },
     {
       "id": "2G",
@@ -219,7 +225,8 @@
         "POST /v1/approvals/{id}/approve",
         "POST /v1/approvals/{id}/deny",
         "GET  /v1/notify/status",
-        "POST /v1/notify/send"
+        "POST /v1/notify/send",
+        "GET /v1/mobile-parity/approvals (public, sanitized)"
       ],
       "desktop_status": "READY",
       "mobile_status": "CLOUD_REQUIRED",
@@ -234,7 +241,8 @@
         "PWA push notification API not wired"
       ],
       "required_next_patch": "Telegram notification trigger on new approval queued; mobile approval polling (every 30s)",
-      "proof_for_acceptance": "New pending approval on desktop triggers Telegram notification; Bryan can approve from iPhone via /v1/approvals/{id}/approve"
+      "proof_for_acceptance": "New pending approval on desktop triggers Telegram notification; Bryan can approve from iPhone via /v1/approvals/{id}/approve",
+      "sprint_verdict": "PLAN_2G_APPROVAL_NOTIFICATION_PARITY_PATCHED_PENDING_REVIEW"
     },
     {
       "id": "2H",
@@ -251,7 +259,8 @@
         "POST /v1/orchestration/dag/run",
         "GET  /v1/orchestration/dag/status",
         "POST /v1/orchestration/batch/run",
-        "GET  /v1/orchestration/batch/status"
+        "GET  /v1/orchestration/batch/status",
+        "GET /v1/mobile-parity/long-running (public)"
       ],
       "desktop_status": "READY",
       "mobile_status": "CLOUD_REQUIRED",
@@ -266,7 +275,8 @@
         "DAG and batch orchestration routes are cloud-safe but require Fargate worker for execution"
       ],
       "required_next_patch": "Deploy worker process to Fargate or implement serverless job dispatch; add SSE/WebSocket status stream for mobile",
-      "proof_for_acceptance": "Long-running task submitted from iPhone completes while MacBook is off; result visible on iPhone"
+      "proof_for_acceptance": "Long-running task submitted from iPhone completes while MacBook is off; result visible on iPhone",
+      "sprint_verdict": "PLAN_2H_LONG_RUNNING_PARITY_PATCHED_PENDING_REVIEW"
     },
     {
       "id": "2I",
@@ -281,7 +291,8 @@
       "key_routes": [
         "POST /v1/deploy/plan",
         "POST /v1/self-upgrade/request",
-        "GET  /v1/self-upgrade/status"
+        "GET  /v1/self-upgrade/status",
+        "GET /v1/mobile-parity/deploy (public)"
       ],
       "desktop_status": "READY",
       "mobile_status": "MACBOOK_OFF_PENDING",
@@ -296,7 +307,8 @@
         "Self-upgrade route exists but triggers local script \u2014 not safe from mobile without cloud CI"
       ],
       "required_next_patch": "Wire cloud deploy (ECS only, no signing) to be triggerable from mobile with approval gate; Tauri signing stays QUEUED_MAC_ONLY",
-      "proof_for_acceptance": "ECS backend redeployment triggered from iPhone returns 200 after approval; Tauri signing correctly rejected from mobile"
+      "proof_for_acceptance": "ECS backend redeployment triggered from iPhone returns 200 after approval; Tauri signing correctly rejected from mobile",
+      "sprint_verdict": "PLAN_2I_DEPLOY_PARITY_PATCHED_PENDING_REVIEW"
     }
   ],
   "global_auth_state": {

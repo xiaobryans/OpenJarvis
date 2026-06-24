@@ -2,8 +2,8 @@
 ## Source-of-Truth Matrix
 
 **Acceptance target:** `MOBILE_MACBOOK_PARITY_TARGET_LOCKED`  
-**Sprint:** Plan 2A + Plan 2B + Plan 2C Foundation  
-**Sprint verdict target:** `PLAN_2C_FILE_WORKSPACE_DATA_PARITY_PATCHED_PENDING_REVIEW`  
+**Sprint:** Plan 2A + 2B + 2C + 2D + 2E + 2F + 2G + 2H + 2I Foundation  
+**Sprint verdict target:** `PLAN_2_FULL_MOBILE_MACBOOK_OFF_PARITY_RUNTIME_PATCHED_PENDING_REVIEW`  
 **Based on:** Plan 1 accepted commit `6cc99316`  
 **Plan 1 verdict locked:** `PLAN_1_DUAL_PLATFORM_JARVIS_NEURAL_COMMAND_CENTER_ACCEPTED`  
 **Generated:** 2026-06-24  
@@ -147,12 +147,14 @@ Whatever Jarvis can do on MacBook/desktop should eventually be operable from pho
 
 ## 2D — Memory / Context / Routing Parity
 
+**Sprint verdict:** `PLAN_2D_MEMORY_CONTEXT_ROUTING_PARITY_PATCHED_PENDING_REVIEW`
+
 **Implementation files:**
 - `src/openjarvis/server/memory_routes.py`
 - `src/openjarvis/memory/{store,cloud_sync,cloud_memory,status}.py`
 - `src/openjarvis/mobile/continuity.py`
 
-**Key routes:** `GET /v1/memory/status`, `POST /v1/memory`, `GET /v1/memory/retrieve`, `GET /v1/continuity/snapshot`, `GET /v1/continuity/resume`, `GET /v1/mobile/continuity/status`
+**Key routes:** `GET /v1/memory/status`, `POST /v1/memory`, `GET /v1/memory/retrieve`, `GET /v1/continuity/snapshot`, `GET /v1/continuity/resume`, `GET /v1/mobile/continuity/status`, `GET /v1/mobile-parity/memory (public, sanitized)`
 
 | Surface | Status |
 |---------|--------|
@@ -175,10 +177,12 @@ Whatever Jarvis can do on MacBook/desktop should eventually be operable from pho
 
 ## 2E — Life-Business OS Operation Parity
 
+**Sprint verdict:** `PLAN_2E_LIFE_OS_PARITY_PATCHED_PENDING_REVIEW`
+
 **Implementation files:**
 - `src/openjarvis/server/{life_os_routes,workstream_routes,goals_routes,mission_routes}.py`
 
-**Key routes:** `GET/POST /v1/life-os/tasks`, `GET/POST /v1/workstreams`, `GET/POST /v1/goals`
+**Key routes:** `GET/POST /v1/life-os/tasks`, `GET/POST /v1/workstreams`, `GET/POST /v1/goals`, `GET /v1/mobile-parity/life-os (public, sanitized)`
 
 | Surface | Status |
 |---------|--------|
@@ -201,11 +205,13 @@ Whatever Jarvis can do on MacBook/desktop should eventually be operable from pho
 
 ## 2F — Voice / Tap-to-Speak Foundation
 
+**Sprint verdict:** `PLAN_2F_VOICE_FOUNDATION_PATCHED_PENDING_REVIEW`
+
 **Implementation files:**
 - `src/openjarvis/server/voice_routes.py`
 - `src/openjarvis/speech/`, `src/openjarvis/voice/`
 
-**Key routes:** `POST /v1/voice/transcribe`, `POST /v1/voice/speak`
+**Key routes:** `POST /v1/voice/transcribe`, `POST /v1/voice/speak`, `GET /v1/mobile-parity/voice (public — Plan 3 PARKED)`
 
 | Surface | Status |
 |---------|--------|
@@ -228,11 +234,13 @@ Whatever Jarvis can do on MacBook/desktop should eventually be operable from pho
 
 ## 2G — Notifications / Approval Parity
 
+**Sprint verdict:** `PLAN_2G_APPROVAL_NOTIFICATION_PARITY_PATCHED_PENDING_REVIEW`
+
 **Implementation files:**
 - `src/openjarvis/server/{approval_routes,notify_routes}.py`
 - `src/openjarvis/tools/approval_store.py`
 
-**Key routes:** `GET /v1/approvals/pending`, `POST /v1/approvals/{id}/approve`, `POST /v1/approvals/{id}/deny`, `GET /v1/notify/status`, `POST /v1/notify/send`
+**Key routes:** `GET /v1/approvals/pending`, `POST /v1/approvals/{id}/approve`, `POST /v1/approvals/{id}/deny`, `GET /v1/notify/status`, `POST /v1/notify/send`, `GET /v1/mobile-parity/approvals (public, sanitized)`
 
 | Surface | Status |
 |---------|--------|
@@ -255,11 +263,13 @@ Whatever Jarvis can do on MacBook/desktop should eventually be operable from pho
 
 ## 2H — Long-Running Cloud Execution Parity
 
+**Sprint verdict:** `PLAN_2H_LONG_RUNNING_PARITY_PATCHED_PENDING_REVIEW`
+
 **Implementation files:**
 - `src/openjarvis/plan9/mac_worker_queue.py`
 - `src/openjarvis/server/{plan9_routes,orchestrator_routes}.py`
 
-**Key routes:** `GET /v1/mac-worker/queue`, `POST /v1/mac-worker/queue`, `GET /v1/mac-worker/status`, `POST /v1/orchestration/dag/run`, `POST /v1/orchestration/batch/run`
+**Key routes:** `GET /v1/mac-worker/queue`, `POST /v1/mac-worker/queue`, `GET /v1/mac-worker/status`, `POST /v1/orchestration/dag/run`, `POST /v1/orchestration/batch/run`, `GET /v1/mobile-parity/long-running (public)`
 
 | Surface | Status |
 |---------|--------|
@@ -283,12 +293,14 @@ Whatever Jarvis can do on MacBook/desktop should eventually be operable from pho
 
 ## 2I — Deployment / Release / Signing Workflow Parity
 
+**Sprint verdict:** `PLAN_2I_DEPLOY_PARITY_PATCHED_PENDING_REVIEW`
+
 **Implementation files:**
 - `src/openjarvis/server/{plan9_routes,self_upgrade_routes}.py`
 - `scripts/build-local.sh`
 - `rust/`, `desktop/`
 
-**Key routes:** `POST /v1/deploy/plan`, `POST /v1/self-upgrade/request`, `GET /v1/self-upgrade/status`
+**Key routes:** `POST /v1/deploy/plan`, `POST /v1/self-upgrade/request`, `GET /v1/self-upgrade/status`, `GET /v1/mobile-parity/deploy (public)`
 
 | Surface | Status |
 |---------|--------|

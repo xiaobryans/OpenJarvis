@@ -59,3 +59,35 @@ Never contains secret values, token values, OAuth contents, private keys, or cre
 
 ---
 *Last updated: Plan 2C closure sprint start*
+
+---
+
+## Sprint: Plan 2D-2I Foundation Patches
+
+**Started:** 2026-06-24  
+**Branch:** `localhost-get-tool`  
+**Base HEAD:** `564350c0`  
+**Final HEAD:** `21ce74ec`
+
+### Action Log
+
+| # | Action | Files | Risk | Result |
+|---|--------|-------|------|--------|
+| 1 | Add _memory_cloud_sync_probe() to plan2_routes.py | plan2_routes.py | LOW | Presence-only; no bucket names exposed |
+| 2 | Update _status_2d_memory() with runtime sync probe | plan2_routes.py | LOW | Reports cloud_sync_probe, pinecone_configured |
+| 3 | Add GET /v1/mobile-parity/memory public endpoint | plan2_routes.py | LOW | Sanitized; 21 tests pass |
+| 4 | Add GET /v1/mobile-parity/life-os (2E) | plan2_routes.py | LOW | Uses _public_subsection() |
+| 5 | Add GET /v1/mobile-parity/voice (2F) | plan2_routes.py | LOW | Plan 3 stays PARKED |
+| 6 | Add GET /v1/mobile-parity/approvals (2G) | plan2_routes.py | LOW | No token booleans |
+| 7 | Add GET /v1/mobile-parity/long-running (2H) | plan2_routes.py | LOW | fargate_worker_deployed=false |
+| 8 | Add GET /v1/mobile-parity/deploy (2I) | plan2_routes.py | LOW | Tauri QUEUED_MAC_ONLY |
+| 9 | Auth middleware: register 6 new public paths | auth_middleware.py | LOW | workspace/status and connectors/detail remain auth-gated |
+| 10 | 21 tests for Plan 2D | test_plan2d_memory_parity.py | LOW | 21/21 pass |
+| 11 | 30 tests for Plan 2E-2I + auth middleware | test_plan2e_2i_parity.py | LOW | 30/30 pass |
+| 12 | git add (explicit paths only) | staged files | LOW | Pre-existing dirty files excluded |
+| 13 | git commit + push Plan 2D-2I | localhost-get-tool | MEDIUM | 21ce74ec pushed to fork |
+
+**Blockers resolved this sprint:** None new (all known Fargate/deployment blockers documented)  
+**Tests:** 80 Plan 2 tests total (27 + 21 + 30 + 2)  
+**Secret scan:** CLEAN  
+**Verdict:** PLAN_2_FULL_MOBILE_MACBOOK_OFF_PARITY_RUNTIME_PATCHED_PENDING_REVIEW
