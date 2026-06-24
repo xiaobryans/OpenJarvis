@@ -19,6 +19,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { CosmicBackdrop } from '../components/Jarvis/CosmicBackdrop';
 import { LivingOrb } from '../components/Jarvis/LivingOrb';
 import { SettingsPage } from './SettingsPage';
+import { OrgChainPanel } from '../components/OrgChainPanel';
+import type { OrgHierarchyData, OrgChainFetchState } from '../components/OrgChainPanel';
 import { apiFetch, checkHealth } from '../lib/api';
 import type { TurnPhase } from '../hooks/useVoiceTurn';
 
@@ -28,7 +30,8 @@ import type { TurnPhase } from '../hooks/useVoiceTurn';
 
 type PanelId =
   | 'mission' | 'cockpit' | 'authority' | 'workbench' | 'connectors'
-  | 'agents' | 'memory' | 'plan9' | 'logs' | 'settings' | 'routing';
+  | 'agents' | 'memory' | 'plan9' | 'logs' | 'settings' | 'routing'
+  | 'org-chain';
 
 type StatusDot = 'ok' | 'warn' | 'error' | 'unknown';
 
@@ -335,6 +338,8 @@ export function JarvisCockpitPage() {
   const [orchestration, setOrchestration] = useState<OrchestrationSummary | null>(null);
   const [runtimeProof, setRuntimeProof] = useState<RuntimeProofSummary | null>(null);
   const [gitCommit, setGitCommit] = useState('');
+  const [orgHierarchy, setOrgHierarchy] = useState<OrgHierarchyData | null>(null);
+  const [orgChainFetch, setOrgChainFetch] = useState<OrgChainFetchState>({ status: 'idle' });
   const [fetchState, setFetchState] = useState<Record<string, PanelFetchState>>({});
 
   const setPanelFetch = (key: string) => (s: PanelFetchState) => {
@@ -535,6 +540,22 @@ export function JarvisCockpitPage() {
         pending_count: d.pending_count ?? 0,
       });
     });
+
+    setOrgChainFetch({ status: 'loading' });
+    try {
+      const r = await apiFetch('/v1/plan9/org-hierarchy');
+      if (!r.ok) {
+        let detail = r.statusText;
+        try { const j = await r.json(); detail = j.detail ?? detail; } catch { /* ok */ }
+        setOrgChainFetch({ status: 'error', httpStatus: r.status, detail: String(detail) });
+      } else {
+        const d = await r.json();
+        setOrgHierarchy(d as OrgHierarchyData);
+        setOrgChainFetch({ status: 'ok' });
+      }
+    } catch (e) {
+      setOrgChainFetch({ status: 'error', detail: String(e) });
+    }
   }, []);
 
   useEffect(() => {
@@ -763,6 +784,25 @@ export function JarvisCockpitPage() {
         routingStatus
           ? `PA: ${routingStatus.pa_front_door_model} · GLM: ${routingStatus.glm_5_2_available ? 'avail' : 'pending'} · Kimi: ${routingStatus.kimi_k2_6_available ? 'avail' : 'pending'}`
           : '',
+      ],
+      onExpand: setExpandedPanel,
+    },
+    {
+      id: 'org-chain',
+      icon: '🏗',
+      label: 'Org Chain',
+      status: orgChainFetch.status === 'ok' ? 'ok' : orgChainFetch.status === 'error' ? 'error' : 'unknown',
+      lines: [
+        orgChainFetch.status === 'ok' && orgHierarchy
+          ? `PA → COS/GM → ${orgHierarchy.nodes.filter(n => n.layer === 'manager').length}M / ${orgHierarchy.nodes.filter(n => n.layer === 'worker').length}W → Reviewer`
+          : orgChainFetch.status === 'error'
+            ? `Hierarchy unavailable (${orgChainFetch.httpStatus ?? 'err'})`
+            : orgChainFetch.status === 'loading'
+              ? 'Loading org hierarchy…'
+              : 'Bryan → PA → COS/GM → chain',
+        orgChainFetch.status === 'ok' && orgHierarchy
+          ? `Reviewer: independent · self-verify blocked`
+          : 'Approval: PA-gated only',
       ],
       onExpand: setExpandedPanel,
     },
@@ -1115,6 +1155,17 @@ export function JarvisCockpitPage() {
               <div>• Ollama/local: offline fallback only</div>
               <div>• No manual model picker in normal UI</div>
             </div>
+          </Overlay>
+        );
+
+      case 'org-chain':
+        return (
+          <Overlay title="Jarvis PA — Org Chain & Loop Architecture" icon="🏗" onClose={() => setExpandedPanel(null)}>
+            <OrgChainPanel
+              data={orgHierarchy}
+              fetchState={orgChainFetch}
+              apiTarget={apiTarget}
+            />
           </Overlay>
         );
 
