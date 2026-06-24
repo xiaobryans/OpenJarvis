@@ -7,12 +7,12 @@
 | Field | Value |
 |-------|-------|
 | Branch | `localhost-get-tool` |
-| HEAD | `af990db1` (Plan 2 full foundation + matrix docs) |
+| HEAD | `b786bdc7` (Plan 2 correction sprint — HOLD verdict + security fixes) |
 | Remote | `fork/localhost-get-tool` |
 | Working tree | Dirty — pre-existing: `JARVIS_OMNIX_HANDOFF.md`, `tests/workbench/test_us14a_fixture.py` |
 | Untracked | `evidence/`, `scripts/plan1_cockpit_proof.py`, `scripts/plan9_copy_cloud_api_key.sh`, `scripts/plan9_verify_cloud_api_key.py` |
 | Active worktrees | None |
-| Auto-continue safe | YES — correction sprint in progress |
+| Auto-continue safe | YES — correction sprint complete; push confirmed |
 
 ## Corrected Plan 2 Verdict
 
