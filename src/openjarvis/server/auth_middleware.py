@@ -79,6 +79,13 @@ class AuthMiddleware(BaseHTTPMiddleware):
             "/v1/mobile-parity/status",
             "/v1/mobile-parity/connectors",
             "/v1/mobile-parity/files",
+            "/v1/mobile-parity/memory",
+            "/v1/mobile-parity/life-os",
+            "/v1/mobile-parity/voice",
+            "/v1/mobile-parity/approvals",
+            "/v1/mobile-parity/long-running",
+            "/v1/mobile-parity/deploy",
+            "/v1/files/cloud-index",
         }
     )
 

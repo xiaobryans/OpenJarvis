@@ -1,6 +1,6 @@
 """Plan 2 — Full Mobile MacBook-Off Parity Runtime routes.
 
-Sprint: Plan 2A + Plan 2B + Plan 2C Foundation
+Sprint: Plan 2A + Plan 2B + Plan 2C + Plan 2D Foundation
 Acceptance target: MOBILE_MACBOOK_PARITY_TARGET_LOCKED
 
 Routes:
@@ -24,6 +24,11 @@ Routes:
   GET /v1/mobile-parity/files
       Plan 2C — file/workspace/data parity status detail.
       PUBLIC endpoint. Reports cloud file index availability and route inventory.
+
+  GET /v1/mobile-parity/memory
+      Plan 2D — memory/context/routing parity status detail.
+      PUBLIC endpoint. Sanitized status: sync probe, Pinecone configured flag,
+      route inventory. No memory content, no bucket names, no credential values.
 
 Status vocabulary (honest states only):
   READY               — fully working on this surface
@@ -385,19 +390,54 @@ def _status_2c_files() -> Dict[str, Any]:
     }
 
 
+def _memory_cloud_sync_probe() -> Dict[str, Any]:
+    """Probe cloud memory sync availability. Never exposes bucket names or credentials."""
+    try:
+        from openjarvis.memory.cloud_sync import JarvisMemoryS3Sync
+        status = JarvisMemoryS3Sync().get_status()
+        return {
+            "available": status.available,
+            "bucket_configured": bool(status.bucket),
+            "region_configured": bool(status.region),
+            "can_read": status.can_read,
+            "can_write": status.can_write,
+            "last_error": status.last_error or None,
+            "note": "Bucket name truncated for safety — never exposed in full.",
+        }
+    except Exception as exc:
+        return {
+            "available": False,
+            "bucket_configured": _memory_bucket_configured(),
+            "region_configured": _env_present("OMNIX_WORKBENCH_AWS_REGION"),
+            "can_read": False,
+            "can_write": False,
+            "last_error": f"probe error: {type(exc).__name__}",
+            "note": "Sync probe failed — check OMNIX_WORKBENCH_MEMORY_BUCKET and AWS config.",
+        }
+
+
 def _status_2d_memory() -> Dict[str, Any]:
     """2D — Memory / context / routing parity."""
     db_ok = _db_accessible()
-    has_memory_bucket = _memory_bucket_configured()
     has_pinecone = _env_present("PINECONE_API_KEY")
     has_api_key = _api_key_configured()
+    sync_probe = _memory_cloud_sync_probe()
 
     blockers: List[str] = []
     if not has_api_key:
         blockers.append("OPENJARVIS_API_KEY not set — mobile cannot authenticate to /v1/memory/*")
-    if not has_memory_bucket:
-        blockers.append("OMNIX_WORKBENCH_MEMORY_BUCKET not configured — cloud sync unavailable")
-    blockers.append("Full bidirectional SQLite↔S3 sync not verified post-Plan 9")
+    if not sync_probe["available"]:
+        if not sync_probe["bucket_configured"]:
+            blockers.append("OMNIX_WORKBENCH_MEMORY_BUCKET not configured — cloud sync unavailable")
+        else:
+            blockers.append(
+                "Cloud memory sync configured but S3 not reachable from this runtime "
+                "(expected — Fargate required for live S3 access)"
+            )
+    blockers.append(
+        "Full bidirectional SQLite↔S3 sync requires Fargate backend — "
+        "POST /v1/memory/sync route exists and is wired"
+    )
 
     return {
         "subsection": "2D",
@@ -407,21 +447,24 @@ def _status_2d_memory() -> Dict[str, Any]:
         "macbook_off_status": CLOUD_REQUIRED,
         "auth_status": AUTH_REQUIRED if not has_api_key else "Bearer token required — key configured",
         "local_db_accessible": db_ok,
-        "memory_bucket_configured": has_memory_bucket,
-        "pinecone_key_present": has_pinecone,
+        "cloud_sync_probe": sync_probe,
+        "pinecone_configured": has_pinecone,
         "blockers": blockers,
         "notes": [
-            "Primary memory: SQLite (local). Cloud sync module exists (cloud_sync.py).",
-            "Semantic search: Pinecone key present.",
+            "Primary memory: SQLite (local). Cloud sync module present (cloud_sync.py).",
+            "POST /v1/memory/sync — push/pull/both modes implemented and wired.",
+            "Semantic search: Pinecone key configured." if has_pinecone else "Semantic search: Pinecone key not configured.",
             "/v1/continuity/macbook-off-status is public (no auth required).",
             "/v1/memory/* requires Bearer token.",
+            "GET /v1/mobile-parity/memory — public Plan 2D parity status.",
         ],
         "key_routes": [
-            "GET  /v1/memory/status",
-            "POST /v1/memory",
-            "GET  /v1/memory/retrieve",
-            "GET  /v1/continuity/macbook-off-status",
-            "GET  /v1/mobile/continuity/status",
+            "GET  /v1/memory/status         (auth-gated)",
+            "POST /v1/memory                (auth-gated)",
+            "POST /v1/memory/sync           (auth-gated — push/pull/both)",
+            "GET  /v1/memory/search         (auth-gated)",
+            "GET  /v1/continuity/macbook-off-status  (public)",
+            "GET  /v1/mobile-parity/memory  (public, sanitized)",
         ],
     }
 
@@ -1007,4 +1050,159 @@ async def get_file_parity_status() -> Dict[str, Any]:
             "Bidirectional cloud sync for git-tracked file metadata; "
             "S3 artifact bucket live connectivity verification on Fargate."
         ),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Plan 2D — Memory / Context / Routing Parity detail
+# ---------------------------------------------------------------------------
+
+@router.get("/v1/mobile-parity/memory")
+async def get_memory_parity_status() -> Dict[str, Any]:
+    """Plan 2D — memory/context/routing parity status detail.
+
+    PUBLIC endpoint (no auth required).
+    Returns sanitized status only — no memory content, no bucket names,
+    no credential values, no usernames, no account IDs.
+    Cloud sync probe result is presence-only (bucket name truncated to 8 chars
+    by cloud_sync.py before reaching here).
+    """
+    full = _status_2d_memory()
+    sync_probe = full.get("cloud_sync_probe", {})
+
+    return {
+        "plan": "Plan 2D — Memory / Context / Routing Parity",
+        "sprint_verdict": "PLAN_2D_MEMORY_CONTEXT_ROUTING_PARITY_PATCHED_PENDING_REVIEW",
+        "subsection": "2D",
+        "desktop_status": full["desktop_status"],
+        "mobile_status": full["mobile_status"],
+        "macbook_off_status": full["macbook_off_status"],
+        "cloud_sync_available": sync_probe.get("available", False),
+        "cloud_sync_bucket_configured": sync_probe.get("bucket_configured", False),
+        "pinecone_configured": full.get("pinecone_configured", False),
+        "local_db_accessible": full.get("local_db_accessible", False),
+        "blockers": full["blockers"],
+        "notes": full["notes"],
+        "key_routes": full["key_routes"],
+        "permanent_blockers": [
+            "Full SQLite↔S3 sync requires Fargate deployment (not a code blocker).",
+        ],
+    }
+
+
+# ---------------------------------------------------------------------------
+# Plan 2E — Life-Business OS Parity detail (public, sanitized)
+# ---------------------------------------------------------------------------
+
+@router.get("/v1/mobile-parity/life-os")
+async def get_life_os_parity_status() -> Dict[str, Any]:
+    """Plan 2E — life-business OS parity status detail. PUBLIC endpoint."""
+    full = _status_2e_life_os()
+    pub = _public_subsection(full)
+    return {
+        "plan": "Plan 2E — Life-Business OS Operation Parity",
+        "sprint_verdict": "PLAN_2E_LIFE_OS_PARITY_PATCHED_PENDING_REVIEW",
+        **pub,
+        "blockers_summary": [
+            "Life-OS data (tasks, workstreams, goals) stored in local SQLite — cloud sync pending.",
+            "Push notifications for task updates not yet wired.",
+        ],
+    }
+
+
+# ---------------------------------------------------------------------------
+# Plan 2F — Voice/Tap-to-Speak Parity detail (public, sanitized)
+# ---------------------------------------------------------------------------
+
+@router.get("/v1/mobile-parity/voice")
+async def get_voice_parity_status() -> Dict[str, Any]:
+    """Plan 2F — voice/tap-to-speak parity status detail. PUBLIC endpoint.
+
+    Wake word and TTS are PARKED (Plan 3). Foundation tap-to-speak only.
+    No STT key presence booleans returned — presence is internal.
+    """
+    full = _status_2f_voice()
+    pub = _public_subsection(full)
+    return {
+        "plan": "Plan 2F — Voice / Tap-to-Speak Foundation",
+        "sprint_verdict": "PLAN_2F_VOICE_FOUNDATION_PATCHED_PENDING_REVIEW",
+        **pub,
+        "blockers_summary": [
+            "Wake word and TTS: PARKED (Plan 3) — not reopening in Plan 2.",
+            "Browser MediaRecorder → /v1/voice/transcribe not yet wired in mobile UI.",
+        ],
+    }
+
+
+# ---------------------------------------------------------------------------
+# Plan 2G — Approvals/Notification Parity detail (public, sanitized)
+# ---------------------------------------------------------------------------
+
+@router.get("/v1/mobile-parity/approvals")
+async def get_approvals_parity_status() -> Dict[str, Any]:
+    """Plan 2G — notifications/approval parity status detail. PUBLIC endpoint.
+
+    No token presence booleans. No Telegram/Slack token names.
+    Reports structural readiness only.
+    """
+    full = _status_2g_approvals()
+    pub = _public_subsection(full)
+    return {
+        "plan": "Plan 2G — Notifications / Approval Parity",
+        "sprint_verdict": "PLAN_2G_APPROVAL_NOTIFICATION_PARITY_PATCHED_PENDING_REVIEW",
+        **pub,
+        "blockers_summary": [
+            "Approval store is local SQLite — not synced to cloud for MacBook-off.",
+            "Auto-trigger on new pending approvals not yet wired.",
+            "Mobile approval polling not yet implemented.",
+        ],
+    }
+
+
+# ---------------------------------------------------------------------------
+# Plan 2H — Long-Running Cloud Execution Parity detail (public, sanitized)
+# ---------------------------------------------------------------------------
+
+@router.get("/v1/mobile-parity/long-running")
+async def get_long_running_parity_status() -> Dict[str, Any]:
+    """Plan 2H — long-running cloud execution parity status detail. PUBLIC endpoint.
+
+    No AWS config booleans. Fargate deploy status reported statically.
+    """
+    full = _status_2h_long_running()
+    pub = _public_subsection(full)
+    return {
+        "plan": "Plan 2H — Long-Running Cloud Execution Parity",
+        "sprint_verdict": "PLAN_2H_LONG_RUNNING_PARITY_PATCHED_PENDING_REVIEW",
+        **pub,
+        "fargate_worker_deployed": False,
+        "blockers_summary": [
+            "Mac worker queue requires MacBook to be online.",
+            "Cloud execution daemon not deployed to Fargate (API only).",
+            "No long-running job status push/WebSocket for mobile.",
+        ],
+    }
+
+
+# ---------------------------------------------------------------------------
+# Plan 2I — Deployment/Release/Signing Parity detail (public, sanitized)
+# ---------------------------------------------------------------------------
+
+@router.get("/v1/mobile-parity/deploy")
+async def get_deploy_parity_status() -> Dict[str, Any]:
+    """Plan 2I — deployment/release/signing parity status detail. PUBLIC endpoint.
+
+    No GitHub token or Apple signing key presence booleans.
+    Tauri signing is QUEUED_MAC_ONLY permanently.
+    """
+    full = _status_2i_deploy()
+    pub = _public_subsection(full)
+    return {
+        "plan": "Plan 2I — Deployment / Release / Signing Parity",
+        "sprint_verdict": "PLAN_2I_DEPLOY_PARITY_PATCHED_PENDING_REVIEW",
+        **pub,
+        "blockers_summary": [
+            "Tauri build + codesign: QUEUED_MAC_ONLY (permanent exception — MacBook + Xcode required).",
+            "ECS cloud deploy not yet wired for mobile-triggered approval-gated execution.",
+        ],
     }
