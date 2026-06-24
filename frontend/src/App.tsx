@@ -14,6 +14,9 @@ import { MissionControlPage } from './pages/MissionControlPage';
 import { MobilePage } from './pages/MobilePage';
 import { WorkbenchPage } from './pages/WorkbenchPage';
 import { AuthorityPage } from './pages/AuthorityPage';
+import { RulesManagerPage } from './pages/RulesManagerPage';
+import { ExpertRolesPage } from './pages/ExpertRolesPage';
+import { JarvisCapabilitiesPage } from './pages/JarvisCapabilitiesPage';
 import { CommandPalette } from './components/CommandPalette';
 import { TextFallbackPanel } from './components/TextFallbackPanel';
 import { SetupScreen } from './components/SetupScreen';
@@ -221,6 +224,9 @@ export default function App() {
           <Route path="mission-control" element={<MissionControlPage />} />
           <Route path="workbench" element={<WorkbenchPage />} />
           <Route path="authority" element={<AuthorityPage />} />
+          <Route path="rules" element={<RulesManagerPage />} />
+          <Route path="expert-roles" element={<ExpertRolesPage />} />
+          <Route path="capabilities" element={<JarvisCapabilitiesPage />} />
         </Route>
       </Routes>
       <Toaster position="bottom-right" />

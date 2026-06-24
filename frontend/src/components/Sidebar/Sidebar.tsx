@@ -21,6 +21,9 @@ import {
   Target,
   Code2,
   ShieldCheck,
+  BookOpen,
+  Users,
+  Activity,
 } from 'lucide-react';
 import { ConversationList } from './ConversationList';
 import { useAppStore } from '../../lib/store';
@@ -65,6 +68,9 @@ export function Sidebar() {
     { path: '/dashboard', icon: BarChart3, label: 'Dashboard', badge: null },
     { path: '/workbench', icon: Code2, label: 'Workbench', badge: null },
     { path: '/data-sources', icon: Database, label: 'Connectors', badge: '4 blocked' },
+    { path: '/rules', icon: BookOpen, label: 'Rules', badge: null },
+    { path: '/expert-roles', icon: Users, label: 'Expert Roles', badge: null },
+    { path: '/capabilities', icon: Activity, label: 'Capabilities', badge: null },
     { path: '/agents', icon: Bot, label: 'Agents', badge: null },
     { path: '/logs', icon: ScrollText, label: 'Logs', badge: null },
     { path: '/settings', icon: Settings, label: 'Settings', badge: null },

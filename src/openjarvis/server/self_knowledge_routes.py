@@ -127,11 +127,22 @@ _CAPABILITIES: List[Dict[str, Any]] = [
     },
     {
         "id": "ios_native",
-        "name": "Native iOS App",
-        "status": "not_started",
-        "description": "No native iOS app yet. PWA mobile web surface exists. Requires Apple Developer Account and Xcode setup.",
-        "plan": "Plan 5 — pending",
-        "blocker": "Apple Developer Account enrollment status unknown",
+        "name": "Native iOS / Productization",
+        "status": "partial",
+        "description": (
+            "PWA fully implemented (Plan 2). Native iOS scaffold present via Tauri src-tauri/. "
+            "Distribution requires Apple Developer Account enrollment (external gate). "
+            "See GET /v1/productization/status for full breakdown."
+        ),
+        "plan": "Plan 4-5",
+        "external_gate": "Apple Developer Account enrollment",
+    },
+    {
+        "id": "expert_role_wiring",
+        "name": "Expert role routing in Jarvis PA",
+        "status": "available",
+        "description": "RoleSelector is wired into the frontdoor submit path. Expert roles are selected internally behind one Jarvis PA voice.",
+        "plan": "Plan 4-6",
     },
 ]
 

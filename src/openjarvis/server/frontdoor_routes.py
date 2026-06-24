@@ -88,6 +88,8 @@ class FrontDoorSubmitResponse(BaseModel):
     next_actions: List[str]
     blocked_reason: Optional[str]
     omnix_hardcoded: bool  # always False — proves OMNIX is not root
+    expert_roles_selected: List[str]  # internal role ids — single Jarvis PA voice preserved
+    expert_roles_audit_id: str  # audit record id for provenance
 
 
 class FrontDoorStatusResponse(BaseModel):
@@ -181,6 +183,31 @@ async def submit_request(body: FrontDoorSubmitRequest) -> Dict[str, Any]:
     except Exception:
         memory_retrieved = False
 
+    # Expert role selection — internal routing aid, one Jarvis PA voice preserved.
+    # Roles are selected based on intent + user input text. Approval gates are
+    # never weakened by role selection.
+    expert_role_ids: List[str] = []
+    expert_audit_id = ""
+    try:
+        from openjarvis.orchestrator.expert_roles import ExpertRoleRegistry, RoleSelector
+        selector = RoleSelector(registry=ExpertRoleRegistry.get_instance())
+        selected = selector.select(
+            text=f"{body.intent} {body.user_input}",
+            action_type=body.intent,
+            max_roles=3,
+            include_high_safety=False,
+        )
+        audit = selector.audit_selection(
+            session_id=body.session_id or request_id,
+            selected=selected,
+            trigger_text=body.user_input[:200],
+            action_type=body.intent,
+        )
+        expert_role_ids = [r.role_id for r in selected]
+        expert_audit_id = audit.record_id
+    except Exception:
+        pass  # graceful degradation — role selection is non-critical
+
     return FrontDoorSubmitResponse(
         request_id=request_id,
         status="blocked" if body.risk_level == "blocked" else "accepted",
@@ -194,6 +221,8 @@ async def submit_request(body: FrontDoorSubmitRequest) -> Dict[str, Any]:
         next_actions=next_actions,
         blocked_reason=blocked_reason,
         omnix_hardcoded=False,  # invariant — OMNIX is never the hardcoded root
+        expert_roles_selected=expert_role_ids,
+        expert_roles_audit_id=expert_audit_id,
     ).model_dump()
 
 
