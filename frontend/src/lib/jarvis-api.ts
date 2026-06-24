@@ -294,3 +294,100 @@ export async function fetchProductizationStatus(): Promise<ProductizationStatus>
   const res = await apiFetch('/v1/productization/status');
   return res.json();
 }
+
+// ---------------------------------------------------------------------------
+// System status types + API
+// ---------------------------------------------------------------------------
+
+export interface ConnectorStatus {
+  status: string;
+  note: string;
+}
+
+export interface SystemComponentStatus {
+  status: string;
+  note: string;
+  [key: string]: unknown;
+}
+
+export interface SystemStatusSummary {
+  connectors_configured: number;
+  connectors_partial: number;
+  connectors_not_configured: number;
+  fargate_healthy: boolean;
+  pwa_ready: boolean;
+  ios_scaffold_ready: boolean;
+  voice_parked: boolean;
+  fake_claims: boolean;
+}
+
+export interface SystemStatusResponse {
+  connectors: Record<string, ConnectorStatus>;
+  system: Record<string, SystemComponentStatus>;
+  summary: SystemStatusSummary;
+  safety: string;
+}
+
+export async function fetchSystemStatus(): Promise<SystemStatusResponse> {
+  const res = await apiFetch('/v1/system/status');
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Delegation queue types + API
+// ---------------------------------------------------------------------------
+
+export interface DelegationItem {
+  delegation_id: string;
+  source: string;
+  source_id: string;
+  title: string;
+  description: string;
+  status: string;
+  category: string;
+  authority_tier: string;
+  approval_route: string | null;
+  reject_route: string | null;
+  created_at: string | number | null;
+  expires_at: string | number | null;
+  audit_id: string;
+  priority: string | null;
+  risk_level: string | null;
+  tags: string[];
+  extra: Record<string, unknown>;
+}
+
+export interface DelegationQueueResponse {
+  items: DelegationItem[];
+  count: number;
+  by_source: { life_os: number; agent_action: number; mission: number };
+  errors: Array<{ source: string; error: string }>;
+  sources_probed: string[];
+  note: string;
+}
+
+export interface DelegationSummary {
+  total: number;
+  by_source: { life_os: number; agent_action: number; mission: number };
+  has_pending: boolean;
+}
+
+export async function fetchDelegationQueue(): Promise<DelegationQueueResponse> {
+  const res = await apiFetch('/v1/delegation/queue');
+  return res.json();
+}
+
+export async function fetchDelegationSummary(): Promise<DelegationSummary> {
+  const res = await apiFetch('/v1/delegation/queue/summary');
+  return res.json();
+}
+
+export async function approveItem(approvalRoute: string): Promise<Record<string, unknown>> {
+  const res = await apiFetch(approvalRoute, { method: 'POST' });
+  return res.json();
+}
+
+export async function rejectItem(rejectRoute: string): Promise<Record<string, unknown>> {
+  const res = await apiFetch(rejectRoute, { method: 'POST' });
+  return res.json();
+}

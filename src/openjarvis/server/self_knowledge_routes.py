@@ -144,6 +144,28 @@ _CAPABILITIES: List[Dict[str, Any]] = [
         "description": "RoleSelector is wired into the frontdoor submit path. Expert roles are selected internally behind one Jarvis PA voice.",
         "plan": "Plan 4-6",
     },
+    {
+        "id": "delegation_queue",
+        "name": "Life-Business OS delegation queue",
+        "status": "available",
+        "description": (
+            "Unified delegation/approval queue aggregating life-os tasks, agent actions, "
+            "and mission tasks pending approval. Approve/reject through existing gated routes. "
+            "See GET /v1/delegation/queue."
+        ),
+        "plan": "Plan 4-5",
+    },
+    {
+        "id": "system_status",
+        "name": "Unified system / connector status",
+        "status": "available",
+        "description": (
+            "Presence-only status for all connectors (Gmail, Calendar, Drive, Slack, Telegram, "
+            "Notion, GitHub, S3) and system components (Fargate, mobile/PWA/iOS, skills/rules, "
+            "expert roles). See GET /v1/system/status."
+        ),
+        "plan": "Plan 4-6",
+    },
 ]
 
 _ROADMAP: List[Dict[str, Any]] = [
@@ -152,7 +174,9 @@ _ROADMAP: List[Dict[str, Any]] = [
     {"plan": "Post-Plan-2", "name": "Claude Code Automation Expansion", "status": "ACCEPTED"},
     {"plan": "Plan 3", "name": "Voice / Wake / TTS", "status": "PARKED — text-first priority"},
     {"plan": "Plan 4-6", "name": "Text-First Jarvis OS Mega-Sprint", "status": "IN_PROGRESS"},
-    {"plan": "Plan 4", "name": "Skills / Rules / Third-Party Skill Intake", "status": "IN_PROGRESS"},
+    {"plan": "Plan 4-6 B3/B5/B6", "name": "iOS/Productization + UI Surfaces + RoleSelector Wiring", "status": "ACCEPTED"},
+    {"plan": "Plan 4-6 B7", "name": "Delegation Queue UI + Connector Status Polish", "status": "IN_PROGRESS"},
+    {"plan": "Plan 4", "name": "Skills / Rules / Third-Party Skill Intake", "status": "COMPLETE"},
     {"plan": "Plan 5", "name": "Life-Business OS + Trusted Delegation + iOS", "status": "IN_PROGRESS"},
     {"plan": "Plan 6", "name": "Chat Intelligence + Expert Roles + UI/UX Polish", "status": "IN_PROGRESS"},
 ]

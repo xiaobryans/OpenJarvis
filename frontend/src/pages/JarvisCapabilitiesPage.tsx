@@ -34,12 +34,14 @@ import type {
   JarvisStatus,
   RoadmapResponse,
   ProductizationStatus,
+  SystemStatusResponse,
 } from '../lib/jarvis-api';
 import {
   fetchCapabilities,
   fetchJarvisStatus,
   fetchRoadmap,
   fetchProductizationStatus,
+  fetchSystemStatus,
 } from '../lib/jarvis-api';
 
 // ---------------------------------------------------------------------------
@@ -427,6 +429,114 @@ function ProductizationSection({ data }: { data: ProductizationStatus }) {
 }
 
 // ---------------------------------------------------------------------------
+// System / connector status
+// ---------------------------------------------------------------------------
+
+const STATUS_LABEL_CFG: Record<string, { color: string }> = {
+  configured: { color: 'var(--color-success, #a6e3a1)' },
+  partial: { color: 'var(--color-warning, #f9e2af)' },
+  not_configured: { color: 'var(--color-text-tertiary)' },
+  external_gate: { color: 'var(--color-warning, #f9e2af)' },
+  not_started: { color: 'var(--color-text-tertiary)' },
+  unknown: { color: 'var(--color-text-tertiary)' },
+  implemented: { color: 'var(--color-success, #a6e3a1)' },
+};
+
+function StatusDot({ status }: { status: string }) {
+  const cfg = STATUS_LABEL_CFG[status] ?? { color: C.textSec };
+  const isDot = ['configured', 'implemented'].includes(status);
+  return (
+    <span
+      className="inline-flex items-center gap-1 text-[10px] font-mono"
+      style={{ color: cfg.color }}
+    >
+      {isDot && <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: cfg.color }} />}
+      {status}
+    </span>
+  );
+}
+
+function SystemStatusSection({ data }: { data: SystemStatusResponse }) {
+  const connectorEntries = Object.entries(data.connectors);
+  const systemEntries = Object.entries(data.system);
+  const { summary } = data;
+
+  return (
+    <Section title="System & Connector Status" icon={<Globe size={14} />} defaultOpen={false}>
+      <div className="px-4 py-3">
+        {/* Safety note */}
+        <div
+          className="text-[10px] mb-3 px-2 py-1.5 rounded flex items-center gap-1.5"
+          style={{ background: 'rgba(137,180,250,0.06)', color: C.textTert, border: `1px solid rgba(137,180,250,0.12)` }}
+        >
+          <Info size={11} />
+          {data.safety}
+        </div>
+
+        {/* Summary badges */}
+        <div className="flex flex-wrap gap-2 mb-4 text-xs">
+          <div className="px-2 py-1 rounded" style={{ background: C.surfaceAlt }}>
+            <span style={{ color: C.success }}>{summary.connectors_configured}</span>
+            <span style={{ color: C.textTert }}> configured</span>
+          </div>
+          <div className="px-2 py-1 rounded" style={{ background: C.surfaceAlt }}>
+            <span style={{ color: C.warning }}>{summary.connectors_partial}</span>
+            <span style={{ color: C.textTert }}> partial</span>
+          </div>
+          <div className="px-2 py-1 rounded" style={{ background: C.surfaceAlt }}>
+            <span style={{ color: C.textTert }}>{summary.connectors_not_configured}</span>
+            <span style={{ color: C.textTert }}> not configured</span>
+          </div>
+        </div>
+
+        {/* Connectors table */}
+        <div className="text-xs mb-1 font-medium" style={{ color: C.textTert }}>Connectors</div>
+        <div className="mb-4 space-y-0">
+          {connectorEntries.map(([name, info]) => (
+            <div
+              key={name}
+              className="flex items-center gap-3 py-1.5 text-xs"
+              style={{ borderBottom: `1px solid ${C.border}` }}
+            >
+              <span className="w-24 shrink-0 font-mono capitalize" style={{ color: C.textSec }}>
+                {name.replace(/_/g, ' ')}
+              </span>
+              <StatusDot status={info.status} />
+              <span className="flex-1 truncate italic" style={{ color: C.textTert }}>{info.note}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* System table */}
+        <div className="text-xs mb-1 font-medium" style={{ color: C.textTert }}>System</div>
+        <div className="space-y-0">
+          {systemEntries.map(([name, info]) => (
+            <div
+              key={name}
+              className="flex items-center gap-3 py-1.5 text-xs"
+              style={{ borderBottom: `1px solid ${C.border}` }}
+            >
+              <span className="w-32 shrink-0 font-mono" style={{ color: C.textSec }}>
+                {name.replace(/_/g, ' ')}
+              </span>
+              <StatusDot status={info.status} />
+              <span className="flex-1 truncate italic" style={{ color: C.textTert }}>{String(info.note ?? '')}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* Fake-claim guard */}
+        {!summary.fake_claims && (
+          <div className="mt-3 flex items-center gap-1.5 text-xs" style={{ color: C.success }}>
+            <CheckCircle size={11} /> No fake status claims — all reports are presence-only.
+          </div>
+        )}
+      </div>
+    </Section>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------
 
@@ -435,6 +545,7 @@ type PageData = {
   status: JarvisStatus | null;
   roadmap: RoadmapResponse | null;
   productization: ProductizationStatus | null;
+  systemStatus: SystemStatusResponse | null;
 };
 
 export function JarvisCapabilitiesPage() {
@@ -443,6 +554,7 @@ export function JarvisCapabilitiesPage() {
     status: null,
     roadmap: null,
     productization: null,
+    systemStatus: null,
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -451,13 +563,14 @@ export function JarvisCapabilitiesPage() {
     setLoading(true);
     setError('');
     try {
-      const [capabilities, status, roadmap, productization] = await Promise.all([
+      const [capabilities, status, roadmap, productization, systemStatus] = await Promise.all([
         fetchCapabilities().catch(() => null),
         fetchJarvisStatus().catch(() => null),
         fetchRoadmap().catch(() => null),
         fetchProductizationStatus().catch(() => null),
+        fetchSystemStatus().catch(() => null),
       ]);
-      setData({ capabilities, status, roadmap, productization });
+      setData({ capabilities, status, roadmap, productization, systemStatus });
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to load status');
     } finally {
@@ -514,6 +627,7 @@ export function JarvisCapabilitiesPage() {
         {!loading && data.capabilities && <CapabilityList data={data.capabilities} />}
         {!loading && data.roadmap && <RoadmapSection data={data.roadmap} />}
         {!loading && data.productization && <ProductizationSection data={data.productization} />}
+        {!loading && data.systemStatus && <SystemStatusSection data={data.systemStatus} />}
 
         {!loading && !data.status && !error && (
           <div
