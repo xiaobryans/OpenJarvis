@@ -72,10 +72,13 @@ import re
 from typing import Any, Dict, List, Optional
 
 try:
-    from fastapi import APIRouter, Body, HTTPException, Query
+    from fastapi import APIRouter, Body, Depends, HTTPException, Query
+    from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
     from pydantic import BaseModel, Field
 except ImportError:
     raise ImportError("fastapi and pydantic are required for plan9_routes")
+
+_p9_bearer = HTTPBearer(auto_error=False)
 
 from openjarvis.plan9.capability_matrix import (
     CapabilityStatus,
@@ -1905,6 +1908,95 @@ async def get_files_cloud_index(
         "truncated": truncated,
         "macbook_off_safe": True,
         "files": files,
+    }
+
+
+# ---------------------------------------------------------------------------
+# /v1/files/workspace/status — Plan 2C workspace sync status (auth-gated)
+# ---------------------------------------------------------------------------
+
+@router.get("/v1/files/workspace/status")
+async def get_workspace_sync_status(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(_p9_bearer),
+) -> Dict[str, Any]:
+    """Plan 2C — honest workspace sync status for mobile/MacBook-off operation.
+
+    AUTH REQUIRED. Returns Bearer-gated workspace accounting.
+    Reports git-tracked vs local-only counts; S3 artifact store presence.
+    Never returns file paths, file contents, usernames, local home paths,
+    credential values, env var values, or account IDs.
+    """
+    import os as _os
+    from openjarvis.plan9.workspace_root import workspace_sync_summary
+
+    api_key = _os.environ.get("OPENJARVIS_API_KEY", "").strip()
+    if api_key:
+        import secrets as _sec
+        token = credentials.credentials if credentials else ""
+        if not token or not _sec.compare_digest(token.strip(), api_key):
+            raise HTTPException(status_code=401, detail="Invalid or missing Bearer token")
+
+    sync = workspace_sync_summary()
+
+    provider = _os.environ.get("OMNIX_WORKBENCH_STORAGE_PROVIDER", "local").strip()
+    memory_bucket_ok = bool(_os.environ.get("OMNIX_WORKBENCH_MEMORY_BUCKET", "").strip())
+    artifact_bucket_ok = bool(_os.environ.get("OMNIX_WORKBENCH_ARTIFACT_BUCKET", "").strip())
+    state_table_ok = bool(_os.environ.get("OMNIX_WORKBENCH_STATE_TABLE", "").strip())
+    region_ok = bool(_os.environ.get("OMNIX_WORKBENCH_AWS_REGION", "").strip())
+
+    configured_count = sum([memory_bucket_ok, artifact_bucket_ok, state_table_ok, region_ok])
+    if provider == "aws" and configured_count == 4:
+        s3_status = "READY"
+    elif configured_count >= 2:
+        s3_status = "PARTIAL"
+    elif configured_count >= 1:
+        s3_status = "BLOCKED"
+    else:
+        s3_status = "NOT_CONFIGURED"
+
+    git_indexed = sync.get("git_tracked_count", 0)
+    modified = sync.get("modified_count", 0)
+    untracked = sync.get("untracked_count", 0)
+
+    overall_status: str
+    if not sync.get("git_available"):
+        overall_status = "BLOCKED"
+    elif s3_status in ("BLOCKED", "NOT_CONFIGURED"):
+        overall_status = "PARTIAL"
+    elif s3_status == "PARTIAL":
+        overall_status = "PARTIAL"
+    else:
+        overall_status = "MACBOOK_OFF_PENDING"
+
+    return {
+        "plan": "2C",
+        "status": overall_status,
+        "git_available": sync.get("git_available", False),
+        "cloud_indexable_files": git_indexed,
+        "locally_modified_tracked": modified,
+        "local_only_untracked": untracked,
+        "permanent_exceptions": sync.get("permanent_exception", ""),
+        "s3_artifact_store": {
+            "status": s3_status,
+            "memory_bucket_configured": memory_bucket_ok,
+            "artifact_bucket_configured": artifact_bucket_ok,
+            "state_table_configured": state_table_ok,
+            "region_configured": region_ok,
+            "provider_aws": provider == "aws",
+            "note": "Presence-only — no values exposed, no live S3 connection attempted.",
+        },
+        "workspace_sync": {
+            "full_sync_to_s3": "NOT_IMPLEMENTED",
+            "git_tracked_read": "AVAILABLE" if sync.get("git_available") else "UNAVAILABLE",
+            "cloud_index_route": "GET /v1/files/cloud-index",
+            "file_read_route": "POST /v1/coding/files/read",
+        },
+        "blockers": (
+            ["Full workspace sync to S3 not implemented — git-tracked files readable only"]
+            + ([] if s3_status not in ("BLOCKED", "NOT_CONFIGURED") else
+               [f"S3 artifact store: {s3_status} — bucket/table env vars not fully configured"])
+        ),
+        "auth": "Bearer token validated",
     }
 
 

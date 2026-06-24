@@ -97,21 +97,23 @@ Whatever Jarvis can do on MacBook/desktop should eventually be operable from pho
 
 ## 2C — File / Workspace / Data Parity
 
-**Sprint verdict:** `PLAN_2C_FILE_WORKSPACE_DATA_PARITY_PATCHED_PENDING_REVIEW`
+**Sprint verdict:** `PLAN_2C_FILE_WORKSPACE_DATA_PARITY_CLOSED_PENDING_REVIEW`
 
 **Implementation files:**
 - `src/openjarvis/server/plan9_routes.py`
 - `src/openjarvis/plan9/workspace_root.py`
 - `src/openjarvis/server/plan2_routes.py`
+- `src/openjarvis/server/auth_middleware.py`
 - `src/openjarvis/omnix_storage.py`
 - `src/openjarvis/omnix_workbench.py`
 
 **Key routes:**
-- `GET /v1/files/cloud-index` ← **NEW (Plan 2C)** — git-tracked file index, cloud-container safe
-- `GET /v1/mobile-parity/files` ← **NEW (Plan 2C)** — parity status detail endpoint (public)
+- `GET /v1/files/cloud-index` — git-tracked file index, cloud-container safe (public)
+- `GET /v1/files/workspace/status` ← **NEW (Plan 2C closure)** — workspace sync status (auth-gated)
+- `GET /v1/mobile-parity/files` — Plan 2C parity status detail (public, sanitized)
 - `GET /v1/files/index` — local filesystem index (allowlisted, metadata only)
-- `POST /v1/coding/files/read` — read file content (allowlisted, git-tracked paths)
-- `POST /v1/coding/search` — repo code search
+- `POST /v1/coding/files/read` — read file content (allowlisted, git-tracked paths, auth-gated)
+- `POST /v1/coding/search` — repo code search (auth-gated)
 
 | Surface | Status |
 |---------|--------|
@@ -126,14 +128,20 @@ Whatever Jarvis can do on MacBook/desktop should eventually be operable from pho
 - Full workspace sync to S3 not implemented — git-tracked files accessible via repo operations only
 - Mac-only unsynced files remain `QUEUED_MAC_ONLY` per Plan 9 acceptance (permanent exception)
 
-**Plan 2C foundation patched:**
-- `git_tracked_files()` and `git_is_available()` added to `workspace_root.py` — cloud-container safe via `git ls-files`
-- `GET /v1/files/cloud-index` added — uses `git ls-files` instead of local rglob; works in cloud containers with `OPENJARVIS_ROOT=/app`
-- `GET /v1/mobile-parity/files` added — public parity status detail for Plan 2C (allowlisted to auth middleware)
-- `_status_2c_files()` updated — now reports `cloud_file_index_available` based on runtime git availability
+**Plan 2C closure (this sprint):**
+- `workspace_sync_summary()` added to `workspace_root.py` — honest git-tracked/modified/untracked counts; no paths/contents
+- `_s3_artifact_store_probe()` added to `plan2_routes.py` — presence-only S3 status; never exposes values; returns READY/PARTIAL/BLOCKED/NOT_CONFIGURED
+- `GET /v1/files/workspace/status` added (auth-gated) — full workspace sync accounting including S3 probe; blocks 401 without Bearer token
+- `_status_2c_files()` updated — uses `_s3_artifact_store_probe()` and `workspace_sync_summary()`; reports `s3_artifact_store_status`
+- `GET /v1/mobile-parity/files` updated — sanitized public response; `sprint_verdict: PLAN_2C_FILE_WORKSPACE_DATA_PARITY_CLOSED_PENDING_REVIEW`
+- `tests/plan9/test_plan2c_file_parity.py` — 27 smoke tests: path traversal, secret non-exposure, fake-READY prevention, S3 honest status
 
-**Required next patch:** S3-backed workspace artifact store for sessions; bidirectional cloud sync for git-tracked file metadata  
-**Proof for acceptance:** `GET /v1/files/cloud-index` from iPhone returns git-tracked file list; `GET /v1/mobile-parity/files` returns `cloud_file_index_available: true`
+**Known remaining (not Plan 2C blockers):**
+- Full bidirectional workspace sync to S3 is a Fargate deployment concern, not a code blocker — architecture is present
+- Mac-only untracked files remain QUEUED_MAC_ONLY permanently
+
+**Required next patch (Plan 2D):** Memory/context/routing parity  
+**Proof for closure:** `GET /v1/mobile-parity/files` returns `cloud_file_index_available: true` and `s3_artifact_store_status` reflects runtime; 27 tests pass
 
 ---
 

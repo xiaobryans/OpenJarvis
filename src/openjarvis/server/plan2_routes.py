@@ -157,6 +157,54 @@ def _artifact_bucket_configured() -> bool:
     return _env_present("OMNIX_WORKBENCH_ARTIFACT_BUCKET")
 
 
+def _s3_artifact_store_probe() -> Dict[str, Any]:
+    """Presence-only check for S3 artifact store configuration.
+
+    Never reads S3, never prints env var values.
+    Returns status: READY | PARTIAL | BLOCKED | NOT_CONFIGURED.
+    """
+    memory_ok = _env_present("OMNIX_WORKBENCH_MEMORY_BUCKET")
+    artifact_ok = _env_present("OMNIX_WORKBENCH_ARTIFACT_BUCKET")
+    state_ok = _env_present("OMNIX_WORKBENCH_STATE_TABLE")
+    provider_aws = os.environ.get("OMNIX_WORKBENCH_STORAGE_PROVIDER", "").strip() == "aws"
+    region_ok = _env_present("OMNIX_WORKBENCH_AWS_REGION")
+
+    configured_count = sum([memory_ok, artifact_ok, state_ok, region_ok])
+
+    if provider_aws and memory_ok and artifact_ok and state_ok and region_ok:
+        status = "READY"
+        detail = "All S3 store env vars present; provider=aws. Live connectivity not verified (Fargate)."
+    elif configured_count >= 2:
+        status = "PARTIAL"
+        missing = [
+            k for k, v in {
+                "OMNIX_WORKBENCH_MEMORY_BUCKET": memory_ok,
+                "OMNIX_WORKBENCH_ARTIFACT_BUCKET": artifact_ok,
+                "OMNIX_WORKBENCH_STATE_TABLE": state_ok,
+                "OMNIX_WORKBENCH_AWS_REGION": region_ok,
+                "OMNIX_WORKBENCH_STORAGE_PROVIDER=aws": provider_aws,
+            }.items() if not v
+        ]
+        detail = f"S3 store partially configured. Missing: {missing}"
+    elif configured_count >= 1:
+        status = "BLOCKED"
+        detail = "S3 store env vars incomplete — cannot use AWS provider."
+    else:
+        status = "NOT_CONFIGURED"
+        detail = "No S3 store env vars present — using local storage only."
+
+    return {
+        "status": status,
+        "memory_bucket_configured": memory_ok,
+        "artifact_bucket_configured": artifact_ok,
+        "state_table_configured": state_ok,
+        "provider_aws": provider_aws,
+        "region_configured": region_ok,
+        "detail": detail,
+        "note": "Presence-only check — no S3 connection attempted, no values exposed.",
+    }
+
+
 def _github_token_present() -> bool:
     return _env_present("GITHUB_TOKEN")
 
@@ -277,29 +325,43 @@ def _status_2b_connectors() -> Dict[str, Any]:
 
 def _status_2c_files() -> Dict[str, Any]:
     """2C — File / workspace / data parity."""
-    has_memory_bucket = _memory_bucket_configured()
-    has_artifact_bucket = _artifact_bucket_configured()
-    has_aws = _aws_configured()
+    s3_probe = _s3_artifact_store_probe()
+    s3_status = s3_probe["status"]
 
     try:
-        from openjarvis.plan9.workspace_root import git_is_available
+        from openjarvis.plan9.workspace_root import git_is_available, workspace_sync_summary
         cloud_index_available = git_is_available()
+        sync = workspace_sync_summary()
     except Exception:
         cloud_index_available = False
+        sync = {"git_available": False, "git_tracked_count": 0, "modified_count": 0, "untracked_count": 0}
 
-    blockers = [
-        "Full workspace sync to S3 not implemented — only git-tracked files via repo operations",
-    ]
+    blockers: List[str] = []
+    if s3_status in ("BLOCKED", "NOT_CONFIGURED"):
+        blockers.append(
+            f"S3 artifact store: {s3_status} — "
+            "OMNIX_WORKBENCH_ARTIFACT_BUCKET/MEMORY_BUCKET/STATE_TABLE env vars not fully configured."
+        )
     if not cloud_index_available:
-        blockers.append("git not available in this runtime — cloud index unavailable")
+        blockers.append("git not available in this runtime — cloud index unavailable.")
+
+    if not blockers:
+        blockers.append(
+            "Full workspace sync to S3 not yet implemented — "
+            "git-tracked files readable via /v1/files/cloud-index; "
+            "Mac-only untracked files remain QUEUED_MAC_ONLY (permanent exception)."
+        )
 
     notes = [
         "Mac-only unsynced files remain QUEUED_MAC_ONLY per Plan 9 acceptance (permanent exception).",
-        "GET /v1/files/cloud-index uses git ls-files — cloud-container safe (Plan 2C foundation).",
-        "GET /v1/coding/files/read returns file content for allowlisted git-tracked paths.",
+        "GET /v1/files/cloud-index: git ls-files based index — cloud-container safe.",
+        "GET /v1/files/workspace/status: honest workspace sync accounting (auth-gated).",
+        "GET /v1/coding/files/read: allowlisted path file content (auth-gated).",
     ]
-    if has_memory_bucket or has_artifact_bucket:
-        notes.append("OMNIX_WORKBENCH buckets configured — S3 artifact path available.")
+    if s3_status == "READY":
+        notes.append("S3 artifact store env vars fully configured.")
+    elif s3_status == "PARTIAL":
+        notes.append("S3 artifact store partially configured — see /v1/files/workspace/status.")
 
     return {
         "subsection": "2C",
@@ -307,19 +369,18 @@ def _status_2c_files() -> Dict[str, Any]:
         "desktop_status": READY,
         "mobile_status": MACBOOK_OFF_PENDING,
         "macbook_off_status": MACBOOK_OFF_PENDING,
-        "auth_status": "Bearer token required",
-        "aws_configured": has_aws,
-        "memory_bucket_configured": has_memory_bucket,
-        "artifact_bucket_configured": has_artifact_bucket,
+        "auth_status": "Bearer token required (public: /v1/mobile-parity/files, /v1/files/cloud-index)",
         "cloud_file_index_available": cloud_index_available,
+        "git_tracked_count": sync.get("git_tracked_count", 0),
+        "s3_artifact_store_status": s3_status,
         "blockers": blockers,
         "notes": notes,
         "key_routes": [
-            "GET  /v1/files/cloud-index",
-            "GET  /v1/files/index",
-            "POST /v1/coding/files/read",
-            "POST /v1/coding/search",
-            "GET  /v1/mobile-parity/files",
+            "GET  /v1/files/cloud-index          (public — git-tracked index)",
+            "GET  /v1/files/workspace/status     (auth-gated — workspace sync detail)",
+            "GET  /v1/mobile-parity/files        (public — Plan 2C parity status)",
+            "POST /v1/coding/files/read          (auth-gated — file content)",
+            "POST /v1/coding/search              (auth-gated — repo search)",
         ],
     }
 
@@ -919,29 +980,31 @@ async def get_file_parity_status() -> Dict[str, Any]:
     """Plan 2C — file/workspace/data parity status detail.
 
     PUBLIC endpoint (no auth required).
-    Reports cloud file index availability, route inventory, and honest blockers.
-    Never returns file content, credentials, or env var values.
+    Returns sanitized status only — no file contents, no local paths,
+    no credential values, no usernames, no account IDs, no token presence booleans.
     """
     full = _status_2c_files()
+    s3_status = full.get("s3_artifact_store_status", "NOT_CONFIGURED")
 
     return {
         "plan": "Plan 2C — File / Workspace / Data Parity",
-        "sprint_verdict": "PLAN_2C_FILE_WORKSPACE_DATA_PARITY_PATCHED_PENDING_REVIEW",
+        "sprint_verdict": "PLAN_2C_FILE_WORKSPACE_DATA_PARITY_CLOSED_PENDING_REVIEW",
         "subsection": "2C",
         "desktop_status": full["desktop_status"],
         "mobile_status": full["mobile_status"],
         "macbook_off_status": full["macbook_off_status"],
         "cloud_file_index_available": full.get("cloud_file_index_available", False),
-        "aws_storage_configured": full.get("aws_configured", False),
+        "git_tracked_count": full.get("git_tracked_count", 0),
+        "s3_artifact_store_status": s3_status,
         "blockers": full["blockers"],
         "notes": full["notes"],
         "key_routes": full["key_routes"],
         "permanent_exceptions": [
             "Mac-only unsynced files (QUEUED_MAC_ONLY) are a permanent exception "
-            "per Plan 9 acceptance — they are not expected to be cloud-synced.",
+            "per Plan 9 acceptance — not expected to be cloud-synced.",
         ],
         "next_patch": (
-            "S3-backed workspace artifact store for sessions; "
-            "bidirectional cloud sync for git-tracked file metadata."
+            "Bidirectional cloud sync for git-tracked file metadata; "
+            "S3 artifact bucket live connectivity verification on Fargate."
         ),
     }

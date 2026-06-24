@@ -130,6 +130,67 @@ def git_is_available(root: Optional[Path] = None) -> bool:
         return False
 
 
+def workspace_sync_summary(root: Optional[Path] = None) -> dict:
+    """Return honest workspace sync status for Plan 2C parity reporting.
+
+    Reports:
+    - git_tracked_count: files enumerable via git ls-files (cloud-readable)
+    - modified_count: locally modified tracked files not yet pushed
+    - untracked_count: files not under git (local-only; QUEUED_MAC_ONLY class)
+    - git_available: whether git ls-files is usable in this runtime
+
+    Never returns file paths, usernames, content, or credentials.
+    All counts are integers; no file names are returned here.
+    """
+    base = root or workspace_root()
+    git_ok = git_is_available(base)
+
+    git_tracked_count = 0
+    modified_count = 0
+    untracked_count = 0
+
+    if git_ok:
+        allowed = workspace_allowlist_roots()
+        try:
+            ls = subprocess.run(
+                ["git", "ls-files", "--", *allowed],
+                capture_output=True, text=True, timeout=15, cwd=str(base),
+            )
+            if ls.returncode == 0:
+                git_tracked_count = sum(1 for l in ls.stdout.splitlines() if l.strip())
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+
+        try:
+            st = subprocess.run(
+                ["git", "status", "--short"],
+                capture_output=True, text=True, timeout=10, cwd=str(base),
+            )
+            if st.returncode == 0:
+                for line in st.stdout.splitlines():
+                    if len(line) >= 2:
+                        code = line[:2]
+                        if "?" in code:
+                            untracked_count += 1
+                        elif code.strip():
+                            modified_count += 1
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+
+    return {
+        "git_available": git_ok,
+        "git_tracked_count": git_tracked_count,
+        "modified_count": modified_count,
+        "untracked_count": untracked_count,
+        "cloud_indexable": git_tracked_count if git_ok else 0,
+        "local_only_class": "QUEUED_MAC_ONLY",
+        "permanent_exception": (
+            "Untracked/Mac-only files are a permanent QUEUED_MAC_ONLY exception "
+            "per Plan 9 acceptance — not expected to be cloud-synced."
+        ),
+    }
+
+
 def workspace_index_summary(root: Optional[Path] = None) -> dict:
     """Metadata-only index counts for workspace status surfaces."""
     base = root or workspace_root()

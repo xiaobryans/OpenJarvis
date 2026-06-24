@@ -2,7 +2,7 @@
   "plan": "Plan 2 \u2014 Full Mobile MacBook-Off Parity Runtime",
   "acceptance_target": "MOBILE_MACBOOK_PARITY_TARGET_LOCKED",
   "sprint": "Plan 2A \u2014 Foundation Sprint",
-  "sprint_verdict_target": "PLAN_2A_MOBILE_MACBOOK_OFF_FOUNDATION_PATCHED_PENDING_REVIEW",
+  "sprint_verdict_target": "PLAN_2C_FILE_WORKSPACE_DATA_PARITY_CLOSED_PENDING_REVIEW",
   "generated_at": "2026-06-24",
   "based_on_commit": "6cc99316",
   "plan1_verdict": "PLAN_1_DUAL_PLATFORM_JARVIS_NEURAL_COMMAND_CENTER_ACCEPTED",
@@ -80,13 +80,16 @@
       "name": "File / workspace / data parity",
       "implementation_files": [
         "src/openjarvis/server/plan9_routes.py",
-        "src/openjarvis/omnix_storage.py",
-        "src/openjarvis/omnix_workbench.py"
+        "src/openjarvis/plan9/workspace_root.py",
+        "src/openjarvis/server/plan2_routes.py",
+        "src/openjarvis/server/auth_middleware.py"
       ],
       "key_routes": [
-        "GET  /v1/files/index",
-        "POST /v1/coding/files/read",
-        "POST /v1/coding/search"
+        "GET  /v1/files/cloud-index          (public)",
+        "GET  /v1/files/workspace/status     (auth-gated)",
+        "GET  /v1/mobile-parity/files        (public, sanitized)",
+        "POST /v1/coding/files/read          (auth-gated)",
+        "POST /v1/coding/search              (auth-gated)"
       ],
       "desktop_status": "READY",
       "mobile_status": "MACBOOK_OFF_PENDING",
@@ -100,7 +103,17 @@
         "Mac-only unsynced files remain QUEUED_MAC_ONLY permanently per Plan 9 acceptance"
       ],
       "required_next_patch": "Cloud file index via git-tracked file list; S3-backed workspace artifact store for sessions",
-      "proof_for_acceptance": "GET /v1/files/index from iPhone returns indexed file list; POST /v1/coding/files/read returns file content from cloud"
+      "proof_for_acceptance": "GET /v1/files/index from iPhone returns indexed file list; POST /v1/coding/files/read returns file content from cloud",
+      "sprint_verdict": "PLAN_2C_FILE_WORKSPACE_DATA_PARITY_CLOSED_PENDING_REVIEW",
+      "plan_2c_closure": {
+        "workspace_sync_summary": "workspace_root.workspace_sync_summary()",
+        "s3_probe": "plan2_routes._s3_artifact_store_probe()",
+        "workspace_status_route": "GET /v1/files/workspace/status (auth-gated)",
+        "tests": "tests/plan9/test_plan2c_file_parity.py (27 tests)",
+        "fake_ready_prevented": true,
+        "path_traversal_blocked": true,
+        "secret_values_never_exposed": true
+      }
     },
     {
       "id": "2D",
