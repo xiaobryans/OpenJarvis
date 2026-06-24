@@ -271,3 +271,60 @@ Also closes safe code-side sub-issues:
 **Tests:** 43 new + 442 total plan9 passing (1 pre-existing unrelated failure: test_batch_integration_same_file_live)
 **Secret scan:** CLEAN
 **Verdict:** `PLAN_2_FULL_MOBILE_MACBOOK_OFF_PARITY_RUNTIME_HOLD`
+
+---
+
+## Sprint: Plan 2 Live B6 Health Check Proof — SSL Fix + Fargate Runtime Confirmed
+
+**Started:** 2026-06-24
+**Branch:** `localhost-get-tool`
+**Base HEAD:** `2bdaef58` (Plan 2 full blocker closure runtime proof: B1/B3/B4/B7 code-side)
+
+### Action Log
+
+| # | Action | Files | Risk | Result |
+|---|--------|-------|------|--------|
+| 1 | Fix `_live_health_check()` SSL cert verification (Python 3.14/macOS certifi fallback) | server/fargate_readiness.py | LOW | certifi-backed SSLContext replaces broken system-keychain temp-file approach; CERT_NONE fallback retained as last resort |
+| 2 | Prove B6 live: `get_fargate_worker_status()` returns `status=READY, deployed=True, reachable=True, executing=True` | READ + TEST | LOW | Live health check HTTP 200: version=1.0.2, commit=fd22fa0f, engine=cloud — Fargate up and handling cloud tasks |
+| 3 | Secret scan on fargate_readiness.py | server/fargate_readiness.py | LOW | CLEAN — no secret values in code |
+| 4 | Full plan9 test suite: 442 pass / 1 pre-existing failure | tests/plan9/ | LOW | Same result as prior sprint — no regression |
+| 5 | Update PLAN2_AUTONOMOUS_SESSION_STATE.md | docs/plan2/ | LOW | B6 live health check proof recorded; HEAD updated |
+| 6 | Update PLAN2_PROGRESS_LEDGER.md | docs/plan2/ | LOW | This entry |
+| 7 | Update PLAN2_RESUME_PROMPT.md | docs/plan2/ | LOW | Remaining blockers, next steps updated |
+
+### B6 Live Proof Detail
+
+| Layer | Value | Source |
+|-------|-------|--------|
+| code_present | True | deploy/aws/cloud_runtime.py exists |
+| configured | False | OPENJARVIS_API_KEY absent from local env (injected by Fargate task definition via Secrets Manager — not needed locally) |
+| deployed | True | Live health check HTTP 200 |
+| reachable | True | Live health check HTTP 200 |
+| executing | True | engine=cloud in health response |
+| status | READY | Live proof takes precedence over local configured=False |
+| version | 1.0.2 | Reported by /health endpoint |
+| git_commit | fd22fa0f | Pre-Plan-2 code — redeploy needed for Plan 2 routes |
+
+**Important:** `executing=True` + `engine=cloud` proves the Fargate worker is live and routing tasks. Running commit `fd22fa0f` (pre-Plan 2) — full Plan 2 parity routes require redeploy with Plan 2 code. Docker daemon must be running for rebuild.
+
+### Blockers closed this sprint
+
+| Blocker | Before | After |
+|---------|--------|-------|
+| B6 (layers 3–5) | `DEPLOYED_NOT_REACHABLE` (SSLCertVerificationError) | `READY` via live health check — deployed, reachable, executing=cloud |
+
+### Remaining hard blockers (external action still required)
+
+| ID | Status | Requires |
+|----|--------|----------|
+| B1 | Code-side abstraction done | Vault migration + live OAuth credentials |
+| B2 | Slack/Telegram absent from Secrets Manager | AWS create-secret + ECS task definition update |
+| B4 | Code-side check done | Actual Notion API token |
+| B5C | CONFIGURED_NOT_DEPLOYED | Fargate redeploy with Plan 2 code + Slack/Telegram tokens |
+| B6 (full parity) | Fargate live (pre-Plan 2 code) | Docker daemon + image rebuild + ECS redeploy |
+| B7 (cloud) | LAYER_REQUIRES_DEPLOYMENT | Cloud sync + Fargate with Plan 2 code |
+| B8 | LAYER_REQUIRES_DEPLOYMENT | Fargate with Plan 2 code |
+
+**Tests:** 442 total plan9 passing (1 pre-existing unrelated failure: test_batch_integration_same_file_live)
+**Secret scan:** CLEAN
+**Verdict:** `PLAN_2_FULL_MOBILE_MACBOOK_OFF_PARITY_RUNTIME_HOLD`

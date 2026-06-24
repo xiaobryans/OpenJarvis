@@ -7,12 +7,12 @@
 | Field | Value |
 |-------|-------|
 | Branch | `localhost-get-tool` |
-| HEAD | `6c9fdd25` (Plan 2 cloud worker readiness gating — committed/pushed; B1/B3/B4/B7 closure sprint commit pending) |
+| HEAD | `2bdaef58` (Plan 2 full blocker closure runtime proof: B1/B3/B4/B7 code-side — committed/pushed; B6 live SSL fix commit pending) |
 | Remote | `fork/localhost-get-tool` |
 | Working tree | Dirty — pre-existing: `JARVIS_OMNIX_HANDOFF.md`, `tests/workbench/test_us14a_fixture.py` |
 | Untracked (pre-existing, do NOT stage) | `evidence/`, `scripts/plan1_cockpit_proof.py`, `scripts/plan9_copy_cloud_api_key.sh`, `scripts/plan9_verify_cloud_api_key.py` |
 | Active worktrees | None |
-| Auto-continue safe | YES — B1/B3/B4/B7 code sprint complete; commit/push pending |
+| Auto-continue safe | YES — B6 live health check SSL fix complete; commit/push pending |
 
 ## Corrected Plan 2 Verdict
 
@@ -22,10 +22,46 @@
 
 **Not accepted.** Only Bryan/ChatGPT reviewer can accept.
 
-## Plan 2 Full External Blocker Closure + Runtime Proof Sprint (current)
+## Plan 2 Live B6 Health Check Proof Sprint (current)
+
+**Sprint:** Plan 2 live B6 health check proof — SSL fix + Fargate runtime confirmed
+**Base HEAD:** `2bdaef58` (Plan 2 full blocker closure runtime proof: B1/B3/B4/B7 code-side)
+**Purpose:** Fix `_live_health_check()` SSLCertVerificationError in `fargate_readiness.py`; prove Fargate is live with `status=READY, deployed=True, reachable=True, executing=True, engine=cloud`
+
+### What was implemented (code)
+
+- `src/openjarvis/server/fargate_readiness.py` (MODIFIED) — Replaced broken system-keychain temp-file SSL approach with certifi-backed SSLContext; CERT_NONE retained as last-resort fallback. Health check now succeeds: `status=READY, version=1.0.2, commit=fd22fa0f, engine=cloud`.
+
+### B6 Live Proof Result
+
+```json
+{
+  "code_present": true,
+  "configured": false,
+  "deployed": true,
+  "reachable": true,
+  "executing": true,
+  "missing_vars_count": 5,
+  "optional_vars_present_count": 0,
+  "status": "READY",
+  "detail": "Health check passed: version=1.0.2 commit=fd22fa0f engine=cloud"
+}
+```
+
+Note: `configured=False` because OPENJARVIS_API_KEY is absent locally (injected by Fargate via Secrets Manager). Live proof takes precedence. Fargate running pre-Plan-2 commit `fd22fa0f` — full Plan 2 parity routes need redeploy.
+
+### Validation results
+- 442 plan9 tests: PASS (1 pre-existing unrelated failure: `test_batch_integration_same_file_live`)
+- Secret scan: CLEAN
+- Live health check: HTTP 200, engine=cloud confirmed
+
+---
+
+## Plan 2 Full External Blocker Closure + Runtime Proof Sprint (prior)
 
 **Sprint:** Plan 2 full blocker closure runtime proof (B1/B3/B4/B7 code-side)
 **Base HEAD:** `6c9fdd25` (Plan 2 cloud worker readiness gating)
+**Commit:** `2bdaef58`
 **Purpose:** Close all safe code-only gating work for B1 (Google OAuth vault status abstraction), B3 (Telegram env alias verification), B4 (Notion env var check), B7 (SQLite persistence fix + cloud sync layer tracking)
 
 ### What was implemented (code)
@@ -91,7 +127,7 @@
 | B5A | Approval gate / queue | 2G | **CLOSED** | READY |
 | B5B | Internal notification enqueue | 2G | **CLOSED** | READY |
 | B5C | External notification delivery (Slack/Telegram/push) | 2G | **Code-side gating done** (CONFIGURED_NOT_DEPLOYED) | NO — requires live provider tokens + Fargate |
-| B6 | Fargate worker / cloud execution path not deployed | 2H | **Code-side gating done** (CONFIGURED_NOT_DEPLOYED; 5-layer readiness) | NO — requires live Fargate deployment |
+| B6 | Fargate worker / cloud execution path not deployed | 2H | **LIVE PROOF: deployed=True, reachable=True, executing=cloud** (pre-Plan-2 code; full parity needs Docker + redeploy) | NO — Docker daemon + ECS redeploy with Plan 2 code |
 | B7 (local) | Life-OS task store in-memory only | 2E | **CODE_CLOSED** — SQLite backend active | N/A |
 | B7 (cloud) | Life-OS SQLite not synced to cloud | 2E | **Code-side tracking done** (LAYER_REQUIRES_DEPLOYMENT) | NO — requires cloud sync + Fargate |
 | B8 | Full workspace sync to S3 | 2C | **Code-side gating done** (LAYER_REQUIRES_DEPLOYMENT for sync_executed + cloud_worker_access) | NO — requires Fargate deployment |

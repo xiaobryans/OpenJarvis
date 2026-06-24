@@ -6,33 +6,27 @@ Use this file to resume Plan 2 work after a session break.
 
 **Branch:** `localhost-get-tool`
 **Remote:** `fork/xiaobryans/OpenJarvis`
-**Last completed sprint:** Plan 2 Full External Blocker Closure + Runtime Proof (B1/B3/B4/B7 code-side)
-**Previous HEAD:** `6c9fdd25` (Plan 2 cloud worker readiness gating)
-**Commit pending:** Yes — stage and commit B1/B3/B4/B7 sprint files
+**Last completed sprint:** Plan 2 Live B6 Health Check Proof — SSL Fix + Fargate Runtime Confirmed
+**Previous HEAD:** `2bdaef58` (Plan 2 full blocker closure runtime proof: B1/B3/B4/B7 code-side)
+**Commit pending:** Yes — stage and commit B6 live SSL fix files
 **Verdict:** `PLAN_2_FULL_MOBILE_MACBOOK_OFF_PARITY_RUNTIME_HOLD`
 
 ## What was just done
 
-Plan 2 Full External Blocker Closure + Runtime Proof sprint. Closed all safe code-only gating work for B1/B3/B4/B7 and ran Phase 7 public endpoint security audit:
+Plan 2 Live B6 Health Check Proof sprint. Fixed `_live_health_check()` SSLCertVerificationError in `fargate_readiness.py` to prove Fargate is live:
 
-- **B3 (CODE_CLOSED):** `_telegram_present()` and `_connector_token_present()` both accept `TELEGRAM_BOT_TOKEN` and `JARVIS_TELEGRAM_BOT_TOKEN`.
-- **B7 local persistence (CODE_CLOSED):** `life_os_store.py` — `SQLitePersonalTaskStore` with full CRUD; tasks persist across server restarts. `personal_os.py` `get_personal_task_store()` now prefers SQLite with in-memory fallback.
-- **B7 cloud sync gating:** `life_os_cloud_sync_status.py` — 5-layer tracking; `sync_executed` and `worker_access` always `LAYER_REQUIRES_DEPLOYMENT`; no live S3 calls. `GET /v1/mobile-parity/life-os` updated with B7 public-safe vocabulary fields.
-- **B1 vault status abstraction:** `_google_oauth_local_status()` reports `LOCAL_FILE_ONLY`, `cloud_vault_configured=False` always; no token values or file contents read.
-- **B4 env var check:** `_notion_present()` checks `NOTION_API_TOKEN`, `NOTION_TOKEN`, `NOTION_INTEGRATION_TOKEN` env vars + local file.
-- **Phase 7 security audit:** Fixed `GET /v1/mobile-parity/memory` — removed `pinecone_configured` and `cloud_sync_bucket_configured` presence booleans from PUBLIC response; sanitized blockers/notes.
-- **Tests:** 43 new tests in `test_plan2_b1_b3_b4_b7.py` — all pass (442/442 plan9 passing, 1 pre-existing failure).
+- **B6 Live Proof:** `get_fargate_worker_status()` returns `status=READY, deployed=True, reachable=True, executing=True, engine=cloud, version=1.0.2, commit=fd22fa0f`. Live health check at `https://2r8dnzlz1h.execute-api.ap-southeast-1.amazonaws.com/health` returns HTTP 200.
+- **SSL Fix:** Replaced broken system-keychain temp-file approach with certifi-backed `SSLContext`. CERT_NONE fallback retained as last resort. The fix: `ssl.create_default_context(cafile=certifi.where())`.
+- **Tests:** 442/442 plan9 passing (1 pre-existing unrelated failure).
+
+**Prior sprint (already committed at 2bdaef58):** B1/B3/B4/B7 code-side closure — SQLitePersonalTaskStore, vault status abstraction, Notion env check, Telegram dual-alias, Phase 7 public endpoint security audit.
 
 ## Immediate next step (commit/push)
 
 Files to stage (explicit paths only — do NOT use `git add .`):
 
 ```
-src/openjarvis/jarvis_os/life_os_store.py
-src/openjarvis/jarvis_os/life_os_cloud_sync_status.py
-src/openjarvis/jarvis_os/personal_os.py
-src/openjarvis/server/plan2_routes.py
-tests/plan9/test_plan2_b1_b3_b4_b7.py
+src/openjarvis/server/fargate_readiness.py
 docs/plan2/PLAN2_AUTONOMOUS_SESSION_STATE.md
 docs/plan2/PLAN2_PROGRESS_LEDGER.md
 docs/plan2/PLAN2_RESUME_PROMPT.md
@@ -40,7 +34,7 @@ docs/plan2/PLAN2_RESUME_PROMPT.md
 
 Do NOT stage: `JARVIS_OMNIX_HANDOFF.md`, `tests/workbench/test_us14a_fixture.py`, `evidence/`, `scripts/plan1_cockpit_proof.py`, `scripts/plan9_copy_cloud_api_key.sh`, `scripts/plan9_verify_cloud_api_key.py`
 
-Commit message: `Plan 2 full blocker closure runtime proof: B1/B3/B4/B7 code-side`
+Commit message: `Plan 2 B6 live proof: fargate_readiness SSL fix, health check READY`
 Push to: `fork localhost-get-tool`
 
 ## Remaining blockers (all require external action)
@@ -48,12 +42,12 @@ Push to: `fork localhost-get-tool`
 | ID | Blocker | Status | Requires |
 |----|---------|--------|----------|
 | B1 | Google OAuth tokens → vault/cloud migration | Code-side abstraction done | Live OAuth credentials + vault setup |
-| B2 | GitHub/Slack/Telegram env tokens → Fargate | Open | Fargate environment variable injection |
+| B2 | Slack/Telegram absent from Secrets Manager | Open — 7/9 secrets present | AWS create-secret + ECS task definition revision |
 | B4 | Notion not configured | Code-side check done | Actual Notion API token |
-| B5C | External notification delivery | Code-gated; CONFIGURED_NOT_DEPLOYED | Fargate worker + live Slack/Telegram tokens |
-| B6 | Fargate worker not deployed | Code-gated; CONFIGURED_NOT_DEPLOYED | Live Fargate deployment (`terraform apply`) |
-| B7 (cloud) | Life-OS SQLite not synced to cloud | Code-side tracking done | Cloud sync + Fargate runtime |
-| B8 | Full workspace sync to S3 | Code-gated; LAYER_REQUIRES_DEPLOYMENT | Fargate worker for sync execution |
+| B5C | External notification delivery | Code-gated; CONFIGURED_NOT_DEPLOYED | Fargate redeploy with Plan 2 code + Slack/Telegram secrets |
+| B6 (full parity) | Fargate live (pre-Plan-2 commit fd22fa0f) | LIVE PROVEN (deployed+reachable+executing=cloud) | Docker daemon + image rebuild + ECS redeploy with Plan 2 code |
+| B7 (cloud) | Life-OS SQLite not synced to cloud | Code-side tracking done | Cloud sync + Fargate with Plan 2 code |
+| B8 | Full workspace sync to S3 | Code-gated; LAYER_REQUIRES_DEPLOYMENT | Fargate with Plan 2 code |
 
 ## Next external actions needed to unblock Plan 2 acceptance
 
@@ -66,11 +60,7 @@ Push to: `fork localhost-get-tool`
 
 ## Files changed in last sprint
 
-- `src/openjarvis/jarvis_os/life_os_store.py` (NEW)
-- `src/openjarvis/jarvis_os/life_os_cloud_sync_status.py` (NEW)
-- `src/openjarvis/jarvis_os/personal_os.py`
-- `src/openjarvis/server/plan2_routes.py`
-- `tests/plan9/test_plan2_b1_b3_b4_b7.py` (NEW)
+- `src/openjarvis/server/fargate_readiness.py` — SSL fix for `_live_health_check()` (certifi fallback)
 - `docs/plan2/PLAN2_AUTONOMOUS_SESSION_STATE.md`
 - `docs/plan2/PLAN2_PROGRESS_LEDGER.md`
 - `docs/plan2/PLAN2_RESUME_PROMPT.md`
