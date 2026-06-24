@@ -313,6 +313,27 @@ class ApprovalEngine:
         )
 
         self._upsert(record)
+
+        # B5B: enqueue an internal notification event for new PENDING approvals.
+        # External delivery (B5C) is NOT triggered here — it remains gated behind
+        # provider configuration.  This call is soft: any failure is logged and
+        # silently suppressed so approval creation is never blocked.
+        if status == ApprovalStatus.PENDING:
+            try:
+                from openjarvis.authority.notification_queue import (
+                    enqueue_approval_notification,
+                )
+                enqueue_approval_notification(
+                    approval_id=approval_id,
+                    action_type=action_type,
+                    risk_level=risk_level,
+                )
+            except Exception as _notif_exc:
+                import logging as _log
+                _log.getLogger(__name__).warning(
+                    "Internal notification enqueue failed (non-blocking): %s", _notif_exc
+                )
+
         return record
 
     def grant(self, approval_id: str, *, expires_in_seconds: Optional[int] = 3600) -> bool:

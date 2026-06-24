@@ -127,3 +127,40 @@ Also closes safe code-side sub-issues:
 **Tests:** 25 new + 312 total plan9 passing (1 pre-existing unrelated failure)
 **Secret scan:** CLEAN
 **Corrected verdict:** `PLAN_2_FULL_MOBILE_MACBOOK_OFF_PARITY_RUNTIME_HOLD`
+
+---
+
+## Sprint: Plan 2G — Approval Notification Queue Gating (B5B Closure)
+
+**Started:** 2026-06-24
+**Branch:** `localhost-get-tool`
+**Base HEAD:** `7b639e5e`
+**Purpose:** Resolve B5 ambiguity; split into B5A/B5B/B5C; close B5B (internal notification enqueue)
+
+### Action Log
+
+| # | Action | Files | Risk | Result |
+|---|--------|-------|------|--------|
+| 1 | Inspect approval/notification architecture (phase 1) | READ ONLY | LOW | Found: ApprovalEngine (READY), ApprovalStore (has notification_sent field), approval_routes (auth-gated), notify_routes (no auto-trigger), notifier.py (Slack/Telegram send — explicit only) |
+| 2 | Create `notification_queue.py` — SQLite internal event queue | authority/notification_queue.py | LOW | NotificationEvent dataclass (safe metadata only), NotificationQueue class, enqueue/list_pending/mark_delivery_status/count_queued, module-level singleton, enqueue_approval_notification() soft helper |
+| 3 | Hook notification enqueue into `approval_engine.py` | authority/approval_engine.py | LOW | `request_approval()` enqueues internal event when status==PENDING; soft hook (try/except, never blocks approval) |
+| 4 | Add `_notification_queue_probe()` helper | server/plan2_routes.py | LOW | Probes B5A (ApprovalEngine importable), B5B (NotificationQueue ready), B5C (external delivery status) |
+| 5 | Update `_status_2g_approvals()` with three-layer B5A/B5B/B5C breakdown | server/plan2_routes.py | LOW | blockers key preserved (backward-compat); b5a_blockers, b5b_blockers, b5c_blockers added; approval_gate_status, internal_notification_queue_status, external_notification_delivery_status |
+| 6 | Update `/v1/mobile-parity/approvals` public endpoint | server/plan2_routes.py | LOW | Exposes three-layer status; sanitized blockers_summary; mobile_approval_action_status=AUTH_REQUIRED; no env var names, no token names, no paths |
+| 7 | Write 35 B5 closure tests | test_plan2g_approval_notification.py | LOW | 35/35 pass: B5A gate (6), B5B enqueue (13), B5C external blocked (3), public endpoint safety (8), auth-gated routes (3), overall HOLD (2) |
+| 8 | Update PLAN2_SOURCE_OF_TRUTH_MATRIX.md 2G section | docs/plan2/ | LOW | B5 three-layer table added; B5B marked CLOSED; B5C NOT_CONFIGURED |
+| 9 | Update plan2_matrix.json 2G section | docs/plan2/ | LOW | b5_split object added; plan_2g_b5b_closure object added; known_blockers updated |
+| 10 | Rewrite PLAN2_AUTONOMOUS_SESSION_STATE.md | docs/plan2/ | LOW | Blocker registry updated with B5A/B5B (CLOSED) / B5C (open) |
+| 11 | Update PLAN2_PROGRESS_LEDGER.md | docs/plan2/ | LOW | This entry |
+| 12 | Update PLAN2_RESUME_PROMPT.md | docs/plan2/ | LOW | RESUME_FROM_HERE updated |
+
+**B5 resolved (three layers):**
+- B5A (approval gate / queue): READY — documented and tested
+- B5B (internal notification enqueue): CLOSED — NotificationQueue wired on PENDING approval
+- B5C (external delivery): NOT_CONFIGURED — requires Fargate + live provider tokens
+
+**Blockers remaining after this sprint:** B1, B2, B4, B5C, B6, B7, B8
+**No further safe code-only closures available.**
+**Tests:** 35 new + 347 total plan9 passing (1 pre-existing unrelated failure: test_batch_integration_same_file_live)
+**Secret scan:** CLEAN
+**Verdict:** `PLAN_2_FULL_MOBILE_MACBOOK_OFF_PARITY_RUNTIME_HOLD`

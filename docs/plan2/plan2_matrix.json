@@ -219,7 +219,9 @@
       "implementation_files": [
         "src/openjarvis/server/approval_routes.py",
         "src/openjarvis/server/notify_routes.py",
-        "src/openjarvis/tools/approval_store.py"
+        "src/openjarvis/tools/approval_store.py",
+        "src/openjarvis/authority/approval_engine.py",
+        "src/openjarvis/authority/notification_queue.py"
       ],
       "key_routes": [
         "GET  /v1/approvals/pending",
@@ -232,18 +234,32 @@
       "desktop_status": "READY",
       "mobile_status": "CLOUD_REQUIRED",
       "macbook_off_status": "CLOUD_REQUIRED",
-      "auth_status": "Bearer token required for approval actions",
-      "data_storage_dependency": "SQLite approval store (local)",
-      "connector_dependency": "TELEGRAM_BOT_TOKEN present (push notifications via Telegram); SLACK_BOT_TOKEN present",
+      "auth_status": "Bearer token required for approval actions; /v1/mobile-parity/approvals is public",
+      "data_storage_dependency": "SQLite approval store (local); SQLite notification event queue (local)",
+      "connector_dependency": "External channel keys present \u2014 Telegram and Slack \u2014 but auto-trigger not deployed",
+      "b5_split": {
+        "B5A_approval_gate_and_queue": "READY \u2014 ApprovalEngine creates PENDING records for tier 2+; auth-gated routes exist; ApprovalStore persists; NUS1D TTL/scope enforced",
+        "B5B_internal_notification_enqueue": "READY (Plan 2G closure sprint) \u2014 PENDING approval creation now enqueues an internal notification event in notification_queue.db; safe metadata only; no external side effects",
+        "B5C_external_delivery": "NOT_CONFIGURED \u2014 Slack/Telegram/push delivery requires live provider tokens + Fargate deployment; auto-trigger not wired to cloud"
+      },
       "known_blockers": [
-        "Approval store is local SQLite \u2014 not synced to cloud for MacBook-off case",
-        "Push notifications (Telegram/Slack) exist but not triggered on new pending approvals",
-        "No polling/WebSocket push from mobile to watch for new approvals",
-        "PWA push notification API not wired"
+        "B5A: Approval store is local SQLite \u2014 not synced to cloud for MacBook-off case",
+        "B5A: Mobile approval polling interval not yet implemented in UI",
+        "B5B: CLOSED (this sprint) \u2014 internal notification enqueue now wired on PENDING approval creation",
+        "B5C: External delivery (Slack/Telegram/push) not deployed \u2014 requires live provider tokens and Fargate worker"
       ],
-      "required_next_patch": "Telegram notification trigger on new approval queued; mobile approval polling (every 30s)",
-      "proof_for_acceptance": "New pending approval on desktop triggers Telegram notification; Bryan can approve from iPhone via /v1/approvals/{id}/approve",
-      "sprint_verdict": "PLAN_2G_APPROVAL_NOTIFICATION_PARITY_PATCHED_PENDING_REVIEW"
+      "required_next_patch": "B5C: deploy Fargate worker with Telegram/Slack token; wire external delivery from notification_queue to provider; mobile approval polling every 30s",
+      "proof_for_acceptance": "New pending approval triggers Telegram notification; Bryan can approve from iPhone via /v1/approvals/{id}/approve",
+      "sprint_verdict": "PLAN_2G_APPROVAL_NOTIFICATION_PARITY_PATCHED_PENDING_REVIEW",
+      "plan_2g_b5b_closure": {
+        "notification_queue_module": "src/openjarvis/authority/notification_queue.py",
+        "hook_location": "authority/approval_engine.py:request_approval()",
+        "trigger_condition": "status == PENDING (tier 2+)",
+        "safe_metadata_only": true,
+        "external_side_effects": false,
+        "tests": "tests/plan9/test_plan2g_approval_notification.py (35 tests)",
+        "b5b_status": "READY"
+      }
     },
     {
       "id": "2H",

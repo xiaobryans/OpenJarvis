@@ -236,6 +236,46 @@ def _api_key_configured() -> bool:
     return _env_present("OPENJARVIS_API_KEY")
 
 
+def _notification_queue_probe() -> Dict[str, Any]:
+    """Probe whether the internal notification queue (B5B) is ready.
+
+    Safe: no secret values, no env var names, no external side effects.
+    Returns a status dict distinguishing B5A / B5B / B5C layers.
+    """
+    # B5A: approval gate — check that ApprovalEngine can be instantiated
+    b5a_status = NOT_CONFIGURED
+    try:
+        from openjarvis.authority.approval_engine import ApprovalEngine as _AE  # noqa: F401
+        b5a_status = READY
+    except Exception:
+        b5a_status = NOT_CONFIGURED
+
+    # B5B: internal notification enqueue — check that NotificationQueue is ready
+    b5b_status = NOT_CONFIGURED
+    try:
+        from openjarvis.authority.notification_queue import is_queue_ready
+        b5b_status = READY if is_queue_ready() else NOT_CONFIGURED
+    except Exception:
+        b5b_status = NOT_CONFIGURED
+
+    # B5C: external delivery — requires live tokens and Fargate deployment
+    has_telegram = _telegram_present()
+    has_slack = _slack_present()
+    if has_telegram or has_slack:
+        b5c_status = "NOT_CONFIGURED"   # tokens present but auto-trigger not deployed
+        b5c_detail = "External channel keys present but auto-trigger not deployed to Fargate"
+    else:
+        b5c_status = NOT_CONFIGURED
+        b5c_detail = "No external notification channel configured"
+
+    return {
+        "approval_gate_status": b5a_status,            # B5A
+        "internal_notification_queue_status": b5b_status,  # B5B
+        "external_notification_delivery_status": b5c_status,   # B5C
+        "external_delivery_detail": b5c_detail,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Per-subsection status builders
 # ---------------------------------------------------------------------------
@@ -536,22 +576,36 @@ def _status_2f_voice() -> Dict[str, Any]:
 
 
 def _status_2g_approvals() -> Dict[str, Any]:
-    """2G — Notifications / approval parity."""
+    """2G — Notifications / approval parity.
+
+    B5 is split into three layers:
+      B5A — approval gate and pending queue (SQLite, auth-gated routes): READY
+      B5B — internal notification enqueue on new pending approvals: READY (this sprint)
+      B5C — external delivery (Slack/Telegram/email/push): BLOCKED / NOT_CONFIGURED
+    """
     has_telegram = _telegram_present()
     has_slack = _slack_present()
     has_api_key = _api_key_configured()
+    notif_probe = _notification_queue_probe()
 
-    blockers: List[str] = []
+    # B5A blockers
+    b5a_blockers: List[str] = []
     if not has_api_key:
-        blockers.append("OPENJARVIS_API_KEY not set — mobile cannot authenticate to /v1/approvals/*")
-    blockers.append("Approval store is local SQLite — not synced to cloud for MacBook-off case")
-    if not has_telegram and not has_slack:
-        blockers.append("No TELEGRAM_BOT_TOKEN or SLACK_BOT_TOKEN — push notifications unavailable")
-    else:
-        blockers.append(
-            "Push notifications (Telegram/Slack) exist but not triggered on new pending approvals yet"
-        )
-    blockers.append("Mobile approval polling (30s interval) not yet implemented in UI")
+        b5a_blockers.append("Mobile auth key not configured — mobile cannot authenticate to approval routes")
+    b5a_blockers.append("Approval store is local SQLite — not synced to cloud for MacBook-off case")
+    b5a_blockers.append("Mobile approval polling interval not yet implemented in UI")
+
+    # B5B blockers — CLOSED this sprint if queue is ready
+    b5b_blockers: List[str] = []
+    if notif_probe["internal_notification_queue_status"] != READY:
+        b5b_blockers.append("Internal notification queue module not available")
+
+    # B5C blockers — external delivery requires live provider config + Fargate
+    b5c_blockers: List[str] = [
+        "External notification delivery requires live provider tokens (not configured here)",
+        "Auto-trigger to external channels (Slack/Telegram) not deployed — requires Fargate worker",
+        "Mobile push (PWA) not yet implemented",
+    ]
 
     return {
         "subsection": "2G",
@@ -562,10 +616,20 @@ def _status_2g_approvals() -> Dict[str, Any]:
         "auth_status": AUTH_REQUIRED if not has_api_key else "Bearer token required — key configured",
         "telegram_token_present": has_telegram,
         "slack_token_present": has_slack,
-        "blockers": blockers,
+        # B5 three-layer breakdown
+        "approval_gate_status": notif_probe["approval_gate_status"],          # B5A
+        "internal_notification_queue_status": notif_probe["internal_notification_queue_status"],  # B5B
+        "external_notification_delivery_status": notif_probe["external_notification_delivery_status"],  # B5C
+        # Combined blockers list (backward-compatible key) + per-layer breakdown
+        "blockers": b5a_blockers + b5b_blockers + b5c_blockers,
+        "b5a_blockers": b5a_blockers,
+        "b5b_blockers": b5b_blockers,
+        "b5c_blockers": b5c_blockers,
         "notes": [
             "Approval routes fully implemented: /v1/approvals/pending, /v1/approvals/{id}/approve/deny.",
-            "Telegram and Slack keys present — notification infrastructure exists but not auto-triggered.",
+            "B5A: Approval gate and SQLite queue are READY — new pending approvals persist and are inspectable.",
+            "B5B: Internal notification enqueue wired — PENDING approvals trigger an internal queue event.",
+            "B5C: External delivery (Slack/Telegram/push) NOT_CONFIGURED — requires live provider tokens + Fargate.",
             "PWA push notification API not yet wired.",
         ],
         "key_routes": [
@@ -1144,8 +1208,14 @@ async def get_voice_parity_status() -> Dict[str, Any]:
 async def get_approvals_parity_status() -> Dict[str, Any]:
     """Plan 2G — notifications/approval parity status detail. PUBLIC endpoint.
 
-    No token presence booleans. No Telegram/Slack token names.
-    Reports structural readiness only.
+    No token presence booleans. No env var names. No Telegram/Slack token names.
+    No provider account identifiers. No private local paths.
+    Reports structural readiness per B5 layer only.
+
+    B5 is split into three layers:
+      B5A — approval_gate_status: READY
+      B5B — internal_notification_queue_status: READY (this sprint)
+      B5C — external_notification_delivery_status: NOT_CONFIGURED
     """
     full = _status_2g_approvals()
     pub = _public_subsection(full)
@@ -1153,10 +1223,18 @@ async def get_approvals_parity_status() -> Dict[str, Any]:
         "plan": "Plan 2G — Notifications / Approval Parity",
         "sprint_verdict": "PLAN_2G_APPROVAL_NOTIFICATION_PARITY_PATCHED_PENDING_REVIEW",
         **pub,
+        # B5 three-layer status — safe static strings, no secrets
+        "approval_gate_status": full["approval_gate_status"],
+        "pending_queue_status": full["approval_gate_status"],   # same layer: gate == queue
+        "internal_notification_queue_status": full["internal_notification_queue_status"],
+        "external_notification_delivery_status": full["external_notification_delivery_status"],
+        "mobile_approval_action_status": AUTH_REQUIRED,  # approve/deny requires auth
+        # Sanitized blocker list — no env var names, no token names, no paths
         "blockers_summary": [
-            "Approval store is local SQLite — not synced to cloud for MacBook-off.",
-            "Auto-trigger on new pending approvals not yet wired.",
-            "Mobile approval polling not yet implemented.",
+            "B5A — Approval store is local SQLite — not synced to cloud for MacBook-off case.",
+            "B5A — Mobile approval polling interval not yet implemented in UI.",
+            "B5B — Internal notification queue is READY: PENDING approvals now enqueue an internal event.",
+            "B5C — External delivery (Slack/Telegram/push) not configured — requires provider tokens and Fargate deployment.",
         ],
     }
 
