@@ -215,8 +215,8 @@ async def get_system_status() -> Dict[str, Any]:
         "ios_native": {
             "status": mobile_ios["ios_status"],
             "scaffold_status": mobile_ios["ios_scaffold_status"],
-            "note": "Tauri iOS scaffold present; Apple Developer Account is an external gate",
-            "external_gate": "apple_developer_account" if mobile_ios["ios_scaffold_status"] == "present" else None,
+            "note": "Tauri desktop scaffold present (macOS/Windows/Linux only); iOS target not yet initialized — run tauri ios init. Apple Developer Account is an external gate.",
+            "external_gate": "apple_developer_account" if mobile_ios["ios_status"] != "ready" else None,
         },
         "skills_rules": {
             "status": skills_rules["status"],
