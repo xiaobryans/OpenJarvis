@@ -78,6 +78,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
             "/v1/continuity/macbook-off-status",
             "/v1/mobile-parity/status",
             "/v1/mobile-parity/connectors",
+            "/v1/mobile-parity/files",
         }
     )
 

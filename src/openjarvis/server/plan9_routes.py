@@ -1840,6 +1840,75 @@ async def get_files_index(
 
 
 # ---------------------------------------------------------------------------
+# /v1/files/cloud-index — Plan 2C git-tracked file index (MacBook-off safe)
+# ---------------------------------------------------------------------------
+
+@router.get("/v1/files/cloud-index")
+async def get_files_cloud_index(
+    path_prefix: Optional[str] = Query(None, description="Filter by path prefix"),
+    max_files: int = Query(1000, ge=1, le=2000, description="Max files to return"),
+) -> Dict[str, Any]:
+    """Cloud-safe index of git-tracked repo files (Plan 2C foundation).
+
+    Uses ``git ls-files`` instead of local filesystem rglob — works in cloud
+    containers where OPENJARVIS_ROOT=/app and the repo is cloned.
+
+    Returns: path, size_bytes (if file is present), extension, git_tracked=True.
+    No file content is returned. Allowlisted paths only.
+    Never returns .env, .git/, or credential paths.
+    """
+    from openjarvis.plan9.workspace_root import (
+        git_is_available,
+        git_tracked_files,
+        workspace_allowlist_roots,
+        workspace_root,
+    )
+
+    root = workspace_root()
+    allowed = workspace_allowlist_roots()
+
+    if path_prefix:
+        if ".." in path_prefix or path_prefix.startswith("/"):
+            raise HTTPException(status_code=400, detail="Path traversal not allowed")
+        if not any(path_prefix.startswith(a) for a in allowed):
+            raise HTTPException(
+                status_code=403,
+                detail=f"path_prefix {path_prefix!r} is not in the cloud-safe allowlist.",
+            )
+
+    git_available = git_is_available(root)
+    if not git_available:
+        return {
+            "status": "UNAVAILABLE",
+            "reason": "git not available in this runtime — repo may not be cloned",
+            "files": [],
+            "total": 0,
+            "git_tracked": False,
+        }
+
+    files = git_tracked_files(root, allowed_roots=allowed, max_files=max_files)
+
+    if path_prefix:
+        files = [f for f in files if f["path"].startswith(path_prefix)]
+
+    truncated = len(files) >= max_files
+
+    return {
+        "status": "OK",
+        "plan": "2C",
+        "source": "git ls-files",
+        "git_tracked": True,
+        "workspace_root": str(root),
+        "allowed_roots": list(allowed),
+        "path_prefix": path_prefix,
+        "total": len(files),
+        "truncated": truncated,
+        "macbook_off_safe": True,
+        "files": files,
+    }
+
+
+# ---------------------------------------------------------------------------
 # /v1/coding/workflow — Jarvis approval-gated coding execution chain
 # ---------------------------------------------------------------------------
 

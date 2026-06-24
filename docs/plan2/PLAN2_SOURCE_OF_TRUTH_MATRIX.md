@@ -2,13 +2,15 @@
 ## Source-of-Truth Matrix
 
 **Acceptance target:** `MOBILE_MACBOOK_PARITY_TARGET_LOCKED`  
-**Sprint:** Plan 2A Foundation  
-**Sprint verdict target:** `PLAN_2A_MOBILE_MACBOOK_OFF_FOUNDATION_PATCHED_PENDING_REVIEW`  
+**Sprint:** Plan 2A + Plan 2B + Plan 2C Foundation  
+**Sprint verdict target:** `PLAN_2C_FILE_WORKSPACE_DATA_PARITY_PATCHED_PENDING_REVIEW`  
 **Based on:** Plan 1 accepted commit `6cc99316`  
 **Plan 1 verdict locked:** `PLAN_1_DUAL_PLATFORM_JARVIS_NEURAL_COMMAND_CENTER_ACCEPTED`  
 **Generated:** 2026-06-24  
+**Last updated:** 2026-06-24 (Plan 2C foundation patch)  
 **Machine-readable artifact:** `docs/plan2/plan2_matrix.json`  
-**Runtime status endpoint:** `GET /v1/mobile-parity/status`
+**Runtime status endpoint:** `GET /v1/mobile-parity/status`  
+**Plan 2C detail endpoint:** `GET /v1/mobile-parity/files`
 
 ---
 
@@ -95,29 +97,43 @@ Whatever Jarvis can do on MacBook/desktop should eventually be operable from pho
 
 ## 2C — File / Workspace / Data Parity
 
+**Sprint verdict:** `PLAN_2C_FILE_WORKSPACE_DATA_PARITY_PATCHED_PENDING_REVIEW`
+
 **Implementation files:**
 - `src/openjarvis/server/plan9_routes.py`
+- `src/openjarvis/plan9/workspace_root.py`
+- `src/openjarvis/server/plan2_routes.py`
 - `src/openjarvis/omnix_storage.py`
 - `src/openjarvis/omnix_workbench.py`
 
-**Key routes:** `GET /v1/files/index`, `POST /v1/coding/files/read`, `POST /v1/coding/search`
+**Key routes:**
+- `GET /v1/files/cloud-index` ← **NEW (Plan 2C)** — git-tracked file index, cloud-container safe
+- `GET /v1/mobile-parity/files` ← **NEW (Plan 2C)** — parity status detail endpoint (public)
+- `GET /v1/files/index` — local filesystem index (allowlisted, metadata only)
+- `POST /v1/coding/files/read` — read file content (allowlisted, git-tracked paths)
+- `POST /v1/coding/search` — repo code search
 
 | Surface | Status |
 |---------|--------|
 | Desktop | `READY` |
 | Mobile web | `MACBOOK_OFF_PENDING` |
 | MacBook-off | `MACBOOK_OFF_PENDING` |
-| Auth | Bearer token required |
+| Auth | Bearer token required (`/v1/mobile-parity/files` is public) |
 
 **Data/storage:** Local filesystem + `OMNIX_WORKBENCH_MEMORY_BUCKET` (S3, configured). Full workspace not synced.  
 **Connector dependency:** `OMNIX_WORKBENCH_ARTIFACT_BUCKET` (S3); `OMNIX_WORKBENCH_STORAGE_PROVIDER` configured  
 **Known blockers:**
-- Full workspace sync to S3 not implemented — only git-tracked files accessible via repo operations
-- File index is local-only (repo path); cloud index requires separate indexing job
+- Full workspace sync to S3 not implemented — git-tracked files accessible via repo operations only
 - Mac-only unsynced files remain `QUEUED_MAC_ONLY` per Plan 9 acceptance (permanent exception)
 
-**Required next patch:** Cloud file index via git-tracked file list; S3-backed workspace artifact store for sessions  
-**Proof for acceptance:** `GET /v1/files/index` from iPhone returns indexed file list; `POST /v1/coding/files/read` returns file content from cloud
+**Plan 2C foundation patched:**
+- `git_tracked_files()` and `git_is_available()` added to `workspace_root.py` — cloud-container safe via `git ls-files`
+- `GET /v1/files/cloud-index` added — uses `git ls-files` instead of local rglob; works in cloud containers with `OPENJARVIS_ROOT=/app`
+- `GET /v1/mobile-parity/files` added — public parity status detail for Plan 2C (allowlisted to auth middleware)
+- `_status_2c_files()` updated — now reports `cloud_file_index_available` based on runtime git availability
+
+**Required next patch:** S3-backed workspace artifact store for sessions; bidirectional cloud sync for git-tracked file metadata  
+**Proof for acceptance:** `GET /v1/files/cloud-index` from iPhone returns git-tracked file list; `GET /v1/mobile-parity/files` returns `cloud_file_index_available: true`
 
 ---
 

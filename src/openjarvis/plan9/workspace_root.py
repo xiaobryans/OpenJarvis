@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import os
+import subprocess
 from functools import lru_cache
 from pathlib import Path
-from typing import Optional
+from typing import Dict, List, Optional
 
 
 def _has_pyproject(path: Path) -> bool:
@@ -65,6 +66,68 @@ def workspace_prefix_allowed(raw: str) -> bool:
             return False
     allowed = workspace_allowlist_roots() + ("pyproject.toml", "README")
     return any(raw.startswith(p) for p in allowed)
+
+
+def git_tracked_files(
+    root: Optional[Path] = None,
+    *,
+    allowed_roots: Optional[tuple[str, ...]] = None,
+    max_files: int = 2000,
+) -> List[Dict]:
+    """Return metadata for git-tracked files in allowlisted paths.
+
+    Uses ``git ls-files`` — works in cloud containers (no local rglob needed).
+    Never returns file content. Returns path, size_bytes, extension only.
+    Returns empty list if git is unavailable or the repo has no tracked files.
+    """
+    base = root or workspace_root()
+    roots = allowed_roots or workspace_allowlist_roots()
+
+    try:
+        result = subprocess.run(
+            ["git", "ls-files", "--", *roots],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            cwd=str(base),
+        )
+        if result.returncode != 0:
+            return []
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        return []
+
+    files: List[Dict] = []
+    for line in result.stdout.splitlines():
+        rel = line.strip()
+        if not rel:
+            continue
+        full = base / rel
+        entry: Dict = {"path": rel, "extension": Path(rel).suffix, "git_tracked": True}
+        try:
+            stat = full.stat()
+            entry["size_bytes"] = stat.st_size
+            entry["modified_ts"] = int(stat.st_mtime)
+        except OSError:
+            entry["size_bytes"] = None
+            entry["modified_ts"] = None
+        files.append(entry)
+        if len(files) >= max_files:
+            break
+
+    return files
+
+
+def git_is_available(root: Optional[Path] = None) -> bool:
+    """Return True if git is installed and the workspace is a git repo."""
+    base = root or workspace_root()
+    try:
+        r = subprocess.run(
+            ["git", "rev-parse", "--is-inside-work-tree"],
+            capture_output=True, text=True, timeout=5, cwd=str(base),
+        )
+        return r.returncode == 0
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        return False
 
 
 def workspace_index_summary(root: Optional[Path] = None) -> dict:

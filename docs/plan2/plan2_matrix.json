@@ -1,7 +1,7 @@
 {
-  "plan": "Plan 2 — Full Mobile MacBook-Off Parity Runtime",
+  "plan": "Plan 2 \u2014 Full Mobile MacBook-Off Parity Runtime",
   "acceptance_target": "MOBILE_MACBOOK_PARITY_TARGET_LOCKED",
-  "sprint": "Plan 2A — Foundation Sprint",
+  "sprint": "Plan 2A \u2014 Foundation Sprint",
   "sprint_verdict_target": "PLAN_2A_MOBILE_MACBOOK_OFF_FOUNDATION_PATCHED_PENDING_REVIEW",
   "generated_at": "2026-06-24",
   "based_on_commit": "6cc99316",
@@ -35,8 +35,8 @@
       "data_storage_dependency": "SQLite session store; OMNIX_WORKBENCH_ARTIFACT_BUCKET for artifacts",
       "connector_dependency": "GitHub (CROSS_DEVICE_LIVE); repo clone required for file edit",
       "known_blockers": [
-        "No mobile-native IDE shell — coding task must go through chat/frontdoor",
-        "file_edit is CLOUD_LIVE (not CROSS_DEVICE_LIVE) — requires cloud execution context",
+        "No mobile-native IDE shell \u2014 coding task must go through chat/frontdoor",
+        "file_edit is CLOUD_LIVE (not CROSS_DEVICE_LIVE) \u2014 requires cloud execution context",
         "Terminal exec requires approval_token; no push-notification channel for approval on mobile yet",
         "Fargate backend must be running for MacBook-off execution"
       ],
@@ -68,7 +68,7 @@
       "data_storage_dependency": "OAuth tokens local to MacBook; not synced to cloud",
       "connector_dependency": "Gmail, Calendar, Slack, GitHub: CROSS_DEVICE_LIVE. GDrive, Notion: UNKNOWN_NEEDS_PROOF",
       "known_blockers": [
-        "OAuth tokens stored locally — not accessible from cloud/Fargate without secure token sync",
+        "OAuth tokens stored locally \u2014 not accessible from cloud/Fargate without secure token sync",
         "GDrive and Notion connector status unverified (UNKNOWN_NEEDS_PROOF in Plan 9 matrix)",
         "Connector re-auth from mobile not implemented (OAuth redirect would need HTTPS + callback URL)"
       ],
@@ -95,7 +95,7 @@
       "data_storage_dependency": "Local filesystem + OMNIX_WORKBENCH_MEMORY_BUCKET (S3, configured). Full workspace not synced.",
       "connector_dependency": "OMNIX_WORKBENCH_ARTIFACT_BUCKET (S3); OMNIX_WORKBENCH_STORAGE_PROVIDER configured",
       "known_blockers": [
-        "Full workspace file sync to S3 not implemented — only git-tracked files via repo operations",
+        "Full workspace file sync to S3 not implemented \u2014 only git-tracked files via repo operations",
         "File index is local-only (repo path); cloud index requires separate indexing job",
         "Mac-only unsynced files remain QUEUED_MAC_ONLY permanently per Plan 9 acceptance"
       ],
@@ -128,7 +128,7 @@
       "data_storage_dependency": "Primary: SQLite (local). Cloud sync: OMNIX_WORKBENCH_MEMORY_BUCKET (S3). Semantic: Pinecone (key present).",
       "connector_dependency": "PINECONE_API_KEY present; OMNIX_WORKBENCH_MEMORY_BUCKET present",
       "known_blockers": [
-        "SQLite primary store is local — cloud sync to S3 requires explicit sync trigger",
+        "SQLite primary store is local \u2014 cloud sync to S3 requires explicit sync trigger",
         "Full bidirectional sync not verified post-Plan 9",
         "Context injection from cloud memory to cloud-executed tasks not verified"
       ],
@@ -159,7 +159,7 @@
       "data_storage_dependency": "SQLite local; no cloud sync implemented for life-os data yet",
       "connector_dependency": "None required for basic task management",
       "known_blockers": [
-        "Life-OS data (tasks, workstreams, goals) stored in local SQLite — not synced to cloud",
+        "Life-OS data (tasks, workstreams, goals) stored in local SQLite \u2014 not synced to cloud",
         "No push notification for task updates on mobile",
         "Mission control real-time updates not streamed to mobile"
       ],
@@ -185,12 +185,12 @@
       "data_storage_dependency": "DEEPGRAM_API_KEY present; JARVIS_STT_PROVIDER configured; JARVIS_TTS_PROVIDER configured",
       "connector_dependency": "Deepgram STT; TTS provider configured",
       "known_blockers": [
-        "Full wake word and TTS is PARKED (Plan 3) — do NOT reopen",
-        "Foundation only: tap-to-speak (browser MediaRecorder → /v1/voice/transcribe) not wired in mobile UI",
+        "Full wake word and TTS is PARKED (Plan 3) \u2014 do NOT reopen",
+        "Foundation only: tap-to-speak (browser MediaRecorder \u2192 /v1/voice/transcribe) not wired in mobile UI",
         "Audio permissions require HTTPS on mobile browsers",
-        "TTS playback requires Web Audio API on mobile — not yet wired"
+        "TTS playback requires Web Audio API on mobile \u2014 not yet wired"
       ],
-      "required_next_patch": "Wire browser MediaRecorder → POST /v1/voice/transcribe in mobile UI (foundation only, no wake word)",
+      "required_next_patch": "Wire browser MediaRecorder \u2192 POST /v1/voice/transcribe in mobile UI (foundation only, no wake word)",
       "proof_for_acceptance": "Tap-to-speak button in mobile UI captures audio, sends to /v1/voice/transcribe, populates chat input"
     },
     {
@@ -215,7 +215,7 @@
       "data_storage_dependency": "SQLite approval store (local)",
       "connector_dependency": "TELEGRAM_BOT_TOKEN present (push notifications via Telegram); SLACK_BOT_TOKEN present",
       "known_blockers": [
-        "Approval store is local SQLite — not synced to cloud for MacBook-off case",
+        "Approval store is local SQLite \u2014 not synced to cloud for MacBook-off case",
         "Push notifications (Telegram/Slack) exist but not triggered on new pending approvals",
         "No polling/WebSocket push from mobile to watch for new approvals",
         "PWA push notification API not wired"
@@ -277,10 +277,10 @@
       "data_storage_dependency": "APPLE_SIGNING_IDENTITY, APPLE_TEAM_ID, APPLE_APP_SPECIFIC_PASSWORD: present (local keychain)",
       "connector_dependency": "GITHUB_TOKEN present; AWS profile configured for ECS deploy",
       "known_blockers": [
-        "Tauri app build and signing require MacBook with Xcode/codesign — cannot run on Fargate",
-        "Apple signing certificate in local keychain — not accessible from cloud",
-        "ECS/Vercel deploy (non-signing) could be triggered from mobile with approval gate — not yet wired",
-        "Self-upgrade route exists but triggers local script — not safe from mobile without cloud CI"
+        "Tauri app build and signing require MacBook with Xcode/codesign \u2014 cannot run on Fargate",
+        "Apple signing certificate in local keychain \u2014 not accessible from cloud",
+        "ECS/Vercel deploy (non-signing) could be triggered from mobile with approval gate \u2014 not yet wired",
+        "Self-upgrade route exists but triggers local script \u2014 not safe from mobile without cloud CI"
       ],
       "required_next_patch": "Wire cloud deploy (ECS only, no signing) to be triggerable from mobile with approval gate; Tauri signing stays QUEUED_MAC_ONLY",
       "proof_for_acceptance": "ECS backend redeployment triggered from iPhone returns 200 after approval; Tauri signing correctly rejected from mobile"
@@ -309,10 +309,22 @@
   },
   "macbook_off_summary": {
     "subsections_ready": [],
-    "subsections_cloud_required": ["2A", "2B", "2D", "2E", "2G"],
-    "subsections_macbook_off_pending": ["2C", "2H", "2I"],
-    "subsections_not_configured": ["2F"],
+    "subsections_cloud_required": [
+      "2A",
+      "2B",
+      "2D",
+      "2E",
+      "2G"
+    ],
+    "subsections_macbook_off_pending": [
+      "2C",
+      "2H",
+      "2I"
+    ],
+    "subsections_not_configured": [
+      "2F"
+    ],
     "parked": [],
-    "global_blocker": "Primary data stores (memory, approvals, life-os, connector tokens) are local SQLite — cloud sync required for MacBook-off parity"
+    "global_blocker": "Primary data stores (memory, approvals, life-os, connector tokens) are local SQLite \u2014 cloud sync required for MacBook-off parity"
   }
 }

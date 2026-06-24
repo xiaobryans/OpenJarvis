@@ -1,6 +1,6 @@
 """Plan 2 — Full Mobile MacBook-Off Parity Runtime routes.
 
-Sprint: Plan 2A + Plan 2B Foundation
+Sprint: Plan 2A + Plan 2B + Plan 2C Foundation
 Acceptance target: MOBILE_MACBOOK_PARITY_TARGET_LOCKED
 
 Routes:
@@ -20,6 +20,10 @@ Routes:
   GET /v1/mobile-parity/connectors/detail
       Plan 2B — detailed per-connector diagnostics.
       AUTH REQUIRED (Bearer token). Presence-only diagnostics — no secret values.
+
+  GET /v1/mobile-parity/files
+      Plan 2C — file/workspace/data parity status detail.
+      PUBLIC endpoint. Reports cloud file index availability and route inventory.
 
 Status vocabulary (honest states only):
   READY               — fully working on this surface
@@ -277,10 +281,25 @@ def _status_2c_files() -> Dict[str, Any]:
     has_artifact_bucket = _artifact_bucket_configured()
     has_aws = _aws_configured()
 
+    try:
+        from openjarvis.plan9.workspace_root import git_is_available
+        cloud_index_available = git_is_available()
+    except Exception:
+        cloud_index_available = False
+
     blockers = [
         "Full workspace sync to S3 not implemented — only git-tracked files via repo operations",
-        "File index is local-only; cloud index requires separate indexing job",
     ]
+    if not cloud_index_available:
+        blockers.append("git not available in this runtime — cloud index unavailable")
+
+    notes = [
+        "Mac-only unsynced files remain QUEUED_MAC_ONLY per Plan 9 acceptance (permanent exception).",
+        "GET /v1/files/cloud-index uses git ls-files — cloud-container safe (Plan 2C foundation).",
+        "GET /v1/coding/files/read returns file content for allowlisted git-tracked paths.",
+    ]
+    if has_memory_bucket or has_artifact_bucket:
+        notes.append("OMNIX_WORKBENCH buckets configured — S3 artifact path available.")
 
     return {
         "subsection": "2C",
@@ -292,16 +311,15 @@ def _status_2c_files() -> Dict[str, Any]:
         "aws_configured": has_aws,
         "memory_bucket_configured": has_memory_bucket,
         "artifact_bucket_configured": has_artifact_bucket,
+        "cloud_file_index_available": cloud_index_available,
         "blockers": blockers,
-        "notes": [
-            "OMNIX_WORKBENCH_MEMORY_BUCKET and ARTIFACT_BUCKET are configured.",
-            "Mac-only unsynced files remain QUEUED_MAC_ONLY per Plan 9 acceptance (permanent exception).",
-            "Git-tracked files accessible via /v1/coding/files/read when backend is up.",
-        ],
+        "notes": notes,
         "key_routes": [
+            "GET  /v1/files/cloud-index",
             "GET  /v1/files/index",
             "POST /v1/coding/files/read",
             "POST /v1/coding/search",
+            "GET  /v1/mobile-parity/files",
         ],
     }
 
@@ -889,4 +907,41 @@ async def get_connector_parity_detail(
             "if deployed to Fargate)."
         ),
         "connectors": entries,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Plan 2C — File / Workspace / Data Parity detail
+# ---------------------------------------------------------------------------
+
+@router.get("/v1/mobile-parity/files")
+async def get_file_parity_status() -> Dict[str, Any]:
+    """Plan 2C — file/workspace/data parity status detail.
+
+    PUBLIC endpoint (no auth required).
+    Reports cloud file index availability, route inventory, and honest blockers.
+    Never returns file content, credentials, or env var values.
+    """
+    full = _status_2c_files()
+
+    return {
+        "plan": "Plan 2C — File / Workspace / Data Parity",
+        "sprint_verdict": "PLAN_2C_FILE_WORKSPACE_DATA_PARITY_PATCHED_PENDING_REVIEW",
+        "subsection": "2C",
+        "desktop_status": full["desktop_status"],
+        "mobile_status": full["mobile_status"],
+        "macbook_off_status": full["macbook_off_status"],
+        "cloud_file_index_available": full.get("cloud_file_index_available", False),
+        "aws_storage_configured": full.get("aws_configured", False),
+        "blockers": full["blockers"],
+        "notes": full["notes"],
+        "key_routes": full["key_routes"],
+        "permanent_exceptions": [
+            "Mac-only unsynced files (QUEUED_MAC_ONLY) are a permanent exception "
+            "per Plan 9 acceptance — they are not expected to be cloud-synced.",
+        ],
+        "next_patch": (
+            "S3-backed workspace artifact store for sessions; "
+            "bidirectional cloud sync for git-tracked file metadata."
+        ),
     }
