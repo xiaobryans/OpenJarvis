@@ -137,6 +137,13 @@ Whatever Jarvis can do on MacBook/desktop should eventually be operable from pho
 - `GET /v1/mobile-parity/files` updated — sanitized public response; `sprint_verdict: PLAN_2C_FILE_WORKSPACE_DATA_PARITY_CLOSED_PENDING_REVIEW`
 - `tests/plan9/test_plan2c_file_parity.py` — 27 smoke tests: path traversal, secret non-exposure, fake-READY prevention, S3 honest status
 
+**Plan 2 Fargate readiness sprint (B8 code-side gating):**
+- `workspace_sync_status.py` added to `memory/` — 5-layer workspace sync tracking; `sync_executed` and `cloud_worker_access` always `LAYER_REQUIRES_DEPLOYMENT` (no live S3 calls)
+- `_workspace_sync_probe()` added to `plan2_routes.py` — calls `get_workspace_sync_status().to_dict()`
+- `_status_2c_files()` updated — adds `workspace_sync_status` (full object) and `workspace_sync_layers` (5-layer breakdown) to files parity dict; B8 blocker references `sync_executed == requires_deployment`
+- `GET /v1/mobile-parity/cloud-worker` includes `workspace_sync_status` summary (public endpoint)
+- 52 new tests in `test_plan2_fargate_readiness.py` cover `TestWorkspaceSyncLayerDistinction` (7 tests: all 5 layers present, sync_executed always requires_deployment)
+
 **Known remaining (not Plan 2C blockers):**
 - Full bidirectional workspace sync to S3 is a Fargate deployment concern, not a code blocker — architecture is present
 - Mac-only untracked files remain QUEUED_MAC_ONLY permanently
@@ -268,12 +275,18 @@ Whatever Jarvis can do on MacBook/desktop should eventually be operable from pho
 - B5B: **CLOSED (Plan 2G closure sprint)** — internal notification enqueue now wired on PENDING approval creation
 - B5C: External delivery (Slack/Telegram/push) not deployed — requires live provider tokens and Fargate worker
 
-**Plan 2G B5B closure (this sprint):**
+**Plan 2G B5B closure (Plan 2G sprint):**
 - `notification_queue.py` added to `authority/` — SQLite-backed internal event queue; safe metadata only; no external side effects
 - `approval_engine.py` hooked — `request_approval()` enqueues internal notification event when `status == PENDING` (tier 2+); soft hook (failure logged, never blocks approval)
 - `_status_2g_approvals()` updated — three-layer B5A/B5B/B5C breakdown in status dict
 - `/v1/mobile-parity/approvals` updated — exposes `approval_gate_status`, `internal_notification_queue_status`, `external_notification_delivery_status`; sanitized blockers; no env var names
 - `tests/plan9/test_plan2g_approval_notification.py` — 35 tests: B5A gate, B5B enqueue, B5C blocked, public endpoint safety, auth-gated routes, overall HOLD verdict
+
+**Plan 2 Fargate readiness sprint (B5C code-side gating):**
+- `notification_dispatcher.py` added to `authority/` — injectable `NotificationProviderAdapter` ABC; `NotificationDispatcher` consumer skeleton; no live sends without configured provider tokens; approval gates never modified
+- `get_external_delivery_status()` — returns `NOT_CONFIGURED` or `CONFIGURED_NOT_DEPLOYED` based on token presence; never returns `READY` without live verification
+- `_notification_queue_probe()` updated in `plan2_routes.py` — calls `get_external_delivery_status()` for B5C status; fallback if import fails
+- 52 new tests in `test_plan2_fargate_readiness.py` cover `TestNotificationDispatcherNoLiveDelivery` and `TestExternalDeliveryHonestStatus`; `TestApprovalGateNotBypassed` verifies no bypasses
 
 **Required next patch (B5C):** Deploy Fargate worker with Telegram/Slack provider token; wire `NotificationQueue.list_pending()` → external delivery; mobile approval polling every 30s
 **Proof for acceptance:** New pending approval triggers Telegram notification; Bryan approves from iPhone via `POST /v1/approvals/{id}/approve`
@@ -287,8 +300,9 @@ Whatever Jarvis can do on MacBook/desktop should eventually be operable from pho
 **Implementation files:**
 - `src/openjarvis/plan9/mac_worker_queue.py`
 - `src/openjarvis/server/{plan9_routes,orchestrator_routes}.py`
+- `src/openjarvis/server/fargate_readiness.py` ← **NEW (Plan 2 Fargate readiness sprint)**
 
-**Key routes:** `GET /v1/mac-worker/queue`, `POST /v1/mac-worker/queue`, `GET /v1/mac-worker/status`, `POST /v1/orchestration/dag/run`, `POST /v1/orchestration/batch/run`, `GET /v1/mobile-parity/long-running (public)`
+**Key routes:** `GET /v1/mac-worker/queue`, `POST /v1/mac-worker/queue`, `GET /v1/mac-worker/status`, `POST /v1/orchestration/dag/run`, `POST /v1/orchestration/batch/run`, `GET /v1/mobile-parity/long-running (public)`, `GET /v1/mobile-parity/cloud-worker (public, B6 status)`, `GET /v1/mobile-parity/cloud-worker/detail (auth-gated, layer detail)`
 
 | Surface | Status |
 |---------|--------|
@@ -299,13 +313,31 @@ Whatever Jarvis can do on MacBook/desktop should eventually be operable from pho
 
 **Data/storage:** Mac worker queue: local SQLite. Fargate: `OMNIX_WORKBENCH_AWS_PROFILE` + `OMNIX_WORKBENCH_AWS_REGION` configured.
 **Connector dependency:** AWS ECS Fargate (configured per Plan 4)
+
+**B6 Fargate worker readiness layers (this sprint):**
+
+| Layer | Status | Notes |
+|-------|--------|-------|
+| code_present | `ok` | `deploy/aws/cloud_runtime.py` exists |
+| configured | depends on env | All 5 required env vars must be set |
+| deployed | `REQUIRES_EXTERNAL_ACTION` | ECS service not started |
+| reachable | `REQUIRES_EXTERNAL_ACTION` | Health check not verified |
+| executing | `REQUIRES_EXTERNAL_ACTION` | No worker process running |
+
 **Known blockers:**
 - Mac worker queue processes tasks only when MacBook is online and process is running
-- Cloud execution daemon not deployed to Fargate (only API deployed, not worker process)
+- Cloud execution daemon not deployed to Fargate (B6: CONFIGURED_NOT_DEPLOYED)
 - No long-running job status webhook/push for mobile polling
 - DAG/batch orchestration routes are cloud-safe but require Fargate worker for execution
 
-**Required next patch:** Deploy worker process to Fargate or implement serverless job dispatch; SSE/WebSocket status stream for mobile
+**Plan 2 Fargate readiness sprint (this sprint):**
+- `fargate_readiness.py` added — multi-layer B6 readiness abstraction; no live calls; no secret values
+- `get_cloud_worker_parity_status()` — new public `/v1/mobile-parity/cloud-worker` endpoint
+- `get_cloud_worker_detail()` — new auth-gated `/v1/mobile-parity/cloud-worker/detail` endpoint
+- `tests/plan9/test_plan2_fargate_readiness.py` — 52 tests covering all 9 required scenarios
+- `docs/plan2/FARGATE_WORKER_DEPLOYMENT_CONTRACT.md` — deployment contract (non-secret)
+
+**Required next patch:** Deploy Fargate worker (requires live AWS credentials — separate authorized sprint)
 **Proof for acceptance:** Long-running task submitted from iPhone completes while MacBook is off; result visible on iPhone
 
 ---

@@ -164,3 +164,50 @@ Also closes safe code-side sub-issues:
 **Tests:** 35 new + 347 total plan9 passing (1 pre-existing unrelated failure: test_batch_integration_same_file_live)
 **Secret scan:** CLEAN
 **Verdict:** `PLAN_2_FULL_MOBILE_MACBOOK_OFF_PARITY_RUNTIME_HOLD`
+
+---
+
+## Sprint: Plan 2 Fargate Worker Readiness Gating (B6/B8/B5C code-side)
+
+**Started:** 2026-06-24
+**Branch:** `localhost-get-tool`
+**Base HEAD:** `43c58b89`
+**Purpose:** Close all safe code-only gating work for B6 (Fargate worker readiness), B8 (workspace sync layer tracking), B5C (notification dispatcher skeleton) before live Fargate deployment sprint.
+
+### Action Log
+
+| # | Action | Files | Risk | Result |
+|---|--------|-------|------|--------|
+| 1 | Inventory current cloud/Fargate architecture (Phase 1) | READ ONLY | LOW | cloud_runtime.py is minimal HTTP runtime (not worker); main.tf has full IaC; mac_worker_queue.py is local SQLite only |
+| 2 | Create `FARGATE_WORKER_DEPLOYMENT_CONTRACT.md` — non-secret deployment contract | docs/plan2/ | LOW | Runtime roles, required env var names (no values), startup behavior, B5C/B8/B6 behaviors, failure modes, Terraform reference, deployment steps |
+| 3 | Create `fargate_readiness.py` — multi-layer B6 readiness abstraction | server/fargate_readiness.py | LOW | 5-layer model; deployed/reachable/executing always False; no live calls; no secret values; to_public_dict() strips sensitive fields |
+| 4 | Create `notification_dispatcher.py` — B5C injectable provider adapter | authority/notification_dispatcher.py | LOW | NotificationProviderAdapter ABC; NotificationDispatcher consumer skeleton; no live sends; approval gates never modified; get_external_delivery_status() never returns READY |
+| 5 | Create `workspace_sync_status.py` — B8 5-layer sync tracking | memory/workspace_sync_status.py | LOW | sync_executed and cloud_worker_access always LAYER_REQUIRES_DEPLOYMENT; no live S3 calls |
+| 6 | Add `_fargate_worker_probe()`, `_fargate_worker_public_probe()`, `_workspace_sync_probe()` to plan2_routes.py | server/plan2_routes.py | LOW | Probes for new modules |
+| 7 | Update `_notification_queue_probe()` for B5C via dispatcher | server/plan2_routes.py | LOW | Calls get_external_delivery_status(); fallback if import fails |
+| 8 | Update `_status_2h_long_running()` with fargate_worker_status/fargate_worker_readiness | server/plan2_routes.py | LOW | Full layer detail in auth-gated response; fargate_worker_deployed=False preserved for backward compat |
+| 9 | Update `_status_2c_files()` with workspace_sync_status/workspace_sync_layers | server/plan2_routes.py | LOW | 5-layer breakdown in files parity dict; B8 blocker references sync_executed==requires_deployment |
+| 10 | Add `GET /v1/mobile-parity/cloud-worker` (public) and `GET /v1/mobile-parity/cloud-worker/detail` (auth-gated) | server/plan2_routes.py | MEDIUM | Public: fargate_worker (public dict), workspace_sync_status, external_notification_delivery_status; Auth-gated: full b6/b8/b5c/b5a/b5b detail; 401 without valid Bearer |
+| 11 | Add `/v1/mobile-parity/cloud-worker` to `_PUBLIC_PATHS` | server/auth_middleware.py | LOW | cloud-worker/detail remains auth-gated |
+| 12 | Write 52 fargate readiness tests | test_plan2_fargate_readiness.py | LOW | 52/52 pass: TestFargateWorkerNotReady(8), TestLongRunningNoFakeReady(7), TestNotificationDispatcherNoLiveDelivery(5), TestExternalDeliveryHonestStatus(5), TestPublicEndpointSafety(6), TestCloudWorkerDetailAuthRequired(5), TestApprovalGateNotBypassed(3), TestWorkspaceSyncLayerDistinction(7), TestPlan2VerdictHold(6) |
+| 13 | Update PLAN2_SOURCE_OF_TRUTH_MATRIX.md — 2H B6, 2C B8, 2G B5C sections | docs/plan2/ | LOW | Code-ready vs external-action status for each |
+| 14 | Update plan2_matrix.json — 2C/2G/2H sections | docs/plan2/ | LOW | fargate_readiness_sprint_b6/b5c/b8 objects added |
+| 15 | Rewrite PLAN2_AUTONOMOUS_SESSION_STATE.md | docs/plan2/ | LOW | RESUME_FROM_HERE updated; blocker registry updated with B5C/B6/B8 code-side gating done |
+| 16 | Update PLAN2_PROGRESS_LEDGER.md | docs/plan2/ | LOW | This entry |
+| 17 | Update PLAN2_RESUME_PROMPT.md | docs/plan2/ | LOW | Next step: commit/push then live Fargate deployment sprint |
+
+**Blockers with code-side gating now in place (still need external action):**
+- B5C (external notification delivery): CONFIGURED_NOT_DEPLOYED — dispatcher skeleton in place; no live sends
+- B6 (Fargate worker): CONFIGURED_NOT_DEPLOYED — multi-layer readiness abstraction; never fakes READY
+- B8 (workspace sync): LAYER_REQUIRES_DEPLOYMENT for sync_executed + cloud_worker_access
+
+**Blockers still fully open (no code change can help):**
+- B1: Google OAuth vault migration
+- B2: Fargate env token injection
+- B4: Notion API token
+- B7: Life-OS cloud sync
+
+**Tests:** 52 new + 399 total plan9 passing (1 pre-existing unrelated failure: test_batch_integration_same_file_live)
+**Secret scan:** CLEAN
+**High-entropy scan:** CLEAN
+**Verdict:** `PLAN_2_FULL_MOBILE_MACBOOK_OFF_PARITY_RUNTIME_HOLD`

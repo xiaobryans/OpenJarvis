@@ -258,22 +258,96 @@ def _notification_queue_probe() -> Dict[str, Any]:
     except Exception:
         b5b_status = NOT_CONFIGURED
 
-    # B5C: external delivery — requires live tokens and Fargate deployment
-    has_telegram = _telegram_present()
-    has_slack = _slack_present()
-    if has_telegram or has_slack:
-        b5c_status = "NOT_CONFIGURED"   # tokens present but auto-trigger not deployed
-        b5c_detail = "External channel keys present but auto-trigger not deployed to Fargate"
-    else:
-        b5c_status = NOT_CONFIGURED
-        b5c_detail = "No external notification channel configured"
+    # B5C: external delivery — use dispatcher to get honest status
+    try:
+        from openjarvis.authority.notification_dispatcher import get_external_delivery_status
+        b5c_info = get_external_delivery_status()
+        b5c_status = b5c_info["status"]
+        b5c_detail = b5c_info["detail"]
+    except Exception:
+        # Fallback: presence-only check
+        has_telegram = _telegram_present()
+        has_slack = _slack_present()
+        if has_telegram or has_slack:
+            b5c_status = "CONFIGURED_NOT_DEPLOYED"
+            b5c_detail = "External channel tokens present but auto-trigger not deployed to Fargate"
+        else:
+            b5c_status = NOT_CONFIGURED
+            b5c_detail = "No external notification channel configured"
 
     return {
-        "approval_gate_status": b5a_status,            # B5A
-        "internal_notification_queue_status": b5b_status,  # B5B
-        "external_notification_delivery_status": b5c_status,   # B5C
+        "approval_gate_status": b5a_status,                           # B5A
+        "internal_notification_queue_status": b5b_status,              # B5B
+        "external_notification_delivery_status": b5c_status,           # B5C
         "external_delivery_detail": b5c_detail,
     }
+
+
+def _fargate_worker_probe() -> Dict[str, Any]:
+    """Probe Fargate worker deployment readiness (B6).
+
+    No live calls. No secret values. Returns layer status dict.
+    safe for auth-gated use; call to_public_dict() for public endpoints.
+    """
+    try:
+        from openjarvis.server.fargate_readiness import get_fargate_worker_status
+        r = get_fargate_worker_status()
+        return r.to_dict()
+    except Exception as exc:
+        return {
+            "code_present": False,
+            "configured": False,
+            "deployed": False,
+            "reachable": False,
+            "executing": False,
+            "missing_vars_count": -1,
+            "optional_vars_present_count": 0,
+            "status": "BLOCKED",
+            "detail": f"Fargate readiness probe failed: {type(exc).__name__}",
+        }
+
+
+def _fargate_worker_public_probe() -> Dict[str, Any]:
+    """Return public-safe Fargate worker status (no config booleans)."""
+    try:
+        from openjarvis.server.fargate_readiness import get_fargate_worker_status
+        r = get_fargate_worker_status()
+        return r.to_public_dict()
+    except Exception:
+        return {
+            "code_present": False,
+            "deployed": False,
+            "reachable": False,
+            "executing": False,
+            "status": "BLOCKED",
+            "detail": "Fargate readiness probe unavailable.",
+        }
+
+
+def _workspace_sync_probe() -> Dict[str, Any]:
+    """Probe workspace sync layer status (B8).
+
+    No live S3 calls. No secret values.
+    Returns dict with all 5 layers for honest B8 reporting.
+    """
+    try:
+        from openjarvis.memory.workspace_sync_status import get_workspace_sync_status
+        return get_workspace_sync_status().to_dict()
+    except Exception as exc:
+        return {
+            "layers": {
+                "local_git_index": "unknown",
+                "s3_config": "unknown",
+                "sync_code_present": "unknown",
+                "sync_executed": "requires_deployment",
+                "cloud_worker_access": "requires_deployment",
+            },
+            "git_tracked_count": 0,
+            "s3_configured": False,
+            "sync_code_file_count": 0,
+            "status": "BLOCKED",
+            "detail": f"Workspace sync probe failed: {type(exc).__name__}",
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -373,6 +447,9 @@ def _status_2c_files() -> Dict[str, Any]:
     """2C — File / workspace / data parity."""
     s3_probe = _s3_artifact_store_probe()
     s3_status = s3_probe["status"]
+    workspace_sync = _workspace_sync_probe()
+    workspace_sync_status = workspace_sync.get("status", "NOT_CONFIGURED")
+    workspace_sync_layers = workspace_sync.get("layers", {})
 
     try:
         from openjarvis.plan9.workspace_root import git_is_available, workspace_sync_summary
@@ -392,6 +469,16 @@ def _status_2c_files() -> Dict[str, Any]:
     if not cloud_index_available:
         blockers.append("git not available in this runtime — cloud index unavailable.")
 
+    # B8 blocker: workspace sync layers
+    sync_executed = workspace_sync_layers.get("sync_executed", "requires_deployment")
+    if sync_executed == "requires_deployment":
+        blockers.append(
+            "B8: Workspace sync not yet executed — requires Fargate worker deployment (B6). "
+            "Sync code present; S3 config present if configured."
+        )
+    elif sync_executed != "ok":
+        blockers.append(f"B8: Workspace sync layer issue: sync_executed={sync_executed}")
+
     if not blockers:
         blockers.append(
             "Full workspace sync to S3 not yet implemented — "
@@ -404,6 +491,7 @@ def _status_2c_files() -> Dict[str, Any]:
         "GET /v1/files/cloud-index: git ls-files based index — cloud-container safe.",
         "GET /v1/files/workspace/status: honest workspace sync accounting (auth-gated).",
         "GET /v1/coding/files/read: allowlisted path file content (auth-gated).",
+        f"B8 workspace sync status: {workspace_sync_status}",
     ]
     if s3_status == "READY":
         notes.append("S3 artifact store env vars fully configured.")
@@ -420,6 +508,8 @@ def _status_2c_files() -> Dict[str, Any]:
         "cloud_file_index_available": cloud_index_available,
         "git_tracked_count": sync.get("git_tracked_count", 0),
         "s3_artifact_store_status": s3_status,
+        "workspace_sync_status": workspace_sync_status,         # B8 overall
+        "workspace_sync_layers": workspace_sync_layers,         # B8 five-layer breakdown
         "blockers": blockers,
         "notes": notes,
         "key_routes": [
@@ -643,6 +733,8 @@ def _status_2g_approvals() -> Dict[str, Any]:
 def _status_2h_long_running() -> Dict[str, Any]:
     """2H — Long-running cloud execution parity."""
     has_aws = _aws_configured()
+    fargate_probe = _fargate_worker_probe()
+    fargate_status = fargate_probe.get("status", "BLOCKED")
 
     return {
         "subsection": "2H",
@@ -652,16 +744,19 @@ def _status_2h_long_running() -> Dict[str, Any]:
         "macbook_off_status": MACBOOK_OFF_PENDING,
         "auth_status": "Bearer token required",
         "aws_configured": has_aws,
-        "fargate_worker_deployed": False,
+        "fargate_worker_deployed": False,   # always False until live deployment proof
+        "fargate_worker_status": fargate_status,
+        "fargate_worker_readiness": fargate_probe,  # full detail for auth-gated use
         "blockers": [
             "Mac worker queue processes tasks only when MacBook is online",
-            "Cloud execution daemon not deployed to Fargate (API only, no worker process)",
+            f"Cloud execution daemon not deployed to Fargate (B6 status: {fargate_status})",
             "No long-running job status push/WebSocket for mobile polling",
         ],
         "notes": [
             "Mac worker queue (QUEUED_MAC_ONLY): /v1/mac-worker/queue, /v1/mac-worker/status.",
             "DAG/batch orchestration routes are cloud-safe but need Fargate worker for execution.",
             "AWS region and profile are configured per Plan 4.",
+            f"Fargate worker readiness: {fargate_probe.get('detail', 'unknown')}",
         ],
         "key_routes": [
             "GET  /v1/mac-worker/queue",
@@ -669,6 +764,8 @@ def _status_2h_long_running() -> Dict[str, Any]:
             "GET  /v1/mac-worker/status",
             "POST /v1/orchestration/dag/run",
             "POST /v1/orchestration/batch/run",
+            "GET  /v1/mobile-parity/cloud-worker        (public — B6 status)",
+            "GET  /v1/mobile-parity/cloud-worker/detail (auth-gated — layer detail)",
         ],
     }
 
@@ -1284,5 +1381,94 @@ async def get_deploy_parity_status() -> Dict[str, Any]:
         "blockers_summary": [
             "Tauri build + codesign: QUEUED_MAC_ONLY (permanent exception — MacBook + Xcode required).",
             "ECS cloud deploy not yet wired for mobile-triggered approval-gated execution.",
+        ],
+    }
+
+
+# ---------------------------------------------------------------------------
+# Plan 2H/B6 — Fargate Cloud Worker status (public + auth-gated detail)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/v1/mobile-parity/cloud-worker")
+async def get_cloud_worker_parity_status() -> Dict[str, Any]:
+    """B6 — Fargate cloud worker deployment readiness. PUBLIC endpoint.
+
+    Reports multi-layer worker readiness without exposing:
+    - env var names or presence booleans
+    - bucket names or account IDs
+    - private paths or OAuth paths
+    - token values
+
+    Workers cannot execute MacBook-off tasks until `deployed` is True and
+    `reachable` is True — both require live Fargate deployment.
+    """
+    pub = _fargate_worker_public_probe()
+    workspace = _workspace_sync_probe()
+    notif_probe = _notification_queue_probe()
+
+    return {
+        "plan": "Plan 2 — Fargate Cloud Worker Readiness (B6)",
+        "sprint_verdict": "PLAN_2_FULL_MOBILE_MACBOOK_OFF_PARITY_RUNTIME_HOLD",
+        "fargate_worker": pub,
+        "macbook_off_execution_ready": pub.get("deployed", False) and pub.get("reachable", False),
+        "workspace_sync_status": workspace.get("status", "NOT_CONFIGURED"),
+        "external_notification_delivery_status": notif_probe.get(
+            "external_notification_delivery_status", "NOT_CONFIGURED"
+        ),
+        "blockers_summary": [
+            f"B6 — Fargate worker: {pub.get('status', 'BLOCKED')} (deployed={pub.get('deployed', False)})",
+            f"B8 — Workspace sync: {workspace.get('status', 'NOT_CONFIGURED')} "
+            "(sync_executed=requires_deployment)",
+            f"B5C — External notification delivery: "
+            f"{notif_probe.get('external_notification_delivery_status', 'NOT_CONFIGURED')}",
+        ],
+        "required_external_actions": [
+            "Deploy ECS Fargate service (B6)",
+            "Inject connector tokens into Fargate task environment (B2)",
+            "Execute workspace sync worker after Fargate deployment (B8)",
+        ],
+    }
+
+
+@router.get("/v1/mobile-parity/cloud-worker/detail")
+async def get_cloud_worker_detail(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(_bearer_scheme),
+) -> Dict[str, Any]:
+    """B6 — Fargate cloud worker layer detail. AUTH REQUIRED.
+
+    Returns full multi-layer readiness detail including config presence.
+    No secret values. No token values. Missing vars count (not names).
+    """
+    api_key = os.environ.get("OPENJARVIS_API_KEY", "").strip()
+    if api_key:
+        import secrets as _secrets
+        token = credentials.credentials if credentials else ""
+        if not token or not _secrets.compare_digest(token.strip(), api_key):
+            raise HTTPException(status_code=401, detail="Invalid or missing API key")
+
+    fargate_detail = _fargate_worker_probe()
+    workspace_detail = _workspace_sync_probe()
+    notif_probe = _notification_queue_probe()
+
+    return {
+        "plan": "Plan 2 — Fargate Cloud Worker Readiness Detail",
+        "auth_required": True,
+        "b6_fargate_worker": fargate_detail,
+        "b8_workspace_sync": workspace_detail,
+        "b5c_external_delivery": {
+            "status": notif_probe.get("external_notification_delivery_status", "NOT_CONFIGURED"),
+            "detail": notif_probe.get("external_delivery_detail", ""),
+        },
+        "b5a_approval_gate": notif_probe.get("approval_gate_status", NOT_CONFIGURED),
+        "b5b_internal_queue": notif_probe.get("internal_notification_queue_status", NOT_CONFIGURED),
+        "macbook_off_execution_ready": (
+            fargate_detail.get("deployed", False) and fargate_detail.get("reachable", False)
+        ),
+        "next_external_actions": [
+            "Deploy ECS Fargate service to close B6",
+            "Inject env tokens at task level for B2 connector access",
+            "Trigger workspace sync worker after Fargate deployment for B8",
+            "Wire external notification delivery from Fargate for B5C",
         ],
     }
