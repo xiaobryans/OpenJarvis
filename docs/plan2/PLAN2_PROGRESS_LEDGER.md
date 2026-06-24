@@ -211,3 +211,63 @@ Also closes safe code-side sub-issues:
 **Secret scan:** CLEAN
 **High-entropy scan:** CLEAN
 **Verdict:** `PLAN_2_FULL_MOBILE_MACBOOK_OFF_PARITY_RUNTIME_HOLD`
+
+---
+
+## Sprint: Plan 2 Full External Blocker Closure + Runtime Proof (B1/B3/B4/B7 code-side)
+
+**Started:** 2026-06-24
+**Branch:** `localhost-get-tool`
+**Base HEAD:** `6c9fdd25`
+**Purpose:** Close all safe code-only gating work for B1 (Google OAuth vault status), B3 (Telegram env alias), B4 (Notion env check), B7 (SQLite persistence + cloud sync layer tracking), and Phase 7 public endpoint security audit.
+
+### Action Log
+
+| # | Action | Files | Risk | Result |
+|---|--------|-------|------|--------|
+| 1 | Repo state inventory: HEAD reconciliation, blocker matrix, dirty files audit | READ ONLY | LOW | HEAD `6c9fdd25` confirmed; pre-existing dirty files identified; 9-blocker matrix built |
+| 2 | Create `life_os_store.py` — SQLite-backed PersonalTaskStore (B7 local) | jarvis_os/life_os_store.py | LOW | SQLitePersonalTaskStore with full CRUD + task_count + db_exists; no cloud calls; no secrets |
+| 3 | Create `life_os_cloud_sync_status.py` — B7 5-layer sync tracking | jarvis_os/life_os_cloud_sync_status.py | LOW | 5 layers; sync_executed and worker_access always LAYER_REQUIRES_DEPLOYMENT; no S3 calls |
+| 4 | Update `personal_os.py` — prefer SQLite backend | jarvis_os/personal_os.py | LOW | get_personal_task_store() uses SQLitePersonalTaskStore with in-memory fallback |
+| 5 | Add `_notion_present()` to plan2_routes.py (B4) | server/plan2_routes.py | LOW | Checks NOTION_API_TOKEN, NOTION_TOKEN, NOTION_INTEGRATION_TOKEN env vars + local file |
+| 6 | Add `_google_oauth_local_status()` to plan2_routes.py (B1) | server/plan2_routes.py | LOW | Presence-only; cloud_vault_configured=False always; b1_status=LOCAL_FILE_ONLY; no token values |
+| 7 | Add `_life_os_cloud_sync_probe()` to plan2_routes.py (B7) | server/plan2_routes.py | LOW | Calls get_life_os_cloud_sync_status().to_dict() with fallback |
+| 8 | Update `_connector_token_present()` for Notion env vars (B3/B4) | server/plan2_routes.py | LOW | B3 comment updated; B4 Notion env vars added to env_checks dict |
+| 9 | Update `_status_2b_connectors()` with B1/B4 fields | server/plan2_routes.py | LOW | b1_google_oauth_vault_status, b1_vault_migration_needed, b4_notion_configured added |
+| 10 | Update `_status_2e_life_os()` with B7 layers | server/plan2_routes.py | LOW | b7_cloud_sync_status, b7_cloud_sync_layers (5 layers) added |
+| 11 | Update `GET /v1/mobile-parity/life-os` with B7 public-safe fields | server/plan2_routes.py | LOW | b7_local_store_type, b7_sync_executed, b7_worker_access (vocabulary strings only) |
+| 12 | Phase 7 security audit: fix `GET /v1/mobile-parity/memory` (PUBLIC) | server/plan2_routes.py | LOW | Removed pinecone_configured and cloud_sync_bucket_configured presence booleans; sanitized blockers/notes text; kept cloud_sync_available (runtime reachability, not key presence) |
+| 13 | Write 43 tests for B1/B3/B4/B7 | tests/plan9/test_plan2_b1_b3_b4_b7.py | LOW | 43/43 pass: TestB3TelegramDualAlias(6), TestB1GoogleOAuthVaultStatus(7), TestB4NotionNotConfigured(8), TestB7LifeOSCloudSyncStatus(8), TestB7SQLiteStore(6), TestPublicEndpointSafetyB1B4B7(3), TestPlan2HoldWithBlockers(5) |
+| 14 | Update PLAN2_AUTONOMOUS_SESSION_STATE.md | docs/plan2/ | LOW | HEAD, sprint info, blocker registry updated |
+| 15 | Update PLAN2_PROGRESS_LEDGER.md | docs/plan2/ | LOW | This entry |
+| 16 | Update PLAN2_RESUME_PROMPT.md | docs/plan2/ | LOW | Files to stage, commit message, next steps |
+
+### Blockers closed this sprint (code-side)
+
+| Blocker | Before | After |
+|---------|--------|-------|
+| B3 | Single env var only | CODE_CLOSED — both TELEGRAM_BOT_TOKEN and JARVIS_TELEGRAM_BOT_TOKEN accepted |
+| B7 (local persistence) | In-memory only — tasks lost on restart | CODE_CLOSED — SQLitePersonalTaskStore active by default |
+
+### Blockers with code-side gating added (still need external action)
+
+| Blocker | Code change | External still needed |
+|---------|-------------|----------------------|
+| B1 | _google_oauth_local_status() reports LOCAL_FILE_ONLY, cloud_vault_configured=False | YES — vault migration |
+| B4 | Notion env var presence check added | YES — actual token |
+| B7 (cloud) | 5-layer tracking; sync_executed always LAYER_REQUIRES_DEPLOYMENT | YES — Fargate deployment |
+
+### Phase 7 Security Audit Findings
+
+**Issue fixed:** `GET /v1/mobile-parity/memory` (PUBLIC endpoint) was exposing:
+- `pinecone_configured: True/False` — revealed Pinecone API key presence to unauthenticated callers
+- `cloud_sync_bucket_configured: True/False` — revealed S3 bucket env var presence
+- `blockers` text containing "Server API key not set" and "Memory store bucket not configured" — revealed key/bucket absence
+
+**Fix applied:** Removed both presence booleans; replaced `blockers` and `notes` with static sanitized text. Kept `cloud_sync_available` (runtime reachability bool — acceptable, analogous to `cloud_file_index_available` on files endpoint).
+
+**All other public endpoints:** PASS — `/v1/mobile-parity/status`, `/v1/mobile-parity/connectors`, `/v1/mobile-parity/files`, `/v1/mobile-parity/life-os`, `/v1/mobile-parity/voice`, `/v1/mobile-parity/approvals`, `/v1/mobile-parity/long-running`, `/v1/mobile-parity/deploy`, `/v1/mobile-parity/cloud-worker` all pass the audit.
+
+**Tests:** 43 new + 442 total plan9 passing (1 pre-existing unrelated failure: test_batch_integration_same_file_live)
+**Secret scan:** CLEAN
+**Verdict:** `PLAN_2_FULL_MOBILE_MACBOOK_OFF_PARITY_RUNTIME_HOLD`

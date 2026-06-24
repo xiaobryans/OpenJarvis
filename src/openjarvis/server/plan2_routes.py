@@ -215,12 +215,25 @@ def _github_token_present() -> bool:
 
 
 def _telegram_present() -> bool:
-    # B3 fix: support both canonical and legacy env var names
+    # B3 CLOSED: both canonical and legacy env var names are checked
     return _env_any("TELEGRAM_BOT_TOKEN", "JARVIS_TELEGRAM_BOT_TOKEN")
 
 
 def _slack_present() -> bool:
     return _env_any("SLACK_BOT_TOKEN", "OPENCLAW_SLACK_BOT_TOKEN")
+
+
+def _notion_present() -> bool:
+    """B4: check Notion token via env var or local credentials file (presence only)."""
+    # Env var takes precedence (cloud-safe if injected at Fargate level)
+    if _env_any("NOTION_API_TOKEN", "NOTION_TOKEN", "NOTION_INTEGRATION_TOKEN"):
+        return True
+    # Local credentials file fallback
+    notion_file = _CONNECTOR_TOKEN_DIR / "notion.json"
+    try:
+        return notion_file.exists() and notion_file.stat().st_size > 10
+    except Exception:
+        return False
 
 
 def _deepgram_present() -> bool:
@@ -234,6 +247,61 @@ def _apple_signing_present() -> bool:
 def _api_key_configured() -> bool:
     """Return True if an API key is set for the server."""
     return _env_present("OPENJARVIS_API_KEY")
+
+
+def _google_oauth_local_status() -> Dict[str, Any]:
+    """B1: Report Google OAuth token local/vault status (presence-only, no values).
+
+    Checks which local credential files exist for Google connectors.
+    Never reads file contents, token values, or account details.
+    Returns cloud_vault_configured=False always — vault migration not implemented.
+    """
+    google_files = {
+        "gmail": "gmail.json",
+        "gcalendar": "gcalendar.json",
+        "gdrive": "gdrive.json",
+        "google_shared": "google.json",
+    }
+    files_present = {}
+    for key, fname in google_files.items():
+        path = _CONNECTOR_TOKEN_DIR / fname
+        try:
+            files_present[key] = path.exists() and path.stat().st_size > 10
+        except Exception:
+            files_present[key] = False
+
+    any_present = any(files_present.values())
+    return {
+        "any_google_token_file_present": any_present,
+        "files_present_count": sum(files_present.values()),
+        "cloud_vault_configured": False,   # vault migration not yet implemented
+        "vault_migration_needed": True,
+        "storage_type": "LOCAL_FILE" if any_present else "NOT_PRESENT",
+        "b1_status": "LOCAL_FILE_ONLY",
+        "b1_action_required": (
+            "Migrate Google OAuth token files to a cloud vault (e.g. AWS Secrets Manager) "
+            "and update google_auth.py to read from vault at Fargate task startup. "
+            "No vault integration is implemented yet."
+        ),
+    }
+
+
+def _life_os_cloud_sync_probe() -> Dict[str, Any]:
+    """B7: probe Life-OS cloud sync layer status (presence-only, no live calls)."""
+    try:
+        from openjarvis.jarvis_os.life_os_cloud_sync_status import get_life_os_cloud_sync_status
+        return get_life_os_cloud_sync_status().to_dict()
+    except Exception as exc:
+        return {
+            "local_store_type": "in_memory",
+            "s3_configured": "not_configured",
+            "sync_code_present": "unknown",
+            "sync_executed": "requires_deployment",
+            "worker_access": "requires_deployment",
+            "local_task_count": 0,
+            "status": "LOCAL_ONLY",
+            "detail": f"life_os_cloud_sync_status unavailable: {exc}",
+        }
 
 
 def _notification_queue_probe() -> Dict[str, Any]:
@@ -404,17 +472,26 @@ def _status_2b_connectors() -> Dict[str, Any]:
     """2B — Connector / task parity."""
     has_slack = _slack_present()
     has_github = _github_token_present()
+    has_telegram = _telegram_present()
+    has_notion = _notion_present()
     has_api_key = _api_key_configured()
+    b1_vault = _google_oauth_local_status()
 
     blockers: List[str] = []
     if not has_api_key:
         blockers.append("OPENJARVIS_API_KEY not set — mobile cannot authenticate to /v1/connectors/*")
+    # B1 blocker
     blockers.append(
-        "OAuth tokens stored locally (~/.openjarvis/) — not accessible from Fargate without secure token sync"
+        f"B1: Google OAuth tokens {b1_vault['storage_type']} — "
+        "vault/cloud migration required for MacBook-off connector access."
     )
+    # B2 blocker
     blockers.append(
-        "GDrive and Notion connector status unverified (UNKNOWN_NEEDS_PROOF in Plan 9 matrix)"
+        "B2: GitHub/Slack/Telegram env tokens are cloud-safe but require Fargate deployment to inject."
     )
+    # B4 blocker
+    if not has_notion:
+        blockers.append("B4: Notion not configured — no API token set.")
 
     return {
         "subsection": "2B",
@@ -426,14 +503,19 @@ def _status_2b_connectors() -> Dict[str, Any]:
         "connector_keys_present": {
             "SLACK": has_slack,
             "GITHUB": has_github,
+            "TELEGRAM": has_telegram,
+            "NOTION": has_notion,
             "GOOGLE_OAUTH": _env_present("GOOGLE_OAUTH_CLIENT_ID"),
-            "NOTION": False,
         },
+        "b1_google_oauth_vault_status": b1_vault["b1_status"],
+        "b1_vault_migration_needed": b1_vault["vault_migration_needed"],
+        "b4_notion_configured": has_notion,
         "blockers": blockers,
         "notes": [
             "Gmail, Calendar, Slack, GitHub: CROSS_DEVICE_LIVE in Plan 9 matrix.",
             "GDrive, Notion: UNKNOWN_NEEDS_PROOF — not yet verified over cloud.",
             "OAuth connector re-auth from mobile requires HTTPS callback URL — not yet implemented.",
+            "B3 CLOSED: Telegram checks both TELEGRAM_BOT_TOKEN and JARVIS_TELEGRAM_BOT_TOKEN.",
         ],
         "key_routes": [
             "GET  /v1/connectors/status",
@@ -604,6 +686,24 @@ def _status_2d_memory() -> Dict[str, Any]:
 def _status_2e_life_os() -> Dict[str, Any]:
     """2E — Life-Business OS operation parity."""
     has_api_key = _api_key_configured()
+    sync_probe = _life_os_cloud_sync_probe()
+    store_type = sync_probe.get("local_store_type", "in_memory")
+    sync_status = sync_probe.get("status", "LOCAL_ONLY")
+
+    # B7 blocker detail
+    blockers = []
+    if store_type == "in_memory":
+        blockers.append(
+            "B7: Life-OS task store is in-memory — tasks lost on restart. "
+            "SQLite backend available in life_os_store.py."
+        )
+    else:
+        blockers.append(
+            "B7: Life-OS data persisted in SQLite locally. "
+            "Cloud sync to S3 requires deployed Fargate worker (B6)."
+        )
+    blockers.append("No push notification for task updates on mobile")
+    blockers.append("Mission control real-time updates not streamed to mobile")
 
     return {
         "subsection": "2E",
@@ -612,15 +712,19 @@ def _status_2e_life_os() -> Dict[str, Any]:
         "mobile_status": CLOUD_REQUIRED,
         "macbook_off_status": CLOUD_REQUIRED,
         "auth_status": AUTH_REQUIRED if not has_api_key else "Bearer token required — key configured",
-        "blockers": [
-            "Life-OS data stored in local SQLite — not synced to cloud",
-            "No push notification for task updates on mobile",
-            "Mission control real-time updates not streamed to mobile",
-        ],
+        "b7_cloud_sync_status": sync_status,
+        "b7_cloud_sync_layers": {
+            "local_store_type": store_type,
+            "s3_configured": sync_probe.get("s3_configured", "not_configured"),
+            "sync_code_present": sync_probe.get("sync_code_present", "unknown"),
+            "sync_executed": sync_probe.get("sync_executed", "requires_deployment"),
+            "worker_access": sync_probe.get("worker_access", "requires_deployment"),
+        },
+        "blockers": blockers,
         "notes": [
             "Routes /v1/life-os/tasks, /v1/workstreams, /v1/goals are all implemented.",
             "Same API works on mobile when pointed at cloud backend.",
-            "Data sync to cloud is the main pending work.",
+            "Data sync to cloud is the main pending work (B7).",
         ],
         "key_routes": [
             "GET  /v1/life-os/tasks",
@@ -1005,21 +1109,34 @@ _TASK_CLASSES = {
 
 def _connector_token_present(rec: Dict[str, Any]) -> bool:
     """Check whether a connector token file or env var is present. No values returned."""
-    if rec["token_storage"] == "NOT_PRESENT":
+    storage = rec["token_storage"]
+
+    if storage == "NOT_PRESENT":
+        # B4: Notion — also check env vars even if registry says NOT_PRESENT
+        if rec["connector_id"] == "notion":
+            return _notion_present()
         return False
-    if rec["token_storage"] == "LOCAL_FILE" and rec.get("token_file_key"):
+
+    if storage == "LOCAL_FILE" and rec.get("token_file_key"):
         path = _CONNECTOR_TOKEN_DIR / rec["token_file_key"]
         try:
-            return path.exists() and path.stat().st_size > 10
+            present = path.exists() and path.stat().st_size > 10
         except Exception:
-            return False
-    if rec["token_storage"] == "ENV_VAR":
+            present = False
+        # B4: Notion — env var fallback even for LOCAL_FILE entry
+        if not present and rec["connector_id"] == "notion":
+            return _notion_present()
+        return present
+
+    if storage == "ENV_VAR":
         # Check known env vars for each provider (presence only)
+        # B3 CLOSED: Telegram checks both canonical and legacy names
         provider = rec["connector_id"]
         env_checks: Dict[str, List[str]] = {
             "github": ["GITHUB_TOKEN"],
             "slack": ["OPENCLAW_SLACK_BOT_TOKEN", "SLACK_BOT_TOKEN", "SLACK_USER_TOKEN"],
             "telegram": ["TELEGRAM_BOT_TOKEN", "JARVIS_TELEGRAM_BOT_TOKEN"],
+            "notion": ["NOTION_API_TOKEN", "NOTION_TOKEN", "NOTION_INTEGRATION_TOKEN"],
         }
         return any(
             os.environ.get(v, "").strip()
@@ -1226,9 +1343,8 @@ async def get_memory_parity_status() -> Dict[str, Any]:
 
     PUBLIC endpoint (no auth required).
     Returns sanitized status only — no memory content, no bucket names,
-    no credential values, no usernames, no account IDs.
-    Cloud sync probe result is presence-only (bucket name truncated to 8 chars
-    by cloud_sync.py before reaching here).
+    no credential values, no key presence booleans, no env var names.
+    Detailed sync probe and Pinecone/bucket presence are auth-gated only.
     """
     full = _status_2d_memory()
     sync_probe = full.get("cloud_sync_probe", {})
@@ -1240,15 +1356,23 @@ async def get_memory_parity_status() -> Dict[str, Any]:
         "desktop_status": full["desktop_status"],
         "mobile_status": full["mobile_status"],
         "macbook_off_status": full["macbook_off_status"],
+        # Runtime reachability only — no key/bucket presence booleans
         "cloud_sync_available": sync_probe.get("available", False),
-        "cloud_sync_bucket_configured": sync_probe.get("bucket_configured", False),
-        "pinecone_configured": full.get("pinecone_configured", False),
-        "local_db_accessible": full.get("local_db_accessible", False),
-        "blockers": full["blockers"],
-        "notes": full["notes"],
         "key_routes": full["key_routes"],
+        "notes": [
+            "Primary memory: SQLite (local). Cloud sync module present.",
+            "POST /v1/memory/sync — push/pull/both modes implemented and wired.",
+            "Semantic search: available via configured provider (auth-gated).",
+            "/v1/continuity/macbook-off-status is public (no auth required).",
+            "/v1/memory/* requires Bearer token.",
+        ],
         "permanent_blockers": [
             "Full SQLite↔S3 sync requires Fargate deployment (not a code blocker).",
+        ],
+        "blockers": [
+            "Memory store is local SQLite — cloud sync requires Fargate deployment.",
+            "Full bidirectional SQLite↔S3 sync requires Fargate backend.",
+            "Mobile memory access requires Bearer token.",
         ],
     }
 
@@ -1259,15 +1383,25 @@ async def get_memory_parity_status() -> Dict[str, Any]:
 
 @router.get("/v1/mobile-parity/life-os")
 async def get_life_os_parity_status() -> Dict[str, Any]:
-    """Plan 2E — life-business OS parity status detail. PUBLIC endpoint."""
+    """Plan 2E — life-business OS parity status detail. PUBLIC endpoint.
+
+    No S3 bucket names. No credential values. No private paths.
+    B7 layer status reported as static vocabulary strings only.
+    """
     full = _status_2e_life_os()
     pub = _public_subsection(full)
+    # B7 public-safe layer summary: store type and sync status only
+    b7_layers = full.get("b7_cloud_sync_layers", {})
     return {
         "plan": "Plan 2E — Life-Business OS Operation Parity",
         "sprint_verdict": "PLAN_2E_LIFE_OS_PARITY_PATCHED_PENDING_REVIEW",
         **pub,
+        "b7_local_store_type": b7_layers.get("local_store_type", "unknown"),
+        "b7_sync_executed": b7_layers.get("sync_executed", "requires_deployment"),
+        "b7_worker_access": b7_layers.get("worker_access", "requires_deployment"),
+        "b7_cloud_sync_status": full.get("b7_cloud_sync_status", "LOCAL_ONLY"),
         "blockers_summary": [
-            "Life-OS data (tasks, workstreams, goals) stored in local SQLite — cloud sync pending.",
+            "B7: Life-OS data local only — cloud sync requires Fargate worker (B6).",
             "Push notifications for task updates not yet wired.",
         ],
     }

@@ -217,14 +217,20 @@ def generate_daily_summary(store: PersonalTaskStore) -> DailySummary:
     )
 
 
-# Module-level singleton for server use
+# Module-level singleton for server use.
+# Prefers the SQLite backend (life_os_store.py) for local persistence.
+# Falls back to in-memory PersonalTaskStore if SQLite is unavailable.
 _store: Optional[PersonalTaskStore] = None
 
 
 def get_personal_task_store() -> PersonalTaskStore:
     global _store
     if _store is None:
-        _store = PersonalTaskStore()
+        try:
+            from openjarvis.jarvis_os.life_os_store import SQLitePersonalTaskStore
+            _store = SQLitePersonalTaskStore()  # type: ignore[assignment]
+        except Exception:
+            _store = PersonalTaskStore()
     return _store
 
 
