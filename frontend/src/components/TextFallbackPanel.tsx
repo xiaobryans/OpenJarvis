@@ -1,16 +1,14 @@
 import { useEffect } from 'react';
-import { X, MessageSquareText } from 'lucide-react';
+import { X, History } from 'lucide-react';
 import { useAppStore } from '../lib/store';
-import { ChatArea } from './Chat/ChatArea';
+import { HistoryViewer } from './Chat/HistoryViewer';
 
 /**
- * Cmd+K fallback panel.
+ * Cmd+K history viewer panel.
  *
- * This is the ONLY thing bound to Cmd+K. It is a text / transcript / chat
- * fallback — conversation history + a text input — and it deliberately does
- * NOT contain any model picker, provider picker, or settings. Model routing
- * is automatic/internal; the model manager lives behind an explicit (no
- * hotkey) action in the sidebar for debugging only.
+ * Read-only chat/session history with search. Does NOT submit messages
+ * or generate model responses — chat input lives in the main cockpit only.
+ * Cmd+Shift+K opens the command palette instead.
  */
 export function TextFallbackPanel() {
   const setTextFallbackOpen = useAppStore((s) => s.setTextFallbackOpen);
@@ -47,12 +45,12 @@ export function TextFallbackPanel() {
           className="flex items-center gap-2 px-4 py-3 shrink-0"
           style={{ borderBottom: '1px solid var(--color-border)' }}
         >
-          <MessageSquareText size={16} style={{ color: 'var(--color-accent)' }} />
+          <History size={16} style={{ color: 'var(--color-accent)' }} />
           <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>
-            Transcript &amp; Text
+            Chat History
           </span>
           <span className="text-[11px]" style={{ color: 'var(--color-text-tertiary)' }}>
-            Type to Jarvis · history · ⌘K / Esc to close
+            view &amp; search · ⌘K / Esc to close
           </span>
           <button
             onClick={() => setTextFallbackOpen(false)}
@@ -64,9 +62,9 @@ export function TextFallbackPanel() {
           </button>
         </div>
 
-        {/* Body — reuses the proven chat history + text input (no model picker) */}
+        {/* Body — read-only history viewer, no chat input */}
         <div className="flex-1 min-h-0">
-          <ChatArea />
+          <HistoryViewer />
         </div>
       </div>
     </div>
