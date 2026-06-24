@@ -7,7 +7,7 @@
 | Field | Value |
 |-------|-------|
 | Branch | `localhost-get-tool` |
-| HEAD | `7b639e5e` → (Plan 2G B5B closure sprint — pending commit) |
+| HEAD | `43c58b89` (Plan 2G B5B closure sprint — pushed) |
 | Remote | `fork/localhost-get-tool` |
 | Working tree | Dirty — pre-existing: `JARVIS_OMNIX_HANDOFF.md`, `tests/workbench/test_us14a_fixture.py` |
 | Untracked | `evidence/`, `scripts/plan1_cockpit_proof.py`, `scripts/plan9_copy_cloud_api_key.sh`, `scripts/plan9_verify_cloud_api_key.py` |
