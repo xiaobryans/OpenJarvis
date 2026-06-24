@@ -82,21 +82,25 @@ See `.claude/agents/` for full agent definitions. Key agents:
 - `docs-matrix-maintainer` — matrix/doc maintenance only
 - `merge-coordinator` — final integration gate
 - `automation-auditor` — action ledger review, accountability enforcement
+- `default-automation-router` — classifies any Bryan request and routes automatically
 
 ## Skills
 See `.claude/skills/` — openjarvis-validation, secret-safety-review, plan2-sprint,
 plan2-report, checkpoint-regression, changed-file-review, safe-merge-review,
-parallel-worktree, tauri-deferred-plan2, blocker-triage.
+parallel-worktree, tauri-deferred-plan2, blocker-triage, full-automation-ledger,
+jarvis-plan-executor.
 
 ## Slash Commands
 See `.claude/commands/` — /plan2-next, /plan2-sprint, /validate-openjarvis,
 /secret-scan, /checkpoint-regression, /plan2-report, /safe-merge-review,
-/parallel-plan2, /stop-on-blocker, /status-roadmap,
-/automation-ledger, /full-auto-setup.
+/parallel-plan2, /stop-on-blocker, /status-roadmap, /automation-ledger,
+/full-auto-setup, /auto-execute, /jarvis-plan, /parallel-auto,
+/autonomous-takeover-check.
 
 ## Hooks
-See `.claude/hooks/README.md` — hook scripts prepared but not yet activated.
-Activation requires wiring into `.claude/settings.json`.
+See `.claude/hooks/README.md`. Hooks are **active** via `.claude/settings.json`:
+`warn-env-access` (passive), `warn-tauri-build` (blocking, exit 2),
+`remind-diff-check` (passive), `remind-action-ledger` (passive).
 
 ## Full Automation Accountability
 
@@ -117,6 +121,49 @@ govern autonomous / full-automation sprints:
 - Claude must **preserve unrelated dirty files** — never stage them.
 - Bypass permission does not authorize actions outside sprint scope.
 - Bypass permission does not remove the ledger requirement.
+
+## DEFAULT_AUTONOMOUS_EXECUTION_MODE
+
+Any Bryan plan, sprint, bug, report, or implementation prompt defaults to
+**autonomous execution** unless Bryan explicitly says one of:
+`review-only`, `no-edits`, `planning-only`, or `ask-first`.
+
+**Default autonomous behaviour:**
+- Claude classifies the request automatically using `default-automation-router`.
+- Claude chooses relevant agents, skills, and commands automatically.
+- Claude decides sequential vs safe parallel work automatically.
+- Claude uses worktrees/branches for parallel work when file ownership can be
+  fully separated and no protected areas overlap.
+- Claude assigns file ownership before any parallel work begins.
+- Claude validates changed files after every implementation step.
+- Claude runs secret/security checks before every staged commit.
+- Claude updates docs/matrix files when the sprint scope requires it.
+- Claude may stage explicit files, commit, and push when the prompt grants
+  implementation authority or the task is inside an already-approved sprint scope.
+- Claude reports all actions and justifications in the action ledger.
+- Claude does **not** pause for routine approval on normal repo work inside scope.
+
+**Standing permission (Bryan-granted):**
+Bryan grants standing permission for autonomous repo work inside approved
+OpenJarvis sprint scope. This covers: file edits, staging (explicit paths),
+commits, pushes to `fork/localhost-get-tool`, agent/skill/command invocation,
+safe parallel worktree setup, validation, and secret scanning.
+
+**Claude must still stop and ask Bryan when:**
+1. Action is outside the current sprint/plan scope.
+2. Action may read, expose, or print secret/credential values.
+3. Action is destructive (deletes or quarantines files).
+4. Action triggers live cloud/OAuth/deployment/spend/external side effects.
+5. Action requires Tauri rebuild/reinstall before full Plan 2 completion.
+6. Action contradicts a locked roadmap state or accepted checkpoint.
+7. Action changes auth/approval gates in a way that weakens safety.
+8. Action requires touching unrelated dirty files.
+9. Safe parallelization is impossible due to overlapping file ownership.
+
+**Model routing defaults:**
+- Sonnet — setup, implementation, validation, docs, reporting, connectors
+- Opus — architecture decisions, auth/security tradeoffs, memory/routing design,
+  cloud/deployment design, final merge review, contradiction resolution
 
 ## MCP
 MCP connectors deferred. See `docs/plan2/CLAUDE_AUTOMATION_SETUP.md`.

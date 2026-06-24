@@ -3,7 +3,8 @@
 **Last updated:** 2026-06-24
 **Branch:** `localhost-get-tool`
 **Baseline committed at:** `8491d99c`
-**Full automation commit:** pending review
+**Full automation committed at:** `4c9f15d9`
+**Router extension:** pending review
 
 ---
 
@@ -11,7 +12,7 @@
 
 | File | Status |
 |------|--------|
-| `CLAUDE.md` | Updated — full rules, locked state, accountability section |
+| `CLAUDE.md` | Updated — full rules, locked state, accountability, DEFAULT_AUTONOMOUS_EXECUTION_MODE |
 | `.gitignore` | Updated — un-ignored agents/skills/commands/hooks, settings.json tracked |
 | `.claude/settings.json` | Created — repo-scoped hook activation |
 
@@ -21,6 +22,7 @@
 
 | Agent | Responsibility |
 |-------|---------------|
+| `default-automation-router` | Classifies any Bryan request, routes automatically |
 | `plan2-coordinator` | Sprint ownership, file conflict prevention, routing |
 | `backend-implementer` | API/route/handler implementation |
 | `frontend-mobile-implementer` | React/TypeScript/mobile UI |
@@ -39,6 +41,7 @@
 
 | Skill | Purpose |
 |-------|---------|
+| `jarvis-plan-executor` | Full autonomous sprint lifecycle (the primary execution skill) |
 | `openjarvis-validation` | Changed-file validation + sprint report |
 | `secret-safety-review` | Secret scan — presence-only, PASS/HOLD |
 | `plan2-sprint` | Full sprint execution end-to-end |
@@ -57,6 +60,10 @@
 
 | Command | Purpose |
 |---------|---------|
+| `/auto-execute` | Autonomous execution entry point — routes + executes any prompt |
+| `/jarvis-plan` | Execute Bryan's roadmap/sprint prompt using default automation |
+| `/parallel-auto` | Evaluate safe parallelization and execute; fallback to sequential |
+| `/autonomous-takeover-check` | Validate all automation infrastructure is ready |
 | `/plan2-next` | Show next unblocked Plan 2 task |
 | `/plan2-sprint` | Execute a Plan 2 sprint |
 | `/validate-openjarvis` | Run changed-file validation |
@@ -76,58 +83,108 @@
 
 **Status: ACTIVATED in `.claude/settings.json`**
 
-| Script | Type | Exit | Status | Purpose |
-|--------|------|------|--------|---------|
-| `warn-env-access.sh` | PreToolUse (Read/Edit/Write) | 0 — warn only | **Active** | Warns when secret-looking files accessed |
-| `warn-tauri-build.sh` | PreToolUse (Bash) | 2 — **blocks** | **Active** | Blocks `build-local.sh --install` |
-| `remind-diff-check.sh` | PostToolUse (Bash) | 0 — warn only | **Active** | Reminds to run `git diff --check` |
-| `remind-action-ledger.sh` | PostToolUse (Bash) | 0 — warn only | **Active** | Reminds to log in sprint action ledger |
-
-Hook config lives at `.claude/settings.json` (repo-scoped, tracked by git).
-`settings.local.json` remains gitignored (per-developer overrides only).
+| Script | Type | Exit | Purpose |
+|--------|------|------|---------|
+| `warn-env-access.sh` | PreToolUse (Read/Edit/Write) | 0 — passive | Warns when secret-looking files accessed |
+| `warn-tauri-build.sh` | PreToolUse (Bash) | 2 — **blocks** | Hard-blocks `build-local.sh --install` |
+| `remind-diff-check.sh` | PostToolUse (Bash) | 0 — passive | Reminds to run `git diff --check` |
+| `remind-action-ledger.sh` | PostToolUse (Bash) | 0 — passive | Reminds to log in sprint action ledger |
 
 ---
 
-## Full Automation Mode
+## Default Autonomous Execution Mode
 
-When **bypass permission mode** is enabled, Claude may act autonomously within the
-declared sprint scope. The following rules apply regardless of permission mode:
+`DEFAULT_AUTONOMOUS_EXECUTION_MODE` is active. Any Bryan plan, sprint, bug,
+report, or implementation prompt defaults to **autonomous execution**.
 
-1. All project hard rules from `CLAUDE.md` remain in force.
-2. Claude must maintain an **action ledger** for every meaningful action.
-3. **High-risk actions** (auth, connectors, staging/commit/push, hook activation,
-   file deletion, large refactors) require explicit justification before execution.
-4. Claude must never hide changed files, failed validations, or blockers.
-5. Claude must use explicit `git add <path>` — never `git add .` or `git add -A`.
-6. Claude must not claim acceptance — only Bryan (or ChatGPT reviewer) can accept.
-7. Unrelated dirty files must not be staged.
+### Activation keywords (Bryan overrides — disables autonomous mode for that prompt)
+- `review-only`
+- `no-edits`
+- `planning-only`
+- `ask-first`
 
-### Coordinator / Worker / Reviewer Flow
+### Standing Permission Scope (Bryan-granted)
+Autonomous execution is authorized for:
+- File edits within declared sprint scope
+- Staging (explicit paths only — no `git add .`)
+- Committing within sprint scope
+- Pushing to `fork/localhost-get-tool`
+- Agent/skill/command invocation
+- Safe parallel worktree setup (when file ownership fully separable)
+- Validation (all forms)
+- Secret scanning (presence-only)
+- Doc/matrix updates triggered by sprint scope
+
+### No Routine Approval Loop
+Claude does NOT pause to ask Bryan for approval on:
+- Normal file edits within scope
+- Running validation commands
+- Staging, committing, pushing within scope
+- Agent and skill delegation
+- Worktree creation for approved parallel work
+- Secret scan (presence-only)
+
+Claude reports actions and justifications in the action ledger instead.
+
+### Automatic Router Behaviour
+Every prompt passes through `default-automation-router` which:
+1. Classifies the task type
+2. Assigns risk class (low/medium/high)
+3. Recommends model (Sonnet/Opus)
+4. Selects agents, skills, commands
+5. Decides sequential vs parallel work
+6. Declares file ownership map
+7. Plans validation steps
+8. Sets commit/push policy
+
+### Automatic Parallelization Rules
+Parallel worktrees are created automatically when:
+- ≥2 independent sub-tasks exist
+- Zero file overlap between tasks
+- No task touches protected areas simultaneously
+- Each task can validate independently
+
+Fallback to sequential without prompting when any of the above is false.
+
+### When Claude Must Still Ask Bryan
+1. Task classified as `out-of-scope`
+2. Secret/credential exposure risk
+3. Destructive file operations (deletion)
+4. Live cloud/OAuth/deployment/spend side effects
+5. Tauri rebuild required before full Plan 2 completion
+6. Contradicts locked roadmap state or accepted checkpoint
+7. Auth/approval-gate weakening
+8. Touching unrelated dirty files
+9. Unavoidable file ownership overlap in protected areas
+
+### Examples
+
+| Bryan says | Claude does |
+|------------|-------------|
+| "Plan 2C. Proceed." | Router classifies → ownership map → implement → validate → commit → report |
+| "Fix this blocker and validate." | Blocker-triage → fix → validate → report |
+| "Run takeover validation." | Checkpoint-regression + security-review → report |
+| "Parallelize if safe." | Evaluate ownership → worktrees if safe → sequential if not |
+| "Review only." | Router: review-only → reads files → reports → no edits |
+
+---
+
+## Coordinator / Worker / Reviewer Flow (Autonomous)
 
 ```
-Bryan (approves sprint scope)
-  └── plan2-coordinator (declares file ownership, routes tasks)
-        ├── backend-implementer (owns backend files)
-        ├── frontend-mobile-implementer (owns frontend files)
-        ├── connector-specialist (owns connector files)
-        └── memory-sync-specialist (owns memory files)
-              └── merge-coordinator (integration gate, PASS/HOLD)
-                    └── Bryan (approves merge)
+Bryan prompt
+  └── default-automation-router (classify, plan, ownership)
+        └── jarvis-plan-executor (full lifecycle)
+              ├── Sequential: plan2-coordinator → implementer(s)
+              └── Parallel: plan2-coordinator → worktree-A + worktree-B
+                              └── merge-coordinator (PASS/HOLD)
+                                    └── Bryan approves merge
 ```
 
-Accountability layer:
-- `automation-auditor` reviews ledger after any autonomous sprint.
-- `security-reviewer` reviews auth/secret changes — can HOLD independently.
-- `validation-reporter` produces exact outputs, no summarizing.
-
-### Commit / Push Rules (full automation mode)
-1. Stage only files in declared sprint scope using explicit paths.
-2. Verify staged files with `git diff --cached --name-only` before commit.
-3. Run secret scan on staged files before commit.
-4. Run `git diff --check` before commit.
-5. Commit with a clear message describing scope.
-6. Push only to the declared remote/branch.
-7. Log staging, commit, and push in the action ledger (all MEDIUM risk).
+Action accountability at every step:
+- `full-automation-ledger` records every action
+- `automation-auditor` reviews ledger for gaps on request
+- `security-reviewer` can HOLD any step independently
 
 ---
 
@@ -135,48 +192,43 @@ Accountability layer:
 
 **MCP connectors: DEFERRED**
 
-Recommended future MCP activation order (when ready):
-1. Local filesystem/repo only — read-only access to project files
-2. GitHub read-only — PR, issue, and diff context
-3. Browser/dev server — frontend validation
-4. Cloud/provider read-only — monitoring only
-5. Write-enabled tools — only after approval gates are proven in production
-
-Do not add write-enabled MCP connectors until:
-- Fargate approval gate is deployed and tested
-- Cloud execution path is proven safe
-- Bryan approves each connector explicitly
+Recommended future MCP activation order:
+1. Local filesystem/repo only
+2. GitHub read-only
+3. Browser/dev server
+4. Cloud/provider read-only
+5. Write-enabled — only after approval gates proven
 
 ---
 
 ## Remaining Setup
 
-- [x] Review and activate hooks — done via `.claude/settings.json`
+- [x] Hooks activated via `.claude/settings.json`
+- [x] Default autonomous execution mode configured
+- [x] Router agent and executor skill in place
 - [ ] Wire approval notification loop (Plan 2 blocker)
 - [ ] Deploy Fargate worker (Plan 2 blocker)
 - [ ] Migrate Google OAuth tokens to vault (Plan 2 blocker)
 - [ ] Resolve Telegram env mismatch (Plan 2 blocker)
 - [ ] Configure Notion connector (Plan 2 blocker)
-- [ ] Activate MCP connectors (deferred per MCP policy above)
+- [ ] Activate MCP connectors (deferred)
 
 ---
 
-## Is Claude Ready for Plan 2C Takeover Validation?
+## Is Claude Ready for Autonomous Plan 2C Execution?
 
-**YES — with the following conditions:**
+**YES — autonomous execution infrastructure is complete.**
 
-✓ `CLAUDE.md` with full rules, locked state, and accountability section  
-✓ 11 agents defined with narrow responsibilities  
-✓ 11 skills defined with exact steps and stop conditions  
-✓ 12 commands defined  
-✓ 4 hook scripts active via `settings.json`  
-✓ Parallel worktree workflow documented  
-✓ Action ledger and automation-auditor in place  
-✓ Contradiction rule enforced  
-✓ No fake PASS / no fake ACCEPTED rules in all agents/skills  
+✓ `DEFAULT_AUTONOMOUS_EXECUTION_MODE` in `CLAUDE.md`
+✓ `default-automation-router` agent — automatic task classification
+✓ `jarvis-plan-executor` skill — full sprint lifecycle
+✓ 12 agents, 12 skills, 16 commands
+✓ 4 hooks active
+✓ Action ledger and auditor in place
+✓ Parallel worktree flow documented and automated
+✓ Standing permission documented with explicit hard-stop boundaries
+✓ `/autonomous-takeover-check` command for pre-sprint verification
 
-**Conditions before first Plan 2C sprint:**
-- Bryan must explicitly approve start of Plan 2C
-- Tauri rebuild remains deferred
-- Run `/stop-on-blocker` to triage current blockers
-- Run `/status-roadmap` to confirm locked state
+**Run `/autonomous-takeover-check` to verify all components before first Plan 2C sprint.**
+**Run `/stop-on-blocker` to triage current blockers.**
+**Bryan must explicitly approve start of Plan 2C sprint.**
