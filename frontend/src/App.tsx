@@ -19,7 +19,7 @@ import { TextFallbackPanel } from './components/TextFallbackPanel';
 import { SetupScreen } from './components/SetupScreen';
 import { Toaster } from './components/ui/sonner';
 import { useAppStore } from './lib/store';
-import { fetchModels, fetchServerInfo, fetchSavings, submitSavings, isTauri } from './lib/api';
+import { fetchModels, fetchServerInfo, fetchSavings, submitSavings, isTauri, apiFetch } from './lib/api';
 import { OptInModal } from './components/OptInModal';
 import { UpdateChecker } from './components/Desktop/UpdateChecker';
 import { track, hashId } from './lib/analytics';
@@ -87,6 +87,19 @@ export default function App() {
   // Fetch server info
   useEffect(() => {
     fetchServerInfo().then(setServerInfo).catch(() => {});
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Override selectedModel with configured PA front-door cloud model.
+  // Local Ollama models (e.g. qwen3.5:2b) are only used if no cloud route exists.
+  // Cloud model IDs contain '/' (e.g. openai/gpt-4o); local IDs do not.
+  useEffect(() => {
+    apiFetch('/v1/model-routing/status')
+      .then((r) => r.json())
+      .then((d: { pa_front_door_model?: string }) => {
+        const pa = d?.pa_front_door_model;
+        if (pa && pa.includes('/')) setSelectedModel(pa);
+      })
+      .catch(() => {}); // non-critical — silent on failure
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Poll savings and optionally share to Supabase

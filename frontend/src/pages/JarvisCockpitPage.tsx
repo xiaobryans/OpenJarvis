@@ -131,7 +131,7 @@ const ALL_MODULES: ModuleEntry[] = [
   { id: 'audit',      icon: '📜', label: 'Audit / Logs',            mode: 'audit',     availability: 'live',          description: 'Governance audit trail, event log' },
   { id: 'memory',     icon: '🧠', label: 'Memory',                  mode: 'memory',    availability: 'live',          description: 'Memory store + S3 cloud sync' },
   { id: 'connectors', icon: '🔌', label: 'Connectors',              mode: 'system',    availability: 'live',          description: 'Data source integrations' },
-  { id: 'plan9',      icon: '🚀', label: 'Plan 9 / System',         mode: 'system',    availability: 'live',          description: 'Cross-device parity matrix, capability status' },
+  { id: 'plan9',      icon: '🚀', label: 'Parity / System',          mode: 'system',    availability: 'live',          description: 'Parity readiness, Plan 2 status, routing' },
   { id: 'settings',   icon: '⚙️',  label: 'Settings',               mode: 'system',    availability: 'live',          description: 'Server URL, model, auth, theme' },
   { id: 'skills',     icon: '🎓', label: 'Skills',                  mode: 'system',    availability: 'pending_plan_4', description: 'ECC skill packs — Pending Plan 4' },
   { id: 'research',   icon: '🔬', label: 'Research',                mode: 'system',    availability: 'pending_plan_4', description: 'Research assistant — Pending Plan 4' },
@@ -377,7 +377,7 @@ function TopStatusBar({ apiOk, model, version, gitCommit, apiTarget, plan9, pend
         {model && <span style={{ color: 'rgba(100,165,200,0.55)' }}>{model.split('/').pop()?.slice(0, 18) ?? model}</span>}
         {plan9 && (
           <span style={{ color: plan9.gaps === 0 ? '#3ddc97' : '#f59e0b', letterSpacing: '0.04em' }}>
-            P9{plan9.gaps === 0 ? '·✓' : `·${plan9.gaps}⚠`}
+            {plan9.gaps === 0 ? 'PARITY·✓' : `P2·${plan9.gaps}⚠`}
           </span>
         )}
         {connectorTotal > 0 && (
@@ -1474,7 +1474,7 @@ function MemorySurface({ memStatus, memLastRefresh, syncBusy, syncResult, apiOk,
           )}
         </div>
         <div style={{ background: 'rgba(8,14,28,0.85)', border: '1px solid rgba(34,211,238,0.1)', borderRadius: 12, padding: '12px 14px' }}>
-          <div style={{ fontSize: 11, fontWeight: 600, color: 'rgba(160,200,240,0.8)', marginBottom: 8 }}>☁️ Cross-Device Sync (Plan 9)</div>
+          <div style={{ fontSize: 11, fontWeight: 600, color: 'rgba(160,200,240,0.8)', marginBottom: 8 }}>☁️ Cloud Sync (Memory)</div>
           <div style={{ fontSize: 10, color: 'rgba(140,180,210,0.6)', marginBottom: 10, lineHeight: 1.6 }}>
             MacBook writes → push to S3. ECS/iPhone → pull from S3.
           </div>
@@ -1584,7 +1584,7 @@ function SystemSurface({ plan9, routingStatus, registry, runtimeProof, agents, c
       line2: '',
     },
     {
-      id: 'plan9', icon: '🚀', label: 'Plan 9 / Parity', status: plan9 ? (plan9.gaps > 0 ? 'warn' : 'ok') : 'unknown',
+      id: 'plan9', icon: '🚀', label: 'Parity Status', status: plan9 ? (plan9.gaps > 0 ? 'warn' : 'ok') : 'unknown',
       line1: plan9 ? `Verdict: ${plan9.verdict ?? '—'}` : 'Fetching…',
       line2: runtimeProof ? `Proof: ${runtimeProof.verified_count}/${runtimeProof.total_items} verified` : '',
     },
@@ -1878,12 +1878,17 @@ export function JarvisCockpitPage() {
     if (!msg || sending) return;
     setSending(true);
     setPhase('thinking');
-    setLastReply('');
+    setLastReply('Working on it\u2026');
     setInput('');
     setTimeout(() => inputRef.current?.focus(), 60);
 
-    // Prefer selectedModel from shared store (same as Cmd+K), fall back to health model
-    const chatModel = storeSelectedModel || model || 'default';
+    // Cloud-first routing: prefer PA front-door cloud model over local Ollama.
+    // Cloud model IDs contain '/' (e.g. openai/gpt-4o); local IDs do not.
+    const isCloud = (m: string | null | undefined): m is string => !!m && m.includes('/');
+    const paModel = routingStatus?.pa_front_door_model;
+    const chatModel = isCloud(paModel) ? paModel
+      : isCloud(storeSelectedModel) ? storeSelectedModel
+      : (model || 'default');
 
     // Write user message to shared conversation store so Cmd+K history tallies
     let convId = storeActiveId;
@@ -1935,7 +1940,7 @@ export function JarvisCockpitPage() {
       };
       storeAddMessage(convId, assistantMsg);
     }
-  }, [input, sending, model, storeSelectedModel, storeActiveId, storeCreateConversation, storeAddMessage]);
+  }, [input, sending, model, storeSelectedModel, routingStatus, storeActiveId, storeCreateConversation, storeAddMessage]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSubmit(); }
@@ -2032,7 +2037,7 @@ export function JarvisCockpitPage() {
             <Row label="Target" value={apiTarget || '—'} />
             <Row label="Model" value={model || '—'} />
             <Row label="Version" value={version ? `v${version}` : '—'} />
-            <SectionHeading>Plan 9 Parity</SectionHeading>
+            <SectionHeading>Parity Status</SectionHeading>
             {plan9 ? (
               <>
                 <Row label="Cloud/Mobile live" value={plan9.mobile_cloud_live} status="ok" />
@@ -2101,16 +2106,35 @@ export function JarvisCockpitPage() {
             ))}
           </Overlay>
         );
-      case 'connectors':
+      case 'connectors': {
+        const namedConns = connectors.filter(c => c.name && c.name !== 'unknown');
+        const activeConns = connectors.filter(c => c.connected);
+        const unnamedCount = connectors.filter(c => !c.name || c.name === 'unknown').length;
         return (
           <Overlay title="Connectors" icon="🔌" onClose={() => setExpandedPanel(null)}>
             <SectionHeading>Connector Status</SectionHeading>
             {connectors.length === 0
               ? <BackendError endpoint="/v1/connectors" target={apiTarget} httpStatus={fetchState.connectors?.httpStatus} detail={fetchState.connectors?.detail} />
-              : connectors.map(c => <Row key={c.name} label={c.name} value={c.endpoint ?? (c.connected ? 'connected' : 'disconnected')} status={c.connected ? 'ok' : 'error'} />)
+              : (
+                <>
+                  <Row label="Registered" value={connectors.length} />
+                  <Row label="Connected" value={activeConns.length} status={activeConns.length > 0 ? 'ok' : 'warn'} />
+                  {namedConns.map(c => (
+                    <Row key={c.name} label={c.name} value={c.endpoint ?? (c.connected ? 'CONNECTED' : 'DISCONNECTED')} status={c.connected ? 'ok' : 'warn'} />
+                  ))}
+                  {unnamedCount > 0 && (
+                    <Row
+                      label={`${unnamedCount} connector${unnamedCount !== 1 ? 's' : ''}`}
+                      value="SETUP REQUIRED — metadata unavailable"
+                      status="warn"
+                    />
+                  )}
+                </>
+              )
             }
           </Overlay>
         );
+      }
       case 'agents':
         return (
           <Overlay title="Agent Roster" icon="🤖" onClose={() => setExpandedPanel(null)}>
@@ -2154,23 +2178,31 @@ export function JarvisCockpitPage() {
         );
       case 'plan9':
         return (
-          <Overlay title="Plan 9 — Cross-Device Parity" icon="🚀" onClose={() => setExpandedPanel(null)}>
-            <SectionHeading>Capability Matrix</SectionHeading>
+          <Overlay title="Plan 2 — MacBook-Off Parity Readiness" icon="🚀" onClose={() => setExpandedPanel(null)}>
+            <SectionHeading>Plan 9 Foundation (Accepted)</SectionHeading>
             {plan9 ? (
               <>
                 <Row label="Cloud/Mobile live" value={plan9.mobile_cloud_live} status="ok" />
                 <Row label="Mac/Local live" value={plan9.mac_local_live} status="ok" />
-                <Row label="Gaps" value={plan9.gaps} status={plan9.gaps > 0 ? 'warn' : 'ok'} />
-                <Row label="Parked" value={plan9.parked} />
+                <Row label="Plan 9 foundation" value="ACCEPTED" status="ok" />
                 <Row label="Last checked" value={plan9LastRefresh || '—'} />
               </>
             ) : <BackendError endpoint="/v1/parity/status" target={apiTarget} httpStatus={fetchState.parity?.httpStatus} detail={fetchState.parity?.detail} />}
+            <SectionHeading>Plan 2 Parity Runtime (Pending)</SectionHeading>
+            {plan9 && plan9.gaps > 0 && (
+              <Row label="Gaps to close" value={plan9.gaps} status="warn" />
+            )}
+            {plan9 && plan9.parked > 0 && (
+              <Row label="Parked items" value={plan9.parked} status="warn" />
+            )}
+            <Row label="Cloud-off runtime" value="PENDING PLAN 2" status="warn" />
+            <Row label="Mobile parity" value="PENDING PLAN 2" status="warn" />
             <SectionHeading>Runtime Proof</SectionHeading>
             {runtimeProof ? (
               <>
                 <Row label="Total items" value={runtimeProof.total_items} />
-                <Row label="Verified" value={runtimeProof.verified_count} status="ok" />
-                <Row label="Pending" value={runtimeProof.pending_count} status={runtimeProof.pending_count > 0 ? 'warn' : 'ok'} />
+                <Row label="Verified (Plan 9)" value={runtimeProof.verified_count} status="ok" />
+                <Row label="Pending (Plan 2)" value={runtimeProof.pending_count} status={runtimeProof.pending_count > 0 ? 'warn' : 'ok'} />
               </>
             ) : <Row label="Runtime proof" value="Loading…" />}
           </Overlay>
@@ -2364,7 +2396,7 @@ export function JarvisCockpitPage() {
       {/* Top status bar */}
       <TopStatusBar
         apiOk={apiOk}
-        model={model}
+        model={routingStatus?.pa_front_door_model || model}
         version={version}
         gitCommit={gitCommit}
         apiTarget={apiTarget}
