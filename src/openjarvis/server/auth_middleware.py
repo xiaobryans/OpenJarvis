@@ -76,6 +76,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
     _PUBLIC_PATHS: frozenset[str] = frozenset(
         {
             "/v1/continuity/macbook-off-status",
+            "/v1/mobile-parity/status",
         }
     )
 

@@ -176,6 +176,43 @@ interface TaskResult {
   error?: string;
 }
 
+interface Plan2SubsectionStatus {
+  subsection: string;
+  name: string;
+  desktop_status: string;
+  mobile_status: string;
+  macbook_off_status: string;
+  auth_status: string;
+  blockers?: string[];
+  notes?: string[];
+}
+
+interface Plan2ParityData {
+  plan?: string;
+  sprint?: string;
+  version?: string;
+  acceptance_target?: string;
+  sprint_verdict?: string;
+  summary?: {
+    total_subsections: number;
+    mobile_ready: number;
+    macbook_off_ready: number;
+    mobile_cloud_required: number;
+    macbook_off_pending: number;
+    parked: number;
+  };
+  global?: {
+    api_key_configured: boolean;
+    aws_configured: boolean;
+    memory_bucket_configured: boolean;
+    telegram_present: boolean;
+    slack_present: boolean;
+    local_db_accessible: boolean;
+    macbook_off_global_blocker?: string;
+  };
+  subsections?: Plan2SubsectionStatus[];
+}
+
 // ---------------------------------------------------------------------------
 // UI helpers
 // ---------------------------------------------------------------------------
@@ -324,6 +361,7 @@ export function MobilePage() {
   const [workflowData, setWorkflowData] = useState<unknown>(null);
   const [routingData, setRoutingData] = useState<unknown>(null);
   const [connectorsData, setConnectorsData] = useState<unknown>(null);
+  const [plan2Parity, setPlan2Parity] = useState<Plan2ParityData | null>(null);
   const [scrollProof, setScrollProof] = useState(false);
   const [chatInput, setChatInput] = useState('');
   const [chatResult, setChatResult] = useState<ChatResult | null>(null);
@@ -368,6 +406,15 @@ export function MobilePage() {
     } catch {
       setHealth({ reachable: false });
     }
+
+    // Plan 2 parity status — public endpoint, no auth required
+    try {
+      const res = await backendFetch(base, '/v1/mobile-parity/status', '');
+      if (res.ok) {
+        const data = await res.json();
+        setPlan2Parity(data as Plan2ParityData);
+      }
+    } catch { /* non-fatal */ }
 
     const authedGet = async (path: string, onOk: (data: unknown) => void) => {
       if (!token) return;
@@ -490,6 +537,7 @@ export function MobilePage() {
     setLoading(true);
     setHealth(null); setMemory(null); setContinuity(null);
     setChatResult(null); setTaskResult(null); setMemoryWriteResult(null);
+    setPlan2Parity(null);
   };
 
   const saveApiKey = () => {
@@ -1259,6 +1307,115 @@ export function MobilePage() {
 
           {/* Plan 8B — Mobile Authority Cockpit */}
           <MobileAuthorityCockpit backendUrl={backendUrl} apiKey={apiKey} />
+
+          {/* Plan 2 — MacBook-Off Parity Status */}
+          <Card
+            title="Plan 2 — MacBook-Off Parity Status"
+            borderColor="color-mix(in srgb, #a78bfa 25%, var(--color-border, #333))"
+          >
+            {plan2Parity ? (
+              <>
+                <div
+                  style={{
+                    fontSize: '10px', fontFamily: 'monospace', color: '#a78bfa',
+                    marginBottom: '8px', letterSpacing: '0.06em',
+                  }}
+                >
+                  {plan2Parity.sprint ?? 'Plan 2A Foundation'} · v{plan2Parity.version ?? '?'}
+                </div>
+                {plan2Parity.summary && (
+                  <div
+                    style={{
+                      display: 'grid', gridTemplateColumns: '1fr 1fr',
+                      gap: '6px', marginBottom: '10px',
+                    }}
+                  >
+                    {[
+                      { label: 'Subsections', val: String(plan2Parity.summary.total_subsections) },
+                      { label: 'Mobile ready', val: String(plan2Parity.summary.mobile_ready) },
+                      { label: 'MacBook-off ready', val: String(plan2Parity.summary.macbook_off_ready) },
+                      { label: 'Cloud required', val: String(plan2Parity.summary.mobile_cloud_required) },
+                      { label: 'MacBook-off pending', val: String(plan2Parity.summary.macbook_off_pending) },
+                    ].map(({ label, val }) => (
+                      <div
+                        key={label}
+                        style={{
+                          padding: '5px 7px', borderRadius: '6px', fontSize: '11px',
+                          background: 'color-mix(in srgb, #a78bfa 5%, transparent)',
+                          border: '1px solid color-mix(in srgb, #a78bfa 15%, transparent)',
+                        }}
+                      >
+                        <div style={{ color: 'var(--color-text-muted, #888)', fontSize: '10px' }}>{label}</div>
+                        <div style={{ color: '#a78bfa', fontWeight: 600, fontFamily: 'monospace' }}>{val}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {plan2Parity.subsections?.map((s) => {
+                  const mobileColor =
+                    s.mobile_status === 'READY' ? '#22c55e'
+                    : s.mobile_status === 'CLOUD_REQUIRED' ? '#f59e0b'
+                    : s.mobile_status === 'MACBOOK_OFF_PENDING' ? '#fb923c'
+                    : s.mobile_status === 'NOT_CONFIGURED' ? '#64748b'
+                    : s.mobile_status === 'PARKED' ? '#475569'
+                    : '#ef4444';
+                  const offColor =
+                    s.macbook_off_status === 'READY' ? '#22c55e'
+                    : s.macbook_off_status === 'CLOUD_REQUIRED' ? '#f59e0b'
+                    : s.macbook_off_status === 'MACBOOK_OFF_PENDING' ? '#fb923c'
+                    : '#64748b';
+                  return (
+                    <div
+                      key={s.subsection}
+                      style={{
+                        marginBottom: '6px', padding: '7px 9px', borderRadius: '8px',
+                        background: 'color-mix(in srgb, var(--color-surface, #1a1a1c) 60%, transparent)',
+                        border: '1px solid color-mix(in srgb, var(--color-border, #333) 40%, transparent)',
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '3px' }}>
+                        <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--color-text, #eee)' }}>
+                          {s.subsection} · {s.name}
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: '10px', fontFamily: 'monospace', color: mobileColor, background: 'color-mix(in srgb, currentColor 8%, transparent)', padding: '1px 5px', borderRadius: '3px', border: '1px solid color-mix(in srgb, currentColor 20%, transparent)' }}>
+                          📱 {s.mobile_status}
+                        </span>
+                        <span style={{ fontSize: '10px', fontFamily: 'monospace', color: offColor, background: 'color-mix(in srgb, currentColor 8%, transparent)', padding: '1px 5px', borderRadius: '3px', border: '1px solid color-mix(in srgb, currentColor 20%, transparent)' }}>
+                          ☁ {s.macbook_off_status}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+                {plan2Parity.global?.macbook_off_global_blocker && (
+                  <div
+                    style={{
+                      marginTop: '8px', padding: '7px 9px', borderRadius: '7px', fontSize: '11px',
+                      background: 'color-mix(in srgb, #f59e0b 5%, transparent)',
+                      border: '1px solid color-mix(in srgb, #f59e0b 20%, transparent)',
+                      color: '#f59e0b', lineHeight: '1.5',
+                    }}
+                  >
+                    ⚠ {plan2Parity.global.macbook_off_global_blocker}
+                  </div>
+                )}
+                <div
+                  style={{
+                    marginTop: '8px', fontSize: '10px', fontFamily: 'monospace',
+                    color: 'var(--color-text-muted, #666)', letterSpacing: '0.05em',
+                  }}
+                >
+                  {plan2Parity.sprint_verdict}
+                </div>
+              </>
+            ) : (
+              <div style={{ fontSize: '13px', color: 'var(--color-text-muted, #888)' }}>
+                Loading Plan 2 parity status…
+              </div>
+            )}
+          </Card>
 
           <section
             ref={sentinelRef}

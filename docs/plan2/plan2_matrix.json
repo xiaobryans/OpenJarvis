@@ -1,0 +1,318 @@
+{
+  "plan": "Plan 2 — Full Mobile MacBook-Off Parity Runtime",
+  "acceptance_target": "MOBILE_MACBOOK_PARITY_TARGET_LOCKED",
+  "sprint": "Plan 2A — Foundation Sprint",
+  "sprint_verdict_target": "PLAN_2A_MOBILE_MACBOOK_OFF_FOUNDATION_PATCHED_PENDING_REVIEW",
+  "generated_at": "2026-06-24",
+  "based_on_commit": "6cc99316",
+  "plan1_verdict": "PLAN_1_DUAL_PLATFORM_JARVIS_NEURAL_COMMAND_CENTER_ACCEPTED",
+  "subsections": [
+    {
+      "id": "2A",
+      "name": "Coding / Workbench parity",
+      "implementation_files": [
+        "src/openjarvis/server/workbench_routes.py",
+        "src/openjarvis/plan9/capability_matrix.py",
+        "src/openjarvis/server/plan9_routes.py"
+      ],
+      "key_routes": [
+        "POST /v1/workbench/plan",
+        "POST /v1/workbench/execute",
+        "POST /v1/workbench/approve",
+        "GET  /v1/workbench/status/{sid}",
+        "POST /v1/workbench/diff",
+        "POST /v1/workbench/validate",
+        "GET  /v1/workbench/capabilities",
+        "POST /v1/workbench/terminal/exec",
+        "GET  /v1/coding/workspace",
+        "POST /v1/coding/files/read",
+        "POST /v1/coding/diff/stage"
+      ],
+      "desktop_status": "READY",
+      "mobile_status": "CLOUD_REQUIRED",
+      "macbook_off_status": "CLOUD_REQUIRED",
+      "auth_status": "Bearer token required for all /v1/workbench/* routes",
+      "data_storage_dependency": "SQLite session store; OMNIX_WORKBENCH_ARTIFACT_BUCKET for artifacts",
+      "connector_dependency": "GitHub (CROSS_DEVICE_LIVE); repo clone required for file edit",
+      "known_blockers": [
+        "No mobile-native IDE shell — coding task must go through chat/frontdoor",
+        "file_edit is CLOUD_LIVE (not CROSS_DEVICE_LIVE) — requires cloud execution context",
+        "Terminal exec requires approval_token; no push-notification channel for approval on mobile yet",
+        "Fargate backend must be running for MacBook-off execution"
+      ],
+      "required_next_patch": "Mobile task submission form for workbench plans; approval notification routing",
+      "proof_for_acceptance": "POST /v1/workbench/plan from iPhone Safari returns 200 with session_id; status poll returns result"
+    },
+    {
+      "id": "2B",
+      "name": "Connector / task parity",
+      "implementation_files": [
+        "src/openjarvis/server/connectors_router.py",
+        "src/openjarvis/server/frontdoor_routes.py",
+        "src/openjarvis/connectors/gcalendar.py",
+        "src/openjarvis/connectors/gmail.py",
+        "src/openjarvis/connectors/github.py",
+        "src/openjarvis/connectors/gdrive.py",
+        "src/openjarvis/connectors/slack_connector.py"
+      ],
+      "key_routes": [
+        "GET  /v1/connectors/status",
+        "POST /v1/frontdoor/submit",
+        "GET  /v1/connectors/list",
+        "POST /v1/tasks"
+      ],
+      "desktop_status": "READY",
+      "mobile_status": "CLOUD_REQUIRED",
+      "macbook_off_status": "CLOUD_REQUIRED",
+      "auth_status": "Bearer token required; connector OAuth tokens stored in ~/.openjarvis/",
+      "data_storage_dependency": "OAuth tokens local to MacBook; not synced to cloud",
+      "connector_dependency": "Gmail, Calendar, Slack, GitHub: CROSS_DEVICE_LIVE. GDrive, Notion: UNKNOWN_NEEDS_PROOF",
+      "known_blockers": [
+        "OAuth tokens stored locally — not accessible from cloud/Fargate without secure token sync",
+        "GDrive and Notion connector status unverified (UNKNOWN_NEEDS_PROOF in Plan 9 matrix)",
+        "Connector re-auth from mobile not implemented (OAuth redirect would need HTTPS + callback URL)"
+      ],
+      "required_next_patch": "Secure connector token export to cloud vault; mobile OAuth callback handler",
+      "proof_for_acceptance": "GET /v1/connectors/status from iPhone shows authenticated connectors; POST /v1/frontdoor/submit routes task to connector"
+    },
+    {
+      "id": "2C",
+      "name": "File / workspace / data parity",
+      "implementation_files": [
+        "src/openjarvis/server/plan9_routes.py",
+        "src/openjarvis/omnix_storage.py",
+        "src/openjarvis/omnix_workbench.py"
+      ],
+      "key_routes": [
+        "GET  /v1/files/index",
+        "POST /v1/coding/files/read",
+        "POST /v1/coding/search"
+      ],
+      "desktop_status": "READY",
+      "mobile_status": "MACBOOK_OFF_PENDING",
+      "macbook_off_status": "MACBOOK_OFF_PENDING",
+      "auth_status": "Bearer token required",
+      "data_storage_dependency": "Local filesystem + OMNIX_WORKBENCH_MEMORY_BUCKET (S3, configured). Full workspace not synced.",
+      "connector_dependency": "OMNIX_WORKBENCH_ARTIFACT_BUCKET (S3); OMNIX_WORKBENCH_STORAGE_PROVIDER configured",
+      "known_blockers": [
+        "Full workspace file sync to S3 not implemented — only git-tracked files via repo operations",
+        "File index is local-only (repo path); cloud index requires separate indexing job",
+        "Mac-only unsynced files remain QUEUED_MAC_ONLY permanently per Plan 9 acceptance"
+      ],
+      "required_next_patch": "Cloud file index via git-tracked file list; S3-backed workspace artifact store for sessions",
+      "proof_for_acceptance": "GET /v1/files/index from iPhone returns indexed file list; POST /v1/coding/files/read returns file content from cloud"
+    },
+    {
+      "id": "2D",
+      "name": "Memory / context / routing parity",
+      "implementation_files": [
+        "src/openjarvis/server/memory_routes.py",
+        "src/openjarvis/memory/store.py",
+        "src/openjarvis/memory/cloud_sync.py",
+        "src/openjarvis/memory/cloud_memory.py",
+        "src/openjarvis/memory/status.py",
+        "src/openjarvis/mobile/continuity.py"
+      ],
+      "key_routes": [
+        "GET  /v1/memory/status",
+        "POST /v1/memory",
+        "GET  /v1/memory/retrieve",
+        "GET  /v1/continuity/snapshot",
+        "GET  /v1/continuity/resume",
+        "GET  /v1/mobile/continuity/status"
+      ],
+      "desktop_status": "READY",
+      "mobile_status": "CLOUD_REQUIRED",
+      "macbook_off_status": "CLOUD_REQUIRED",
+      "auth_status": "Bearer token required for /v1/memory/*; /v1/continuity/macbook-off-status is public",
+      "data_storage_dependency": "Primary: SQLite (local). Cloud sync: OMNIX_WORKBENCH_MEMORY_BUCKET (S3). Semantic: Pinecone (key present).",
+      "connector_dependency": "PINECONE_API_KEY present; OMNIX_WORKBENCH_MEMORY_BUCKET present",
+      "known_blockers": [
+        "SQLite primary store is local — cloud sync to S3 requires explicit sync trigger",
+        "Full bidirectional sync not verified post-Plan 9",
+        "Context injection from cloud memory to cloud-executed tasks not verified"
+      ],
+      "required_next_patch": "Verify cloud memory sync works end-to-end (write on mobile, read on desktop and vice versa); snapshot sync trigger",
+      "proof_for_acceptance": "Memory written on iPhone appears in GET /v1/memory/retrieve on desktop within 60s"
+    },
+    {
+      "id": "2E",
+      "name": "Life-Business OS operation parity",
+      "implementation_files": [
+        "src/openjarvis/server/life_os_routes.py",
+        "src/openjarvis/server/workstream_routes.py",
+        "src/openjarvis/server/goals_routes.py",
+        "src/openjarvis/server/mission_routes.py"
+      ],
+      "key_routes": [
+        "GET  /v1/life-os/tasks",
+        "POST /v1/life-os/tasks",
+        "GET  /v1/workstreams",
+        "POST /v1/workstreams",
+        "GET  /v1/goals",
+        "POST /v1/goals"
+      ],
+      "desktop_status": "READY",
+      "mobile_status": "CLOUD_REQUIRED",
+      "macbook_off_status": "CLOUD_REQUIRED",
+      "auth_status": "Bearer token required",
+      "data_storage_dependency": "SQLite local; no cloud sync implemented for life-os data yet",
+      "connector_dependency": "None required for basic task management",
+      "known_blockers": [
+        "Life-OS data (tasks, workstreams, goals) stored in local SQLite — not synced to cloud",
+        "No push notification for task updates on mobile",
+        "Mission control real-time updates not streamed to mobile"
+      ],
+      "required_next_patch": "Cloud sync for life-os data store; mobile-optimized task management UI",
+      "proof_for_acceptance": "Task created on iPhone visible on desktop; task created on desktop visible on iPhone"
+    },
+    {
+      "id": "2F",
+      "name": "Voice / tap-to-speak parity foundation",
+      "implementation_files": [
+        "src/openjarvis/server/voice_routes.py",
+        "src/openjarvis/speech/",
+        "src/openjarvis/voice/"
+      ],
+      "key_routes": [
+        "POST /v1/voice/transcribe",
+        "POST /v1/voice/speak"
+      ],
+      "desktop_status": "LOCAL_ONLY",
+      "mobile_status": "NOT_CONFIGURED",
+      "macbook_off_status": "MACBOOK_OFF_PENDING",
+      "auth_status": "Bearer token required",
+      "data_storage_dependency": "DEEPGRAM_API_KEY present; JARVIS_STT_PROVIDER configured; JARVIS_TTS_PROVIDER configured",
+      "connector_dependency": "Deepgram STT; TTS provider configured",
+      "known_blockers": [
+        "Full wake word and TTS is PARKED (Plan 3) — do NOT reopen",
+        "Foundation only: tap-to-speak (browser MediaRecorder → /v1/voice/transcribe) not wired in mobile UI",
+        "Audio permissions require HTTPS on mobile browsers",
+        "TTS playback requires Web Audio API on mobile — not yet wired"
+      ],
+      "required_next_patch": "Wire browser MediaRecorder → POST /v1/voice/transcribe in mobile UI (foundation only, no wake word)",
+      "proof_for_acceptance": "Tap-to-speak button in mobile UI captures audio, sends to /v1/voice/transcribe, populates chat input"
+    },
+    {
+      "id": "2G",
+      "name": "Notifications / approval parity",
+      "implementation_files": [
+        "src/openjarvis/server/approval_routes.py",
+        "src/openjarvis/server/notify_routes.py",
+        "src/openjarvis/tools/approval_store.py"
+      ],
+      "key_routes": [
+        "GET  /v1/approvals/pending",
+        "POST /v1/approvals/{id}/approve",
+        "POST /v1/approvals/{id}/deny",
+        "GET  /v1/notify/status",
+        "POST /v1/notify/send"
+      ],
+      "desktop_status": "READY",
+      "mobile_status": "CLOUD_REQUIRED",
+      "macbook_off_status": "CLOUD_REQUIRED",
+      "auth_status": "Bearer token required for approval actions",
+      "data_storage_dependency": "SQLite approval store (local)",
+      "connector_dependency": "TELEGRAM_BOT_TOKEN present (push notifications via Telegram); SLACK_BOT_TOKEN present",
+      "known_blockers": [
+        "Approval store is local SQLite — not synced to cloud for MacBook-off case",
+        "Push notifications (Telegram/Slack) exist but not triggered on new pending approvals",
+        "No polling/WebSocket push from mobile to watch for new approvals",
+        "PWA push notification API not wired"
+      ],
+      "required_next_patch": "Telegram notification trigger on new approval queued; mobile approval polling (every 30s)",
+      "proof_for_acceptance": "New pending approval on desktop triggers Telegram notification; Bryan can approve from iPhone via /v1/approvals/{id}/approve"
+    },
+    {
+      "id": "2H",
+      "name": "Long-running cloud execution parity",
+      "implementation_files": [
+        "src/openjarvis/plan9/mac_worker_queue.py",
+        "src/openjarvis/server/plan9_routes.py",
+        "src/openjarvis/server/orchestrator_routes.py"
+      ],
+      "key_routes": [
+        "GET  /v1/mac-worker/queue",
+        "POST /v1/mac-worker/queue",
+        "GET  /v1/mac-worker/status",
+        "POST /v1/orchestration/dag/run",
+        "GET  /v1/orchestration/dag/status",
+        "POST /v1/orchestration/batch/run",
+        "GET  /v1/orchestration/batch/status"
+      ],
+      "desktop_status": "READY",
+      "mobile_status": "CLOUD_REQUIRED",
+      "macbook_off_status": "MACBOOK_OFF_PENDING",
+      "auth_status": "Bearer token required",
+      "data_storage_dependency": "Mac worker queue: local SQLite. Fargate backend: OMNIX_WORKBENCH_AWS_PROFILE + AWS_REGION configured.",
+      "connector_dependency": "AWS ECS Fargate (configured per Plan 4)",
+      "known_blockers": [
+        "Mac worker queue processes tasks only when MacBook is online and process is running",
+        "Cloud execution daemon not deployed to Fargate (only API is deployed, not worker process)",
+        "No long-running job status webhook/push for mobile polling",
+        "DAG and batch orchestration routes are cloud-safe but require Fargate worker for execution"
+      ],
+      "required_next_patch": "Deploy worker process to Fargate or implement serverless job dispatch; add SSE/WebSocket status stream for mobile",
+      "proof_for_acceptance": "Long-running task submitted from iPhone completes while MacBook is off; result visible on iPhone"
+    },
+    {
+      "id": "2I",
+      "name": "Deployment / release / signing workflow parity",
+      "implementation_files": [
+        "src/openjarvis/server/plan9_routes.py",
+        "src/openjarvis/server/self_upgrade_routes.py",
+        "scripts/build-local.sh",
+        "rust/",
+        "desktop/"
+      ],
+      "key_routes": [
+        "POST /v1/deploy/plan",
+        "POST /v1/self-upgrade/request",
+        "GET  /v1/self-upgrade/status"
+      ],
+      "desktop_status": "READY",
+      "mobile_status": "MACBOOK_OFF_PENDING",
+      "macbook_off_status": "MACBOOK_OFF_PENDING",
+      "auth_status": "APPROVAL_REQUIRED for all deploy/signing actions",
+      "data_storage_dependency": "APPLE_SIGNING_IDENTITY, APPLE_TEAM_ID, APPLE_APP_SPECIFIC_PASSWORD: present (local keychain)",
+      "connector_dependency": "GITHUB_TOKEN present; AWS profile configured for ECS deploy",
+      "known_blockers": [
+        "Tauri app build and signing require MacBook with Xcode/codesign — cannot run on Fargate",
+        "Apple signing certificate in local keychain — not accessible from cloud",
+        "ECS/Vercel deploy (non-signing) could be triggered from mobile with approval gate — not yet wired",
+        "Self-upgrade route exists but triggers local script — not safe from mobile without cloud CI"
+      ],
+      "required_next_patch": "Wire cloud deploy (ECS only, no signing) to be triggerable from mobile with approval gate; Tauri signing stays QUEUED_MAC_ONLY",
+      "proof_for_acceptance": "ECS backend redeployment triggered from iPhone returns 200 after approval; Tauri signing correctly rejected from mobile"
+    }
+  ],
+  "global_auth_state": {
+    "mechanism": "Bearer API key (OPENJARVIS_API_KEY)",
+    "storage_desktop": "~/.openjarvis/config.toml",
+    "storage_mobile": "localStorage (jarvis_mobile_api_key)",
+    "cloud_auth": "Same Bearer token used against AWS ECS Fargate backend",
+    "missing": "No OAuth/JWT/multi-user; single-user API key only",
+    "public_endpoints": [
+      "/health",
+      "/health/mobile-proof",
+      "/v1/continuity/macbook-off-status",
+      "/v1/mobile-parity/status"
+    ]
+  },
+  "cloud_backend_state": {
+    "provider": "AWS ECS Fargate",
+    "url_env": "AWS_BACKEND hardcoded in MobilePage.tsx (https://2r8dnzlz1h.execute-api.ap-southeast-1.amazonaws.com)",
+    "status": "CONFIGURED_PER_PLAN4",
+    "cert_expiry": "Aug 2026",
+    "tls": true,
+    "fargate_worker_deployed": false
+  },
+  "macbook_off_summary": {
+    "subsections_ready": [],
+    "subsections_cloud_required": ["2A", "2B", "2D", "2E", "2G"],
+    "subsections_macbook_off_pending": ["2C", "2H", "2I"],
+    "subsections_not_configured": ["2F"],
+    "parked": [],
+    "global_blocker": "Primary data stores (memory, approvals, life-os, connector tokens) are local SQLite — cloud sync required for MacBook-off parity"
+  }
+}
