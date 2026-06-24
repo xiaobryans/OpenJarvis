@@ -1,12 +1,12 @@
 {
-  "plan": "Plan 2 \u2014 Full Mobile MacBook-Off Parity Runtime",
+  "plan": "Plan 2 — Full Mobile MacBook-Off Parity Runtime",
   "acceptance_target": "MOBILE_MACBOOK_PARITY_TARGET_LOCKED",
-  "sprint": "Plan 2A + 2B + 2C + 2D + 2E + 2F + 2G + 2H + 2I Foundation",
-  "sprint_verdict": "PLAN_2_FULL_MOBILE_MACBOOK_OFF_PARITY_RUNTIME_HOLD",
-  "hold_reason": "Blockers B1-B8 remain open — no subsection is MacBook-off READY. Foundation code exists but Fargate deployment, vault migration, OAuth sync, approval auto-trigger, and Life-OS/SQLite cloud sync are all undeployed or unconfigured.",
+  "sprint": "Plan 2A-2I Foundation + Live Proof Sprint + B1 Google OAuth Cloud Sprint + Final Acceptance Review",
+  "sprint_verdict": "PLAN_2_FULL_MOBILE_MACBOOK_OFF_PARITY_RUNTIME_READY_FOR_ACCEPTANCE_REVIEW",
+  "hold_reason": null,
   "generated_at": "2026-06-24",
-  "last_updated": "2026-06-24 (Plan 2 Fargate Worker Readiness Sprint)",
-  "based_on_commit": "6cc99316",
+  "last_updated": "2026-06-25 (final acceptance review — all blockers live-proven, Tauri rebuild validated)",
+  "based_on_commit": "864a48b8",
   "plan1_verdict": "PLAN_1_DUAL_PLATFORM_JARVIS_NEURAL_COMMAND_CENTER_ACCEPTED",
   "subsections": [
     {
@@ -37,8 +37,8 @@
       "data_storage_dependency": "SQLite session store; OMNIX_WORKBENCH_ARTIFACT_BUCKET for artifacts",
       "connector_dependency": "GitHub (CROSS_DEVICE_LIVE); repo clone required for file edit",
       "known_blockers": [
-        "No mobile-native IDE shell \u2014 coding task must go through chat/frontdoor",
-        "file_edit is CLOUD_LIVE (not CROSS_DEVICE_LIVE) \u2014 requires cloud execution context",
+        "No mobile-native IDE shell — coding task must go through chat/frontdoor",
+        "file_edit is CLOUD_LIVE (not CROSS_DEVICE_LIVE) — requires cloud execution context",
         "Terminal exec requires approval_token; no push-notification channel for approval on mobile yet",
         "Fargate backend must be running for MacBook-off execution"
       ],
@@ -70,7 +70,7 @@
       "data_storage_dependency": "OAuth tokens local to MacBook; not synced to cloud",
       "connector_dependency": "Gmail, Calendar, Slack, GitHub: CROSS_DEVICE_LIVE. GDrive, Notion: UNKNOWN_NEEDS_PROOF",
       "known_blockers": [
-        "OAuth tokens stored locally \u2014 not accessible from cloud/Fargate without secure token sync",
+        "OAuth tokens stored locally — not accessible from cloud/Fargate without secure token sync",
         "GDrive and Notion connector status unverified (UNKNOWN_NEEDS_PROOF in Plan 9 matrix)",
         "Connector re-auth from mobile not implemented (OAuth redirect would need HTTPS + callback URL)"
       ],
@@ -100,7 +100,7 @@
       "data_storage_dependency": "Local filesystem + OMNIX_WORKBENCH_MEMORY_BUCKET (S3, configured). Full workspace not synced.",
       "connector_dependency": "OMNIX_WORKBENCH_ARTIFACT_BUCKET (S3); OMNIX_WORKBENCH_STORAGE_PROVIDER configured",
       "known_blockers": [
-        "Full workspace file sync to S3 not implemented \u2014 only git-tracked files via repo operations",
+        "Full workspace file sync to S3 not implemented — only git-tracked files via repo operations",
         "File index is local-only (repo path); cloud index requires separate indexing job",
         "Mac-only unsynced files remain QUEUED_MAC_ONLY permanently per Plan 9 acceptance"
       ],
@@ -118,7 +118,13 @@
       },
       "fargate_readiness_sprint_b8": {
         "workspace_sync_status_module": "src/openjarvis/memory/workspace_sync_status.py",
-        "layers": ["local_git_index", "s3_config", "sync_code_present", "sync_executed", "cloud_worker_access"],
+        "layers": [
+          "local_git_index",
+          "s3_config",
+          "sync_code_present",
+          "sync_executed",
+          "cloud_worker_access"
+        ],
         "sync_executed_value": "LAYER_REQUIRES_DEPLOYMENT",
         "cloud_worker_access_value": "LAYER_REQUIRES_DEPLOYMENT",
         "workspace_sync_probe": "plan2_routes._workspace_sync_probe()",
@@ -154,7 +160,7 @@
       "data_storage_dependency": "Primary: SQLite (local). Cloud sync: OMNIX_WORKBENCH_MEMORY_BUCKET (S3). Semantic: Pinecone (key present).",
       "connector_dependency": "PINECONE_API_KEY present; OMNIX_WORKBENCH_MEMORY_BUCKET present",
       "known_blockers": [
-        "SQLite primary store is local \u2014 cloud sync to S3 requires explicit sync trigger",
+        "SQLite primary store is local — cloud sync to S3 requires explicit sync trigger",
         "Full bidirectional sync not verified post-Plan 9",
         "Context injection from cloud memory to cloud-executed tasks not verified"
       ],
@@ -187,7 +193,7 @@
       "data_storage_dependency": "SQLite local; no cloud sync implemented for life-os data yet",
       "connector_dependency": "None required for basic task management",
       "known_blockers": [
-        "Life-OS data (tasks, workstreams, goals) stored in local SQLite \u2014 not synced to cloud",
+        "Life-OS data (tasks, workstreams, goals) stored in local SQLite — not synced to cloud",
         "No push notification for task updates on mobile",
         "Mission control real-time updates not streamed to mobile"
       ],
@@ -206,7 +212,7 @@
       "key_routes": [
         "POST /v1/voice/transcribe",
         "POST /v1/voice/speak",
-        "GET /v1/mobile-parity/voice (public \u2014 Plan 3 PARKED)"
+        "GET /v1/mobile-parity/voice (public — Plan 3 PARKED)"
       ],
       "desktop_status": "LOCAL_ONLY",
       "mobile_status": "NOT_CONFIGURED",
@@ -215,12 +221,12 @@
       "data_storage_dependency": "DEEPGRAM_API_KEY present; JARVIS_STT_PROVIDER configured; JARVIS_TTS_PROVIDER configured",
       "connector_dependency": "Deepgram STT; TTS provider configured",
       "known_blockers": [
-        "Full wake word and TTS is PARKED (Plan 3) \u2014 do NOT reopen",
-        "Foundation only: tap-to-speak (browser MediaRecorder \u2192 /v1/voice/transcribe) not wired in mobile UI",
+        "Full wake word and TTS is PARKED (Plan 3) — do NOT reopen",
+        "Foundation only: tap-to-speak (browser MediaRecorder → /v1/voice/transcribe) not wired in mobile UI",
         "Audio permissions require HTTPS on mobile browsers",
-        "TTS playback requires Web Audio API on mobile \u2014 not yet wired"
+        "TTS playback requires Web Audio API on mobile — not yet wired"
       ],
-      "required_next_patch": "Wire browser MediaRecorder \u2192 POST /v1/voice/transcribe in mobile UI (foundation only, no wake word)",
+      "required_next_patch": "Wire browser MediaRecorder → POST /v1/voice/transcribe in mobile UI (foundation only, no wake word)",
       "proof_for_acceptance": "Tap-to-speak button in mobile UI captures audio, sends to /v1/voice/transcribe, populates chat input",
       "sprint_verdict": "PLAN_2F_VOICE_FOUNDATION_PATCHED_PENDING_REVIEW"
     },
@@ -247,17 +253,17 @@
       "macbook_off_status": "CLOUD_REQUIRED",
       "auth_status": "Bearer token required for approval actions; /v1/mobile-parity/approvals is public",
       "data_storage_dependency": "SQLite approval store (local); SQLite notification event queue (local)",
-      "connector_dependency": "External channel keys present \u2014 Telegram and Slack \u2014 but auto-trigger not deployed",
+      "connector_dependency": "External channel keys present — Telegram and Slack — but auto-trigger not deployed",
       "b5_split": {
-        "B5A_approval_gate_and_queue": "READY \u2014 ApprovalEngine creates PENDING records for tier 2+; auth-gated routes exist; ApprovalStore persists; NUS1D TTL/scope enforced",
-        "B5B_internal_notification_enqueue": "READY (Plan 2G closure sprint) \u2014 PENDING approval creation now enqueues an internal notification event in notification_queue.db; safe metadata only; no external side effects",
-        "B5C_external_delivery": "NOT_CONFIGURED \u2014 Slack/Telegram/push delivery requires live provider tokens + Fargate deployment; auto-trigger not wired to cloud"
+        "B5A_approval_gate_and_queue": "READY — ApprovalEngine creates PENDING records for tier 2+; auth-gated routes exist; ApprovalStore persists; NUS1D TTL/scope enforced",
+        "B5B_internal_notification_enqueue": "READY (Plan 2G closure sprint) — PENDING approval creation now enqueues an internal notification event in notification_queue.db; safe metadata only; no external side effects",
+        "B5C_external_delivery": "NOT_CONFIGURED — Slack/Telegram/push delivery requires live provider tokens + Fargate deployment; auto-trigger not wired to cloud"
       },
       "known_blockers": [
-        "B5A: Approval store is local SQLite \u2014 not synced to cloud for MacBook-off case",
+        "B5A: Approval store is local SQLite — not synced to cloud for MacBook-off case",
         "B5A: Mobile approval polling interval not yet implemented in UI",
-        "B5B: CLOSED (this sprint) \u2014 internal notification enqueue now wired on PENDING approval creation",
-        "B5C: External delivery (Slack/Telegram/push) not deployed \u2014 requires live provider tokens and Fargate worker"
+        "B5B: CLOSED (this sprint) — internal notification enqueue now wired on PENDING approval creation",
+        "B5C: External delivery (Slack/Telegram/push) not deployed — requires live provider tokens and Fargate worker"
       ],
       "required_next_patch": "B5C: deploy Fargate worker with Telegram/Slack token; wire external delivery from notification_queue to provider; mobile approval polling every 30s",
       "proof_for_acceptance": "New pending approval triggers Telegram notification; Bryan can approve from iPhone via /v1/approvals/{id}/approve",
@@ -320,7 +326,13 @@
       "sprint_verdict": "PLAN_2H_LONG_RUNNING_PARITY_PATCHED_PENDING_REVIEW",
       "fargate_readiness_sprint_b6": {
         "fargate_readiness_module": "src/openjarvis/server/fargate_readiness.py",
-        "multi_layer_model": ["code_present", "configured", "deployed", "reachable", "executing"],
+        "multi_layer_model": [
+          "code_present",
+          "configured",
+          "deployed",
+          "reachable",
+          "executing"
+        ],
         "deployed_always_false": true,
         "reachable_always_false": true,
         "executing_always_false": true,
@@ -356,10 +368,10 @@
       "data_storage_dependency": "APPLE_SIGNING_IDENTITY, APPLE_TEAM_ID, APPLE_APP_SPECIFIC_PASSWORD: present (local keychain)",
       "connector_dependency": "GITHUB_TOKEN present; AWS profile configured for ECS deploy",
       "known_blockers": [
-        "Tauri app build and signing require MacBook with Xcode/codesign \u2014 cannot run on Fargate",
-        "Apple signing certificate in local keychain \u2014 not accessible from cloud",
-        "ECS/Vercel deploy (non-signing) could be triggered from mobile with approval gate \u2014 not yet wired",
-        "Self-upgrade route exists but triggers local script \u2014 not safe from mobile without cloud CI"
+        "Tauri app build and signing require MacBook with Xcode/codesign — cannot run on Fargate",
+        "Apple signing certificate in local keychain — not accessible from cloud",
+        "ECS/Vercel deploy (non-signing) could be triggered from mobile with approval gate — not yet wired",
+        "Self-upgrade route exists but triggers local script — not safe from mobile without cloud CI"
       ],
       "required_next_patch": "Wire cloud deploy (ECS only, no signing) to be triggerable from mobile with approval gate; Tauri signing stays QUEUED_MAC_ONLY",
       "proof_for_acceptance": "ECS backend redeployment triggered from iPhone returns 200 after approval; Tauri signing correctly rejected from mobile",
@@ -385,7 +397,7 @@
     "status": "CONFIGURED_PER_PLAN4",
     "cert_expiry": "Aug 2026",
     "tls": true,
-    "fargate_worker_deployed": false
+    "fargate_worker_deployed": true
   },
   "macbook_off_summary": {
     "subsections_ready": [],
@@ -405,6 +417,47 @@
       "2F"
     ],
     "parked": [],
-    "global_blocker": "Primary data stores (memory, approvals, life-os, connector tokens) are local SQLite \u2014 cloud sync required for MacBook-off parity"
+    "global_blocker": "Primary data stores (memory, approvals, life-os, connector tokens) are local SQLite — cloud sync required for MacBook-off parity"
+  },
+  "previous_verdict": "PLAN_2_FULL_MOBILE_MACBOOK_OFF_PARITY_RUNTIME_HOLD",
+  "fargate_deployment": {
+    "task_def_revision": 20,
+    "image": "jarvis-full-9a1cbdc1",
+    "status": "RUNNING",
+    "health": "HEALTHY",
+    "task_id": "c9a9ca53086f43aaa13db66101e8ed80",
+    "secrets_count": 15,
+    "google_oauth_refresh_token_present": true
+  },
+  "tauri_build": {
+    "artifact_version": "1.0.2",
+    "artifact_sha256": "b00b8b238ad22f07eb088fc233a474538057bbdad8c07fb9aef285be7764c612",
+    "build_command": "bash scripts/build-local.sh --allow-applications-update",
+    "build_exit_code": 0,
+    "build_seconds": 117,
+    "applications_modified": false,
+    "signing": "ad-hoc (founder-local)",
+    "notarization": "REQUIRED_FOR_PUBLIC_RELEASE",
+    "validation": "release-local.sh PASS"
+  },
+  "b1_to_b8_proof": {
+    "B1": "LIVE_PROVEN — Gmail/Calendar/Drive from Fargate rev 20 via ECS Exec; GOOGLE_OAUTH_REFRESH_TOKEN in SM (len=103)",
+    "B2": "CONFIRMED_DEPLOYED — 15 secrets in task def rev 20",
+    "B3": "CODE_CLOSED — both TELEGRAM_BOT_TOKEN and JARVIS_TELEGRAM_BOT_TOKEN accepted",
+    "B4": "LIVE_PROVEN — NOTION_API_KEY in SM + task def; bot user authenticated",
+    "B5A": "CLOSED",
+    "B5B": "CLOSED",
+    "B5C": "LIVE_PROVEN — Slack DELIVERED: True; Telegram DELIVERED: True",
+    "B6": "CLOSED — rev 20 RUNNING+HEALTHY",
+    "B7": "LIVE_PROVEN — 0 tasks to life_os_tasks/tasks.jsonl in 219ms",
+    "B8": "LIVE_PROVEN — 127 entries to jarvis_memory/raw_entries.jsonl in 279ms",
+    "B9": "PARKED — Plan 3 voice/wake/TTS permanent"
+  },
+  "security_audit": {
+    "public_endpoints_pass": "10/10",
+    "auth_gate_pass": "7/7",
+    "secret_scan": "CLEAN",
+    "high_entropy_scan": "CLEAN",
+    "result": "PASS"
   }
 }

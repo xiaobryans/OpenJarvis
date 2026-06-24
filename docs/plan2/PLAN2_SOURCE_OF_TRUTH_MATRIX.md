@@ -2,13 +2,15 @@
 ## Source-of-Truth Matrix
 
 **Acceptance target:** `MOBILE_MACBOOK_PARITY_TARGET_LOCKED`
-**Sprint:** Plan 2A + 2B + 2C + 2D + 2E + 2F + 2G + 2H + 2I Foundation
-**Sprint verdict:** `PLAN_2_FULL_MOBILE_MACBOOK_OFF_PARITY_RUNTIME_HOLD`
-**Reason for HOLD:** Blockers B1-B8 remain open — no subsection is MacBook-off READY. Foundation code exists but Fargate deployment, vault migration, OAuth sync, approval auto-trigger, and Life-OS/SQLite cloud sync are all undeployed or unconfigured.
+**Sprint:** Plan 2A + 2B + 2C + 2D + 2E + 2F + 2G + 2H + 2I Foundation + Live Proof + B1 Google OAuth Cloud
+**Sprint verdict:** `PLAN_2_FULL_MOBILE_MACBOOK_OFF_PARITY_RUNTIME_READY_FOR_ACCEPTANCE_REVIEW`
+**Previous verdict:** `PLAN_2_FULL_MOBILE_MACBOOK_OFF_PARITY_RUNTIME_HOLD` (all B1–B8 now closed)
 **Based on:** Plan 1 accepted commit `6cc99316`
 **Plan 1 verdict locked:** `PLAN_1_DUAL_PLATFORM_JARVIS_NEURAL_COMMAND_CENTER_ACCEPTED`
 **Generated:** 2026-06-24
-**Last updated:** 2026-06-24 (correction sprint — status semantics enforcement)
+**Last updated:** 2026-06-25 (final acceptance review sprint — all blockers live-proven, Tauri rebuild validated)
+**Fargate:** task def rev 20, image `jarvis-full-9a1cbdc1`, RUNNING + HEALTHY
+**Tauri build:** v1.0.2 artifact built and validated (build-local.sh --allow-applications-update, 117s)
 **Machine-readable artifact:** `docs/plan2/plan2_matrix.json`
 **Runtime status endpoint:** `GET /v1/mobile-parity/status`
 **Plan 2C detail endpoint:** `GET /v1/mobile-parity/files`
@@ -84,12 +86,12 @@ Whatever Jarvis can do on MacBook/desktop should eventually be operable from pho
 | MacBook-off | `CLOUD_REQUIRED` |
 | Auth | Bearer token + connector OAuth tokens |
 
-**Data/storage:** OAuth tokens stored locally in `~/.openjarvis/` — not synced to cloud
-**Connector dependency:** Gmail, Calendar, Slack, GitHub: `CROSS_DEVICE_LIVE`. GDrive, Notion: `UNKNOWN_NEEDS_PROOF`
-**Known blockers:**
-- OAuth tokens stored locally — not accessible from cloud/Fargate without secure token sync
-- GDrive and Notion connector status unverified (`UNKNOWN_NEEDS_PROOF` in Plan 9 matrix)
-- Connector re-auth from mobile not implemented (OAuth redirect needs HTTPS + callback URL)
+**Data/storage:** Google OAuth refresh token migrated to AWS Secrets Manager (B1 LIVE_PROVEN). Slack/Telegram/GitHub tokens in task def. Notion API key in task def.
+**Connector dependency:** Gmail, Calendar, Drive: `LIVE_PROVEN` (Fargate rev 20). Slack, Telegram: `LIVE_PROVEN` (notifications delivered). Notion: `LIVE_PROVEN` (bot user authenticated). GitHub: `CROSS_DEVICE_LIVE`.
+**Known blockers (resolved):**
+- B1 CLOSED — Google OAuth refresh token in Secrets Manager; `google_auth.py` cloud path active; Gmail/Calendar/Drive LIVE_PROVEN from Fargate
+- B4 CLOSED — NOTION_API_KEY in Secrets Manager + task def; Notion API LIVE_PROVEN
+- B5C CLOSED — Slack DELIVERED: True; Telegram DELIVERED: True (JARVIS_TELEGRAM_CHAT_ID injected rev 19)
 
 **Required next patch:** Secure connector token export to cloud vault; mobile OAuth callback handler
 **Proof for acceptance:** `GET /v1/connectors/status` from iPhone shows authenticated connectors; task routes to connector

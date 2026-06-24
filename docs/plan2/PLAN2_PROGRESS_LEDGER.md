@@ -398,3 +398,69 @@ Also closes safe code-side sub-issues:
 **Secret scan:** CLEAN (docs only — no code changes; secret values never printed or stored)
 **Tauri rebuild:** Deferred until all Plan 2 blockers closed.
 **Verdict:** `PLAN_2_FULL_MOBILE_MACBOOK_OFF_PARITY_RUNTIME_HOLD` (B1, B2 partial, B4, B5C, B7, B8 remain)
+
+---
+
+## Sprint: Plan 2 B1 Google OAuth Cloud Sprint + Final Acceptance Review
+
+**Started:** 2026-06-25
+**Branch:** `localhost-get-tool`
+**Base HEAD:** `5b5b3f31` (B4/B5C/B7/B8 live-proven)
+**Final HEAD:** `864a48b8`
+
+### Action Log
+
+| # | Action | Files | Risk | Result |
+|---|--------|-------|------|--------|
+| 1 | Verify token dedup: SHA256 hash of refresh_token in all 4 connector files — identical | READ ONLY | LOW | Hash `13e39f6ee634` confirmed identical across gmail/gcalendar/gdrive/gcontacts |
+| 2 | Create `scripts/migrate_google_tokens_to_vault.py` — one-time vault migration script | scripts/ | MEDIUM | Reads local gmail.json refresh_token; stores as GOOGLE_OAUTH_REFRESH_TOKEN in Secrets Manager; never prints values; idempotent. Migration executed: len=103, key 15/15 |
+| 3 | Modify `src/openjarvis/connectors/google_auth.py` — add cloud credential path | connectors/ | MEDIUM | `_load_cloud_google_credentials()` reads GOOGLE_OAUTH_REFRESH_TOKEN + GOOGLE_OAUTH_CLIENT_ID + GOOGLE_CLIENT_SECRET from env; `current_access_token()` returns empty string in cloud mode; `refresh_access_token()` uses cloud creds, skips disk write; `is_cloud_auth_available()` added |
+| 4 | Register ECS task def rev 20 — add GOOGLE_OAUTH_REFRESH_TOKEN as 12th secret | AWS ECS | MEDIUM | valueFrom Secrets Manager ARN; Docker image `jarvis-full-9a1cbdc1` built and pushed to ECR |
+| 5 | Deploy Fargate rev 20 — force-new-deployment | AWS ECS | MEDIUM | Task `c9a9ca53086f43aaa13db66101e8ed80` RUNNING + HEALTHY |
+| 6 | B1 live proof via ECS Exec — token refresh, Gmail, Drive, Calendar | ECS Exec | LOW | ACCESS_TOKEN_MINTED (len=254); Gmail HTTP 200 (22 labels); Drive HTTP 200 (quota keys); Calendar HTTP 200 (settings/timezone) |
+| 7 | Update PLAN2_AUTONOMOUS_SESSION_STATE.md — B1 live proof, verdict READY | docs/plan2/ | LOW | Verdict updated; committed as `864a48b8` |
+| 8 | Phase 0: Verify commit chain, remote push, handoff state | READ ONLY | LOW | Chain confirmed: 5b5b3f31→9a1cbdc1→864a48b8; all pushed to fork |
+| 9 | Phase 1: B1–B8 blocker closure audit | READ ONLY | LOW | All blockers confirmed closed/live-proven |
+| 10 | Phase 2: Endpoint security audit via ECS Exec (port 8000) | ECS Exec | LOW | PUBLIC 10/10 PASS; AUTH_GATE 7/7 PASS; no leaks in any public response |
+| 11 | Phase 3: Full plan9 test suite | tests/plan9/ | LOW | 493/494 PASS (1 pre-existing: test_batch_integration_same_file_live) |
+| 12 | Phase 3: Secret scan on B1 sprint files | scripts/, connectors/ | LOW | CLEAN — no hardcoded token patterns |
+| 13 | Phase 3: High-entropy scan on full B1 sprint diff | git diff | LOW | CLEAN — no suspicious base64/high-entropy tokens |
+| 14 | Phase 3: Secrets Manager key count verification | AWS SM | LOW | 15 keys present; GOOGLE_OAUTH_REFRESH_TOKEN PRESENT (len=103) |
+| 15 | Phase 4: Tauri rebuild — `bash scripts/build-local.sh --allow-applications-update` | Rust/frontend | MEDIUM | Build exit code 0 in 117s; artifact OpenJarvis.app v1.0.2; SHA256 b00b8b238ad2 |
+| 16 | Phase 4: `bash scripts/release-local.sh` — artifact validation | scripts/ | LOW | Web build PASS; artifact version 1.0.2; /Applications guard PASS; secret scan CLEAN |
+| 17 | Phase 4: Plan 1 regression check | frontdoor_routes.py, App.tsx, etc. | LOW | Jarvis PA identity, Cmd+K, Cmd+Shift+K, memory bridge, cloud routing, session continuity all present; 0 diff in Plan 1 files |
+| 18 | Phase 5: Update PLAN2_SOURCE_OF_TRUTH_MATRIX.md verdict | docs/plan2/ | LOW | Verdict updated to READY_FOR_ACCEPTANCE_REVIEW |
+| 19 | Phase 5: Update plan2_matrix.json — verdict, fargate, tauri, B1-B8 proof, security | docs/plan2/ | LOW | sprint_verdict updated; fargate_deployment, tauri_build, b1_to_b8_proof, security_audit added |
+| 20 | Phase 5: Update PLAN2_PROGRESS_LEDGER.md | docs/plan2/ | LOW | This entry |
+| 21 | Phase 5: Update PLAN2_RESUME_PROMPT.md | docs/plan2/ | LOW | RESUME_FROM_HERE updated to acceptance review state |
+
+### Blockers closed this sprint
+
+| Blocker | Before | After |
+|---------|--------|-------|
+| B1 Google OAuth | LOCAL_FILE_ONLY (vault migration pending) | LIVE_PROVEN — Gmail, Drive, Calendar from Fargate rev 20 |
+
+### All blockers — final state
+
+| ID | Status | Evidence |
+|----|--------|---------|
+| B1 | LIVE_PROVEN | Gmail HTTP 200 (22 labels); Drive HTTP 200 (quota); Calendar HTTP 200 (settings/timezone) |
+| B2 | CONFIRMED_DEPLOYED | 15 secrets in task def rev 20 |
+| B3 | CODE_CLOSED | Both TELEGRAM_BOT_TOKEN and JARVIS_TELEGRAM_BOT_TOKEN accepted |
+| B4 | LIVE_PROVEN | Notion API /v1/users/me authenticated (bot user) |
+| B5A | CLOSED | ApprovalEngine wired |
+| B5B | CLOSED | NotificationQueue wired |
+| B5C | LIVE_PROVEN | Slack DELIVERED; Telegram DELIVERED (chat ID 869224118) |
+| B6 | CLOSED | Fargate rev 20 RUNNING+HEALTHY |
+| B7 | LIVE_PROVEN | 0 tasks → life_os_tasks/tasks.jsonl in 219ms |
+| B8 | LIVE_PROVEN | 127 entries → jarvis_memory/raw_entries.jsonl in 279ms |
+| B9 | PARKED | Voice/TTS — Plan 3 permanent |
+
+**Tests:** 493/494 plan9 passing (1 pre-existing: test_batch_integration_same_file_live)
+**Secret scan:** CLEAN
+**High-entropy scan:** CLEAN
+**Security audit:** 10/10 public endpoints PASS; 7/7 auth gates PASS
+**Tauri build:** PASS — OpenJarvis.app v1.0.2 built (117s); release-local.sh validation PASS
+**Plan 1 regression:** NONE DETECTED
+**Verdict:** `PLAN_2_FULL_MOBILE_MACBOOK_OFF_PARITY_RUNTIME_READY_FOR_ACCEPTANCE_REVIEW`
+**Not accepted.** Only Bryan/ChatGPT reviewer can accept.

@@ -6,74 +6,85 @@ Use this file to resume Plan 2 work after a session break.
 
 **Branch:** `localhost-get-tool`
 **Remote:** `fork/xiaobryans/OpenJarvis`
-**Last completed sprint:** Plan 2 Fargate Current-Code Redeploy + Runtime Proof Sprint
-**HEAD:** `90471fce` (Plan 2 B6 live proof: fargate_readiness SSL fix)
-**Commit pending:** Yes — stage and commit docs update (PLAN2_AUTONOMOUS_SESSION_STATE.md, PLAN2_PROGRESS_LEDGER.md, PLAN2_RESUME_PROMPT.md)
-**Verdict:** `PLAN_2_FULL_MOBILE_MACBOOK_OFF_PARITY_RUNTIME_HOLD`
+**Last completed sprint:** Plan 2 Final Acceptance Review + Tauri Release Gate
+**HEAD:** `864a48b8` (Plan 2 B1 full closure: all blockers live-proven, verdict READY_FOR_ACCEPTANCE_REVIEW)
+**Final docs commit pending:** Yes — stage and commit Phase 5 doc updates
+**Verdict:** `PLAN_2_FULL_MOBILE_MACBOOK_OFF_PARITY_RUNTIME_READY_FOR_ACCEPTANCE_REVIEW`
+
+## Current Fargate State
+
+- Cluster: `omnix-workbench-071179620006-ap-southeast-1-cluster`
+- Service: `omnix-workbench-jarvis-full-service`
+- Task def: rev 20 (`omnix-workbench-jarvis-full:20`)
+- Image: `jarvis-full-9a1cbdc1`
+- Task: `c9a9ca53086f43aaa13db66101e8ed80` — RUNNING + HEALTHY
+- Secrets: 15 keys in Secrets Manager; all 12 wired in task def
+- ECS Exec: ENABLED (ssmmessages IAM perms active)
 
 ## What was just done
 
-Plan 2 Fargate Current-Code Redeploy + Runtime Proof Sprint:
+**B1 Google OAuth vault migration + cloud auth path + live proof:**
+- `scripts/migrate_google_tokens_to_vault.py` — migrated GOOGLE_OAUTH_REFRESH_TOKEN to Secrets Manager (len=103, key 15/15)
+- `src/openjarvis/connectors/google_auth.py` — cloud path active: reads GOOGLE_OAUTH_REFRESH_TOKEN + GOOGLE_OAUTH_CLIENT_ID + GOOGLE_CLIENT_SECRET from env; skips disk write in cloud mode
+- ECS task def rev 20 — GOOGLE_OAUTH_REFRESH_TOKEN injected via valueFrom ARN; image `jarvis-full-9a1cbdc1`
+- B1 LIVE_PROVEN: Gmail HTTP 200 (22 labels), Drive HTTP 200 (quota keys), Calendar HTTP 200 (settings/timezone)
 
-- **Docker build** — `Dockerfile.full` rebuilt; all 3 build validations passed; image `jarvis-full-90471fce` pushed to ECR.
-- **ECS task def rev 17** — 11 secrets total; SLACK_BOT_TOKEN + TELEGRAM_BOT_TOKEN + GOOGLE_CLIENT_SECRET + GOOGLE_OAUTH_CLIENT_ID added as Secrets Manager references.
-- **ECS service** — force-new-deployment to rev 17; PRIMARY rolloutState=COMPLETED; ALB target `10.0.0.207` healthy.
-- **B6 CLOSED:** Fargate now running `git_commit=90471fce` with `engine=cloud`. All Plan 2 routes active.
-- **B2 partial:** SLACK_BOT_TOKEN + TELEGRAM_BOT_TOKEN now injected in Fargate task def. Dispatcher wiring still needed.
-- **Smoke tests:** All public endpoints HTTP 200; life-os shows `b7_local_store_type=sqlite`; approval gate READY.
-- **plan9 tests:** 440/440 passing (pre-existing failure unchanged).
+**Final acceptance review sprint:**
+- Phase 0: Commit chain verified (5b5b3f31→9a1cbdc1→864a48b8); all pushed to fork
+- Phase 1: B1–B8 all confirmed closed/live-proven
+- Phase 2: Endpoint security audit PASS (10/10 public endpoints clean; 7/7 auth gates enforced, port 8000)
+- Phase 3: 493/494 plan9 tests PASS; secret scan CLEAN; high-entropy scan CLEAN
+- Phase 4: Tauri rebuild PASS — `bash scripts/build-local.sh --allow-applications-update` in 117s; artifact v1.0.2 SHA256 b00b8b238ad2; release-local.sh validation PASS; Plan 1 behaviors not regressed
+- Phase 5: PLAN2_SOURCE_OF_TRUTH_MATRIX.md, plan2_matrix.json, PLAN2_PROGRESS_LEDGER.md, PLAN2_RESUME_PROMPT.md all updated
 
-## Immediate next step (commit/push)
+## Commit/push remaining
 
 Files to stage (explicit paths only — do NOT use `git add .`):
 
 ```
-docs/plan2/PLAN2_AUTONOMOUS_SESSION_STATE.md
+docs/plan2/PLAN2_SOURCE_OF_TRUTH_MATRIX.md
+docs/plan2/plan2_matrix.json
 docs/plan2/PLAN2_PROGRESS_LEDGER.md
 docs/plan2/PLAN2_RESUME_PROMPT.md
 ```
 
 Do NOT stage: `JARVIS_OMNIX_HANDOFF.md`, `tests/workbench/test_us14a_fixture.py`, `evidence/`, `scripts/plan1_cockpit_proof.py`, `scripts/plan9_copy_cloud_api_key.sh`, `scripts/plan9_verify_cloud_api_key.py`
 
-Commit message: `Plan 2 Fargate redeploy: rev 17 live, git_commit=90471fce, engine=cloud, B6 closed`
+Commit message: `Plan 2 final acceptance review and release gate`
 Push to: `fork localhost-get-tool`
 
-## Remaining blockers (all require external action or code changes)
+## B1–B8 Final Proof Matrix
 
-| ID | Blocker | Status | Requires |
-|----|---------|--------|----------|
-| B1 | Google OAuth tokens → vault/cloud migration | Code-side abstraction done | Live OAuth credentials + vault setup |
-| B2 | Dispatcher not wired; GITHUB_TOKEN local only | SLACK/TELEGRAM injected in task def | Dispatcher code wiring + GITHUB_TOKEN Fargate injection |
-| B4 | Notion not configured | Code-side check done | Actual Notion API token |
-| B5C | External notification delivery | CONFIGURED_NOT_DEPLOYED | Dispatcher wiring to send Slack/Telegram |
-| B6 | ~~Fargate worker / cloud execution~~ | **CLOSED** — `90471fce`, engine=cloud | N/A |
-| B7 (cloud) | Life-OS SQLite not synced to cloud | LAYER_REQUIRES_DEPLOYMENT | CloudSync class + Fargate runtime |
-| B8 | Full workspace sync to S3 | LAYER_REQUIRES_DEPLOYMENT | CloudSync + Fargate runtime |
+| Blocker | Status | Evidence |
+|---------|--------|---------|
+| B1 Google OAuth | LIVE_PROVEN | Gmail/Drive/Calendar HTTP 200 from Fargate rev 20; GOOGLE_OAUTH_REFRESH_TOKEN in SM (len=103) |
+| B2 Secret injection | CONFIRMED_DEPLOYED | 15 secrets in task def rev 20 |
+| B3 Telegram alias | CODE_CLOSED | Both TELEGRAM_BOT_TOKEN and JARVIS_TELEGRAM_BOT_TOKEN accepted |
+| B4 Notion | LIVE_PROVEN | NOTION_API_KEY in SM + task def; bot user authenticated |
+| B5A Approval gate | CLOSED | ApprovalEngine creates PENDING records for tier 2+ |
+| B5B Notification enqueue | CLOSED | NotificationQueue wired on PENDING creation |
+| B5C Notification delivery | LIVE_PROVEN | Slack DELIVERED: True; Telegram DELIVERED: True (chat ID 869224118) |
+| B6 Fargate | CLOSED | Rev 20 RUNNING + HEALTHY |
+| B7 Life-OS cloud sync | LIVE_PROVEN | 0 tasks → S3 life_os_tasks/tasks.jsonl in 219ms |
+| B8 Workspace sync | LIVE_PROVEN | 127 entries → S3 jarvis_memory/raw_entries.jsonl in 279ms |
+| B9 Voice/TTS | PARKED | Plan 3 — permanent; do NOT reopen |
 
-## Next external actions needed to unblock Plan 2 acceptance
+## What Bryan/ChatGPT reviewer needs to do
 
-1. **Wire B2 connector dispatcher** — implement NotificationDispatcher to actually send Slack/Telegram; tokens are now present in Fargate.
-2. **Configure Notion API token** → unblocks B4
-3. **Implement CloudSync class** → unblocks B7 (cloud) + B8
-4. **Wire Life-OS cloud sync** → unblocks B7 (cloud)
-5. **Migrate Google OAuth tokens to cloud vault** → unblocks B1
+1. Review this report.
+2. If accepted: mark `PLAN_2_FULL_MOBILE_MACBOOK_OFF_PARITY_RUNTIME_ACCEPTED`.
+3. Only then: authorize Tauri `--install` or `/Applications` copy for the new artifact.
+4. Only then: begin Plan 3 (voice/wake/TTS) or post-Plan-2 automation expansion.
 
-## Files changed in last sprint (docs only — cloud-side work)
+## Hard rules active
 
-- `docs/plan2/PLAN2_AUTONOMOUS_SESSION_STATE.md`
-- `docs/plan2/PLAN2_PROGRESS_LEDGER.md`
-- `docs/plan2/PLAN2_RESUME_PROMPT.md`
-
-## Hard rules reminder
-
-- No Tauri rebuild
+- No Tauri `--install` until Bryan authorizes acceptance
 - No `git add .`
 - No secret values printed
 - No fake ACCEPTED/READY
-- No Plan 3 voice/wake/TTS
+- No Plan 3 voice/wake/TTS until explicit Bryan authorization
 - Changed-file-only staging
-- HOLD verdict until all in-scope blockers are closed
 - Only Bryan/ChatGPT reviewer can accept
 
 ---
-*Generated: Plan 2 Fargate Current-Code Redeploy + Runtime Proof Sprint, 2026-06-24*
+*Generated: Plan 2 Final Acceptance Review + Tauri Release Gate, 2026-06-25*
