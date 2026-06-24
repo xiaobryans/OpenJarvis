@@ -90,6 +90,14 @@ docs/superpowers/
 # Claude Code project instructions (per-developer)
 CLAUDE.md
 .claude/
+# Track shared project rules/agents/skills; keep per-developer local settings ignored
+!CLAUDE.md
+!.claude/
+!.claude/agents/
+!.claude/agents/**
+!.claude/skills/
+!.claude/skills/**
+.claude/settings.local.json
 
 # Tauri auto-generated schemas
 **/src-tauri/gen/schemas/
