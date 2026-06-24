@@ -41,6 +41,7 @@ from openjarvis.orchestrator.runtime_trace import (
     EVENT_COS_GM,
     EVENT_MANAGER_ACTIVATION,
     EVENT_WORKER_EXECUTION,
+    EVENT_REVIEWER_VERIFICATION,
     EVENT_VALIDATION,
     EVENT_NUS_FEEDBACK,
     EVENT_BLOCKER,
@@ -270,11 +271,84 @@ class CosGmOrchestrator:
                 except Exception:
                     pass
 
-        # 7. Validation event (if validation_required)
+        # 7. Reviewer/Tester/Verifier integration (independent layer, before returning to PA)
+        #    Runs when validation_required=True and at least one worker was dispatched.
+        #    Self-verify is blocked by VerifierGate. Reviewer is independent of the team.
+        verification_outcome: str = "not_required"
+        verification_summary: str = "verification_not_required"
+        verification_fix_list: list = []
+        if request.validation_required and workers_dispatched > 0:
+            try:
+                from openjarvis.agents.verifier import (
+                    VerifierGate,
+                    EvidenceItem,
+                    VerificationOutcome,
+                )
+                import time as _time
+                gate = VerifierGate(verifier_id="cos_gm_reviewer", stale_threshold_seconds=3600)
+                evidence_items = [
+                    EvidenceItem(
+                        claim_id=f"worker:{wr.worker_id}",
+                        claim_text=f"Worker {wr.worker_id} status={wr.status}",
+                        source_type="worker_execution",
+                        source_ref=f"worker_id:{wr.worker_id}",
+                        last_updated_at=_time.time(),
+                        is_supported=wr.status in ("ok", "dry_run_ok"),
+                    )
+                    for wr in worker_results
+                ]
+                v_report = gate.verify(
+                    team_id=f"cos_gm_workers:{request.request_id}",
+                    evidence_items=evidence_items,
+                )
+                verification_outcome = v_report.outcome.value
+                if v_report.outcome == VerificationOutcome.ACCEPTED:
+                    verification_summary = (
+                        f"Reviewer: ACCEPTED — {len(v_report.accepted_claims)} claim(s) verified. "
+                        f"Trace: {v_report.acceptance_trace}"
+                    )
+                else:
+                    verification_summary = (
+                        f"Reviewer: {v_report.outcome.value} — "
+                        f"{len(v_report.rejected_claims)} claim(s) rejected."
+                    )
+                    verification_fix_list = v_report.fix_list
+                try:
+                    trace.add_event(
+                        EVENT_REVIEWER_VERIFICATION,
+                        component="reviewer_layer",
+                        summary=verification_summary,
+                        payload={
+                            "outcome": verification_outcome,
+                            "accepted_claims": v_report.accepted_claims,
+                            "rejected_claims": v_report.rejected_claims,
+                            "fix_list": verification_fix_list,
+                            "independent": True,
+                            "self_verify_blocked": True,
+                        },
+                    )
+                except Exception:
+                    pass
+            except Exception as _ve:
+                verification_outcome = "reviewer_error"
+                verification_summary = f"Reviewer gate error (non-fatal): {_ve}"
+                logger.warning("VerifierGate integration failed (non-fatal): %s", _ve)
+                try:
+                    trace.add_event(
+                        EVENT_REVIEWER_VERIFICATION,
+                        component="reviewer_layer",
+                        summary=verification_summary,
+                        payload={"outcome": "reviewer_error", "error": str(_ve)},
+                    )
+                except Exception:
+                    pass
+
+        # 8. Validation event (if validation_required)
         validation_summary = "validation_not_required"
         if request.validation_required and workers_dispatched > 0:
             validation_summary = (
-                f"{workers_succeeded}/{workers_dispatched} workers succeeded (dry-run)"
+                f"{workers_succeeded}/{workers_dispatched} workers succeeded (dry-run); "
+                f"reviewer={verification_outcome}"
             )
             try:
                 trace.add_event(
@@ -284,12 +358,13 @@ class CosGmOrchestrator:
                     payload={
                         "workers_dispatched": workers_dispatched,
                         "workers_succeeded": workers_succeeded,
+                        "verification_outcome": verification_outcome,
                     },
                 )
             except Exception:
                 pass
 
-        # 8. NUS feedback trace event
+        # 10. NUS feedback trace event
         nus_available = any("nus_feedback:loaded" in t for t in plan.nus_learning_tags)
         try:
             trace.add_event(
@@ -301,7 +376,7 @@ class CosGmOrchestrator:
         except Exception:
             pass
 
-        # 9. Build result
+        # 11. Build result
         project_label = (
             request.project_context.display_name
             if request.project_context
@@ -318,10 +393,16 @@ class CosGmOrchestrator:
         else:
             status = "planned"
 
+        if verification_fix_list:
+            nus_tags.append(f"reviewer:rejected:{len(verification_fix_list)}_fixes_required")
+        else:
+            nus_tags.append(f"reviewer:{verification_outcome}")
+
         summary = (
             f"COS/GM activated {len(plan.selected_managers)} manager(s), "
             f"dispatched {workers_dispatched} worker(s) "
-            f"({workers_succeeded} succeeded, dry-run) "
+            f"({workers_succeeded} succeeded, dry-run), "
+            f"reviewer={verification_outcome} "
             f"for request '{request.intent}' "
             f"[project={project_label}, risk={effective_risk}, complexity={effective_complexity}]. "
             f"decision_record={plan.structured_decision_record_id}."
@@ -333,6 +414,11 @@ class CosGmOrchestrator:
             "workers_succeeded": workers_succeeded,
             "worker_results": worker_result_dicts,
             "validation_summary": validation_summary,
+            "verification_outcome": verification_outcome,
+            "verification_summary": verification_summary,
+            "verification_fix_list": verification_fix_list,
+            "reviewer_independent": True,
+            "reviewer_self_verify_blocked": True,
         }
 
         try:

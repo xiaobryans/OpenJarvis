@@ -2,7 +2,7 @@
 
 Structured observability for the full Jarvis orchestration pipeline:
   Bryan → front-door → COS/GM → manager-activation → worker-execution
-  → validation → NUS-feedback → blocker → final-response
+  → reviewer-verification → validation → NUS-feedback → blocker → final-response
 
 Each event carries a trace_id (set at front-door entry) that flows through
 the entire pipeline, enabling end-to-end request correlation.
@@ -45,6 +45,7 @@ EVENT_ROUTING = "routing"
 EVENT_COS_GM = "cos_gm"
 EVENT_MANAGER_ACTIVATION = "manager_activation"
 EVENT_WORKER_EXECUTION = "worker_execution"
+EVENT_REVIEWER_VERIFICATION = "reviewer_verification"
 EVENT_VALIDATION = "validation"
 EVENT_NUS_FEEDBACK = "nus_feedback"
 EVENT_BLOCKER = "blocker"
@@ -56,6 +57,7 @@ ALL_EVENT_TYPES = frozenset({
     EVENT_COS_GM,
     EVENT_MANAGER_ACTIVATION,
     EVENT_WORKER_EXECUTION,
+    EVENT_REVIEWER_VERIFICATION,
     EVENT_VALIDATION,
     EVENT_NUS_FEEDBACK,
     EVENT_BLOCKER,
@@ -380,6 +382,7 @@ __all__ = [
     "EVENT_COS_GM",
     "EVENT_MANAGER_ACTIVATION",
     "EVENT_WORKER_EXECUTION",
+    "EVENT_REVIEWER_VERIFICATION",
     "EVENT_VALIDATION",
     "EVENT_NUS_FEEDBACK",
     "EVENT_BLOCKER",

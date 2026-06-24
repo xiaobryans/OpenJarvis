@@ -89,6 +89,7 @@ from openjarvis.plan9.model_routing import (
 from openjarvis.plan9.pa_brain_layer import (
     get_pa_config,
     get_brain_layer_config,
+    get_org_hierarchy,
 )
 from openjarvis.plan9.orchestration_policy import (
     RETRIEVAL_WORKER_POLICIES,
@@ -1088,6 +1089,64 @@ async def get_mac_worker_status() -> Dict[str, Any]:
             "Tasks in 'queued' status are waiting for MacBook to come online. "
             "Status is visible from both mobile and MacBook surfaces."
         ),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Plan 9 Org Hierarchy — canonical chain representation
+# ---------------------------------------------------------------------------
+
+@router.get("/v1/plan9/org-hierarchy")
+async def get_plan9_org_hierarchy() -> Dict[str, Any]:
+    """Return the canonical Jarvis org hierarchy for UI representation.
+
+    Canonical chain:
+      Bryan → Jarvis PA → COS/GM → Managers → Workers
+      → Reviewer/Tester/Verifier (independent) → COS/GM → Jarvis PA → Bryan
+
+    Approval chain:
+      Worker/Manager → Domain Manager → Reviewer → COS/GM → Jarvis PA → Bryan
+      → Bryan approves/denies through Jarvis PA only → COS/GM routes back down
+
+    Design invariant: Bryan only interacts through Jarvis PA.
+    Workers, managers, reviewers must not directly produce user-facing responses.
+    """
+    nodes = get_org_hierarchy()
+    pa_config = get_pa_config()
+    brain_config = get_brain_layer_config()
+    return {
+        "canonical_chain": (
+            "Bryan → Jarvis PA → COS/GM → Domain Managers → Worker Teams "
+            "→ Reviewer/Tester/Verifier (independent) → COS/GM → Jarvis PA → Bryan"
+        ),
+        "approval_chain": (
+            "Worker/Manager → Domain Manager validates → Reviewer checks risk "
+            "→ COS/GM escalates → Jarvis PA asks Bryan → Bryan approves/denies "
+            "through Jarvis PA only → COS/GM routes decision back down"
+        ),
+        "user_facing_only": "jarvis_pa",
+        "user_interacts_only_through": "jarvis_pa",
+        "pa_layer": pa_config.to_dict(),
+        "brain_layer": brain_config.to_dict(),
+        "nodes": [
+            {
+                "node_id": n.node_id,
+                "display_name": n.display_name,
+                "layer": n.layer.value,
+                "reports_to": n.reports_to,
+                "ownership": n.ownership,
+                "scope": n.scope,
+                "acceptance_criteria": n.acceptance_criteria,
+                "evidence_requirements": n.evidence_requirements,
+                "model_tier_ref": n.model_tier_ref,
+                "report_format": n.report_format,
+                "children": n.children,
+            }
+            for n in nodes
+        ],
+        "node_count": len(nodes),
+        "reviewer_independent": True,
+        "reviewer_self_verify_blocked": True,
     }
 
 

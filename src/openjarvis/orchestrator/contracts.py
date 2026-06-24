@@ -57,6 +57,8 @@ LEVEL_JARVIS_PA = "jarvis_pa"
 LEVEL_COS_GM = "cos_gm"
 LEVEL_MANAGER = "manager"
 LEVEL_WORKER = "worker"
+LEVEL_REVIEWER = "reviewer"
+LEVEL_TESTER = "tester"
 LEVEL_VALIDATOR = "validator"
 LEVEL_GOVERNANCE = "governance"
 
@@ -633,6 +635,8 @@ __all__ = [
     "LEVEL_COS_GM",
     "LEVEL_MANAGER",
     "LEVEL_WORKER",
+    "LEVEL_REVIEWER",
+    "LEVEL_TESTER",
     "LEVEL_VALIDATOR",
     "LEVEL_GOVERNANCE",
 ]

@@ -38,8 +38,9 @@ class JarvisLayer(str, Enum):
     COS_GM = "cos_gm"
     MANAGER = "manager"
     WORKER = "worker"
-    REVIEWER = "reviewer"
-    VALIDATOR = "validator"
+    REVIEWER = "reviewer"    # independent verification layer — not a manager child
+    TESTER = "tester"        # independent testing layer — not a manager child
+    VALIDATOR = "validator"  # independent audit gate — not a manager child
 
 
 @dataclass(frozen=True)
@@ -146,7 +147,30 @@ class OrgNode:
 
 
 def get_org_hierarchy() -> List[OrgNode]:
-    """Return the full AI organization hierarchy for Plan 9."""
+    """Return the full AI organization hierarchy for Plan 9.
+
+    Canonical chain:
+      Bryan
+      → Jarvis PA                 (user-facing front door; only interaction point)
+        → COS/GM                  (command coordinator; activates managers)
+          → Domain Managers       (domain owners; supervise worker pools)
+            → Worker Teams        (execution cells; dry-run safe by default)
+            ← Manager reports
+          → Reviewer/Tester/Verifier Layer  (INDEPENDENT — not a manager child)
+            (wired into COS/GM after worker execution, before returning to Jarvis PA)
+          ← COS/GM integration
+        ← Jarvis PA summary / approval request
+      ← Bryan
+
+    Approval chain:
+      Worker/Manager requests action
+      → Domain Manager validates need
+      → Reviewer/Authority layer checks risk where applicable
+      → COS/GM escalates
+      → Jarvis PA asks Bryan
+      → Bryan approves/denies through Jarvis only
+      → COS/GM routes decision back down
+    """
     return [
         OrgNode(
             node_id="bryan",
@@ -163,7 +187,12 @@ def get_org_hierarchy() -> List[OrgNode]:
             layer=JarvisLayer.JARVIS_PA,
             reports_to="bryan",
             ownership="Front-door assistant. Summarizer. Approval gatekeeper.",
-            scope="Coordinate all managers via COS/GM. Report to Bryan.",
+            scope=(
+                "Sole user-facing interaction point. "
+                "Coordinate all managers via COS/GM. Report to Bryan. "
+                "Workers, managers, reviewers, and testers must NOT directly "
+                "produce user-facing final responses."
+            ),
             acceptance_criteria="Bryan receives complete, honest, evidence-backed summary",
             evidence_requirements="Final report with all 7 fields (files/tests/proof/blockers/rollback/secret scan)",
             model_tier_ref="jarvis_pa",
@@ -176,9 +205,16 @@ def get_org_hierarchy() -> List[OrgNode]:
             layer=JarvisLayer.COS_GM,
             reports_to="jarvis_pa",
             ownership="Orchestrates all domain managers. Owns activation plans.",
-            scope="Task routing to managers. Cross-manager coordination. Goal tracking.",
-            acceptance_criteria="All managers activated, results aggregated, no orphaned tasks",
-            evidence_requirements="ActivationPlan with all managers assigned and results collected",
+            scope=(
+                "Task routing to managers. Cross-manager coordination. Goal tracking. "
+                "After workers execute, routes results through reviewer_layer before "
+                "returning to Jarvis PA when validation_required=True."
+            ),
+            acceptance_criteria="All managers activated, results aggregated, reviewer integrated, no orphaned tasks",
+            evidence_requirements=(
+                "ActivationPlan with all managers assigned and results collected + "
+                "VerificationReport when validation_required=True"
+            ),
             model_tier_ref="cos_gm",
             children=[
                 "coding_manager", "architecture_manager", "testing_validation_manager",
@@ -187,7 +223,34 @@ def get_org_hierarchy() -> List[OrgNode]:
                 "operations_automation_manager", "governance_safety_manager",
                 "release_packaging_manager", "data_manager", "cost_routing_manager",
                 "nus_learning_manager", "connector_auth_manager", "runtime_ops_manager",
+                "reviewer_layer",
             ],
+        ),
+        # Independent Reviewer/Tester/Verifier Layer
+        # This is a child of COS/GM (receives work after workers complete) but is
+        # INDEPENDENT from managers — it never verifies its own output (self-verify blocked).
+        OrgNode(
+            node_id="reviewer_layer",
+            display_name="Reviewer / Tester / Verifier (Independent)",
+            layer=JarvisLayer.REVIEWER,
+            reports_to="cos_gm",
+            ownership="Independent verification of worker/manager outputs",
+            scope=(
+                "Audit worker execution results for evidence, contradictions, staleness. "
+                "Verify tester outputs. Gate COS/GM integration before Jarvis PA response. "
+                "Self-verify is permanently blocked. Cannot verify own output."
+            ),
+            acceptance_criteria=(
+                "VerificationReport produced with ACCEPTED or REJECTED outcome. "
+                "Fix list provided on rejection. Trace includes reviewer_verification event."
+            ),
+            evidence_requirements=(
+                "VerificationReport.acceptance_trace for ACCEPTED; "
+                "VerificationReport.fix_list for REJECTED"
+            ),
+            model_tier_ref="reviewer_layer",
+            report_format="VerificationReport.to_dict() — structured, no raw chain-of-thought",
+            children=[],
         ),
         # Managers
         OrgNode(

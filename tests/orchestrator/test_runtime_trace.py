@@ -285,7 +285,7 @@ class TestModuleTraceAPI:
         from openjarvis.orchestrator.runtime_trace import ALL_EVENT_TYPES
         expected = {
             "front_door", "routing", "cos_gm", "manager_activation",
-            "worker_execution", "validation", "nus_feedback",
+            "worker_execution", "reviewer_verification", "validation", "nus_feedback",
             "blocker", "final_response",
         }
         assert expected == ALL_EVENT_TYPES
