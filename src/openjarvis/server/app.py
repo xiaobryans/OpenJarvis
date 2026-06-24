@@ -40,6 +40,9 @@ from openjarvis.server.self_upgrade_routes import router as self_upgrade_router
 from openjarvis.server.plan9_routes import router as plan9_router
 from openjarvis.server.model_catalog_routes import router as model_catalog_router
 from openjarvis.server.plan2_routes import router as plan2_router
+from openjarvis.server.rules_routes import router as rules_router
+from openjarvis.server.expert_roles_routes import router as expert_roles_router
+from openjarvis.server.self_knowledge_routes import router as self_knowledge_router
 
 logger = logging.getLogger(__name__)
 
@@ -328,6 +331,9 @@ def create_app(
     app.include_router(model_catalog_router)
     app.include_router(plan9_router)
     app.include_router(plan2_router)
+    app.include_router(rules_router)
+    app.include_router(expert_roles_router)
+    app.include_router(self_knowledge_router)
     include_all_routes(app)
 
     # Restore SendBlue channel bindings from database on startup
