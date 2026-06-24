@@ -32,6 +32,9 @@ import { CockpitCommandPalette } from '../components/CockpitCommandPalette';
 import type { OrgHierarchyData, OrgChainFetchState } from '../components/OrgChainPanel';
 import type { FocusMode } from '../components/CockpitCommandPalette';
 import { apiFetch, checkHealth, getBase } from '../lib/api';
+import { streamChat } from '../lib/sse';
+import { useAppStore } from '../lib/store';
+import type { ChatMessage } from '../types';
 import type { TurnPhase } from '../hooks/useVoiceTurn';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1664,6 +1667,12 @@ export function JarvisCockpitPage() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [expandedPanel, setExpandedPanel] = useState<PanelId | null>(null);
 
+  // Shared conversation store — used for history sync with Cmd+K TextFallbackPanel
+  const storeSelectedModel = useAppStore((s) => s.selectedModel);
+  const storeAddMessage = useAppStore((s) => s.addMessage);
+  const storeCreateConversation = useAppStore((s) => s.createConversation);
+  const storeActiveId = useAppStore((s) => s.activeId);
+
   // Core state
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
@@ -1872,29 +1881,61 @@ export function JarvisCockpitPage() {
     setLastReply('');
     setInput('');
     setTimeout(() => inputRef.current?.focus(), 60);
+
+    // Prefer selectedModel from shared store (same as Cmd+K), fall back to health model
+    const chatModel = storeSelectedModel || model || 'default';
+
+    // Write user message to shared conversation store so Cmd+K history tallies
+    let convId = storeActiveId;
+    if (!convId) convId = storeCreateConversation(chatModel);
+    const userMsg: ChatMessage = {
+      id: `ck_u_${Date.now()}`,
+      role: 'user',
+      content: msg,
+      timestamp: Date.now(),
+    };
+    storeAddMessage(convId, userMsg);
+
+    let accumulatedReply = '';
     try {
-      const res = await apiFetch('/v1/chat/completions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: model || 'default', messages: [{ role: 'user', content: msg }], stream: false }) });
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        const errMsg = res.status === 401 ? 'AUTH REQUIRED — API key not configured'
-          : res.status === 403 ? 'Forbidden'
-          : (errData as { detail?: string }).detail || `Server error ${res.status}`;
-        setLastReply(`Error: ${errMsg}`);
-        setPhase('error');
-        return;
+      // Use streamChat (same authenticated path as Cmd+K) for progressive rendering
+      for await (const ev of streamChat(
+        { model: chatModel, messages: [{ role: 'user', content: msg }], stream: true },
+      )) {
+        // Skip named agent events (inference_start, tool_call_start, etc.) — only handle content
+        if (ev.event && ev.event !== 'content' && ev.event !== '') continue;
+        try {
+          const chunk = JSON.parse(ev.data) as { choices?: Array<{ delta?: { content?: string }; finish_reason?: string }> };
+          const delta = chunk?.choices?.[0]?.delta?.content ?? '';
+          if (delta) {
+            accumulatedReply += delta;
+            setLastReply(accumulatedReply);
+            setPhase('speaking');
+          }
+          if (chunk?.choices?.[0]?.finish_reason === 'stop') break;
+        } catch { /* skip malformed chunks */ }
       }
-      const data = await res.json();
-      const reply: string = data?.choices?.[0]?.message?.content ?? (data as { error?: string }).error ?? 'No reply.';
-      setLastReply(reply.slice(0, 800));
+      if (!accumulatedReply) accumulatedReply = 'No response was generated.';
+      setLastReply(accumulatedReply);
       setPhase('speaking');
       setTimeout(() => setPhase('idle'), 3000);
-    } catch (err) {
-      setLastReply(`Error: ${String(err)}`);
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      accumulatedReply = `Error: ${errMsg}`;
+      setLastReply(accumulatedReply);
       setPhase('error');
     } finally {
       setSending(false);
+      // Write assistant reply to shared store so Cmd+K history reflects this turn
+      const assistantMsg: ChatMessage = {
+        id: `ck_a_${Date.now()}`,
+        role: 'assistant',
+        content: accumulatedReply,
+        timestamp: Date.now(),
+      };
+      storeAddMessage(convId, assistantMsg);
     }
-  }, [input, sending, model]);
+  }, [input, sending, model, storeSelectedModel, storeActiveId, storeCreateConversation, storeAddMessage]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSubmit(); }

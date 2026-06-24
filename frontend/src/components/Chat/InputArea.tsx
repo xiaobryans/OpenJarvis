@@ -170,9 +170,6 @@ export function InputArea() {
     // model list is still loading (race condition on first launch) or when the
     // API key was missing and models couldn't be fetched yet.
     const effectiveModel = selectedModel || 'default';
-    if (!selectedModel) {
-      // Model list may not have loaded yet — proceed with fallback silently.
-    }
 
     setInput('');
 

@@ -1,5 +1,5 @@
 import type { ResearchEvent, SSEEvent } from '../types';
-import { getBase } from './api';
+import { getBase, getApiKey } from './api';
 
 export interface ChatRequest {
   model: string;
@@ -14,9 +14,12 @@ export async function* streamChat(
   signal?: AbortSignal,
 ): AsyncGenerator<SSEEvent> {
   const base = getBase();
+  const apiKey = getApiKey();
+  const chatHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (apiKey) chatHeaders['Authorization'] = `Bearer ${apiKey}`;
   const response = await fetch(`${base}/v1/chat/completions`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: chatHeaders,
     body: JSON.stringify(request),
     signal,
   });
@@ -65,9 +68,12 @@ export async function* streamResearch(
   // /api/research is mounted at the server root — strip any trailing /v1
   // from the base so configurations like "http://host:8000/v1" still resolve.
   const base = getBase().replace(/\/v1\/?$/, '');
+  const apiKey = getApiKey();
+  const researchHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (apiKey) researchHeaders['Authorization'] = `Bearer ${apiKey}`;
   const response = await fetch(`${base}/api/research`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: researchHeaders,
     body: JSON.stringify({ query }),
     signal,
   });
