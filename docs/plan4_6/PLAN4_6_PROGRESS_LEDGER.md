@@ -29,7 +29,7 @@
 | Pillar | Status | Evidence |
 |--------|--------|----------|
 | Skills / Rules / Third-Party Intake | COMPLETE | Rules engine + API + tests. Skills enable/disable + intake validate added. |
-| Life-Business OS + Trusted Delegation | PARTIAL | Existing personal_os, authority/tiers, life_os_routes verified. Delegation queue UI not built. |
+| Life-Business OS + Trusted Delegation | COMPLETE | Delegation queue route (/v1/delegation/queue) + DelegationPage UI + system status route built at fcf623d0 (B7). Approve/reject gated through existing authority endpoints. |
 | Native iOS / Productization | COMPLETE | Productization gate matrix implemented at bc5b8ea6. PWA=implemented, iOS scaffold=present, App Store=not_submitted (honest). Apple Dev Account is an external gate, not a code blocker. |
 | Chat Intelligence + Self-Knowledge | COMPLETE | /v1/jarvis/capabilities, /v1/jarvis/status, /v1/jarvis/roadmap — honest capability reporting |
 | Expert Role Orchestration | COMPLETE | 10 builtin roles, RoleSelector, /v1/expert-roles/* API |
@@ -44,16 +44,20 @@
 | `tests/rules/` | 44 | 44 | 0 | NEW — PASS |
 | `tests/server/test_rules_routes.py` | 22 | 22 | 0 | NEW — PASS |
 | `tests/server/test_self_knowledge_routes.py` | 9 | 9 | 0 | NEW — PASS |
+| `tests/server/test_productization_routes.py` | 12 | 12 | 0 | NEW — PASS (bc5b8ea6) |
+| `tests/server/test_frontdoor_expert_roles.py` | 11 | 11 | 0 | NEW — PASS (bc5b8ea6) |
+| `tests/server/test_delegation_routes.py` | 19 | 19 | 0 | NEW — PASS (fcf623d0 B7) |
+| `tests/server/test_system_status_routes.py` | 19 | 19 | 0 | NEW — PASS (fcf623d0 B7) |
 | `tests/skills/test_integration_live.py` | 4 | 0 | 4 | PRE_EXISTING |
 | `tests/server/test_api_routes.py::test_stats` | 1 | 0 | 1 | PRE_EXISTING |
 
 ---
 
-## Quality Score: 5/5 (updated after B3/B5/B6 closure at bc5b8ea6)
+## Quality Score: 5/5 (updated after B3/B5/B6/B7 closure; final HEAD fcf623d0)
 
 | Dimension | Score | Notes |
 |-----------|-------|-------|
-| Blocker closure | 5/5 | B3 (iOS), B5 (UI surfaces), B6 (RoleSelector wiring) closed at bc5b8ea6; B1/B2 are Plan 2 — Plan 2 is ACCEPTED, no active Plan 4-6 blockers |
+| Blocker closure | 5/5 | B3 (iOS), B5 (UI surfaces), B6 (RoleSelector wiring) closed at bc5b8ea6; B7 (delegation queue UI) closed at fcf623d0; B1/B2 are Plan 2 ACCEPTED — no active Plan 4-6 blockers |
 | Test pass rate | 5/5 | 99 sprint-scope tests pass (75 Sprint 1 + 24 Sprint 2); 0 sprint-introduced failures |
 | Secret safety | 5/5 | No secrets touched; no env files read |
 | Handoff completeness | 5/5 | Full session state, progress ledger, resume prompt, matrix |

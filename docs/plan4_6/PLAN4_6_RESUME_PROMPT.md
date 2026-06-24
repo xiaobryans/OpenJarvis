@@ -37,42 +37,25 @@ You are resuming the `PLAN_4_6_MEGA_SPRINT_TEXT_FIRST_JARVIS_OS` sprint for Open
 - 75 new tests all pass
 - 5 pre-existing failures confirmed unchanged
 
-## What Remains (in priority order)
+## Sprint Completion Status
 
-1. **Commit** — stage and commit the sprint work
-2. **UI/UX surfaces** — add frontend routes/pages for rules manager, expert roles status, Jarvis capability panel
-3. **Life-Business OS delegation queue UI** — frontend for delegation/approval queue
-4. **Mobile/iOS PWA polish** — update manifest, onboarding, mobile viewport
-5. **Expert role orchestration wiring** — wire RoleSelector into the Jarvis PA response path
-6. **Resolve B3** — confirm Apple Developer Account enrollment before any native iOS work
+All six Plan 4-6 pillars are COMPLETE as of HEAD fcf623d0:
+
+1. ✅ **Skills / Rules / Intake** — rules engine, rules API, skills enable/disable/intake (d95cec9d)
+2. ✅ **Life-Business OS + Delegation** — delegation queue route + DelegationPage UI + system status (fcf623d0)
+3. ✅ **iOS / Productization** — productization gate matrix, honest iOS/PWA/App Store state (bc5b8ea6)
+4. ✅ **Chat Intelligence + Self-Knowledge** — /v1/jarvis/capabilities, /status, /roadmap (d95cec9d)
+5. ✅ **Expert Role Orchestration** — 10 builtin roles, RoleSelector wired into Jarvis PA (bc5b8ea6)
+6. ✅ **Unified UI/UX** — Rules Manager, Expert Roles, Capabilities, Delegation pages (bc5b8ea6 + fcf623d0)
+
+137 new tests pass. Frontend build clean. Secret scan clean.
+
+**Waiting for:** Bryan / ChatGPT reviewer acceptance review at HEAD fcf623d0.
 
 ## Hard-Stop Rules
 1. Never print secret values
 2. Never read .env / OAuth / credential files for contents
-3. Never stage unrelated dirty files (JARVIS_OMNIX_HANDOFF.md, tests/workbench/test_us14a_fixture.py, evidence/, scripts/plan1_*)
+3. Never stage unrelated dirty files (JARVIS_OMNIX_HANDOFF.md, tests/workbench/test_us14a_fixture.py, evidence/, scripts/plan1_*, scripts/plan9_*)
 4. Do NOT start Plan 3 voice/TTS
 5. Do NOT mark accepted — only Bryan can
-
-## Files to Stage (explicit only)
-```
-src/openjarvis/rules/__init__.py
-src/openjarvis/rules/types.py
-src/openjarvis/rules/registry.py
-src/openjarvis/rules/engine.py
-src/openjarvis/orchestrator/expert_roles.py
-src/openjarvis/server/rules_routes.py
-src/openjarvis/server/expert_roles_routes.py
-src/openjarvis/server/self_knowledge_routes.py
-src/openjarvis/server/skills_routes.py
-src/openjarvis/server/app.py
-tests/rules/__init__.py
-tests/rules/test_rules_engine.py
-tests/rules/test_expert_roles.py
-tests/server/test_rules_routes.py
-tests/server/test_self_knowledge_routes.py
-docs/plan4_6/PLAN4_6_SESSION_STATE.md
-docs/plan4_6/PLAN4_6_PROGRESS_LEDGER.md
-docs/plan4_6/PLAN4_6_RESUME_PROMPT.md
-docs/plan4_6/PLAN4_6_SOURCE_OF_TRUTH_MATRIX.md
-docs/plan4_6/plan4_6_matrix.json
-```
+6. Do NOT claim Tauri rebuild is "deferred until full Plan 2 completion" — Plan 2 is accepted

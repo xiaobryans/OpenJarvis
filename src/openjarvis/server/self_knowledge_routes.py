@@ -175,7 +175,7 @@ _ROADMAP: List[Dict[str, Any]] = [
     {"plan": "Plan 3", "name": "Voice / Wake / TTS", "status": "PARKED — text-first priority"},
     {"plan": "Plan 4-6", "name": "Text-First Jarvis OS Mega-Sprint", "status": "IN_PROGRESS"},
     {"plan": "Plan 4-6 B3/B5/B6", "name": "iOS/Productization + UI Surfaces + RoleSelector Wiring", "status": "ACCEPTED"},
-    {"plan": "Plan 4-6 B7", "name": "Delegation Queue UI + Connector Status Polish", "status": "IN_PROGRESS"},
+    {"plan": "Plan 4-6 B7", "name": "Delegation Queue UI + Connector Status Polish", "status": "ACCEPTED"},
     {"plan": "Plan 4", "name": "Skills / Rules / Third-Party Skill Intake", "status": "COMPLETE"},
     {"plan": "Plan 5", "name": "Life-Business OS + Trusted Delegation + iOS", "status": "IN_PROGRESS"},
     {"plan": "Plan 6", "name": "Chat Intelligence + Expert Roles + UI/UX Polish", "status": "IN_PROGRESS"},

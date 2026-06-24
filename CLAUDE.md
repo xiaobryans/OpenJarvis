@@ -11,18 +11,21 @@
 - `CLAUDE_CODE_BASELINE_SETUP_ACCEPTED`
 
 ## Active Plan
-**Plan 2 — Full Mobile MacBook-Off Parity Runtime**
+**Plan 4-6 Mega Sprint — Text-First Jarvis OS**
 
 Scope:
-- Mobile/MacBook-off parity status endpoints and matrix
-- Connector and task parity (GitHub, Slack, Telegram, Notion, Google OAuth)
-- Approval notification loop
-- Fargate worker / cloud execution path
-- Safe public parity routes (no sensitive field leakage)
+- Skills / Rules engine / Third-party skill intake
+- Life-Business OS + Trusted Delegation queue
+- Expert Role Orchestration (internal routing, single PA voice)
+- Chat Intelligence + Self-Knowledge
+- Unified UI/UX surfaces
+- Native iOS / Productization gate matrix
+
+(Plan 2 — Full Mobile MacBook-Off Parity Runtime — ACCEPTED)
 
 ## Hard Rules (do not violate)
 - Do **not** start Plan 3 (voice / wake / TTS) unless Bryan explicitly asks.
-- Do **not** rebuild/reinstall Tauri until full Plan 2 completion unless Bryan explicitly asks.
+- Do **not** rebuild/reinstall Tauri unless Bryan explicitly asks.
 - Do **not** run `bash scripts/build-local.sh --install`.
 - **No fake PASS.**
 - **No fake ACCEPTED.**
@@ -44,14 +47,15 @@ Scope:
 - Cmd+K history viewer only (read-only)
 - Cmd+Shift+K command palette
 
-## Current Plan 2 Blockers
-- Google OAuth tokens are local JSON and need vault/cloud migration.
-- GitHub / Slack / Telegram env tokens need Fargate deployment.
-- Telegram env mismatch: `TELEGRAM_BOT_TOKEN` vs `JARVIS_TELEGRAM_BOT_TOKEN`.
-- Notion is not configured.
-- Approval notification loop is not wired.
-- Fargate worker / cloud execution path is not deployed.
-- Voice / wake / TTS remains parked for Plan 3.
+## Plan 2 — Accepted (no active Plan 2 blockers)
+Plan 2 is ACCEPTED as PLAN_2_FULL_MOBILE_MACBOOK_OFF_PARITY_RUNTIME_ACCEPTED.
+The items below were blockers before acceptance; they are not re-opened unless fresh
+regression evidence is found:
+- Google OAuth tokens (local JSON → vault/cloud migration) — accepted state
+- GitHub / Slack / Telegram / Notion env tokens for Fargate — accepted state
+- Telegram env name: `TELEGRAM_BOT_TOKEN` vs `JARVIS_TELEGRAM_BOT_TOKEN` — accepted state
+- Approval notification loop — accepted state
+- Voice / wake / TTS — PARKED for Plan 3 (intentional, not a Plan 2 blocker)
 
 ## Required Final Sprint Report Format
 Every sprint / validation report must include, in order:
@@ -66,7 +70,7 @@ Every sprint / validation report must include, in order:
 9. **Validation command outputs**
 10. **Secret scan result**
 11. **Proof accepted checkpoints were not regressed**
-12. **Statement that Tauri rebuild is deferred until full Plan 2 completion**
+12. **Tauri rebuild status** — state whether it was run, not required for this sprint, or pending release hardening; do not use "deferred until full Plan 2 completion" (Plan 2 is accepted)
 13. **Remaining blockers**
 
 ## Agents
@@ -154,7 +158,7 @@ safe parallel worktree setup, validation, and secret scanning.
 2. Action may read, expose, or print secret/credential values.
 3. Action is destructive (deletes or quarantines files).
 4. Action triggers live cloud/OAuth/deployment/spend/external side effects.
-5. Action requires Tauri rebuild/reinstall before full Plan 2 completion.
+5. Action requires Tauri rebuild/reinstall (Bryan must explicitly authorize).
 6. Action contradicts a locked roadmap state or accepted checkpoint.
 7. Action changes auth/approval gates in a way that weakens safety.
 8. Action requires touching unrelated dirty files.
