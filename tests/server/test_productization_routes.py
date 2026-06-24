@@ -32,11 +32,24 @@ class TestProductizationStatus:
         pwa = r.json()["mobile_web_pwa"]
         assert pwa["status"] == "implemented"
 
-    def test_ios_scaffold_present(self, client):
+    def test_ios_scaffold_not_present(self, client):
         r = client.get("/v1/productization/status")
         ios = r.json()["native_ios"]
-        assert ios["scaffold_status"] == "present"
-        assert "src-tauri" in ios["scaffold_path"]
+        assert ios["scaffold_status"] == "not_scaffolded"
+        assert ios["scaffold_status"] != "present"
+
+    def test_desktop_scaffold_present(self, client):
+        r = client.get("/v1/productization/status")
+        ios = r.json()["native_ios"]
+        assert ios["desktop_scaffold_status"] == "present"
+        assert "src-tauri" in ios["desktop_scaffold_path"]
+
+    def test_desktop_scaffold_separate_from_ios_scaffold(self, client):
+        r = client.get("/v1/productization/status")
+        ios = r.json()["native_ios"]
+        assert ios["desktop_scaffold_status"] == "present"
+        assert ios["scaffold_status"] == "not_scaffolded"
+        assert ios["desktop_scaffold_status"] != ios["scaffold_status"]
 
     def test_no_fake_app_store_claim(self, client):
         r = client.get("/v1/productization/status")
@@ -50,9 +63,13 @@ class TestProductizationStatus:
         r = client.get("/v1/productization/status")
         assert r.json()["summary"]["pwa_ready"] is True
 
-    def test_ios_scaffold_ready_true(self, client):
+    def test_ios_scaffold_ready_false(self, client):
         r = client.get("/v1/productization/status")
-        assert r.json()["summary"]["ios_scaffold_ready"] is True
+        assert r.json()["summary"]["ios_scaffold_ready"] is False
+
+    def test_desktop_scaffold_ready_true(self, client):
+        r = client.get("/v1/productization/status")
+        assert r.json()["summary"]["desktop_scaffold_ready"] is True
 
     def test_apple_developer_account_is_external_gate(self, client):
         r = client.get("/v1/productization/status")

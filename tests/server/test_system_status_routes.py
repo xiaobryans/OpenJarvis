@@ -20,7 +20,7 @@ VALID_STATUSES = {
     "configured", "not_configured", "partial", "external_gate",
     "not_started", "unknown", "implemented",
     # productization-specific statuses surfaced via _IOS_NATIVE_STATUS
-    "scaffold_ready", "present", "not_submitted",
+    "not_scaffolded", "not_submitted",
 }
 
 

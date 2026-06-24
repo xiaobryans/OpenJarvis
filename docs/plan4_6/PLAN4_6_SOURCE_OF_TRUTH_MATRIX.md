@@ -44,8 +44,9 @@
 | PWA icons | `src/openjarvis/server/static/pwa-*.png` | EXISTING (Plan 2) | — |
 | Mobile parity routes | `src/openjarvis/server/plan2_routes.py` | EXISTING (Plan 2) | — |
 | Mobile proof page | `src/openjarvis/server/mobile_proof_page.py` | EXISTING (Plan 2) | — |
-| Productization gate matrix | `src/openjarvis/server/productization_routes.py` | **COMPLETE (B3 closed — bc5b8ea6)** | `tests/server/test_productization_routes.py` (12) |
-| Native iOS scaffold | `src-tauri/` | EXTERNAL_GATE — Apple Developer Account enrollment required | — |
+| Productization gate matrix | `src/openjarvis/server/productization_routes.py` | **COMPLETE (iOS truth fix sprint)** | `tests/server/test_productization_routes.py` |
+| Desktop Tauri scaffold | `frontend/src-tauri/` | PRESENT — macOS/Windows/Linux only (`com.openjarvis.desktop`) | — |
+| Native iOS scaffold | — | NOT_STARTED — iOS target not initialized; run `tauri ios init` | — |
 | App Store submission | — | NOT_SUBMITTED — honest; external gate | — |
 
 ---

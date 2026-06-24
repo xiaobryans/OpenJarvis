@@ -50,33 +50,37 @@ _MOBILE_WEB_STATUS: Dict[str, Any] = {
 
 _IOS_NATIVE_STATUS: Dict[str, Any] = {
     "type": "native_ios",
-    "status": "scaffold_ready",
+    "status": "not_scaffolded",
     "description": (
-        "Native iOS scaffold exists via Tauri (src-tauri/) referencing the React frontend. "
-        "A full native iOS build requires Xcode, an Apple Developer Account, and provisioning profiles. "
-        "The scaffold is present and the frontend is iOS-capable. "
-        "App Store submission is an external release gate, not an internal code blocker."
+        "A Tauri desktop scaffold exists at frontend/src-tauri/ for macOS/Windows/Linux only. "
+        "The iOS target has NOT been initialized — no ios/ directory, no iOS Xcode project, "
+        "no iOS bundle section in tauri.conf.json (identifier: com.openjarvis.desktop), "
+        "and no iOS-specific Rust dependencies. "
+        "To scaffold iOS support: run 'tauri ios init', then enroll an Apple Developer Account. "
+        "App Store distribution is an external release gate, not an internal code blocker."
     ),
-    "scaffold_status": "present",
-    "scaffold_path": "frontend/src-tauri/",
+    "scaffold_status": "not_scaffolded",
+    "desktop_scaffold_status": "present",
+    "desktop_scaffold_path": "frontend/src-tauri/",
     "build_requirements": [
+        "Run 'tauri ios init' to configure the iOS target (not yet done)",
         "Xcode 15+ (macOS only)",
         "Apple Developer Account (enrollment required for distribution)",
         "iOS provisioning profile",
-        "Tauri iOS target: `tauri build --target aarch64-apple-ios`",
     ],
     "external_gates": {
         "apple_developer_account": "EXTERNAL — Bryan must confirm enrollment",
+        "tauri_ios_init": "PENDING — iOS target not yet initialized",
         "app_store_submission": "EXTERNAL — requires review by Apple",
         "testflight_distribution": "EXTERNAL — requires Developer Account",
     },
     "implemented_in_code": [
-        "src-tauri/ Tauri project pointing to Jarvis React frontend",
-        "Tauri iOS target configuration in tauri.conf.json",
+        "frontend/src-tauri/ Tauri desktop project (macOS/Windows/Linux only)",
         "Mobile-responsive frontend tested locally",
+        "PWA manifest for installable web app (Plan 2)",
     ],
     "plan": "Plan 4-5",
-    "proof": "frontend/src-tauri/ directory present; Tauri project configured",
+    "proof": "frontend/src-tauri/ is a desktop-only Tauri project (com.openjarvis.desktop); no iOS bundle or target configured",
 }
 
 _APP_STORE_STATUS: Dict[str, Any] = {
@@ -110,9 +114,14 @@ _PRODUCTIZATION_GATES: List[Dict[str, Any]] = [
         "evidence": "Plan 2 /v1/mobile-parity/* endpoints accepted",
     },
     {
-        "gate": "ios_scaffold",
+        "gate": "desktop_scaffold",
         "status": "PASS",
-        "evidence": "src-tauri/ present; Tauri iOS target configured",
+        "evidence": "frontend/src-tauri/ present; Tauri desktop project configured for macOS/Windows/Linux",
+    },
+    {
+        "gate": "ios_scaffold",
+        "status": "NOT_STARTED",
+        "evidence": "iOS target not initialized; 'tauri ios init' has not been run; no ios/ directory present",
     },
     {
         "gate": "apple_developer_account",
@@ -158,14 +167,15 @@ async def productization_status() -> Dict[str, Any]:
             "gates_external": external_count,
             "gates_not_started": not_started_count,
             "pwa_ready": True,
-            "ios_scaffold_ready": True,
+            "desktop_scaffold_ready": True,
+            "ios_scaffold_ready": False,
             "app_store_ready": False,
             "fake_claims": False,
         },
         "next_steps": [
+            "Run 'tauri ios init' to configure the iOS target in frontend/src-tauri/",
             "Bryan confirms Apple Developer Account enrollment",
             "Set up TestFlight distribution",
-            "Test iOS build from src-tauri/ with Xcode",
             "Privacy nutrition label + App Store submission",
         ],
     }
@@ -177,7 +187,7 @@ async def ios_status() -> Dict[str, Any]:
     return {
         "native_ios": _IOS_NATIVE_STATUS,
         "app_store": _APP_STORE_STATUS,
-        "summary": "iOS scaffold is code-ready. Distribution requires Apple Developer enrollment (external gate).",
+        "summary": "Tauri desktop scaffold present (macOS/Windows/Linux). iOS target not yet initialized — run 'tauri ios init' to begin. Distribution requires Apple Developer enrollment (external gate).",
     }
 
 

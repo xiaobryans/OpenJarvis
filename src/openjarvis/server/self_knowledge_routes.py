@@ -130,8 +130,9 @@ _CAPABILITIES: List[Dict[str, Any]] = [
         "name": "Native iOS / Productization",
         "status": "partial",
         "description": (
-            "PWA fully implemented (Plan 2). Native iOS scaffold present via Tauri src-tauri/. "
-            "Distribution requires Apple Developer Account enrollment (external gate). "
+            "PWA fully implemented (Plan 2). Tauri desktop scaffold present at frontend/src-tauri/ "
+            "(macOS/Windows/Linux only). Native iOS target not yet initialized — requires "
+            "'tauri ios init' and Apple Developer Account enrollment (external gate). "
             "See GET /v1/productization/status for full breakdown."
         ),
         "plan": "Plan 4-5",
