@@ -7,10 +7,10 @@
 | Field | Value |
 |-------|-------|
 | Branch | `localhost-get-tool` |
-| HEAD | `7cca1f0c` (Post-Plan-2 Claude Code automation expansion) |
+| HEAD | `e2127b5d` (Update automation handoff to new HEAD 7cca1f0c) |
 | Remote | `fork/xiaobryans/OpenJarvis` |
 | Working tree | Dirty — pre-existing only (do NOT stage) |
-| Active sprint | `POST_PLAN_2_CLAUDE_CODE_AUTOMATION_EXPANSION_AND_OPTIMIZATION` |
+| Active sprint | `POST_PLAN_2_CLAUDE_CODE_AUTOMATION_EXPANSION_SMOKE_TEST` |
 | Locked plan state | `PLAN_2_FULL_MOBILE_MACBOOK_OFF_PARITY_RUNTIME_ACCEPTED` |
 | Safe to continue automatically | YES — inside declared sprint scope |
 
@@ -121,4 +121,4 @@ guard-credential-file-read.sh, remind-handoff-update.sh
 - Do not stage unrelated dirty files
 
 ---
-*Last updated: Post-Plan-2 automation expansion sprint — Phases 0–8 complete*
+*Last updated: Post-Plan-2 smoke test sprint — expansion sprint complete at e2127b5d; smoke test in progress*
