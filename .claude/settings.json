@@ -7,6 +7,19 @@
           {
             "type": "command",
             "command": "bash .claude/hooks/warn-env-access.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/guard-credential-file-read.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/guard-acceptance-label.sh"
           }
         ]
       },
@@ -16,6 +29,10 @@
           {
             "type": "command",
             "command": "bash .claude/hooks/warn-tauri-build.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/guard-no-git-add-all.sh"
           }
         ]
       }
@@ -31,6 +48,10 @@
           {
             "type": "command",
             "command": "bash .claude/hooks/remind-action-ledger.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/remind-handoff-update.sh"
           }
         ]
       }
