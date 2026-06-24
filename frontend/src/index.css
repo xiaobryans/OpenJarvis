@@ -971,3 +971,139 @@
     animation: none !important;
   }
 }
+
+/* ================================================================ */
+/* Plan 1 Cinematic Cockpit — depth rings, glass panels, rail chrome */
+/* ================================================================ */
+
+/* Depth ring pulse */
+@keyframes j-ring-breathe {
+  0%, 100% { transform: translate(-50%, -50%) scale(0.97); opacity: 0.55; }
+  50%       { transform: translate(-50%, -50%) scale(1.03); opacity: 1.00; }
+}
+
+/* Neural grid opacity shift */
+@keyframes j-neural-shift {
+  0%, 100% { opacity: 0.055; }
+  50%      { opacity: 0.095; }
+}
+
+/* Top bar scan glow */
+@keyframes j-scan-glow {
+  0%, 100% { opacity: 0.5; }
+  50%      { opacity: 1.0; }
+}
+
+/* ── Concentric orb depth rings ──────────────────────────────── */
+.j-ring {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+  /* translate(-50%,-50%) in the keyframe keeps centering across scale */
+  animation: j-ring-breathe ease-in-out infinite;
+  will-change: transform, opacity;
+  top: 50%;
+  left: 50%;
+}
+
+.j-ring-1 { border: 1px solid rgba(34,211,238,0.30); animation-duration: 3600ms; }
+.j-ring-2 { border: 1px solid rgba(34,211,238,0.15); animation-duration: 5200ms; animation-delay: -2000ms; }
+.j-ring-3 { border: 1px solid rgba(34,211,238,0.07); animation-duration: 7400ms; animation-delay: -3700ms; }
+
+/* Approval (amber) ring tint */
+.j-rings-amber .j-ring-1 { border-color: rgba(245,158,11,0.45); }
+.j-rings-amber .j-ring-2 { border-color: rgba(245,158,11,0.22); }
+.j-rings-amber .j-ring-3 { border-color: rgba(245,158,11,0.10); }
+
+/* Error ring tint */
+.j-rings-error .j-ring-1 { border-color: rgba(239,68,68,0.45); }
+.j-rings-error .j-ring-2 { border-color: rgba(239,68,68,0.22); }
+.j-rings-error .j-ring-3 { border-color: rgba(239,68,68,0.10); }
+
+/* Processing/thinking ring tint */
+.j-rings-processing .j-ring-1 { border-color: rgba(167,139,250,0.40); }
+.j-rings-processing .j-ring-2 { border-color: rgba(167,139,250,0.20); }
+.j-rings-processing .j-ring-3 { border-color: rgba(167,139,250,0.09); }
+
+/* ── Glass morphism panels ───────────────────────────────────── */
+.j-glass {
+  background: rgba(5,10,22,0.74);
+  backdrop-filter: blur(22px) saturate(165%);
+  -webkit-backdrop-filter: blur(22px) saturate(165%);
+  border: 1px solid rgba(34,211,238,0.14);
+  border-radius: 16px;
+}
+
+.j-glass-amber {
+  background: rgba(14,7,2,0.82);
+  backdrop-filter: blur(22px) saturate(165%);
+  -webkit-backdrop-filter: blur(22px) saturate(165%);
+  border: 1px solid rgba(245,158,11,0.24);
+  border-radius: 16px;
+}
+
+/* ── Cockpit mode rail buttons ───────────────────────────────── */
+.j-rail-btn {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  cursor: pointer;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 17px;
+  transition: background 150ms ease, box-shadow 150ms ease;
+  background: transparent;
+  padding: 0;
+}
+.j-rail-btn:hover {
+  background: rgba(34,211,238,0.07);
+}
+.j-rail-btn-active {
+  background: rgba(34,211,238,0.14) !important;
+  box-shadow: inset 3px 0 0 #22d3ee, 0 0 16px rgba(34,211,238,0.20);
+}
+.j-rail-btn-amber {
+  background: rgba(245,158,11,0.14) !important;
+  box-shadow: inset 3px 0 0 #f59e0b, 0 0 16px rgba(245,158,11,0.20);
+}
+
+/* ── Org chain node chips ────────────────────────────────────── */
+.j-node {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 9px;
+  border-radius: 100px;
+  font-family: var(--font-hud, monospace);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+
+/* ── Cockpit top bar glow border ─────────────────────────────── */
+.j-topbar-glow {
+  box-shadow: 0 1px 0 rgba(34,211,238,0.15), 0 2px 8px rgba(34,211,238,0.05);
+}
+
+/* ── State badge ─────────────────────────────────────────────── */
+.j-state-badge {
+  font-family: var(--font-hud, monospace);
+  font-size: 9px;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  font-weight: 700;
+  padding: 3px 12px;
+  border-radius: 100px;
+  display: inline-block;
+}
+
+/* ── Reduce motion ───────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .j-ring,
+  .j-neural-grid {
+    animation: none !important;
+  }
+}

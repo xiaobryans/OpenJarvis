@@ -287,39 +287,95 @@ interface TopStatusProps {
 
 function TopStatusBar({ apiOk, model, version, gitCommit, apiTarget, plan9, pendingApprovals, connectorLive, connectorTotal, activeMode, onPalette, onMode }: TopStatusProps) {
   const modeLabel: Record<FocusMode, string> = {
-    mission: 'Mission', workbench: 'Workbench', approvals: 'Approvals',
+    mission: 'Mission Control', workbench: 'Workbench', approvals: 'Approvals',
     audit: 'Audit', memory: 'Memory', system: 'System', voice: 'Voice [PARKED]',
   };
+  const isApproval = pendingApprovals > 0;
   return (
-    <div style={{ position: 'relative', zIndex: 20, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 0, height: 36, borderBottom: '1px solid rgba(34,211,238,0.08)', background: 'rgba(2,4,10,0.8)', backdropFilter: 'blur(10px)' }}>
-      {/* Left: Jarvis identity */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '0 12px', borderRight: '1px solid rgba(34,211,238,0.07)', height: '100%', flexShrink: 0 }}>
-        {dot(apiOk ? 'ok' : apiOk === false ? 'error' : 'unknown')}
-        <span style={{ fontSize: 11, fontWeight: 700, color: apiOk ? '#22d3ee' : '#6b7280', fontFamily: 'var(--font-display, sans-serif)', letterSpacing: '0.05em' }}>JARVIS</span>
-        {version && <span style={{ fontSize: 9, color: 'rgba(80,120,160,0.5)', fontFamily: 'var(--font-hud, monospace)' }}>v{version}</span>}
-        {gitCommit && <span style={{ fontSize: 9, color: 'rgba(60,100,140,0.4)', fontFamily: 'var(--font-hud, monospace)' }}>{gitCommit.slice(0, 7)}</span>}
+    <div
+      className="j-topbar-glow"
+      style={{
+        position: 'relative', zIndex: 20, flexShrink: 0, display: 'flex', alignItems: 'center',
+        height: 38,
+        background: 'rgba(2,4,12,0.88)',
+        backdropFilter: 'blur(14px)',
+        borderBottom: isApproval ? '1px solid rgba(245,158,11,0.22)' : '1px solid rgba(34,211,238,0.10)',
+        transition: 'border-color 0.4s',
+      }}
+    >
+      {/* Left: JARVIS identity + build marker */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '0 14px', borderRight: '1px solid rgba(34,211,238,0.07)', height: '100%', flexShrink: 0 }}>
+        <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+          {dot(apiOk ? 'ok' : apiOk === false ? 'error' : 'unknown')}
+        </div>
+        <span style={{
+          fontSize: 12, fontWeight: 800,
+          fontFamily: 'var(--font-display, sans-serif)',
+          letterSpacing: '0.12em',
+          color: apiOk ? '#22d3ee' : '#4b5563',
+          textShadow: apiOk ? '0 0 12px rgba(34,211,238,0.55)' : 'none',
+          transition: 'color 0.4s, text-shadow 0.4s',
+        }}>JARVIS</span>
+        {version && <span style={{ fontSize: 8, color: 'rgba(34,211,238,0.30)', fontFamily: 'var(--font-hud, monospace)', letterSpacing: '0.04em' }}>v{version}</span>}
+        {gitCommit && <span style={{ fontSize: 8, color: 'rgba(34,211,238,0.18)', fontFamily: 'var(--font-hud, monospace)' }}>{gitCommit.slice(0, 7)}</span>}
       </div>
 
-      {/* Center: active mode indicator */}
-      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-        {pendingApprovals > 0 && (
+      {/* Center: mode label + approval alert */}
+      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+        {pendingApprovals > 0 ? (
           <button
             onClick={() => onMode('approvals')}
-            style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 9, padding: '2px 8px', background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 4, color: '#f59e0b', cursor: 'pointer', animation: 'orb-pulse-med 2s ease-in-out infinite' }}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 6,
+              fontSize: 9, padding: '3px 10px',
+              background: 'rgba(245,158,11,0.14)',
+              border: '1px solid rgba(245,158,11,0.40)',
+              borderRadius: 6, color: '#f59e0b', cursor: 'pointer',
+              fontFamily: 'var(--font-hud, monospace)', fontWeight: 700, letterSpacing: '0.06em',
+              animation: 'orb-pulse-med 2.4s ease-in-out infinite',
+            }}
           >
-            🛑 {pendingApprovals} approval{pendingApprovals !== 1 ? 's' : ''} pending
+            🛑 {pendingApprovals} APPROVAL{pendingApprovals !== 1 ? 'S' : ''} PENDING
           </button>
+        ) : (
+          <span style={{
+            fontSize: 9, color: 'rgba(100,150,200,0.45)',
+            fontFamily: 'var(--font-hud, monospace)', letterSpacing: '0.10em', textTransform: 'uppercase',
+          }}>
+            {modeLabel[activeMode]}
+          </span>
         )}
-        <span style={{ fontSize: 10, color: 'rgba(100,140,180,0.5)' }}>{modeLabel[activeMode]}</span>
       </div>
 
-      {/* Right: system stats */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0 12px', borderLeft: '1px solid rgba(34,211,238,0.07)', height: '100%', fontSize: 9, color: 'rgba(100,140,180,0.5)', flexShrink: 0 }}>
-        {model && <span style={{ fontFamily: 'var(--font-hud, monospace)' }}>{model.split('/').pop()?.slice(0, 20) ?? model}</span>}
-        {plan9 && <span style={{ color: plan9.gaps === 0 ? '#3ddc97' : '#f59e0b' }}>P9:{plan9.gaps === 0 ? '✓' : plan9.gaps + '⚠'}</span>}
-        {connectorTotal > 0 && <span style={{ color: connectorLive === connectorTotal ? '#3ddc97' : '#f59e0b' }}>{connectorLive}/{connectorTotal}∫</span>}
-        <span style={{ color: 'rgba(60,100,140,0.4)', fontFamily: 'var(--font-hud, monospace)' }}>{apiTarget.replace(/^https?:\/\//, '').slice(0, 20)}</span>
-        <button onClick={onPalette} style={{ fontSize: 9, padding: '2px 7px', background: 'rgba(34,211,238,0.08)', border: '1px solid rgba(34,211,238,0.18)', borderRadius: 4, color: 'rgba(100,180,220,0.7)', cursor: 'pointer', fontFamily: 'var(--font-hud, monospace)' }}>⌘K</button>
+      {/* Right: system telemetry + palette */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 9, padding: '0 12px',
+        borderLeft: '1px solid rgba(34,211,238,0.07)', height: '100%',
+        fontSize: 9, fontFamily: 'var(--font-hud, monospace)', color: 'rgba(80,130,170,0.5)',
+        flexShrink: 0,
+      }}>
+        {model && <span style={{ color: 'rgba(100,165,200,0.55)' }}>{model.split('/').pop()?.slice(0, 18) ?? model}</span>}
+        {plan9 && (
+          <span style={{ color: plan9.gaps === 0 ? '#3ddc97' : '#f59e0b', letterSpacing: '0.04em' }}>
+            P9{plan9.gaps === 0 ? '·✓' : `·${plan9.gaps}⚠`}
+          </span>
+        )}
+        {connectorTotal > 0 && (
+          <span style={{ color: connectorLive === connectorTotal ? '#3ddc97' : '#f59e0b' }}>
+            {connectorLive}/{connectorTotal}∫
+          </span>
+        )}
+        <span style={{ color: 'rgba(40,80,120,0.45)' }}>{apiTarget.replace(/^https?:\/\//, '').slice(0, 18)}</span>
+        <button
+          onClick={onPalette}
+          style={{
+            fontSize: 9, padding: '3px 8px',
+            background: 'rgba(34,211,238,0.09)', border: '1px solid rgba(34,211,238,0.22)',
+            borderRadius: 5, color: 'rgba(120,190,220,0.80)', cursor: 'pointer',
+            fontFamily: 'var(--font-hud, monospace)', letterSpacing: '0.06em',
+            boxShadow: '0 0 6px rgba(34,211,238,0.08)',
+          }}
+        >⌘K</button>
       </div>
     </div>
   );
@@ -341,26 +397,30 @@ const MODE_RAIL: Array<{ id: FocusMode; icon: string; label: string }> = [
 
 function LeftModeRail({ active, pendingApprovals, onMode }: { active: FocusMode; pendingApprovals: number; onMode: (m: FocusMode) => void }) {
   return (
-    <div style={{ width: 52, flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '8px 0', gap: 2, background: 'rgba(4,8,18,0.9)', borderRight: '1px solid rgba(34,211,238,0.07)', overflowY: 'auto' }}>
+    <div style={{
+      width: 56, flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center',
+      padding: '10px 0', gap: 3,
+      background: 'rgba(2,5,14,0.92)',
+      borderRight: '1px solid rgba(34,211,238,0.09)',
+      overflowY: 'auto',
+      boxShadow: '2px 0 20px rgba(0,0,0,0.4)',
+    }}>
       {MODE_RAIL.map(m => {
         const isActive = m.id === active;
         const hasApproval = m.id === 'approvals' && pendingApprovals > 0;
+        const amberActive = isActive && hasApproval;
         return (
           <button
             key={m.id}
             title={m.label}
             onClick={() => onMode(m.id)}
-            style={{
-              position: 'relative', width: 40, height: 40, borderRadius: 10, cursor: 'pointer', border: 'none',
-              background: isActive ? 'rgba(34,211,238,0.12)' : 'transparent',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16,
-              transition: 'background 0.15s',
-              outline: isActive ? '1px solid rgba(34,211,238,0.25)' : 'none',
-            }}
+            className={`j-rail-btn ${amberActive ? 'j-rail-btn-amber' : isActive ? 'j-rail-btn-active' : ''}`}
           >
-            {m.icon}
+            <span style={{ fontSize: 17, filter: isActive ? 'drop-shadow(0 0 4px rgba(34,211,238,0.5))' : 'none', transition: 'filter 0.2s' }}>
+              {m.icon}
+            </span>
             {hasApproval && (
-              <span style={{ position: 'absolute', top: 4, right: 4, width: 8, height: 8, borderRadius: '50%', background: '#f59e0b', boxShadow: '0 0 6px #f59e0b' }} />
+              <span style={{ position: 'absolute', top: 5, right: 5, width: 7, height: 7, borderRadius: '50%', background: '#f59e0b', boxShadow: '0 0 8px #f59e0b', animation: 'orb-pulse-fast 1.5s ease-in-out infinite' }} />
             )}
           </button>
         );
@@ -479,6 +539,104 @@ function ModuleCard({ mod, onClick, fetchErr }: { mod: ModuleEntry; onClick: () 
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Cinematic building blocks — orb rings, state badge, org arc
+// ─────────────────────────────────────────────────────────────────────────────
+
+function OrbRings({ phase, isNarrow }: { phase: TurnPhase; isNarrow: boolean }) {
+  const variant =
+    phase === 'waiting_for_silence' ? 'j-rings-amber' :
+    phase === 'error' ? 'j-rings-error' :
+    (phase === 'thinking' || phase === 'transcribing') ? 'j-rings-processing' :
+    '';
+  if (isNarrow) {
+    // Ring sizes relative to 160px orb (1.25x outer halo = 200px) — rings start beyond that
+    return (
+      <div className={variant} style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
+        <div className="j-ring j-ring-1" style={{ width: 250, height: 250 }} />
+        <div className="j-ring j-ring-2" style={{ width: 316, height: 316 }} />
+      </div>
+    );
+  }
+  // Ring sizes relative to 260px orb (1.25x outer halo = 325px) — rings start beyond that
+  return (
+    <div className={variant} style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
+      <div className="j-ring j-ring-1" style={{ width: 370, height: 370 }} />
+      <div className="j-ring j-ring-2" style={{ width: 470, height: 470 }} />
+      <div className="j-ring j-ring-3" style={{ width: 600, height: 600 }} />
+    </div>
+  );
+}
+
+function StateBadge({ phase }: { phase: TurnPhase }) {
+  const cfg: Record<TurnPhase, { label: string; color: string; bg: string }> = {
+    idle:                { label: 'READY',            color: 'rgba(100,185,225,0.65)', bg: 'rgba(34,211,238,0.07)'   },
+    recording:           { label: 'RECORDING',        color: '#ef4444',                bg: 'rgba(239,68,68,0.10)'    },
+    waiting_for_silence: { label: 'APPROVAL PENDING', color: '#f59e0b',                bg: 'rgba(245,158,11,0.11)'   },
+    transcribing:        { label: 'PROCESSING',       color: '#a78bfa',                bg: 'rgba(167,139,250,0.10)'  },
+    thinking:            { label: 'THINKING',         color: '#a78bfa',                bg: 'rgba(167,139,250,0.10)'  },
+    speaking:            { label: 'RESPONDING',       color: '#3ddc97',                bg: 'rgba(61,220,151,0.09)'   },
+    follow_up_listening: { label: 'LISTENING',        color: '#22d3ee',                bg: 'rgba(34,211,238,0.09)'   },
+    error:               { label: 'ERROR',            color: '#ef4444',                bg: 'rgba(239,68,68,0.10)'    },
+    cancelled:           { label: 'CANCELLED',        color: 'rgba(100,120,140,0.5)',  bg: 'rgba(100,120,140,0.06)'  },
+  };
+  const c = cfg[phase] ?? cfg.idle;
+  return (
+    <div className="j-state-badge" style={{ color: c.color, background: c.bg, border: `1px solid ${c.color}2a`, marginTop: 10 }}>
+      {c.label}
+    </div>
+  );
+}
+
+function OrgArc({ registry, onOrgChain, orgFetchOk, isNarrow }: {
+  registry: RegistryStatus | null;
+  onOrgChain: () => void;
+  orgFetchOk: boolean;
+  isNarrow: boolean;
+}) {
+  const nodes = [
+    { key: 'pa',  label: 'PA',                                 color: '#22d3ee', sub: 'user-facing'  },
+    { key: 'cos', label: 'COS/GM',                             color: '#a78bfa', sub: 'coordinator'  },
+    { key: 'mgr', label: `M×${registry?.total_managers ?? '…'}`, color: '#34d399', sub: 'managers'    },
+    { key: 'wkr', label: `W×${registry?.total_workers ?? '…'}`,  color: '#60a5fa', sub: 'workers'     },
+    { key: 'rev', label: 'Rev',                                color: '#fb923c', sub: 'independent'  },
+  ];
+  const nodeFs = isNarrow ? 9 : 10;
+  const subFs = isNarrow ? 7 : 8;
+  const arrowW = isNarrow ? 12 : 18;
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 0, marginTop: 18, flexShrink: 0 }}>
+      {nodes.map((n, i) => (
+        <React.Fragment key={n.key}>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+            <div
+              className="j-node"
+              style={{ color: n.color, border: `1px solid ${n.color}44`, background: `${n.color}10`, fontSize: nodeFs }}
+            >
+              {n.label}
+            </div>
+            <span style={{ fontSize: subFs, color: 'rgba(100,140,180,0.38)', fontFamily: 'var(--font-hud, monospace)', letterSpacing: '0.03em' }}>{n.sub}</span>
+          </div>
+          {i < nodes.length - 1 && (
+            <div style={{
+              width: arrowW, height: 1, flexShrink: 0, marginBottom: 14,
+              background: 'linear-gradient(90deg,rgba(80,120,180,0.25),rgba(100,160,210,0.55),rgba(80,120,180,0.25))',
+            }} />
+          )}
+        </React.Fragment>
+      ))}
+      {orgFetchOk && (
+        <button
+          onClick={onOrgChain}
+          style={{ marginLeft: 8, fontSize: 8, color: 'rgba(34,211,238,0.38)', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', fontFamily: 'var(--font-hud, monospace)', marginBottom: 14 }}
+        >
+          full →
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Mode work surfaces
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -502,106 +660,120 @@ interface MissionSurfaceProps {
   isNarrow: boolean;
 }
 
-function MissionSurface({ phase, apiOk, input, sending, lastReply, onInputChange, onKeyDown, onSubmit, pendingApprovals, orgHierarchy, orgFetchOk, registry, routingStatus, onExpandPanel, onMode, isNarrow }: MissionSurfaceProps) {
-  const inputRef = useRef<HTMLTextAreaElement>(null);
+function MissionSurface({ phase, apiOk, input, sending, lastReply, onInputChange, onKeyDown, onSubmit, pendingApprovals, orgHierarchy: _orgHierarchy, orgFetchOk, registry, routingStatus, onExpandPanel, onMode, isNarrow }: MissionSurfaceProps) {
+  const orbSize = isNarrow ? 160 : 260;
+  // Container must fit within hero area (viewport − topbar − console ≈ 630px)
+  // leaving room for state badge + org arc (~90px)
+  const orbContainerSize = isNarrow ? 320 : 520;
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-      {/* Approval banner — shown whenever approval is pending, any mode */}
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', position: 'relative' }}>
+
+      {/* Approval banner */}
       {pendingApprovals > 0 && (
         <button
           onClick={() => onMode('approvals')}
-          style={{ flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '8px 16px', background: 'rgba(245,158,11,0.12)', borderBottom: '1px solid rgba(245,158,11,0.25)', cursor: 'pointer', border: 'none', width: '100%' }}
+          style={{
+            flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+            padding: '9px 16px',
+            background: 'rgba(245,158,11,0.10)',
+            borderBottom: '1px solid rgba(245,158,11,0.28)',
+            cursor: 'pointer', border: 'none', width: '100%',
+          }}
         >
           <span style={{ fontSize: 13 }}>🛑</span>
-          <span style={{ fontSize: 11, color: '#f59e0b', fontWeight: 600 }}>
-            {pendingApprovals} action{pendingApprovals !== 1 ? 's' : ''} pending Bryan approval — click to review
+          <span style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700, letterSpacing: '0.05em', fontFamily: 'var(--font-hud, monospace)' }}>
+            {pendingApprovals} ACTION{pendingApprovals !== 1 ? 'S' : ''} PENDING BRYAN APPROVAL
           </span>
-          <span style={{ fontSize: 10, color: 'rgba(245,158,11,0.5)' }}>→</span>
+          <span style={{ fontSize: 10, color: 'rgba(245,158,11,0.45)' }}>→ review</span>
         </button>
       )}
 
-      {/* Main mission area */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: isNarrow ? 'column' : 'row', overflow: 'hidden', minHeight: 0 }}>
+      {/* ── HERO: orb + rings + state badge + org arc ─────────────── */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', position: 'relative', paddingTop: isNarrow ? 8 : 4, paddingBottom: 4, minHeight: 0 }}>
 
-        {/* Left: Jarvis orb + chat */}
-        <div style={{ flex: isNarrow ? 'none' : 2, display: 'flex', flexDirection: 'column', alignItems: 'center', padding: isNarrow ? '16px 12px 8px' : '24px 16px 12px', overflow: 'hidden', minWidth: 0 }}>
-          {/* Orb */}
-          <div style={{ flexShrink: 0, position: 'relative' }}>
-            <LivingOrb phase={phase} voiceEnabled={true} size={isNarrow ? 120 : 160} />
-            {/* State label */}
-            <div style={{ position: 'absolute', bottom: -18, left: '50%', transform: 'translateX(-50%)', whiteSpace: 'nowrap', fontSize: 9, color: 'rgba(100,150,200,0.5)', fontFamily: 'var(--font-hud, monospace)', letterSpacing: '0.06em' }}>
-              {phase === 'waiting_for_silence' ? 'APPROVAL PENDING' : phase === 'error' ? 'ERROR' : phase === 'thinking' ? 'PROCESSING' : phase === 'speaking' ? 'RESPONDING' : 'READY'}
-            </div>
-          </div>
-
-          {/* Chat reply */}
-          {lastReply && (
-            <div style={{ marginTop: 24, width: '100%', maxWidth: 480, fontSize: 12, lineHeight: 1.6, borderRadius: 12, padding: '10px 14px', background: 'rgba(10,18,32,0.75)', color: 'rgba(160,210,180,0.88)', border: '1px solid rgba(61,220,151,0.1)', maxHeight: isNarrow ? 80 : 140, overflowY: 'auto' }}>
-              {lastReply}
-            </div>
-          )}
-
-          {/* Chat input */}
-          <div style={{ width: '100%', maxWidth: 520, marginTop: lastReply ? 10 : 28, flexShrink: 0 }}>
-            <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, borderRadius: 14, padding: '8px 12px', background: 'rgba(10,16,32,0.82)', border: '1px solid rgba(34,211,238,0.13)', backdropFilter: 'blur(8px)' }}>
-              <textarea
-                ref={inputRef}
-                rows={1}
-                value={input}
-                onChange={e => onInputChange(e.target.value)}
-                onKeyDown={onKeyDown}
-                placeholder={apiOk ? 'Ask Jarvis anything… (Enter to send)' : 'Backend unreachable — check server URL in Settings'}
-                disabled={sending || !apiOk}
-                style={{ flex: 1, resize: 'none', background: 'transparent', outline: 'none', fontSize: 13, lineHeight: '1.5', color: 'rgba(200,220,255,0.90)', maxHeight: 100, border: 'none', fontFamily: 'var(--font-display, sans-serif)' }}
-              />
-              <button
-                onClick={onSubmit}
-                disabled={sending || !input.trim() || !apiOk}
-                style={{ fontSize: 13, padding: '4px 12px', borderRadius: 8, flexShrink: 0, background: sending ? 'rgba(34,211,238,0.1)' : 'rgba(34,211,238,0.2)', color: 'rgba(34,211,238,0.9)', border: '1px solid rgba(34,211,238,0.2)', opacity: sending || !input.trim() || !apiOk ? 0.4 : 1, cursor: 'pointer' }}
-              >
-                {sending ? '…' : '↑'}
-              </button>
-            </div>
-            <div style={{ marginTop: 4, fontSize: 9, color: 'rgba(60,100,140,0.4)', textAlign: 'center' }}>Bryan → Jarvis PA · all interactions through Jarvis only</div>
-          </div>
-
-          {/* Mini system stats row */}
-          {!isNarrow && (
-            <div style={{ display: 'flex', gap: 12, marginTop: 16, fontSize: 9, color: 'rgba(80,120,160,0.45)' }}>
-              {routingStatus && <span>PA model: {routingStatus.pa_front_door_model}</span>}
-              {routingStatus && <span>·</span>}
-              {routingStatus && <span>{routingStatus.provider_count} providers</span>}
-              <span>·</span>
-              <button onClick={() => onExpandPanel('routing')} style={{ background: 'none', border: 'none', color: 'rgba(34,211,238,0.3)', fontSize: 9, cursor: 'pointer', textDecoration: 'underline' }}>routing →</button>
-            </div>
-          )}
+        {/* Orb + rings centered container */}
+        <div style={{ position: 'relative', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', width: orbContainerSize, height: orbContainerSize }}>
+          <OrbRings phase={phase} isNarrow={isNarrow} />
+          <LivingOrb phase={phase} voiceEnabled={true} size={orbSize} />
         </div>
 
-        {/* Right: Org spine + quick context (desktop only) */}
-        {!isNarrow && (
-          <div style={{ width: 220, flexShrink: 0, padding: '20px 14px', borderLeft: '1px solid rgba(34,211,238,0.07)', overflowY: 'auto' }}>
-            <MiniOrgSpine
-              orgHierarchy={orgHierarchy}
-              orgFetchOk={orgFetchOk}
-              registry={registry}
-              pendingApprovals={pendingApprovals}
-              onOrgChain={() => onExpandPanel('org-chain')}
-            />
+        {/* State badge */}
+        <StateBadge phase={phase} />
 
-            {/* Quick links */}
-            <div style={{ marginTop: 20, fontSize: 9, fontWeight: 700, letterSpacing: '0.08em', color: 'rgba(34,211,238,0.35)', textTransform: 'uppercase', marginBottom: 8 }}>Quick access</div>
-            {[
-              { icon: '🔧', label: 'Workbench', m: 'workbench' as FocusMode },
-              { icon: '🛑', label: 'Approvals', m: 'approvals' as FocusMode },
-              { icon: '🧠', label: 'Memory', m: 'memory' as FocusMode },
-              { icon: '⚙️', label: 'System', m: 'system' as FocusMode },
-            ].map(q => (
-              <button key={q.m} onClick={() => onMode(q.m)} style={{ display: 'flex', alignItems: 'center', gap: 6, width: '100%', padding: '4px 0', background: 'none', border: 'none', cursor: 'pointer', fontSize: 10, color: 'rgba(120,160,200,0.6)', textAlign: 'left' }}>
-                <span>{q.icon}</span><span>{q.label}</span>
-              </button>
-            ))}
+        {/* Org chain arc */}
+        <OrgArc
+          registry={registry}
+          onOrgChain={() => onExpandPanel('org-chain')}
+          orgFetchOk={orgFetchOk}
+          isNarrow={isNarrow}
+        />
+
+        {/* Reply panel — glass morphism */}
+        {lastReply && (
+          <div
+            className="j-glass"
+            style={{
+              marginTop: 14, width: '100%', maxWidth: isNarrow ? '100%' : 500,
+              fontSize: 12, lineHeight: 1.7, padding: '10px 16px',
+              color: 'rgba(160,215,185,0.92)',
+              maxHeight: isNarrow ? 80 : 110, overflowY: 'auto', flexShrink: 0,
+            }}
+          >
+            {lastReply}
           </div>
         )}
+      </div>
+
+      {/* ── COMMAND CONSOLE ───────────────────────────────────────── */}
+      <div style={{ flexShrink: 0, padding: isNarrow ? '0 10px 12px' : '0 28px 20px' }}>
+        {/* PA model hint (desktop) */}
+        {!isNarrow && routingStatus && (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 6, fontSize: 9, color: 'rgba(60,100,140,0.4)', fontFamily: 'var(--font-hud, monospace)' }}>
+            <span>{routingStatus.pa_front_door_model}</span>
+            <span>·</span>
+            <span>{routingStatus.provider_count} providers</span>
+            <span>·</span>
+            <button onClick={() => onExpandPanel('routing')} style={{ background: 'none', border: 'none', color: 'rgba(34,211,238,0.28)', fontSize: 9, cursor: 'pointer', textDecoration: 'underline', fontFamily: 'inherit' }}>routing →</button>
+          </div>
+        )}
+
+        {/* Input console — glass panel */}
+        <div
+          className="j-glass"
+          style={{ display: 'flex', alignItems: 'flex-end', gap: 8, padding: '10px 14px' }}
+        >
+          <textarea
+            rows={1}
+            value={input}
+            onChange={e => onInputChange(e.target.value)}
+            onKeyDown={onKeyDown}
+            placeholder={apiOk ? 'Ask Jarvis anything… (Enter to send)' : 'Backend unreachable — check server URL in Settings'}
+            disabled={sending || !apiOk}
+            style={{
+              flex: 1, resize: 'none', background: 'transparent', outline: 'none',
+              fontSize: 13, lineHeight: '1.5', color: 'rgba(200,225,255,0.92)',
+              maxHeight: 80, border: 'none', fontFamily: 'var(--font-display, sans-serif)',
+            }}
+          />
+          <button
+            onClick={onSubmit}
+            disabled={sending || !input.trim() || !apiOk}
+            style={{
+              fontSize: 14, padding: '5px 14px', borderRadius: 9, flexShrink: 0,
+              background: sending ? 'rgba(34,211,238,0.07)' : 'rgba(34,211,238,0.18)',
+              color: 'rgba(34,211,238,0.92)', border: '1px solid rgba(34,211,238,0.25)',
+              opacity: sending || !input.trim() || !apiOk ? 0.38 : 1, cursor: 'pointer',
+              boxShadow: !sending && input.trim() && apiOk ? '0 0 10px rgba(34,211,238,0.15)' : 'none',
+            }}
+          >
+            {sending ? '…' : '↑'}
+          </button>
+        </div>
+
+        {/* Console footer */}
+        <div style={{ marginTop: 5, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontSize: 9, color: 'rgba(50,90,130,0.40)', fontFamily: 'var(--font-hud, monospace)', letterSpacing: '0.04em' }}>
+          Bryan → Jarvis PA · all interactions through Jarvis only
+        </div>
       </div>
     </div>
   );
@@ -629,14 +801,21 @@ interface ApprovalSurfaceProps {
 function ApprovalSurface({ approvalItems, pendingApprovals, fetchState, apiTarget, onApprove, onDeny, approvalBusy, approvalErrors, auditEntries, isNarrow }: ApprovalSurfaceProps) {
   return (
     <div style={{ height: '100%', overflowY: 'auto', padding: isNarrow ? '12px' : '20px 24px' }}>
-      {/* Amber header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, padding: '10px 14px', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.25)', borderRadius: 12 }}>
-        <span style={{ fontSize: 18 }}>🛑</span>
+      {/* Amber header — cockpit locked state */}
+      <div
+        className="j-glass-amber"
+        style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18, padding: '14px 18px', boxShadow: pendingApprovals > 0 ? '0 0 30px rgba(245,158,11,0.08), inset 0 0 20px rgba(245,158,11,0.04)' : 'none' }}
+      >
+        <span style={{ fontSize: pendingApprovals > 0 ? 22 : 20, flexShrink: 0 }}>{pendingApprovals > 0 ? '🛑' : '✓'}</span>
         <div>
-          <div style={{ fontSize: 13, fontWeight: 700, color: '#f59e0b' }}>
-            {pendingApprovals > 0 ? `${pendingApprovals} Action${pendingApprovals !== 1 ? 's' : ''} Pending Bryan Approval` : 'No pending approvals'}
+          <div style={{ fontSize: 14, fontWeight: 800, color: pendingApprovals > 0 ? '#f59e0b' : '#3ddc97', letterSpacing: '0.04em', fontFamily: 'var(--font-display, sans-serif)' }}>
+            {pendingApprovals > 0
+              ? `${pendingApprovals} ACTION${pendingApprovals !== 1 ? 'S' : ''} PENDING BRYAN APPROVAL`
+              : 'NO PENDING APPROVALS'}
           </div>
-          <div style={{ fontSize: 10, color: 'rgba(245,158,11,0.6)', marginTop: 1 }}>Bryan approves or denies through Jarvis PA only. No action taken without explicit approval.</div>
+          <div style={{ fontSize: 10, color: pendingApprovals > 0 ? 'rgba(245,158,11,0.55)' : 'rgba(61,220,151,0.55)', marginTop: 2 }}>
+            Bryan approves or denies through Jarvis PA only. No action taken without explicit approval.
+          </div>
         </div>
       </div>
 
