@@ -463,54 +463,6 @@ function MobileTabBar({ active, pendingApprovals, onMode }: { active: FocusMode;
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Mini org chain spine (mission mode sidebar)
-// ─────────────────────────────────────────────────────────────────────────────
-
-interface MiniChainProps {
-  orgHierarchy: OrgHierarchyData | null;
-  orgFetchOk: boolean;
-  registry: RegistryStatus | null;
-  pendingApprovals: number;
-  onOrgChain: () => void;
-}
-
-function MiniOrgSpine({ orgHierarchy, orgFetchOk, registry, pendingApprovals, onOrgChain }: MiniChainProps) {
-  const chainSteps = [
-    { icon: '🔷', label: 'Jarvis PA', sub: 'user-facing only', color: '#22d3ee' },
-    { icon: '🎛',  label: 'COS / GM', sub: 'command coordinator', color: '#a78bfa' },
-    { icon: '📋', label: `Managers (${registry?.total_managers ?? '…'})`, sub: 'domain owners', color: '#34d399' },
-    { icon: '⚙️',  label: `Workers (${registry?.total_workers ?? '…'})`, sub: 'execution cells', color: '#60a5fa' },
-    { icon: '🔍', label: 'Reviewer', sub: 'independent · self-verify blocked', color: '#fb923c' },
-  ];
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-      <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.08em', color: 'rgba(34,211,238,0.35)', textTransform: 'uppercase', marginBottom: 8 }}>Canonical Chain</div>
-      {chainSteps.map((s, i) => (
-        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 0' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0, width: 16 }}>
-            <span style={{ fontSize: 11 }}>{s.icon}</span>
-            {i < chainSteps.length - 1 && <div style={{ width: 1, height: 8, background: 'rgba(100,140,180,0.2)', marginTop: 2 }} />}
-          </div>
-          <div>
-            <div style={{ fontSize: 10, color: s.color, fontWeight: 600, lineHeight: 1.3 }}>{s.label}</div>
-            <div style={{ fontSize: 9, color: 'rgba(100,140,180,0.45)', lineHeight: 1.2 }}>{s.sub}</div>
-          </div>
-        </div>
-      ))}
-      {pendingApprovals > 0 && (
-        <div style={{ marginTop: 10, padding: '5px 8px', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.25)', borderRadius: 6, fontSize: 10, color: '#f59e0b' }}>
-          {pendingApprovals} action{pendingApprovals !== 1 ? 's' : ''} pending Bryan approval
-        </div>
-      )}
-      {orgFetchOk && (
-        <button onClick={onOrgChain} style={{ marginTop: 6, fontSize: 9, color: 'rgba(34,211,238,0.4)', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', textDecoration: 'underline' }}>
-          full org chain →
-        </button>
-      )}
-    </div>
-  );
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Module grid card (used in system mode and as mini cards elsewhere)
@@ -599,14 +551,12 @@ function OrgArc({ registry, onOrgChain, orgFetchOk, isNarrow }: {
           )}
         </React.Fragment>
       ))}
-      {orgFetchOk && (
-        <button
-          onClick={onOrgChain}
-          style={{ marginLeft: 8, fontSize: 8, color: 'rgba(34,211,238,0.38)', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', fontFamily: 'var(--font-hud, monospace)', marginBottom: 14 }}
-        >
-          full →
-        </button>
-      )}
+      <button
+        onClick={onOrgChain}
+        style={{ marginLeft: 8, fontSize: 8, color: 'rgba(34,211,238,0.38)', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', fontFamily: 'var(--font-hud, monospace)', marginBottom: 14 }}
+      >
+        full →
+      </button>
     </div>
   );
 }
@@ -694,7 +644,9 @@ function MissionCore({ phase, registry, onOrgChain, orgFetchOk, isNarrow }: Miss
   }));
 
   return (
-    <div style={{ position: 'relative', width: W, height: H, flexShrink: 0 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0 }}>
+      {/* ── SVG orbital mesh ─────────────────────────────────────── */}
+      <div style={{ position: 'relative', width: W, height: H, flexShrink: 0 }}>
 
       {/* ── SVG: rings, spokes, labels, cockpit frame ─────────────── */}
       <svg
@@ -802,17 +754,11 @@ function MissionCore({ phase, registry, onOrgChain, orgFetchOk, isNarrow }: Miss
         </div>
       ))}
 
-      {/* Full org chain link */}
-      {orgFetchOk && (
-        <button onClick={onOrgChain} style={{
-          position: 'absolute', bottom: 10, right: 14,
-          fontSize: 8, color: `${phaseColor}60`,
-          background: 'none', border: 'none', cursor: 'pointer',
-          textDecoration: 'underline', fontFamily: 'var(--font-hud, monospace)',
-        }}>
-          full org →
-        </button>
-      )}
+      </div>
+      {/* Phase state badge — locked contract: honest visual states visible on desktop */}
+      <StateBadge phase={phase} />
+      {/* Linear chain strip — locked contract: visible PA→COS/GM→managers→workers→reviewer */}
+      <OrgArc registry={registry} onOrgChain={onOrgChain} orgFetchOk={true} isNarrow={false} />
     </div>
   );
 }
@@ -839,9 +785,10 @@ interface MissionSurfaceProps {
   onExpandPanel: (id: PanelId) => void;
   onMode: (m: FocusMode) => void;
   isNarrow: boolean;
+  inputRef: React.RefObject<HTMLTextAreaElement | null>;
 }
 
-function MissionSurface({ phase, apiOk, input, sending, lastReply, onInputChange, onKeyDown, onSubmit, pendingApprovals, orgHierarchy: _orgHierarchy, orgFetchOk, registry, routingStatus, onExpandPanel, onMode, isNarrow }: MissionSurfaceProps) {
+function MissionSurface({ phase, apiOk, input, sending, lastReply, onInputChange, onKeyDown, onSubmit, pendingApprovals, orgHierarchy: _orgHierarchy, orgFetchOk, registry, routingStatus, onExpandPanel, onMode, isNarrow, inputRef }: MissionSurfaceProps) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', position: 'relative' }}>
 
@@ -904,6 +851,7 @@ function MissionSurface({ phase, apiOk, input, sending, lastReply, onInputChange
         )}
         <div className="j-glass" style={{ display: 'flex', alignItems: 'flex-end', gap: 8, padding: '10px 14px' }}>
           <textarea
+            ref={inputRef}
             rows={1}
             value={input}
             onChange={e => onInputChange(e.target.value)}
@@ -1389,6 +1337,7 @@ function SystemSurface({ plan9, routingStatus, registry, runtimeProof, agents, c
 
 export function JarvisCockpitPage() {
   const isNarrow = useIsNarrow();
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   // Mode + palette state
   const [activeMode, setActiveMode] = useState<FocusMode>('mission');
@@ -1597,6 +1546,7 @@ export function JarvisCockpitPage() {
     setPhase('thinking');
     setLastReply('');
     setInput('');
+    setTimeout(() => inputRef.current?.focus(), 60);
     try {
       const res = await apiFetch('/v1/chat/completions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: model || 'default', messages: [{ role: 'user', content: msg }], stream: false }) });
       const data = await res.json();
@@ -1934,6 +1884,7 @@ export function JarvisCockpitPage() {
             onExpandPanel={setExpandedPanel}
             onMode={setActiveMode}
             isNarrow={isNarrow}
+            inputRef={inputRef}
           />
         );
       case 'workbench':
