@@ -7,24 +7,64 @@
 | Field | Value |
 |-------|-------|
 | Branch | `localhost-get-tool` |
-| HEAD | `b8cb53bf` (Fix B8 workspace sync: correct JarvisMemory import path and MemoryEntry serialization) |
+| HEAD | `9a1cbdc1` (Plan 2 B1: Google OAuth cloud credential path + vault migration) |
 | Remote | `fork/localhost-get-tool` (push pending — after this update) |
 | Working tree | Dirty — pre-existing only: `JARVIS_OMNIX_HANDOFF.md`, `tests/workbench/test_us14a_fixture.py` |
 | Untracked (pre-existing, do NOT stage) | `evidence/`, `scripts/plan1_cockpit_proof.py`, `scripts/plan9_copy_cloud_api_key.sh`, `scripts/plan9_verify_cloud_api_key.py` |
 | Active worktrees | None |
-| Fargate image | `jarvis-full-b8cb53bf` (task def rev 19) — RUNNING + HEALTHY + ECS Exec ENABLED |
-| Auto-continue safe | YES — all live proofs complete; B1 vault migration is the only remaining open blocker |
+| Fargate image | `jarvis-full-9a1cbdc1` (task def rev 20) — RUNNING + HEALTHY + ECS Exec ENABLED |
+| Auto-continue safe | YES — all blockers proven; awaiting Bryan/ChatGPT acceptance review |
 
 ## Plan 2 Verdict
 
-`PLAN_2_FULL_MOBILE_MACBOOK_OFF_PARITY_RUNTIME_HOLD`
+`PLAN_2_FULL_MOBILE_MACBOOK_OFF_PARITY_RUNTIME_READY_FOR_ACCEPTANCE_REVIEW`
 
-**Reason:** B1 (Google OAuth refresh tokens local-only — vault migration requires manual OAuth re-grant) is the single remaining open blocker.
-All other blockers: B2 CLOSED, B3 CLOSED, B4 LIVE_PROVEN, B5A READY, B5B READY, B5C LIVE_PROVEN (Slack + Telegram both), B6 CLOSED, B7 LIVE_PROVEN, B8 LIVE_PROVEN.
+**Reason:** All Plan 2 blockers B1–B8 are now closed or live-proven via ECS Exec on Fargate rev 20.
+B1 Google OAuth: vault migration COMPLETE (GOOGLE_OAUTH_REFRESH_TOKEN in Secrets Manager); Gmail LIVE_PROVEN, Drive LIVE_PROVEN, Calendar LIVE_PROVEN.
+B2 CONFIRMED_DEPLOYED, B3 CODE_CLOSED, B4 LIVE_PROVEN, B5A CLOSED, B5B CLOSED, B5C LIVE_PROVEN (Slack + Telegram both), B6 CLOSED, B7 LIVE_PROVEN, B8 LIVE_PROVEN. B9 parked (Plan 3).
 
-**Not accepted.** Only Bryan/ChatGPT reviewer can accept.
+**Not accepted.** Only Bryan/ChatGPT reviewer can accept. Tauri rebuild deferred until acceptance.
 
-## Plan 2 Live Proof Sprint — B4/B5C/B7/B8 via ECS Exec (current)
+## Plan 2 B1 Google OAuth Cloud Sprint (current — COMPLETE)
+
+**Sprint:** Plan 2 B1 Google OAuth vault migration + cloud auth path + live proof
+**Base HEAD:** `5b5b3f31` (session state: B4/B5C/B7/B8 live-proven) → `9a1cbdc1`
+**Fargate:** task def rev 20, image `jarvis-full-9a1cbdc1`, task `c9a9ca53086f43aaa13db66101e8ed80`
+**ECS Exec:** ENABLED (ssmmessages IAM perms; enableExecuteCommand=true)
+**GOOGLE_OAUTH_REFRESH_TOKEN:** migrated to Secrets Manager (len=103, key #15 of 15); injected via valueFrom in task def rev 20
+
+### What was done
+
+1. **Token dedup verification** — SHA256 hash of refresh_token in all 4 small connector files confirmed identical (hash `13e39f6ee634`); one shared GOOGLE_OAUTH_REFRESH_TOKEN migration covers all Google connectors.
+2. **`scripts/migrate_google_tokens_to_vault.py`** (NEW) — reads refresh_token from local `~/.openjarvis/connectors/gmail.json`; stores as `GOOGLE_OAUTH_REFRESH_TOKEN` in Secrets Manager secret `omnix-workbench-071179620006-ap-southeast-1-secrets`; idempotent; never prints values. Migration executed: GOOGLE_OAUTH_REFRESH_TOKEN VERIFIED, len=103, 15 keys total.
+3. **`src/openjarvis/connectors/google_auth.py`** (MODIFIED) — added `_load_cloud_google_credentials()` reading from env vars `GOOGLE_OAUTH_REFRESH_TOKEN` + `GOOGLE_OAUTH_CLIENT_ID` + `GOOGLE_CLIENT_SECRET`; `current_access_token()` returns empty string in cloud mode (triggers 401→refresh); `refresh_access_token()` uses cloud creds, skips disk write; `is_cloud_auth_available()` added.
+4. **4 unit tests** added to existing test file — all PASS: `test_cloud_credentials_loaded`, `test_cloud_credentials_missing`, `test_cloud_current_access_token_returns_empty`, `test_cloud_refresh_skips_save`.
+5. **task def rev 20** — registered with `GOOGLE_OAUTH_REFRESH_TOKEN` as 12th secret (valueFrom Secrets Manager ARN); Docker image `jarvis-full-9a1cbdc1` built and pushed to ECR.
+6. **ECS service** — force-new-deployment to rev 20; task `c9a9ca53086f43aaa13db66101e8ed80` RUNNING + HEALTHY.
+
+### Live Proof Results — B1 Google OAuth (via ECS Exec on rev 20)
+
+| Service | Proof | Result |
+|---------|-------|--------|
+| Token refresh | `refresh_access_token("/nonexistent")` via cloud env path | **ACCESS_TOKEN_MINTED** (len=254) |
+| Gmail | `https://www.googleapis.com/gmail/v1/users/me/labels` | **B1_GMAIL: LIVE_PROVEN** (HTTP 200, 22 labels) |
+| Drive | `https://www.googleapis.com/drive/v3/about?fields=storageQuota` | **B1_DRIVE: LIVE_PROVEN** (HTTP 200, quota keys: limit/usage/usageInDrive/usageInDriveTrash) |
+| Calendar | `https://www.googleapis.com/calendar/v3/users/me/settings/timezone` | **B1_CALENDAR: LIVE_PROVEN** (HTTP 200, `timezone calendar#setting`) |
+| Token scopes | `https://www.googleapis.com/oauth2/v3/tokeninfo` | calendar ✓, gmail.modify ✓, drive.readonly ✓, contacts.readonly ✓, tasks.readonly ✓ |
+
+Note: `calendarList` returns 404 (Calendar API list endpoint disabled in Google Cloud project); `settings/timezone` endpoint proves Calendar auth is functional with full calendar scope.
+
+### Secret scan (B1 sprint files)
+
+| Check | Result |
+|-------|--------|
+| Hardcoded `ya29.`, `sk-`, `xoxb-`, `ghp_`, `AIza`, `AAAA` patterns | **CLEAN** |
+| Secret values in sprint files | **NONE** — presence/length reporting only |
+| Unrelated dirty files staged | **NONE** |
+
+---
+
+## Plan 2 Live Proof Sprint — B4/B5C/B7/B8 via ECS Exec (prior)
 
 **Sprint:** Plan 2 live proof — B4 Notion, B5C Slack+Telegram, B7 Life-OS, B8 Workspace via ECS Exec
 **Base HEAD:** `03630202` → fixes → `b8cb53bf`
@@ -53,42 +93,31 @@ All other blockers: B2 CLOSED, B3 CLOSED, B4 LIVE_PROVEN, B5A READY, B5B READY, 
 | B8 Workspace | `POST /v1/workspace/sync` | **b8_sync_status: SYNCED**, 127 raw entries → `jarvis_memory/raw_entries.jsonl` in 279ms |
 | B4 Notion | Notion API `/v1/users/me` | **REACHABLE_AND_AUTHENTICATED**, user_type=bot, len=50 key |
 
-### B1 Google OAuth — Exact Blocker Statement
+### B1 Google OAuth — CLOSED
 
-**Status:** No vault migration exists in the repo. Manual step required:
+**Status:** LIVE_PROVEN. Vault migration complete. All Google services authenticated from Fargate rev 20.
 
-1. User (Bryan) re-grants Google OAuth via browser for each connector (Gmail, GCalendar, GDrive, GContacts, GTasks)
-2. Resulting refresh tokens stored in AWS Secrets Manager under the existing secrets key
-3. `src/openjarvis/connectors/google_auth.py` updated to read refresh tokens from Secrets Manager instead of local files (`~/.openjarvis/connectors/google.json` etc.)
-4. New Fargate task def revision referencing the new secret keys
-5. ECS service redeployment
-
-**No automated path exists.** `_google_oauth_local_status()` returns `LOCAL_FILE_ONLY, cloud_vault_configured=False` as designed. This is a human-action blocker.
-
-### Blocker registry after this sprint
+### Blocker registry after B1 sprint (all blockers closed)
 
 | Blocker | Before | After | Status |
 |---------|--------|-------|--------|
-| B1 Google OAuth | LOCAL_FILE_ONLY | Unchanged — vault migration not implemented | **OPEN — manual vault migration required** |
+| B1 Google OAuth | LOCAL_FILE_ONLY (vault migration needed) | GOOGLE_OAUTH_REFRESH_TOKEN in SM; cloud auth path in `google_auth.py`; Gmail/Drive/Calendar LIVE_PROVEN from rev 20 | **LIVE_PROVEN** |
 | B2 Env vars | Secret refs confirmed | Unchanged (CLOSED) | CLOSED |
 | B3 Telegram alias | Code CLOSED | Unchanged | CLOSED |
 | B4 Notion | NOT_CONFIGURED | NOTION_API_KEY in task def rev 19; API live-proven | **LIVE_PROVEN** |
-| B5A GitHub | Ready | Unchanged | READY |
-| B5B Slack DM | Ready | Unchanged | READY |
+| B5A GitHub | Ready | Unchanged | CLOSED |
+| B5B Slack DM | Ready | Unchanged | CLOSED |
 | B5C Slack notification | Deployed, unproven | **LIVE_PROVEN — SLACK_DELIVERED: True** | **LIVE_PROVEN** |
-| B5C Telegram notification | No chat ID | JARVIS_TELEGRAM_CHAT_ID discovered + injected; **LIVE_PROVEN — TG_DELIVERED: True** | **LIVE_PROVEN** |
+| B5C Telegram notification | No chat ID | JARVIS_TELEGRAM_CHAT_ID injected; **LIVE_PROVEN — TG_DELIVERED: True** | **LIVE_PROVEN** |
 | B6 Fargate readiness | CLOSED | Unchanged | CLOSED |
 | B7 Life-OS cloud sync | Deployed, unproven | **LIVE_PROVEN — 0 tasks → S3 in 219ms** | **LIVE_PROVEN** |
 | B8 Workspace sync | SYNC_ERROR (wrong import) | Fixed import; **LIVE_PROVEN — 127 entries → S3 in 279ms** | **LIVE_PROVEN** |
+| B9 Voice/wake/TTS | N/A | Parked — Plan 3 permanent | PARKED |
 
-### Next step to resume
+### Next step
 
-B1 Google OAuth vault migration — Bryan must:
-1. Run OAuth re-grant flow for each Google connector via browser
-2. Upload refresh tokens to AWS Secrets Manager
-3. Update `google_auth.py` vault path
-4. New task def revision + redeploy
-5. Prove Google connector connectivity from Fargate
+All blockers closed and live-proven. Awaiting Bryan/ChatGPT acceptance review.
+Tauri rebuild deferred until acceptance is granted.
 
 ---
 
@@ -241,45 +270,34 @@ Fargate is now running current HEAD `90471fce` — the same commit with Plan 2 r
 | Plan 2G | `PLAN_2G_APPROVAL_NOTIFICATION_PARITY_PATCHED_PENDING_REVIEW` | B5A+B5B closed; B5C CONFIGURED_NOT_DEPLOYED |
 | Plan 2H | `PLAN_2H_LONG_RUNNING_PARITY_PATCHED_PENDING_REVIEW` | Foundation patched + Fargate readiness gating; awaiting acceptance |
 | Plan 2I | `PLAN_2I_DEPLOY_PARITY_PATCHED_PENDING_REVIEW` | Foundation patched — awaiting acceptance |
-| Full Plan 2 | `PLAN_2_FULL_MOBILE_MACBOOK_OFF_PARITY_RUNTIME_HOLD` | **HOLD — B1, B4, B5C (partial), B7/B8 (code deployed, live proof needed); B2/B3/B5A/B5B/B6 CLOSED/CONFIRMED** |
+| Full Plan 2 | `PLAN_2_FULL_MOBILE_MACBOOK_OFF_PARITY_RUNTIME_READY_FOR_ACCEPTANCE_REVIEW` | **All blockers B1–B8 closed/live-proven; Tauri rebuild deferred; awaiting Bryan/ChatGPT acceptance** |
 
-## Blocker Registry (updated 2026-06-24)
+## Blocker Registry (updated 2026-06-24 — ALL CLOSED)
 
 | ID | Blocker | Subsection | Status | Remaining gap |
 |----|---------|------------|--------|---------------|
-| B1 | Google OAuth tokens local JSON → vault/cloud migration | 2B | **PARTIAL** — GOOGLE_CLIENT_SECRET + GOOGLE_OAUTH_CLIENT_ID in SM ✓; gmail.json refresh tokens still LOCAL_FILE_ONLY | Vault migration for refresh tokens — manual OAuth re-grant required |
-| B2 | GitHub/Slack/Telegram env tokens → Fargate deployment | 2B | **CONFIRMED_DEPLOYED** — ALL 11 secrets in task def rev 17/18; Slack+Telegram+GitHub adapters wired; dispatch endpoint at POST /v1/notifications/dispatch | Telegram delivery needs JARVIS_TELEGRAM_CHAT_ID env in task def; Slack can deliver (hardcoded default channel) |
-| B3 | Telegram env mismatch | 2B | **CODE_CLOSED** — both TELEGRAM_BOT_TOKEN and JARVIS_TELEGRAM_BOT_TOKEN accepted | N/A |
-| B4 | Notion not configured | 2B | **NOT_CONFIGURED** — no token in SM or task def | Notion API token required |
-| B5A | Approval gate / queue | 2G | **CLOSED** | N/A |
-| B5B | Internal notification enqueue | 2G | **CLOSED** | N/A |
-| B5C | External notification delivery | 2G | **DEPLOYED — live proof pending** — SlackNotificationAdapter + TelegramNotificationAdapter + POST /v1/notifications/dispatch deployed in rev 18; Slack token present + default channel hardcoded → can deliver; Telegram missing JARVIS_TELEGRAM_CHAT_ID | Live delivery proof needs Tailscale to call endpoint; Telegram needs chat ID env var |
-| B6 | Fargate worker / cloud execution path | 2H | **CLOSED** — Running rev 18 `06ef9bf1`, RUNNING+HEALTHY, task def rev 18 active | N/A |
-| B7 (local) | Life-OS task store in-memory | 2E | **CLOSED** — SQLite backend active | N/A |
-| B7 (cloud) | Life-OS not synced to cloud | 2E | **DEPLOYED — live proof pending** — LifeOSTaskS3Sync + POST /v1/life-os/sync deployed; S3 bucket config present in Fargate env | Live S3 sync proof needs Tailscale to call endpoint |
-| B8 | Workspace sync to S3 | 2C | **DEPLOYED — live proof pending** — POST /v1/workspace/sync deployed; JarvisMemoryS3Sync available; S3 config present in Fargate env | Live S3 sync proof needs Tailscale to call endpoint |
-| B9 | Voice/wake/TTS | 2F | **Parked** (Plan 3 — permanent) | N/A |
+| B1 | Google OAuth tokens vault/cloud migration | 2B | **LIVE_PROVEN** — GOOGLE_OAUTH_REFRESH_TOKEN in SM (len=103, key 15/15); `google_auth.py` cloud path active; Gmail/Drive/Calendar LIVE_PROVEN from rev 20 via ECS Exec | None |
+| B2 | GitHub/Slack/Telegram env tokens → Fargate deployment | 2B | **CONFIRMED_DEPLOYED** — 12 secrets in task def rev 20; adapters wired | None |
+| B3 | Telegram env mismatch | 2B | **CODE_CLOSED** — both TELEGRAM_BOT_TOKEN and JARVIS_TELEGRAM_BOT_TOKEN accepted | None |
+| B4 | Notion not configured | 2B | **LIVE_PROVEN** — NOTION_API_KEY in SM + task def rev 19; API returns authenticated bot user | None |
+| B5A | Approval gate / queue | 2G | **CLOSED** | None |
+| B5B | Internal notification enqueue | 2G | **CLOSED** | None |
+| B5C | External notification delivery | 2G | **LIVE_PROVEN** — Slack DELIVERED: True; Telegram DELIVERED: True (chat ID injected as env var rev 19) | None |
+| B6 | Fargate worker / cloud execution path | 2H | **CLOSED** — Running rev 20 `9a1cbdc1`, RUNNING+HEALTHY | None |
+| B7 (local) | Life-OS task store in-memory | 2E | **CLOSED** — SQLite backend active | None |
+| B7 (cloud) | Life-OS not synced to cloud | 2E | **LIVE_PROVEN** — 0 tasks → `life_os_tasks/tasks.jsonl` in S3 in 219ms | None |
+| B8 | Workspace sync to S3 | 2C | **LIVE_PROVEN** — 127 raw entries → `jarvis_memory/raw_entries.jsonl` in 279ms | None |
+| B9 | Voice/wake/TTS | 2F | **PARKED** (Plan 3 — permanent) | Plan 3 only |
 
 ## Hard Blockers Remaining
 
-- **B1**: Google OAuth refresh token vault migration — manual OAuth re-grant required; client credentials already in SM
-- **B4**: Notion API token — not configured anywhere
-- **B5C (Telegram)**: `JARVIS_TELEGRAM_CHAT_ID` env var not in Fargate task def — add to task def to enable Telegram delivery
-- **B5C/B7/B8 (live proof)**: Tailscale stopped — cannot call Fargate endpoints locally; start Tailscale to prove delivery/sync
+**None.** All Plan 2 blockers (B1–B8) are closed or live-proven.
 
 ## Next Step to Resume
 
-**RESUME_FROM_HERE:** B2/B5C/B7/B8 code implemented + deployed in Fargate rev 18. Docs update pending commit.
+**RESUME_FROM_HERE:** All blockers live-proven. Plan 2 verdict updated to `PLAN_2_FULL_MOBILE_MACBOOK_OFF_PARITY_RUNTIME_READY_FOR_ACCEPTANCE_REVIEW`.
 
-**To prove remaining live delivery:**
-1. **Start Tailscale** → call `POST /v1/notifications/dispatch` with Bearer auth → proves B5C Slack delivery
-2. **Add JARVIS_TELEGRAM_CHAT_ID to task def env** → register rev 19 → redeploy → prove Telegram delivery
-3. **Call `POST /v1/life-os/sync`** with Bearer auth → proves B7 cloud sync
-4. **Call `POST /v1/workspace/sync`** with Bearer auth → proves B8 S3 sync
-5. **Migrate Google OAuth refresh tokens** to SM → proves B1
-
-**To close B4:**
-- Add Notion API token to SM under `NOTION_API_TOKEN` key → update task def to inject it → redeploy
+Awaiting Bryan/ChatGPT acceptance review. Tauri rebuild deferred until acceptance.
 
 **Do NOT stage:** `JARVIS_OMNIX_HANDOFF.md`, `tests/workbench/test_us14a_fixture.py`, `evidence/`, `scripts/plan1_cockpit_proof.py`, `scripts/plan9_copy_cloud_api_key.sh`, `scripts/plan9_verify_cloud_api_key.py`
 
@@ -293,5 +311,5 @@ Fargate is now running current HEAD `90471fce` — the same commit with Plan 2 r
 - HOLD verdict until all in-scope blockers are closed
 
 ---
-*Last updated: Plan 2 Full External Blocker Closure + Runtime Proof Sprint — B1/B3/B4/B7 code-side, Phase 7 public endpoint security audit*
+*Last updated: Plan 2 B1 Google OAuth cloud sprint — vault migration complete, Gmail/Drive/Calendar LIVE_PROVEN via ECS Exec on Fargate rev 20; all blockers B1–B8 closed; verdict READY_FOR_ACCEPTANCE_REVIEW*
 *Never save secret values, tokens, OAuth contents, private keys, .env contents*
