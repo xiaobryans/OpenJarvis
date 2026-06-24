@@ -1842,11 +1842,12 @@ async def trigger_workspace_sync(
             }
 
         # S3 is reachable — push memory entries as workspace sync proof
-        from openjarvis.jarvis_memory import JarvisMemory
+        from openjarvis.memory.store import JarvisMemory
         try:
             memory = JarvisMemory()
-            raw = memory.list_all_raw() if hasattr(memory, "list_all_raw") else []
-            distilled = memory.list_all_distilled() if hasattr(memory, "list_all_distilled") else []
+            raw_entries = memory.list_all_raw() if hasattr(memory, "list_all_raw") else []
+            raw = [e.to_dict() if hasattr(e, "to_dict") else e for e in raw_entries]
+            distilled = []  # list_all_distilled not yet implemented
         except Exception:
             raw, distilled = [], []
 
