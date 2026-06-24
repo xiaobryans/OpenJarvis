@@ -5,6 +5,48 @@ Never contains secret values, token values, OAuth contents, private keys, or cre
 
 ---
 
+## Sprint: Final Cutover Gate — Tauri Install + B3 Attribution Fix
+
+**Started:** 2026-06-25
+**Branch:** `localhost-get-tool`
+**Base HEAD:** `35c69227`
+**Verdict:** `PLAN_2_FULL_MOBILE_MACBOOK_OFF_PARITY_RUNTIME_READY_FOR_ACCEPTANCE_REVIEW_FINAL_CUTOVER_PASSED`
+
+### Action Log
+
+| # | Action | Files | Risk | Result |
+|---|--------|-------|------|--------|
+| 1 | Verified /Applications binary SHA vs bundle SHA — confirmed DIFFERENT (old vs Plan 2 rebuild) | none | LOW | Cutover required |
+| 2 | Fixed B3 attribution in plan2_matrix.json — removed any wrong-file reference, added plan2_routes.py:_telegram_present() + notification_adapters.py:118-119 | docs/plan2/plan2_matrix.json | LOW | B3 attribution corrected |
+| 3 | Ran bash scripts/release-local.sh --install — copied artifact to ~/Applications/OpenJarvis.app v1.0.2 | ~/Applications/ | LOW | ~/Applications/ PASS |
+| 4 | Ran Bryan-authorized cp -r [bundle] /Applications/ — updated /Applications/OpenJarvis.app to Plan 2 rebuild artifact | /Applications/ | MEDIUM | /Applications/ PASS |
+| 5 | SHA verification — all three (bundle, ~/Applications, /Applications) match SHA b00b8b23... | none | LOW | ALL THREE MATCH ✓ |
+| 6 | Post-cutover validation — version v1.0.2, signing ad-hoc (CLEARED), bundle intact, no quarantine block | none | LOW | PASS |
+| 7 | Updated plan2_matrix.json — B3 fix + cutover metadata + verdict updated | docs/plan2/plan2_matrix.json | LOW | Updated |
+| 8 | Updated all 5 Plan 2 docs (matrix, session state, ledger, resume prompt) | docs/plan2/ | LOW | Updated |
+| 9 | Committed sprint-scope files (explicit staging only) | docs/plan2/ | LOW | PENDING |
+| 10 | Pushed to fork/localhost-get-tool | git remote fork | LOW | PENDING |
+
+### Cutover Proof
+
+| Location | SHA256 | Version | Status |
+|----------|--------|---------|--------|
+| Bundle artifact | b00b8b238ad22f07eb088fc233a474538057bbdad8c07fb9aef285be7764c612 | v1.0.2 | PASS |
+| ~/Applications/OpenJarvis.app | b00b8b238ad22f07eb088fc233a474538057bbdad8c07fb9aef285be7764c612 | v1.0.2 | PASS |
+| /Applications/OpenJarvis.app | b00b8b238ad22f07eb088fc233a474538057bbdad8c07fb9aef285be7764c612 | v1.0.2 | PASS |
+
+Signing: adhoc — CLEARED_BY_VERIFIED_SUPERSEDED_DESIGN (founder-local)
+release-local.sh --install: PASS (steps 0–12, no unauthorized /Applications modification during script)
+
+### Secret scan
+
+| Check | Result |
+|-------|--------|
+| sprint-scope files (plan2_matrix.json, docs) | CLEAN |
+| Pre-existing dirty files (JARVIS_OMNIX_HANDOFF.md, test fixture) | NOT staged — untouched |
+
+---
+
 ## Sprint: Plan 2C Closure — File/Workspace/Data Parity
 
 **Started:** 2026-06-24

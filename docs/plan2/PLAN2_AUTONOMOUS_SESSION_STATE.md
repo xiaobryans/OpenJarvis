@@ -17,13 +17,14 @@
 
 ## Plan 2 Verdict
 
-`PLAN_2_FULL_MOBILE_MACBOOK_OFF_PARITY_RUNTIME_READY_FOR_ACCEPTANCE_REVIEW`
+`PLAN_2_FULL_MOBILE_MACBOOK_OFF_PARITY_RUNTIME_READY_FOR_ACCEPTANCE_REVIEW_FINAL_CUTOVER_PASSED`
 
 **Reason:** All Plan 2 blockers B1–B8 are now closed or live-proven via ECS Exec on Fargate rev 20.
 B1 Google OAuth: vault migration COMPLETE (GOOGLE_OAUTH_REFRESH_TOKEN in Secrets Manager); Gmail LIVE_PROVEN, Drive LIVE_PROVEN, Calendar LIVE_PROVEN.
-B2 CONFIRMED_DEPLOYED, B3 CODE_CLOSED, B4 LIVE_PROVEN, B5A CLOSED, B5B CLOSED, B5C LIVE_PROVEN (Slack + Telegram both), B6 CLOSED, B7 LIVE_PROVEN, B8 LIVE_PROVEN. B9 parked (Plan 3).
+B2 CONFIRMED_DEPLOYED, B3 CODE_CLOSED (plan2_routes.py:_telegram_present() + notification_adapters.py:118-119), B4 LIVE_PROVEN, B5A CLOSED, B5B CLOSED, B5C LIVE_PROVEN (Slack + Telegram both), B6 CLOSED, B7 LIVE_PROVEN, B8 LIVE_PROVEN. B9 parked (Plan 3).
+Tauri cutover PASSED: /Applications/OpenJarvis.app and ~/Applications/OpenJarvis.app both updated to Plan 2 rebuild artifact SHA b00b8b23... v1.0.2; all three match.
 
-**Not accepted.** Only Bryan/ChatGPT reviewer can accept. Tauri rebuild deferred until acceptance.
+**Not accepted.** Only Bryan/ChatGPT reviewer can accept.
 
 ## Plan 2 B1 Google OAuth Cloud Sprint (current — COMPLETE)
 

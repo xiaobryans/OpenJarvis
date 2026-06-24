@@ -3,14 +3,15 @@
 
 **Acceptance target:** `MOBILE_MACBOOK_PARITY_TARGET_LOCKED`
 **Sprint:** Plan 2A + 2B + 2C + 2D + 2E + 2F + 2G + 2H + 2I Foundation + Live Proof + B1 Google OAuth Cloud
-**Sprint verdict:** `PLAN_2_FULL_MOBILE_MACBOOK_OFF_PARITY_RUNTIME_READY_FOR_ACCEPTANCE_REVIEW`
-**Previous verdict:** `PLAN_2_FULL_MOBILE_MACBOOK_OFF_PARITY_RUNTIME_HOLD` (all B1–B8 now closed)
+**Sprint verdict:** `PLAN_2_FULL_MOBILE_MACBOOK_OFF_PARITY_RUNTIME_READY_FOR_ACCEPTANCE_REVIEW_FINAL_CUTOVER_PASSED`
+**Previous verdict:** `PLAN_2_FULL_MOBILE_MACBOOK_OFF_PARITY_RUNTIME_READY_FOR_ACCEPTANCE_REVIEW`
 **Based on:** Plan 1 accepted commit `6cc99316`
 **Plan 1 verdict locked:** `PLAN_1_DUAL_PLATFORM_JARVIS_NEURAL_COMMAND_CENTER_ACCEPTED`
 **Generated:** 2026-06-24
-**Last updated:** 2026-06-25 (final acceptance review sprint — all blockers live-proven, Tauri rebuild validated)
+**Last updated:** 2026-06-25 (final cutover gate: /Applications/ + ~/Applications/ updated to Plan 2 rebuild artifact)
 **Fargate:** task def rev 20, image `jarvis-full-9a1cbdc1`, RUNNING + HEALTHY
 **Tauri build:** v1.0.2 artifact built and validated (build-local.sh --allow-applications-update, 117s)
+**Tauri cutover:** PASSED — /Applications/OpenJarvis.app + ~/Applications/OpenJarvis.app both updated to SHA b00b8b23...; all three match (bundle/home/applications); signing ad-hoc CLEARED_BY_VERIFIED_SUPERSEDED_DESIGN
 **Machine-readable artifact:** `docs/plan2/plan2_matrix.json`
 **Runtime status endpoint:** `GET /v1/mobile-parity/status`
 **Plan 2C detail endpoint:** `GET /v1/mobile-parity/files`

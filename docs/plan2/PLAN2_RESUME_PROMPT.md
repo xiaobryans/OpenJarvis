@@ -6,10 +6,9 @@ Use this file to resume Plan 2 work after a session break.
 
 **Branch:** `localhost-get-tool`
 **Remote:** `fork/xiaobryans/OpenJarvis`
-**Last completed sprint:** Plan 2 Final Acceptance Review + Tauri Release Gate
-**HEAD:** `864a48b8` (Plan 2 B1 full closure: all blockers live-proven, verdict READY_FOR_ACCEPTANCE_REVIEW)
-**Final docs commit pending:** Yes — stage and commit Phase 5 doc updates
-**Verdict:** `PLAN_2_FULL_MOBILE_MACBOOK_OFF_PARITY_RUNTIME_READY_FOR_ACCEPTANCE_REVIEW`
+**Last completed sprint:** Final Cutover Gate — Tauri Install + B3 Attribution Fix
+**HEAD:** `35c69227` + cutover sprint commit (see below)
+**Verdict:** `PLAN_2_FULL_MOBILE_MACBOOK_OFF_PARITY_RUNTIME_READY_FOR_ACCEPTANCE_REVIEW_FINAL_CUTOVER_PASSED`
 
 ## Current Fargate State
 
@@ -69,16 +68,22 @@ Push to: `fork localhost-get-tool`
 | B8 Workspace sync | LIVE_PROVEN | 127 entries → S3 jarvis_memory/raw_entries.jsonl in 279ms |
 | B9 Voice/TTS | PARKED | Plan 3 — permanent; do NOT reopen |
 
+## Tauri Cutover Status
+
+- `~/Applications/OpenJarvis.app`: INSTALLED — v1.0.2, SHA `b00b8b23...` (via release-local.sh --install)
+- `/Applications/OpenJarvis.app`: UPDATED — v1.0.2, SHA `b00b8b23...` (via Bryan-authorized cp -r)
+- All three (bundle/home/applications) match ✓
+- Signing: adhoc (CLEARED_BY_VERIFIED_SUPERSEDED_DESIGN for founder-local)
+
 ## What Bryan/ChatGPT reviewer needs to do
 
 1. Review this report.
 2. If accepted: mark `PLAN_2_FULL_MOBILE_MACBOOK_OFF_PARITY_RUNTIME_ACCEPTED`.
-3. Only then: authorize Tauri `--install` or `/Applications` copy for the new artifact.
-4. Only then: begin Plan 3 (voice/wake/TTS) or post-Plan-2 automation expansion.
+3. Only then: begin Plan 3 (voice/wake/TTS) or post-Plan-2 automation expansion.
 
 ## Hard rules active
 
-- No Tauri `--install` until Bryan authorizes acceptance
+- Tauri cutover DONE: `/Applications/` + `~/Applications/` both updated to Plan 2 rebuild artifact
 - No `git add .`
 - No secret values printed
 - No fake ACCEPTED/READY

@@ -2,7 +2,7 @@
   "plan": "Plan 2 — Full Mobile MacBook-Off Parity Runtime",
   "acceptance_target": "MOBILE_MACBOOK_PARITY_TARGET_LOCKED",
   "sprint": "Plan 2A-2I Foundation + Live Proof Sprint + B1 Google OAuth Cloud Sprint + Final Acceptance Review",
-  "sprint_verdict": "PLAN_2_FULL_MOBILE_MACBOOK_OFF_PARITY_RUNTIME_READY_FOR_ACCEPTANCE_REVIEW",
+  "sprint_verdict": "PLAN_2_FULL_MOBILE_MACBOOK_OFF_PARITY_RUNTIME_READY_FOR_ACCEPTANCE_REVIEW_FINAL_CUTOVER_PASSED",
   "hold_reason": null,
   "generated_at": "2026-06-24",
   "last_updated": "2026-06-25 (final acceptance review — all blockers live-proven, Tauri rebuild validated)",
@@ -443,7 +443,7 @@
   "b1_to_b8_proof": {
     "B1": "LIVE_PROVEN — Gmail/Calendar/Drive from Fargate rev 20 via ECS Exec; GOOGLE_OAUTH_REFRESH_TOKEN in SM (len=103)",
     "B2": "CONFIRMED_DEPLOYED — 15 secrets in task def rev 20",
-    "B3": "CODE_CLOSED — both TELEGRAM_BOT_TOKEN and JARVIS_TELEGRAM_BOT_TOKEN accepted",
+    "B3": "CODE_CLOSED — both TELEGRAM_BOT_TOKEN and JARVIS_TELEGRAM_BOT_TOKEN accepted via plan2_routes.py:_telegram_present() and notification_adapters.py:118-119",
     "B4": "LIVE_PROVEN — NOTION_API_KEY in SM + task def; bot user authenticated",
     "B5A": "CLOSED",
     "B5B": "CLOSED",
@@ -459,5 +459,20 @@
     "secret_scan": "CLEAN",
     "high_entropy_scan": "CLEAN",
     "result": "PASS"
+  },
+  "tauri_cutover": {
+    "status": "CUTOVER_PASSED",
+    "date": "2026-06-25",
+    "artifact_version": "1.0.2",
+    "bundle_sha256": "b00b8b238ad22f07eb088fc233a474538057bbdad8c07fb9aef285be7764c612",
+    "applications_sha256": "b00b8b238ad22f07eb088fc233a474538057bbdad8c07fb9aef285be7764c612",
+    "home_applications_sha256": "b00b8b238ad22f07eb088fc233a474538057bbdad8c07fb9aef285be7764c612",
+    "all_three_match": true,
+    "install_path_home": "~/Applications/OpenJarvis.app (via release-local.sh --install)",
+    "install_path_applications": "/Applications/OpenJarvis.app (via cp -r, Bryan-authorized)",
+    "signing": "adhoc — CLEARED_BY_VERIFIED_SUPERSEDED_DESIGN (founder-local)",
+    "release_local_validation": "PASS (steps 0-12)",
+    "b3_attribution_corrected": true,
+    "test_batch_integration_same_file_live": "pre-existing failure, unrelated to Plan 2 (tests BatchRunRecord.diff empty string)"
   }
 }
