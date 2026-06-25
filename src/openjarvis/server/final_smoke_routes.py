@@ -138,8 +138,8 @@ async def final_smoke_status() -> Dict[str, Any]:
         "manual_proof_required": True,
         "claimed_passed": False,
         "fake_smoke_result": False,
-        "installed_app_smoke": "blocked_pending_build",
-        "daily_driver": "blocked_pending_build",
+        "installed_app_smoke": "blocked_pending_notarize_and_bryan_visual_proof",
+        "daily_driver": "blocked_pending_daily_driver_usage_sessions",
         "fake_data": False,
     }
 

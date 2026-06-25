@@ -279,7 +279,7 @@ function Overlay({ title, icon, onClose, children }: { title: string; icon: stri
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 16px', borderBottom: '1px solid rgba(34,211,238,0.08)', flexShrink: 0 }}>
           <span style={{ fontSize: 16 }}>{icon}</span>
           <span style={{ fontSize: 13, fontWeight: 600, color: 'rgba(180,220,255,0.9)', flex: 1 }}>{title}</span>
-          <button onClick={onClose} style={{ fontSize: 11, color: 'rgba(120,160,200,0.5)', cursor: 'pointer', background: 'none', border: 'none' }}>✕ close</button>
+          <button onClick={onClose} style={{ fontSize: 10, color: 'rgba(120,160,200,0.6)', cursor: 'pointer', background: 'rgba(34,211,238,0.06)', border: '1px solid rgba(34,211,238,0.15)', borderRadius: 5, padding: '2px 8px', fontFamily: 'var(--font-hud, monospace)' }}>← back to cockpit</button>
         </div>
         <div style={{ overflowY: 'auto', padding: '12px 16px', flex: 1 }}>{children}</div>
       </div>
@@ -413,8 +413,11 @@ const MODE_RAIL: Array<{ id: FocusMode; icon: string; label: string }> = [
   { id: 'approvals', icon: '🛑', label: 'Approvals' },
   { id: 'audit',     icon: '📜', label: 'Audit'     },
   { id: 'memory',    icon: '🧠', label: 'Memory'    },
-  { id: 'system',    icon: '⚙️',  label: 'System'    },
-  { id: 'voice',     icon: '🎙',  label: 'Voice'     },
+];
+
+const MODE_RAIL_SECONDARY: Array<{ id: FocusMode; icon: string; label: string; parked?: boolean }> = [
+  { id: 'system', icon: '⚙️',  label: 'System Overview — All Modules' },
+  { id: 'voice',  icon: '🎙',  label: 'Voice — Parked (Plan 3)', parked: true },
 ];
 
 function LeftModeRail({ active, pendingApprovals, onMode }: { active: FocusMode; pendingApprovals: number; onMode: (m: FocusMode) => void }) {
@@ -444,6 +447,23 @@ function LeftModeRail({ active, pendingApprovals, onMode }: { active: FocusMode;
             {hasApproval && (
               <span style={{ position: 'absolute', top: 5, right: 5, width: 7, height: 7, borderRadius: '50%', background: '#f59e0b', boxShadow: '0 0 8px #f59e0b', animation: 'orb-pulse-fast 1.5s ease-in-out infinite' }} />
             )}
+          </button>
+        );
+      })}
+      {/* Divider before secondary modes */}
+      <div style={{ width: 28, height: 1, background: 'rgba(34,211,238,0.09)', margin: '6px 0' }} />
+      {/* Secondary: System Overview + Voice (parked) — dimmed, clearly non-primary */}
+      {MODE_RAIL_SECONDARY.map(m => {
+        const isActive = m.id === active;
+        return (
+          <button
+            key={m.id}
+            title={m.label}
+            onClick={() => !m.parked && onMode(m.id)}
+            className={`j-rail-btn ${isActive ? 'j-rail-btn-active' : ''}`}
+            style={{ opacity: m.parked ? 0.3 : 0.55, cursor: m.parked ? 'not-allowed' : 'pointer' }}
+          >
+            <span style={{ fontSize: 14 }}>{m.icon}</span>
           </button>
         );
       })}
@@ -919,7 +939,7 @@ function MissionRightPanel({ apiOk, model, connectorLive, connectorTotal, pendin
       <section>
         <div style={{ fontSize: 8, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'rgba(34,211,238,0.35)', marginBottom: 6 }}>Quick</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-          {(['workbench', 'approvals', 'audit', 'system'] as FocusMode[]).map(m => (
+          {(['workbench', 'approvals', 'audit'] as FocusMode[]).map(m => (
             <button
               key={m}
               onClick={() => onMode(m)}
@@ -1027,6 +1047,45 @@ function ChatDrawer({ input, sending, lastReply, apiOk, onInputChange, onKeyDown
   );
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Mission Status Strip — comprehensive one-page cockpit summary bar
+// ─────────────────────────────────────────────────────────────────────────────
+
+function MissionStatusStrip({ apiOk, connectorLive, connectorTotal, pendingApprovals, routingStatus, isNarrow }: {
+  apiOk: boolean | null;
+  connectorLive: number;
+  connectorTotal: number;
+  pendingApprovals: number;
+  routingStatus: RoutingStatus | null;
+  isNarrow: boolean;
+}) {
+  const modelShort = routingStatus?.pa_front_door_model?.split('/').pop()?.slice(0, 16) ?? null;
+  const chip = (label: string, value: string, color: string) => (
+    <div key={label} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 7px', background: `${color}0a`, border: `1px solid ${color}22`, borderRadius: 4, flexShrink: 0 }}>
+      <span style={{ fontSize: 7, color: 'rgba(80,120,160,0.5)', textTransform: 'uppercase', letterSpacing: '0.08em', fontFamily: 'var(--font-hud, monospace)' }}>{label}</span>
+      <span style={{ fontSize: 9, color, fontFamily: 'var(--font-hud, monospace)', fontWeight: 600 }}>{value}</span>
+    </div>
+  );
+  return (
+    <div style={{
+      flexShrink: 0,
+      borderTop: '1px solid rgba(34,211,238,0.05)',
+      background: 'rgba(4,8,18,0.70)',
+      backdropFilter: 'blur(6px)',
+      padding: isNarrow ? '5px 10px' : '5px 20px',
+      display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap',
+    }}>
+      {chip('API', apiOk === true ? 'OK' : apiOk === false ? 'ERR' : '…', apiOk === true ? '#3ddc97' : apiOk === false ? '#ef4444' : '#f59e0b')}
+      {connectorTotal > 0 && chip('Connectors', `${connectorLive}/${connectorTotal} live`, connectorLive === connectorTotal ? '#3ddc97' : '#f59e0b')}
+      {pendingApprovals > 0 && chip('Approvals', `${pendingApprovals} pending`, '#f59e0b')}
+      {modelShort && chip('Model', modelShort, 'rgba(100,160,220,0.7)')}
+      {chip('Phase B', 'ACCEPTED', '#3ddc97')}
+      {chip('Phase C', 'ACCEPTED', '#3ddc97')}
+      {chip('Voice', 'Plan 3 — Parked', '#f59e0b')}
+    </div>
+  );
+}
+
 // — Mission —
 interface MissionSurfaceProps {
   phase: TurnPhase;
@@ -1129,6 +1188,16 @@ function MissionSurface({ phase, apiOk, input, sending, lastReply, onInputChange
           />
         )}
       </div>
+
+      {/* ── Comprehensive status strip — one-page cockpit summary ── */}
+      <MissionStatusStrip
+        apiOk={apiOk}
+        connectorLive={connectorLive}
+        connectorTotal={connectorTotal}
+        pendingApprovals={pendingApprovals}
+        routingStatus={routingStatus}
+        isNarrow={isNarrow}
+      />
 
       {/* ── Bottom strip ──────────────────────────────────────────── */}
       <div style={{
@@ -1550,7 +1619,7 @@ function SystemSurface({ plan9, routingStatus, registry, runtimeProof, agents, c
 
   const systemCards: Array<{ id: PanelId; icon: string; label: string; status: StatusDot; line1: string; line2: string }> = [
     {
-      id: 'mission', icon: '🎯', label: 'Mission Control', status: panelStatus('health'),
+      id: 'mission', icon: '🎯', label: 'Mission Status', status: panelStatus('health'),
       line1: plan9 ? `P9: ${plan9.gaps} gaps · ${plan9.parked} parked` : 'Fetching…',
       line2: `Cloud: ${plan9?.mobile_cloud_live ?? '—'} · Local: ${plan9?.mac_local_live ?? '—'}`,
     },
@@ -1585,7 +1654,7 @@ function SystemSurface({ plan9, routingStatus, registry, runtimeProof, agents, c
       line2: '',
     },
     {
-      id: 'plan9', icon: '🚀', label: 'Parity Status', status: plan9 ? (plan9.gaps > 0 ? 'warn' : 'ok') : 'unknown',
+      id: 'plan9', icon: '🚀', label: 'Plan 2 Parity', status: plan9 ? (plan9.gaps > 0 ? 'warn' : 'ok') : 'unknown',
       line1: plan9 ? `Verdict: ${plan9.verdict ?? '—'}` : 'Fetching…',
       line2: runtimeProof ? `Proof: ${runtimeProof.verified_count}/${runtimeProof.total_items} verified` : '',
     },
@@ -1613,7 +1682,8 @@ function SystemSurface({ plan9, routingStatus, registry, runtimeProof, agents, c
 
   return (
     <div style={{ height: '100%', overflowY: 'auto', padding: isNarrow ? '12px' : '16px 20px' }}>
-      <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.08em', color: 'rgba(34,211,238,0.4)', textTransform: 'uppercase', marginBottom: 12 }}>All Modules — System Overview</div>
+      <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.08em', color: 'rgba(34,211,238,0.4)', textTransform: 'uppercase', marginBottom: 4 }}>System Overview — Module Details</div>
+      <div style={{ fontSize: 8, color: 'rgba(80,120,160,0.5)', marginBottom: 12, fontFamily: 'var(--font-hud, monospace)' }}>click any card to expand in-page ↓ — use ⌘⇧K or Mission tab to return</div>
 
       {/* System module grid */}
       <div style={{ display: 'grid', gap: 7, gridTemplateColumns: isNarrow ? 'repeat(auto-fill, minmax(140px, 1fr))' : 'repeat(auto-fill, minmax(160px, 1fr))', marginBottom: 20 }}>

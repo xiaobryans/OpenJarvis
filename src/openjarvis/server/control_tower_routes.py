@@ -182,10 +182,10 @@ async def control_tower_status() -> Dict[str, Any]:
 
     return {
         "phases": phases,
-        "active_sprint": "FINAL_PHASE_A_LIVE_MANUAL_GATE_CLOSURE",
+        "active_sprint": "FINAL_PHASE_A_INSTALLED_APP_UI_UNIFICATION_CORRECTIVE_SPRINT",
         "fake_acceptance": False,
         "fake_data": False,
-        "note": "Final Phase A Live Gate Closure active. C1-C20 accepted. Phase B accepted, on hold.",
+        "note": "Installed-app UI unification corrective sprint active. UI fix applied: mission mode comprehensive status strip, system mode demoted to secondary rail. Rebuild+notarize pending. Installed-app-smoke needs Bryan visual proof after rebuild.",
     }
 
 
