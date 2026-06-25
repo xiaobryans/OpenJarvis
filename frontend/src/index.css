@@ -944,6 +944,26 @@
   50%      { transform: translate(2px, -2px) scale(1.10); opacity: 1.00; }
 }
 
+@keyframes orb-orbital-rotate {
+  0%   { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes orb-secondary-pulse {
+  0%, 100% { transform: scale(0.92); opacity: 0.30; }
+  50%      { transform: scale(1.08); opacity: 0.70; }
+}
+
+@keyframes ncc-grid-shift {
+  0%, 100% { opacity: 0.6; }
+  50%      { opacity: 1.0; }
+}
+
+@keyframes hud-scanline {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
 @keyframes agent-dot-pulse-kf {
   0%, 100% { transform: scale(1.00); opacity: 0.90; }
   50%      { transform: scale(1.35); opacity: 1.00; }

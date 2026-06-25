@@ -82,6 +82,7 @@ export interface NccCoreProps {
   connectorLive: number;
   connectorTotal: number;
   onExpandPanel: (id: string) => void;
+  routinesStatus?: { total_routines?: number; active_count?: number; last_run?: string } | null;
 }
 
 // Re-export alias so callers can import NccProps for convenience
@@ -101,6 +102,13 @@ const DOT_SHADOWS: Record<StatusDot, string> = {
   warn: '0 0 4px #f59e0b80',
   error: '0 0 4px #ef444480',
   unknown: '0 0 2px #6b728040',
+};
+
+const LABEL_COLORS: Record<StatusDot, string> = {
+  ok: 'rgba(34,211,238,0.9)',
+  warn: 'rgba(245,158,11,0.9)',
+  error: 'rgba(239,68,68,0.9)',
+  unknown: 'rgba(160,200,240,0.6)',
 };
 
 export function dot(s: StatusDot): React.ReactElement {
@@ -142,6 +150,7 @@ export function CommandPanel({
 }: CommandPanelProps): React.ReactElement {
   const [hovered, setHovered] = React.useState(false);
   const padding = compact ? '6px 9px' : '9px 11px';
+  const monoFont = "'JetBrains Mono', 'Consolas', monospace";
 
   return (
     <div
@@ -157,19 +166,38 @@ export function CommandPanel({
       style={{
         flex: 1,
         textAlign: 'left',
-        background: 'rgba(8,14,28,0.82)',
-        border: `1px solid ${hovered ? 'rgba(34,211,238,0.22)' : 'rgba(34,211,238,0.09)'}`,
-        borderRadius: 10,
+        background: 'rgba(6,12,24,0.88)',
+        border: `1px solid ${hovered ? 'rgba(34,211,238,0.35)' : 'rgba(34,211,238,0.12)'}`,
+        borderRadius: 4,
         padding,
         cursor: 'pointer',
         display: 'flex',
         flexDirection: 'column',
         gap: 3,
         position: 'relative',
-        transition: 'border-color 0.15s',
+        transition: 'border-color 0.15s, box-shadow 0.15s',
         minWidth: 0,
+        boxShadow: hovered ? '0 0 12px rgba(34,211,238,0.08)' : 'none',
+        clipPath: hovered
+          ? 'polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 0 100%)'
+          : 'none',
+        overflow: 'hidden',
       }}
     >
+      {/* Top-left corner accent */}
+      <div
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          width: 8,
+          height: 8,
+          borderTop: '1px solid rgba(34,211,238,0.35)',
+          borderLeft: '1px solid rgba(34,211,238,0.35)',
+          pointerEvents: 'none',
+        }}
+      />
+
       {/* Top row: icon + label + dot */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
         <span style={{ fontSize: 13, lineHeight: 1 }}>{icon}</span>
@@ -178,12 +206,13 @@ export function CommandPanel({
             fontSize: 9,
             fontWeight: 700,
             textTransform: 'uppercase',
-            color: 'rgba(160,200,240,0.8)',
+            color: LABEL_COLORS[statusDot],
             letterSpacing: '0.04em',
             flex: 1,
             overflow: 'hidden',
             textOverflow: 'ellipsis',
             whiteSpace: 'nowrap',
+            fontFamily: monoFont,
           }}
         >
           {label}
@@ -199,6 +228,7 @@ export function CommandPanel({
           overflow: 'hidden',
           textOverflow: 'ellipsis',
           whiteSpace: 'nowrap',
+          fontFamily: monoFont,
         }}
       >
         {line1}
@@ -213,6 +243,7 @@ export function CommandPanel({
             overflow: 'hidden',
             textOverflow: 'ellipsis',
             whiteSpace: 'nowrap',
+            fontFamily: monoFont,
           }}
         >
           {line2}
@@ -233,6 +264,21 @@ export function CommandPanel({
       >
         expand ↗
       </div>
+
+      {/* Bottom scanline accent */}
+      <div
+        style={{
+          position: 'absolute',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          height: 1,
+          background: 'linear-gradient(90deg, transparent, rgba(34,211,238,0.2), transparent)',
+          opacity: hovered ? 1 : 0,
+          transition: 'opacity 0.15s',
+          pointerEvents: 'none',
+        }}
+      />
     </div>
   );
 }
@@ -252,12 +298,14 @@ export function StatusMiniCard({
   color,
   subtext,
 }: StatusMiniCardProps): React.ReactElement {
+  const monoFont = "'JetBrains Mono', 'Consolas', monospace";
   return (
     <div
       style={{
-        background: 'rgba(8,14,28,0.70)',
+        background: 'rgba(4,8,18,0.85)',
         border: `1px solid ${color}18`,
-        borderRadius: 8,
+        borderLeft: `2px solid ${color}40`,
+        borderRadius: 4,
         padding: '6px 8px',
         flex: 1,
         display: 'flex',
@@ -284,6 +332,7 @@ export function StatusMiniCard({
           overflow: 'hidden',
           textOverflow: 'ellipsis',
           whiteSpace: 'nowrap',
+          fontFamily: monoFont,
         }}
       >
         {value}
@@ -329,19 +378,34 @@ export function CommandInputStrip({
   lastReply,
 }: CommandInputStripProps): React.ReactElement {
   const offline = apiOk === false;
+  const monoFont = "'JetBrains Mono', 'Consolas', monospace";
 
   return (
     <div
       style={{
-        background: 'rgba(4,8,20,0.82)',
-        border: '1px solid rgba(34,211,238,0.15)',
-        borderRadius: 10,
+        background: 'rgba(3,6,16,0.90)',
+        border: '1px solid rgba(34,211,238,0.18)',
+        borderRadius: 4,
         padding: '7px 9px',
         display: 'flex',
         flexDirection: 'column',
         gap: 5,
       }}
     >
+      {/* Header label */}
+      <div
+        style={{
+          fontSize: 7,
+          color: 'rgba(34,211,238,0.45)',
+          fontFamily: monoFont,
+          letterSpacing: '0.12em',
+          textTransform: 'uppercase',
+          userSelect: 'none',
+        }}
+      >
+        ▸ COMMAND INTERFACE
+      </div>
+
       {/* Last reply preview */}
       {lastReply && !offline && (
         <div
@@ -404,7 +468,7 @@ export function CommandInputStrip({
               fontSize: 11,
               color: 'rgba(180,220,255,0.85)',
               lineHeight: 1.4,
-              fontFamily: 'inherit',
+              fontFamily: monoFont,
               padding: 0,
               opacity: sending ? 0.5 : 1,
             }}
@@ -475,7 +539,10 @@ export function DesktopCommandCenter(props: NccLayoutProps): React.ReactElement 
     onKeyDown,
     inputRef,
     orbChildren,
+    routinesStatus,
   } = props;
+
+  const monoFont = "'JetBrains Mono', 'Consolas', monospace";
 
   // Derive helper values
   const apiStatusDot: StatusDot = apiOk === null ? 'unknown' : apiOk ? 'ok' : 'error';
@@ -550,6 +617,18 @@ export function DesktopCommandCenter(props: NccLayoutProps): React.ReactElement 
       : 'Not signed'
     : '';
 
+  // Routines lines
+  const routinesLine1: string = routinesStatus?.total_routines
+    ? `${routinesStatus.total_routines} routines · ${routinesStatus.active_count ?? 0} active`
+    : 'Cadence center · PA-scheduled';
+  const routinesLine2: string = routinesStatus?.last_run
+    ? `Last run: ${routinesStatus.last_run}`
+    : 'B2 accepted · scheduling live';
+  const routinesDot: StatusDot = routinesStatus ? 'ok' : 'unknown';
+
+  // Suppress unused warning
+  void pendingApprovals;
+
   return (
     <div
       style={{
@@ -560,6 +639,7 @@ export function DesktopCommandCenter(props: NccLayoutProps): React.ReactElement 
         overflow: 'hidden',
         height: '100%',
         boxSizing: 'border-box',
+        background: 'linear-gradient(rgba(4,8,20,0.97),rgba(4,8,20,0.97)), repeating-linear-gradient(0deg, transparent, transparent 39px, rgba(34,211,238,0.04) 40px), repeating-linear-gradient(90deg, transparent, transparent 39px, rgba(34,211,238,0.04) 40px)',
       }}
     >
       {/* ── LEFT COLUMN ── */}
@@ -571,6 +651,11 @@ export function DesktopCommandCenter(props: NccLayoutProps): React.ReactElement 
           overflowY: 'auto',
         }}
       >
+        {/* Column heading */}
+        <div style={{ fontSize: 7, color: 'rgba(34,211,238,0.35)', fontFamily: monoFont, letterSpacing: '0.12em', textTransform: 'uppercase', paddingLeft: 2, marginBottom: 2 }}>
+          ◈ MISSION SYSTEMS
+        </div>
+
         <CommandPanel
           icon="🎯"
           label="Mission / Goals"
@@ -596,6 +681,14 @@ export function DesktopCommandCenter(props: NccLayoutProps): React.ReactElement 
           onExpand={() => onExpandPanel('mission')}
         />
         <CommandPanel
+          icon="🔁"
+          label="Routines / Cadence"
+          statusDot={routinesDot}
+          line1={routinesLine1}
+          line2={routinesLine2}
+          onExpand={() => onExpandPanel('routines')}
+        />
+        <CommandPanel
           icon="📜"
           label="Audit / Safety"
           statusDot={auditStatusDot}
@@ -612,8 +705,16 @@ export function DesktopCommandCenter(props: NccLayoutProps): React.ReactElement 
           flexDirection: 'column',
           overflow: 'hidden',
           gap: 8,
+          position: 'relative',
         }}
       >
+        {/* Faint HUD connection lines */}
+        <svg style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', opacity: 0.07 }} xmlns="http://www.w3.org/2000/svg">
+          <line x1="50%" y1="50%" x2="0%" y2="50%" stroke="#22d3ee" strokeWidth="1" strokeDasharray="4 8"/>
+          <line x1="50%" y1="50%" x2="100%" y2="50%" stroke="#22d3ee" strokeWidth="1" strokeDasharray="4 8"/>
+          <line x1="50%" y1="50%" x2="50%" y2="100%" stroke="#22d3ee" strokeWidth="1" strokeDasharray="3 6"/>
+        </svg>
+
         {/* Orb area */}
         <div
           style={{
@@ -680,6 +781,11 @@ export function DesktopCommandCenter(props: NccLayoutProps): React.ReactElement 
           overflowY: 'auto',
         }}
       >
+        {/* Column heading */}
+        <div style={{ fontSize: 7, color: 'rgba(34,211,238,0.35)', fontFamily: monoFont, letterSpacing: '0.12em', textTransform: 'uppercase', paddingLeft: 2, marginBottom: 2 }}>
+          ◈ AUTHORITY & SERVICES
+        </div>
+
         <CommandPanel
           icon="✅"
           label="Approvals / Auth"
@@ -713,16 +819,17 @@ export function DesktopCommandCenter(props: NccLayoutProps): React.ReactElement 
           onExpand={() => onExpandPanel('plan9')}
         />
 
-        {/* Phase badges */}
+        {/* Phase badges — HUD style */}
         <div style={{ display: 'flex', gap: 4, paddingTop: 4, flexWrap: 'wrap' }}>
           <div
             style={{
               fontSize: 8,
               padding: '2px 6px',
-              background: '#3ddc9714',
-              border: '1px solid #3ddc9730',
-              borderRadius: 4,
-              color: '#3ddc97',
+              background: 'rgba(245,158,11,0.08)',
+              border: '1px solid rgba(245,158,11,0.25)',
+              borderRadius: 3,
+              color: '#f59e0b',
+              fontFamily: monoFont,
             }}
           >
             Phase B ACCEPTED_ON_HOLD
@@ -731,13 +838,53 @@ export function DesktopCommandCenter(props: NccLayoutProps): React.ReactElement 
             style={{
               fontSize: 8,
               padding: '2px 6px',
-              background: '#3ddc9714',
-              border: '1px solid #3ddc9730',
-              borderRadius: 4,
-              color: '#3ddc97',
+              background: 'rgba(34,211,238,0.08)',
+              border: '1px solid rgba(34,211,238,0.25)',
+              borderRadius: 3,
+              color: '#22d3ee',
+              fontFamily: monoFont,
             }}
           >
             Phase C ACCEPTED
+          </div>
+          <div
+            style={{
+              fontSize: 8,
+              padding: '2px 6px',
+              background: 'rgba(34,211,238,0.08)',
+              border: '1px solid rgba(34,211,238,0.25)',
+              borderRadius: 3,
+              color: '#22d3ee',
+              fontFamily: monoFont,
+            }}
+          >
+            Plan 2 ACCEPTED
+          </div>
+          <div
+            style={{
+              fontSize: 8,
+              padding: '2px 6px',
+              background: 'rgba(34,211,238,0.08)',
+              border: '1px solid rgba(34,211,238,0.25)',
+              borderRadius: 3,
+              color: '#22d3ee',
+              fontFamily: monoFont,
+            }}
+          >
+            Plan 4-6 ACCEPTED
+          </div>
+          <div
+            style={{
+              fontSize: 8,
+              padding: '2px 6px',
+              background: 'rgba(100,116,139,0.08)',
+              border: '1px solid rgba(100,116,139,0.20)',
+              borderRadius: 3,
+              color: 'rgba(148,163,184,0.6)',
+              fontFamily: monoFont,
+            }}
+          >
+            Fargate PHASE_D_NOT_STARTED
           </div>
         </div>
       </div>
@@ -770,7 +917,10 @@ export function MobileCommandCenter(props: NccLayoutProps): React.ReactElement {
     onKeyDown,
     inputRef,
     orbChildren,
+    routinesStatus,
   } = props;
+
+  const monoFont = "'JetBrains Mono', 'Consolas', monospace";
 
   // Derive same helper values as desktop
   const apiStatusDot: StatusDot = apiOk === null ? 'unknown' : apiOk ? 'ok' : 'error';
@@ -839,6 +989,15 @@ export function MobileCommandCenter(props: NccLayoutProps): React.ReactElement {
       : 'Not signed'
     : '';
 
+  // Routines lines
+  const routinesLine1: string = routinesStatus?.total_routines
+    ? `${routinesStatus.total_routines} routines · ${routinesStatus.active_count ?? 0} active`
+    : 'Cadence center · PA-scheduled';
+  const routinesLine2: string = routinesStatus?.last_run
+    ? `Last run: ${routinesStatus.last_run}`
+    : 'B2 accepted · scheduling live';
+  const routinesDot: StatusDot = routinesStatus ? 'ok' : 'unknown';
+
   return (
     <div
       style={{
@@ -849,8 +1008,14 @@ export function MobileCommandCenter(props: NccLayoutProps): React.ReactElement {
         gap: 8,
         height: '100%',
         boxSizing: 'border-box',
+        background: 'linear-gradient(rgba(4,8,20,0.97),rgba(4,8,20,0.97)), repeating-linear-gradient(0deg, transparent, transparent 39px, rgba(34,211,238,0.04) 40px), repeating-linear-gradient(90deg, transparent, transparent 39px, rgba(34,211,238,0.04) 40px)',
       }}
     >
+      {/* Neural core label */}
+      <div style={{ textAlign: 'center', fontSize: 8, color: 'rgba(34,211,238,0.5)', fontFamily: monoFont, letterSpacing: '0.15em', textTransform: 'uppercase', marginBottom: 2 }}>
+        JARVIS NEURAL CORE — ONLINE
+      </div>
+
       {/* Compact orb */}
       <div
         style={{
@@ -931,6 +1096,15 @@ export function MobileCommandCenter(props: NccLayoutProps): React.ReactElement {
           line1="Follow-up center · PA"
           line2="B1 accepted"
           onExpand={() => onExpandPanel('mission')}
+          compact
+        />
+        <CommandPanel
+          icon="🔁"
+          label="Routines / Cadence"
+          statusDot={routinesDot}
+          line1={routinesLine1}
+          line2={routinesLine2}
+          onExpand={() => onExpandPanel('routines')}
           compact
         />
         <CommandPanel

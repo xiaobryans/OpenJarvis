@@ -802,7 +802,7 @@ async def get_roadmap() -> Dict[str, Any]:
     """Current Jarvis roadmap and plan acceptance state."""
     return {
         "roadmap": _ROADMAP,
-        "active_sprint": "FINAL_PHASE_A_NEURAL_COMMAND_CENTER_UI_COMPLETION_SPRINT",
+        "active_sprint": "FINAL_PHASE_A_NEURAL_COMMAND_CENTER_TAXONOMY_ROUTINES_AND_VISUAL_LANGUAGE_CORRECTIVE",
         "next": "Neural Command Center UI complete: full 3-column DesktopCommandCenter + MobileCommandCenter layout around Jarvis orb. 12 panels visible by default, inline CommandInputStrip, status mini-cards. App rebuilt, signed, notarized (Apple Accepted). Installed-app-smoke visual needs Bryan proof. Daily-driver cert needs Bryan usage sessions. Plan 3 voice parked.",
         "note": "Only Bryan can mark plans as ACCEPTED.",
     }

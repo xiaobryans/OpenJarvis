@@ -78,6 +78,8 @@ _OPEN_GATES: List[Dict[str, Any]] = [
         "name": "Fargate Cloud Deployment",
         "type": "external_infra",
         "status": "open",
+        "phase": "Phase D — not started",
+        "note": "PHASE_D_NOT_STARTED — Plan 2 accepted; Fargate live cloud execution is a separate Phase D decision",
         "requires": "AWS Fargate + connector credentials",
     },
     {
@@ -182,10 +184,10 @@ async def control_tower_status() -> Dict[str, Any]:
 
     return {
         "phases": phases,
-        "active_sprint": "FINAL_PHASE_A_NEURAL_COMMAND_CENTER_UI_COMPLETION_SPRINT",
+        "active_sprint": "FINAL_PHASE_A_NEURAL_COMMAND_CENTER_TAXONOMY_ROUTINES_AND_VISUAL_LANGUAGE_CORRECTIVE",
         "fake_acceptance": False,
         "fake_data": False,
-        "note": "Neural Command Center UI completion sprint. Full 3-column layout with 12 panels visible by default around Jarvis orb. DesktopCommandCenter + MobileCommandCenter implemented. App rebuilt, signed, notarized (Apple Accepted, ID ddd69bc8). Installed-app-smoke visual needs Bryan proof. Daily-driver cert needs Bryan usage sessions.",
+        "note": "FINAL_PHASE_A corrective sprint: taxonomy fixed, HUD visual language implemented, Routines/Cadence panel added. Installed-app-smoke visual needs Bryan proof. Daily-driver cert needs Bryan usage sessions. Fargate cloud deploy = Phase D not started.",
     }
 
 

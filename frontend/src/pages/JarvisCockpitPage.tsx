@@ -1123,9 +1123,10 @@ interface MissionSurfaceProps {
   macWorkerStatus: { queued: number; running: number; failed: number } | null;
   connectors: ConnectorInfo[];
   plan9: Plan9Status | null;
+  routinesStatus: RoutinesStatus | null;
 }
 
-function MissionSurface({ phase, apiOk, input, sending, lastReply, onInputChange, onKeyDown, onSubmit, pendingApprovals, orgHierarchy: _orgHierarchy, orgFetchOk, registry, routingStatus, onExpandPanel, onMode, isNarrow, inputRef, connectorLive, connectorTotal, auditEntries, memStatus, finalSmoke, signingStatus, completionScore, workflowStatus, macWorkerStatus, connectors, plan9 }: MissionSurfaceProps) {
+function MissionSurface({ phase, apiOk, input, sending, lastReply, onInputChange, onKeyDown, onSubmit, pendingApprovals, orgHierarchy: _orgHierarchy, orgFetchOk, registry, routingStatus, onExpandPanel, onMode, isNarrow, inputRef, connectorLive, connectorTotal, auditEntries, memStatus, finalSmoke, signingStatus, completionScore, workflowStatus, macWorkerStatus, connectors, plan9, routinesStatus }: MissionSurfaceProps) {
   const [chatExpanded, setChatExpanded] = useState(false);
 
   // Esc closes chat drawer
@@ -1192,6 +1193,7 @@ function MissionSurface({ phase, apiOk, input, sending, lastReply, onInputChange
           plan9Gaps={plan9?.gaps ?? null}
           connectorLive={connectorLive}
           connectorTotal={connectorTotal}
+          routinesStatus={routinesStatus}
           onExpandPanel={(id: string) => onExpandPanel(id as PanelId)}
           onMode={(m: string) => onMode(m as FocusMode)}
           input={input}
@@ -1230,6 +1232,7 @@ function MissionSurface({ phase, apiOk, input, sending, lastReply, onInputChange
           plan9Gaps={plan9?.gaps ?? null}
           connectorLive={connectorLive}
           connectorTotal={connectorTotal}
+          routinesStatus={routinesStatus}
           onExpandPanel={(id: string) => onExpandPanel(id as PanelId)}
           onMode={(m: string) => onMode(m as FocusMode)}
           input={input}
@@ -1606,7 +1609,7 @@ function SystemSurface({ plan9, routingStatus, registry, runtimeProof, agents, c
   const systemCards: Array<{ id: PanelId; icon: string; label: string; status: StatusDot; line1: string; line2: string }> = [
     {
       id: 'mission', icon: '🎯', label: 'Mission Status', status: panelStatus('health'),
-      line1: plan9 ? `P9: ${plan9.gaps} gaps · ${plan9.parked} parked` : 'Fetching…',
+      line1: plan9 ? `Parity: ${plan9.gaps} gaps · ${plan9.parked} parked` : 'Fetching…',
       line2: `Cloud: ${plan9?.mobile_cloud_live ?? '—'} · Local: ${plan9?.mac_local_live ?? '—'}`,
     },
     {
@@ -1769,6 +1772,7 @@ export function JarvisCockpitPage() {
   const [finalSmoke, setFinalSmoke] = useState<FinalSmokeStatus | null>(null);
   const [signingStatus, setSigningStatus] = useState<SigningStatus | null>(null);
   const [completionScore, setCompletionScore] = useState<CompletionScore | null>(null);
+  const [routinesStatus, setRoutinesStatus] = useState<RoutinesStatus | null>(null);
 
   const setPanelFetch = (key: string) => (s: PanelFetchState) => setFetchState(prev => ({ ...prev, [key]: s }));
   const connectorLive = connectors.filter(c => c.connected).length;
@@ -1860,6 +1864,15 @@ export function JarvisCockpitPage() {
     await fetchTracked('/v1/plan9/registry', setPanelFetch('registry'), async (r) => {
       const d = await r.json();
       setRegistry({ total_roles: d.total_roles ?? 0, total_managers: d.total_managers ?? 0, total_workers: d.total_workers ?? 0 });
+    });
+
+    await fetchTracked('/v1/routines', setPanelFetch('routines'), async (r) => {
+      const d = await r.json();
+      setRoutinesStatus({
+        total_routines: d?.total_routines ?? d?.routines?.length ?? 0,
+        active_count: d?.active_count ?? d?.routines?.filter((x: { active?: boolean }) => x?.active)?.length ?? 0,
+        last_run: d?.last_run ?? d?.routines?.[0]?.last_run ?? undefined,
+      });
     });
 
     await fetchTracked('/v1/mac-worker/status', setPanelFetch('macWorker'), async (r) => {
@@ -2233,7 +2246,7 @@ export function JarvisCockpitPage() {
       case 'agents':
         return (
           <Overlay title="Agent Roster" icon="🤖" onClose={() => setExpandedPanel(null)}>
-            <SectionHeading>Plan 9 Manager Domains ({agents.length})</SectionHeading>
+            <SectionHeading>Jarvis Manager Domains ({agents.length})</SectionHeading>
             {agents.length === 0
               ? <BackendError endpoint="/v1/capabilities/status" target={apiTarget} httpStatus={fetchState.capabilities?.httpStatus} detail={fetchState.capabilities?.detail} lastOk={plan9LastRefresh} />
               : agents.map(a => <Row key={a.id} label={a.name} value={a.domain} status="ok" />)
@@ -2273,31 +2286,31 @@ export function JarvisCockpitPage() {
         );
       case 'plan9':
         return (
-          <Overlay title="Plan 2 — MacBook-Off Parity Readiness" icon="🚀" onClose={() => setExpandedPanel(null)}>
-            <SectionHeading>Plan 9 Foundation (Accepted)</SectionHeading>
+          <Overlay title="Apple / iOS / Cloud Readiness" icon="🚀" onClose={() => setExpandedPanel(null)}>
+            <SectionHeading>Plan 2 Runtime — ACCEPTED</SectionHeading>
             {plan9 ? (
               <>
                 <Row label="Cloud/Mobile live" value={plan9.mobile_cloud_live} status="ok" />
                 <Row label="Mac/Local live" value={plan9.mac_local_live} status="ok" />
-                <Row label="Plan 9 foundation" value="ACCEPTED" status="ok" />
+                <Row label="Plan 2 runtime" value="ACCEPTED" status="ok" />
                 <Row label="Last checked" value={plan9LastRefresh || '—'} />
               </>
             ) : <BackendError endpoint="/v1/parity/status" target={apiTarget} httpStatus={fetchState.parity?.httpStatus} detail={fetchState.parity?.detail} />}
-            <SectionHeading>Plan 2 Parity Runtime (Pending)</SectionHeading>
+            <SectionHeading>Fargate / Cloud Deployment</SectionHeading>
             {plan9 && plan9.gaps > 0 && (
               <Row label="Gaps to close" value={plan9.gaps} status="warn" />
             )}
             {plan9 && plan9.parked > 0 && (
               <Row label="Parked items" value={plan9.parked} status="warn" />
             )}
-            <Row label="Cloud-off runtime" value="PENDING PLAN 2" status="warn" />
-            <Row label="Mobile parity" value="PENDING PLAN 2" status="warn" />
+            <Row label="Fargate cloud deploy" value="PHASE_D_NOT_STARTED" status="ok" />
+            <Row label="Mobile parity" value="PLAN_2_ACCEPTED" status="ok" />
             <SectionHeading>Runtime Proof</SectionHeading>
             {runtimeProof ? (
               <>
                 <Row label="Total items" value={runtimeProof.total_items} />
-                <Row label="Verified (Plan 9)" value={runtimeProof.verified_count} status="ok" />
-                <Row label="Pending (Plan 2)" value={runtimeProof.pending_count} status={runtimeProof.pending_count > 0 ? 'warn' : 'ok'} />
+                <Row label="Verified items" value={runtimeProof.verified_count} status="ok" />
+                <Row label="Open proof items" value={runtimeProof.pending_count} status={runtimeProof.pending_count > 0 ? 'warn' : 'ok'} />
               </>
             ) : <Row label="Runtime proof" value="Loading…" />}
           </Overlay>
@@ -2318,7 +2331,7 @@ export function JarvisCockpitPage() {
         );
       case 'routing':
         return (
-          <Overlay title="Model Routing — Plan 9K" icon="🔀" onClose={() => setExpandedPanel(null)}>
+          <Overlay title="Model Routing — Jarvis Routing" icon="🔀" onClose={() => setExpandedPanel(null)}>
             <SectionHeading>Routing System Status</SectionHeading>
             {routingStatus ? (
               <>
@@ -2398,6 +2411,7 @@ export function JarvisCockpitPage() {
             macWorkerStatus={macWorkerStatus}
             connectors={connectors}
             plan9={plan9}
+            routinesStatus={routinesStatus}
           />
         );
       case 'workbench':

@@ -125,6 +125,7 @@ from openjarvis.plan9.skills_manifest import PLAN9_SKILLS_MANIFEST
 from openjarvis.plan9.commands_manifest import PLAN9_COMMANDS_MANIFEST
 from openjarvis.plan9.execution_chain import repo_root
 from openjarvis.plan9.future_inheritance import PLAN9_DEFAULT_INHERITANCE
+from openjarvis.plan9.workspace_root import workspace_allowlist_roots
 
 logger = logging.getLogger(__name__)
 

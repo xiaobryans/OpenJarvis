@@ -136,6 +136,46 @@ export function LivingOrb({ phase, voiceEnabled, size = 240 }: Props) {
           filter: 'blur(8px)',
         }}
       />
+      {/* Orbital arc — rotates continuously */}
+      <div
+        className="absolute"
+        style={{
+          width: size * 1.45,
+          height: size * 1.45,
+          borderRadius: '50%',
+          border: `1px solid ${s.ring}`,
+          borderTopColor: s.core,
+          borderRightColor: 'transparent',
+          borderBottomColor: 'transparent',
+          animation: `orb-orbital-rotate ${s.breathMs * 3}ms linear infinite`,
+          pointerEvents: 'none',
+        }}
+      />
+      {/* Scan sweep arc — counter-rotates at different speed */}
+      <div
+        className="absolute"
+        style={{
+          width: size * 1.15,
+          height: size * 1.15,
+          borderRadius: '50%',
+          border: '1px solid transparent',
+          borderTopColor: `${s.halo}`,
+          animation: `orb-orbital-rotate ${s.breathMs * 2}ms linear infinite reverse`,
+          pointerEvents: 'none',
+        }}
+      />
+      {/* Secondary pulse ring — fast independent pulse */}
+      <div
+        className="absolute rounded-full"
+        style={{
+          width: size * 0.85,
+          height: size * 0.85,
+          border: `1px solid ${s.ring}`,
+          animation: `orb-secondary-pulse ${s.breathMs * 0.4}ms ease-in-out infinite`,
+          pointerEvents: 'none',
+          opacity: 0.6,
+        }}
+      />
       {/* Core orb */}
       <div
         className="rounded-full"
