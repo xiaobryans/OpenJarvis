@@ -658,9 +658,9 @@ def test_sk_active_sprint_b7_b12(client: TestClient) -> None:
     assert response.status_code == 200
     data = response.json()
     active_sprint = data.get("active_sprint", "")
-    # Sprint advances through phases — any B7+, C, or later is valid
-    assert any(t in active_sprint for t in ("PHASE_B", "ADVANCED", "EXPANSION", "DEEP", "PHASE_C", "AUTONOMOUS")), (
-        f"active_sprint '{active_sprint}' must be a B-phase, C-phase, or expansion sprint"
+    # Sprint advances through phases — any B7+, C, Final Phase A, or later is valid
+    assert any(t in active_sprint for t in ("PHASE_B", "ADVANCED", "EXPANSION", "DEEP", "PHASE_C", "AUTONOMOUS", "FINAL_PHASE_A", "GATE_CLOSURE")), (
+        f"active_sprint '{active_sprint}' must be a B-phase, C-phase, or later sprint"
     )
 
 

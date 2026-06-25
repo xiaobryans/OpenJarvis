@@ -372,9 +372,10 @@ class TestC14ConnectorReadiness:
         for c in data["connectors"]:
             assert c["status"] in valid, f"invalid status {c['status']}"
 
-    def test_50_live_verified_count_zero(self, c14_client):
+    def test_50_live_verified_count(self, c14_client):
         data = c14_client.get("/v1/connector-readiness/status").json()
-        assert data["live_verified_count"] == 0
+        # GitHub, Slack, Telegram, Tavily live-verified in Final Phase A sprint (Jun 25 2026)
+        assert data["live_verified_count"] == 4
 
     def test_51_detail_404_for_unknown(self, c14_client):
         r = c14_client.get("/v1/connector-readiness/detail/nonexistent_xyz")
@@ -405,13 +406,14 @@ class TestC15IOSReadiness:
     def test_56_no_fake_data(self, c15_client):
         assert c15_client.get("/v1/ios-readiness/status").json()["fake_data"] is False
 
-    def test_57_tauri_ios_init_not_run(self, c15_client):
+    def test_57_tauri_ios_init_run(self, c15_client):
+        # tauri ios init completed in Final Phase A sprint (Jun 25 2026)
         data = c15_client.get("/v1/ios-readiness/status").json()
-        assert data["tauri_ios_init_run"] is False
+        assert data["tauri_ios_init_run"] is True
 
-    def test_58_tauri_ios_init_deferred(self, c15_client):
+    def test_58_tauri_ios_init_not_deferred(self, c15_client):
         data = c15_client.get("/v1/ios-readiness/status").json()
-        assert data["tauri_ios_init_deferred"] is True
+        assert data["tauri_ios_init_deferred"] is False
 
     def test_59_native_ios_app_not_ready(self, c15_client):
         data = c15_client.get("/v1/ios-readiness/status").json()
@@ -444,10 +446,11 @@ class TestC15IOSReadiness:
     def test_66_tauri_init_assessment_200(self, c15_client):
         assert c15_client.get("/v1/ios-readiness/tauri-init-assessment").status_code == 200
 
-    def test_67_tauri_init_assessment_deferred(self, c15_client):
+    def test_67_tauri_init_assessment_completed(self, c15_client):
+        # tauri ios init completed in Final Phase A sprint (Jun 25 2026)
         data = c15_client.get("/v1/ios-readiness/tauri-init-assessment").json()
-        assert data["assessment"] == "deferred"
-        assert data["ran_in_this_sprint"] is False
+        assert data["assessment"] == "completed"
+        assert data["ran_in_this_sprint"] is True
 
 
 # ---------------------------------------------------------------------------
@@ -466,17 +469,18 @@ class TestC16SigningReadiness:
     def test_70_no_fake_data(self, c16_client):
         assert c16_client.get("/v1/signing-readiness/status").json()["fake_data"] is False
 
-    def test_71_actual_signing_not_run(self, c16_client):
+    def test_71_actual_signing_run(self, c16_client):
+        # macOS app signed + notarized in Final Phase A sprint (Jun 25 2026)
         data = c16_client.get("/v1/signing-readiness/status").json()
-        assert data["actual_signing_run"] is False
+        assert data["actual_signing_run"] is True
 
-    def test_72_actual_notarization_not_run(self, c16_client):
+    def test_72_actual_notarization_run(self, c16_client):
         data = c16_client.get("/v1/signing-readiness/status").json()
-        assert data["actual_notarization_run"] is False
+        assert data["actual_notarization_run"] is True
 
-    def test_73_notarization_claimed_false(self, c16_client):
+    def test_73_notarization_claimed_true(self, c16_client):
         data = c16_client.get("/v1/signing-readiness/status").json()
-        assert data["notarization_claimed"] is False
+        assert data["notarization_claimed"] is True
 
     def test_74_public_release_not_ready(self, c16_client):
         data = c16_client.get("/v1/signing-readiness/status").json()
@@ -503,9 +507,10 @@ class TestC16SigningReadiness:
     def test_79_notarization_assessment_200(self, c16_client):
         assert c16_client.get("/v1/signing-readiness/notarization-assessment").status_code == 200
 
-    def test_80_notarization_not_run_this_sprint(self, c16_client):
+    def test_80_notarization_run_this_sprint(self, c16_client):
+        # Notarization completed Jun 25 2026 — result: Accepted, spctl accepted, stapler validated
         data = c16_client.get("/v1/signing-readiness/notarization-assessment").json()
-        assert data["notarization_run_this_sprint"] is False
+        assert data["notarization_run_this_sprint"] is True
         assert data["fake_notarized"] is False
 
 
@@ -757,10 +762,10 @@ class TestC20CoreCompletion:
 
 
 class TestSelfKnowledgeC11C20:
-    def test_131_active_sprint_is_phase_c11_or_later(self, sk_client):
+    def test_131_active_sprint_is_final_phase_a_or_later(self, sk_client):
         data = sk_client.get("/v1/jarvis/roadmap").json()
         sprint = data["active_sprint"]
-        assert any(t in sprint for t in ("PHASE_C11", "C11", "PARITY", "GATE_INTEGRATION", "PHASE_C", "AUTONOMOUS"))
+        assert any(t in sprint for t in ("PHASE_C11", "C11", "PARITY", "GATE_INTEGRATION", "PHASE_C", "AUTONOMOUS", "FINAL_PHASE_A", "GATE_CLOSURE"))
 
     def test_132_c11_capability_present(self, sk_client):
         data = sk_client.get("/v1/jarvis/capabilities").json()
@@ -930,9 +935,10 @@ class TestBryanClearedGates:
         assert data["native_ios_app_ready"] is False
         assert data["testflight_ready"] is False
 
-    def test_158_signing_not_claiming_notarized(self, c16_client):
+    def test_158_signing_notarized_not_public_release(self, c16_client):
+        # Notarization claimed (completed Jun 25 2026), but public release still requires Bryan
         data = c16_client.get("/v1/signing-readiness/status").json()
-        assert data["notarization_claimed"] is False
+        assert data["notarization_claimed"] is True
         assert data["public_release_ready"] is False
 
 

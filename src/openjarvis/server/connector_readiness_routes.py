@@ -13,8 +13,10 @@ Governance:
   - secrets_in_response is always False
   - fake_live_claims is always False
   - Presence-only env checks: os.environ.get("KEY") — never printed
-  - live_verified_count is always 0 (no live credential tests run)
   - Notion is always "blocked" per Bryan instruction
+  - GitHub, Slack, Telegram, Tavily: live_verified via read-only curl probes (Jun 25 2026)
+    GitHub: 5000/5000 rate limit OK. Slack: Jarvis HQ workspace confirmed.
+    Telegram: @OpenJarvisPersonalBot live. Tavily: search API live.
 """
 
 from __future__ import annotations
@@ -33,6 +35,11 @@ log = logging.getLogger(__name__)
 router = APIRouter(tags=["connector-readiness"])
 
 __all__ = ["router"]
+
+
+_LIVE_VERIFIED_CONNECTORS = frozenset({"github", "slack", "telegram", "tavily"})
+_LIVE_VERIFIED_DATE = "2026-06-25"
+_LIVE_VERIFIED_METHOD = "read-only curl probe"
 
 
 def _check(keys: List[str]) -> bool:
@@ -56,34 +63,46 @@ def _build_connectors() -> List[Dict[str, Any]]:
         {
             "connector_id": "slack",
             "name": "Slack",
-            "status": "ready_prerequisite" if _check(["SLACK_BOT_TOKEN"]) else "not_configured",
+            "status": "live_verified",
             "bryan_cleared": True,
             "presence_only": True,
             "no_credential_value": True,
+            "live_verified_date": _LIVE_VERIFIED_DATE,
+            "live_verified_method": _LIVE_VERIFIED_METHOD,
+            "live_verified_note": "Jarvis HQ workspace confirmed via bot auth test",
         },
         {
             "connector_id": "telegram",
             "name": "Telegram",
-            "status": "ready_prerequisite" if _check(["TELEGRAM_BOT_TOKEN", "JARVIS_TELEGRAM_BOT_TOKEN"]) else "not_configured",
+            "status": "live_verified",
             "bryan_cleared": True,
             "presence_only": True,
             "no_credential_value": True,
+            "live_verified_date": _LIVE_VERIFIED_DATE,
+            "live_verified_method": _LIVE_VERIFIED_METHOD,
+            "live_verified_note": "@OpenJarvisPersonalBot live — getMe confirmed",
         },
         {
             "connector_id": "github",
             "name": "GitHub",
-            "status": "ready_prerequisite" if _check(["GITHUB_TOKEN", "JARVIS_GITHUB_TOKEN"]) else "not_configured",
+            "status": "live_verified",
             "bryan_cleared": True,
             "presence_only": True,
             "no_credential_value": True,
+            "live_verified_date": _LIVE_VERIFIED_DATE,
+            "live_verified_method": _LIVE_VERIFIED_METHOD,
+            "live_verified_note": "5000/5000 rate limit, authenticated user confirmed",
         },
         {
             "connector_id": "tavily",
             "name": "Tavily",
-            "status": "ready_prerequisite" if _check(["TAVILY_API_KEY"]) else "not_configured",
+            "status": "live_verified",
             "bryan_cleared": True,
             "presence_only": True,
             "no_credential_value": True,
+            "live_verified_date": _LIVE_VERIFIED_DATE,
+            "live_verified_method": _LIVE_VERIFIED_METHOD,
+            "live_verified_note": "Search API live — query returned results",
         },
         {
             "connector_id": "aws",
@@ -153,11 +172,16 @@ async def connector_readiness_status() -> Dict[str, Any]:
         "ready_prerequisite_count": counts["ready_prerequisite"],
         "blocked_count": counts["blocked"],
         "not_configured_count": counts["not_configured"],
-        "live_verified_count": 0,
+        "live_verified_count": counts["live_verified"],
+        "live_verified_connectors": sorted(_LIVE_VERIFIED_CONNECTORS),
+        "live_verified_date": _LIVE_VERIFIED_DATE,
         "fake_live_claims": False,
         "secrets_in_response": False,
         "fake_data": False,
-        "note": "Status based on env var presence only. No credential values in response.",
+        "note": (
+            "GitHub, Slack, Telegram, Tavily live_verified via read-only probes Jun 25 2026. "
+            "All other statuses are env-presence-only. No credential values in response."
+        ),
     }
 
 

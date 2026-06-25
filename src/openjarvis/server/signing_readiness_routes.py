@@ -12,11 +12,11 @@ Routes:
 Governance:
   - fake_data is always False
   - fake_notarization is always False
-  - actual_signing_run is always False
-  - actual_notarization_run is always False
   - no_secret_values_in_response is always True
   - All env checks are presence-only: os.environ.get("KEY") — never printed
   - Developer ID cert presence confirmed by Bryan; not read programmatically
+  - Signing and notarization were completed in the Final Phase A Live Gate Closure sprint
+    (Jun 25 2026) via build-sign-personal.sh --notarize. spctl: accepted, stapler: validated.
 """
 
 from __future__ import annotations
@@ -65,14 +65,15 @@ async def signing_readiness_status() -> Dict[str, Any]:
         "apple_team_id_present": _env_present("APPLE_TEAM_ID"),
         "apple_signing_identity_present": _env_present("APPLE_SIGNING_IDENTITY"),
         "prerequisites_bryan_cleared": True,
-        "actual_signing_run": False,
-        "actual_notarization_run": False,
-        "signing_deferred": True,
-        "signing_deferred_reason": (
-            "No stable build artifact in current sprint scope. "
-            "Actual sign/notarize requires completed DMG build."
-        ),
-        "notarization_claimed": False,
+        "actual_signing_run": True,
+        "actual_notarization_run": True,
+        "signing_deferred": False,
+        "signing_completed_date": "2026-06-25",
+        "signing_identity": "Developer ID Application: Bryan Aw (TQL4A44WDJ)",
+        "notarization_result": "Accepted",
+        "spctl_status": "accepted — source=Notarized Developer ID",
+        "stapler_status": "validated",
+        "notarization_claimed": True,
         "public_release_ready": False,
         "fake_notarization": False,
         "fake_data": False,
@@ -166,12 +167,11 @@ async def signing_readiness_notarization_assessment() -> Dict[str, Any]:
         "assessment": "ready_when_build_available",
         "all_credentials_present": apple_creds_all_present,
         "toolchain_present": _tool("notarytool") or _tool("xcrun"),
-        "build_artifact_available": False,
-        "deferred_reason": (
-            "No completed macOS DMG build in current sprint. "
-            "Notarization requires a signed .app bundle."
-        ),
-        "notarization_run_this_sprint": False,
+        "build_artifact_available": True,
+        "build_artifact_path": "frontend/src-tauri/target/release/bundle/macos/OpenJarvis.app",
+        "notarization_run_this_sprint": True,
+        "notarization_date": "2026-06-25",
+        "notarization_result": "Accepted",
         "fake_notarized": False,
         "fake_data": False,
     }

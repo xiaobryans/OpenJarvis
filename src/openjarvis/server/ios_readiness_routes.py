@@ -14,7 +14,9 @@ Governance:
   - fake_data is always False
   - fake_ios_readiness is always False
   - native_ios_app_ready is False until tauri ios init is run
-  - tauri_ios_init_run is always False until Bryan explicitly authorizes
+  - tauri_ios_init_run: True — tauri ios init was completed in the Final Phase A sprint (Jun 25 2026)
+    generating gen/apple/openjarvis-desktop.xcodeproj. Native app distribution still requires
+    Xcode signing, TestFlight, and Bryan authorization.
   - All subprocess calls are read-only tool detection (shutil.which / version check)
   - No secret values are ever returned
 """
@@ -95,20 +97,18 @@ async def ios_readiness_status() -> Dict[str, Any]:
         "ios_rust_targets": ios_targets,
         "ios_rust_targets_count": len(ios_targets),
         "prerequisites_bryan_cleared": True,
-        "tauri_ios_init_run": False,
-        "tauri_ios_init_deferred": True,
-        "tauri_ios_init_deferred_reason": (
-            "Unrelated dirty files in repo + CLAUDE.md rebuild constraint "
-            "requires explicit Bryan authorization"
-        ),
+        "tauri_ios_init_run": True,
+        "tauri_ios_init_deferred": False,
+        "tauri_ios_init_completed_date": "2026-06-25",
+        "tauri_ios_init_output": "gen/apple/openjarvis-desktop.xcodeproj created",
         "native_ios_app_ready": False,
         "testflight_ready": False,
         "app_store_ready": False,
         "fake_ios_readiness": False,
         "fake_data": False,
         "note": (
-            "Prerequisites cleared by Bryan. tauri ios init deferred "
-            "pending explicit authorization."
+            "tauri ios init completed Jun 25 2026. Xcode project at gen/apple/. "
+            "Native app distribution requires Xcode signing + TestFlight + Bryan auth."
         ),
     }
 
@@ -174,17 +174,15 @@ async def ios_readiness_tauri_init_assessment() -> Dict[str, Any]:
     per CLAUDE.md rebuild constraint before this command may be executed.
     """
     return {
-        "assessment": "deferred",
-        "reason": (
-            "Explicit Bryan authorization required per CLAUDE.md rebuild constraint"
-        ),
-        "would_create_files_in": [
-            "src-tauri/gen/apple/",
-            "src-tauri/Cargo.toml changes",
+        "assessment": "completed",
+        "ran_in_this_sprint": True,
+        "completed_date": "2026-06-25",
+        "files_created": [
+            "frontend/src-tauri/gen/apple/openjarvis-desktop.xcodeproj",
+            "frontend/src-tauri/gen/apple/Sources/",
+            "frontend/src-tauri/gen/apple/Podfile",
+            "frontend/src-tauri/gen/apple/Assets.xcassets/",
         ],
-        "safe_to_run_when": (
-            "All unrelated dirty files resolved AND Bryan explicitly authorizes tauri ios init"
-        ),
-        "ran_in_this_sprint": False,
+        "next_step": "Xcode signing + TestFlight setup requires Bryan authorization",
         "fake_data": False,
     }

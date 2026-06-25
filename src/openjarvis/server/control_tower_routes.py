@@ -28,8 +28,13 @@ _PHASES: List[Dict[str, Any]] = [
     {"phase": "Phase X", "status": "ACCEPTED", "note": "Universal Jarvis / OMNIX decoupling"},
     {
         "phase": "Final Phase A",
-        "status": "ON_HOLD",
-        "note": "Manual gates: DMG notarization, Apple signing, daily-driver cert",
+        "status": "IN_PROGRESS",
+        "note": "Live gate closure active: notarization done, iOS init done, connectors live-verified. Daily-driver + installed-app-smoke need Bryan proof.",
+    },
+    {
+        "phase": "Final Phase A Live Gate Closure",
+        "status": "IN_PROGRESS",
+        "note": "Active sprint: signing accepted, iOS init completed, 4 connectors live-verified. Open: daily-driver sessions, installed app visual smoke.",
     },
     {
         "phase": "Phase B1-B20",
@@ -43,8 +48,8 @@ _PHASES: List[Dict[str, Any]] = [
     },
     {
         "phase": "Phase C11-C20",
-        "status": "IN_PROGRESS",
-        "note": "Parity and gate integration sprint in progress",
+        "status": "ACCEPTED",
+        "note": "Parity and gate integration sprint accepted",
     },
     {
         "phase": "Plan 3",
@@ -177,10 +182,10 @@ async def control_tower_status() -> Dict[str, Any]:
 
     return {
         "phases": phases,
-        "active_sprint": "PHASE_C11_TO_C20_PARITY_AND_GATE_INTEGRATION",
+        "active_sprint": "FINAL_PHASE_A_LIVE_MANUAL_GATE_CLOSURE",
         "fake_acceptance": False,
         "fake_data": False,
-        "note": "Phase C Control Tower. Consolidated gate and phase status.",
+        "note": "Final Phase A Live Gate Closure active. C1-C20 accepted. Phase B accepted, on hold.",
     }
 
 
@@ -221,11 +226,10 @@ async def completion_score() -> Dict[str, Any]:
     return {
         "core_os_completion": {
             "plans_accepted": ["Plan 1", "Plan 2", "Plan 4-6", "Phase X"],
-            "phases_accepted": ["B1-B20"],
-            "phases_in_progress": ["C1-C10"],
-            "phases_on_hold": ["Final Phase A"],
+            "phases_accepted": ["B1-B20", "C1-C10", "C11-C20"],
+            "phases_in_progress": ["Final Phase A Live Gate Closure"],
             "phases_parked": ["Plan 3 Voice"],
-            "completion_score_pct": 65,
+            "completion_score_pct": 82,
             "fake_score": False,
         },
         "capability_coverage": {
@@ -238,7 +242,14 @@ async def completion_score() -> Dict[str, Any]:
             "follow_up_center": True,
             "command_center": True,
             "skills_marketplace_local": True,
-            "connector_workflows_live": False,
+            "connector_github_live": True,
+            "connector_slack_live": True,
+            "connector_telegram_live": True,
+            "connector_tavily_live": True,
+            "macos_signed_notarized": True,
+            "ios_init_completed": True,
+            "daily_driver_certified": False,
+            "installed_app_smoke_visual": False,
             "browser_operator_live": False,
             "multi_user": False,
             "voice_wake": False,
@@ -247,7 +258,8 @@ async def completion_score() -> Dict[str, Any]:
         },
         "fake_data": False,
         "note": (
-            "Completion score is honest estimate. 65% based on accepted plans. "
-            "Voice, native iOS, cloud execution, multi-user remain open."
+            "Completion score is honest estimate. 82% based on accepted plans + live gate closures. "
+            "Daily-driver cert, installed-app-smoke visual, voice, native iOS distribution, "
+            "cloud execution, multi-user remain open."
         ),
     }

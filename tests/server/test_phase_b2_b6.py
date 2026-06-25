@@ -366,8 +366,8 @@ def test_self_knowledge_active_sprint_b2_b6(client: TestClient) -> None:
     assert response.status_code == 200
     data = response.json()
     active = data.get("active_sprint", "")
-    # Sprint advances — any B or C phase or later expansion is valid
-    assert any(token in active for token in ("B2", "B6", "EXPANSION", "PHASE_B", "PHASE_C", "AUTONOMOUS")), (
+    # Sprint advances — any B, C, or later phase (including Final Phase A) is valid
+    assert any(token in active for token in ("B2", "B6", "EXPANSION", "PHASE_B", "PHASE_C", "AUTONOMOUS", "FINAL_PHASE_A", "GATE_CLOSURE")), (
         f"active_sprint does not reference B2/B6+ or C-phase: {active!r}"
     )
 

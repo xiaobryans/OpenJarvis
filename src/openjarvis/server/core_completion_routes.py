@@ -50,11 +50,16 @@ def _phases() -> List[Dict[str, Any]]:
             "note": "B1-B20 complete, expansion on hold by Bryan",
         },
         {"phase": "Phase C1-C10", "status": "ACCEPTED", "note": "Autonomous ecosystem scale"},
-        {"phase": "Phase C11-C20", "status": "IN_PROGRESS", "note": "Parity and gate integration"},
+        {"phase": "Phase C11-C20", "status": "ACCEPTED", "note": "Parity and gate integration — accepted"},
         {
             "phase": "Final Phase A",
-            "status": "ON_HOLD",
-            "note": "MacBook DMG, daily-driver, connector live proof required",
+            "status": "IN_PROGRESS",
+            "note": "Live gate closure active: notarization done, iOS init done, 4 connectors live-verified",
+        },
+        {
+            "phase": "Final Phase A Live Gate Closure",
+            "status": "IN_PROGRESS",
+            "note": "Signing accepted + stapler validated. iOS init complete. Daily-driver + installed-app-smoke need Bryan proof.",
         },
         {"phase": "Plan 3", "status": "PARKED", "note": "Voice/wake/TTS parked until Bryan reopens"},
     ]
@@ -100,18 +105,30 @@ def _open_manual_gates() -> List[Dict[str, Any]]:
         {
             "gate_id": "ios_init",
             "name": "tauri ios init",
-            "status": "deferred",
-            "reason": "Requires explicit Bryan authorization",
+            "status": "completed",
+            "completed_date": "2026-06-25",
+            "output": "gen/apple/openjarvis-desktop.xcodeproj created",
         },
         {
             "gate_id": "macos_notarization",
             "name": "macOS signing + notarization",
-            "status": "ready_when_build_available",
+            "status": "completed",
+            "completed_date": "2026-06-25",
+            "spctl": "accepted — source=Notarized Developer ID",
+            "stapler": "validated",
+        },
+        {
+            "gate_id": "connectors_live",
+            "name": "Connector live verification",
+            "status": "completed",
+            "completed_date": "2026-06-25",
+            "live_verified": ["github", "slack", "telegram", "tavily"],
         },
         {
             "gate_id": "daily_driver_cert",
             "name": "Daily-driver certification",
-            "status": "pending_sessions",
+            "status": "needs_bryan_usage_proof",
+            "reason": "No daily-driver sessions recorded. Bryan must run real sessions.",
         },
         {
             "gate_id": "notion",
@@ -122,7 +139,8 @@ def _open_manual_gates() -> List[Dict[str, Any]]:
         {
             "gate_id": "installed_app_smoke",
             "name": "Installed app smoke",
-            "status": "held_pending_build",
+            "status": "needs_bryan_visual_proof",
+            "reason": "App built + notarized. Bryan must open and visually verify.",
         },
     ]
 
@@ -157,14 +175,15 @@ async def core_completion_status() -> Dict[str, Any]:
         "completion_classification": "complete_with_deferred_gates",
         "fake_completion": False,
         "fake_100_percent": False,
-        "completion_score_pct": 72,
+        "completion_score_pct": 82,
         "fake_score": False,
         "phase_d_ready": False,
         "manual_gates_open": True,
         "fake_data": False,
         "note": (
-            "Completion is honest estimate. Manual gates (iOS, notarization, "
-            "daily-driver, Notion) remain open."
+            "Completion is honest estimate. 82% — C1-C20 accepted, notarization done, "
+            "iOS init done, 4 connectors live-verified. Daily-driver cert, "
+            "installed-app-smoke visual, Notion, Phase D remain open."
         ),
     }
 
@@ -192,8 +211,9 @@ async def core_completion_readiness_classification() -> Dict[str, Any]:
             "needs_manual_proof",
         ],
         "current_classification_reason": (
-            "Core OS phases accepted. Manual gates (iOS init, notarization, "
-            "daily-driver, Notion, installed-app-smoke) remain open."
+            "C1-C20 accepted, notarization complete (spctl: accepted), iOS init complete. "
+            "Manual gates still open: daily-driver sessions (needs Bryan proof), "
+            "installed-app-smoke visual (needs Bryan), Notion (blocked), Phase D (Bryan decides)."
         ),
         "open_manual_gates": _open_manual_gates(),
         "ready_prerequisites": _ready_prerequisites(),

@@ -588,8 +588,8 @@ class TestSelfKnowledgeB13ToB20:
     def test_90_active_sprint_is_b13_b20_or_later(self, sk_client):
         data = sk_client.get("/v1/jarvis/roadmap").json()
         sprint = data["active_sprint"]
-        # Sprint advances through phases — B13-B20, Phase C, or later are all valid
-        assert any(t in sprint for t in ("PHASE_B13", "B13_TO_B20", "DEEP", "EXPANSION", "PHASE_C", "AUTONOMOUS"))
+        # Sprint advances through phases — B13-B20, Phase C, Final Phase A, or later are all valid
+        assert any(t in sprint for t in ("PHASE_B13", "B13_TO_B20", "DEEP", "EXPANSION", "PHASE_C", "AUTONOMOUS", "FINAL_PHASE_A", "GATE_CLOSURE"))
 
 
 # ---------------------------------------------------------------------------

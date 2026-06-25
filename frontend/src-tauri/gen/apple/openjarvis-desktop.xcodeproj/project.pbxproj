@@ -1,0 +1,464 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		05E76726E3F5BBB69053FFEE /* Security.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8C2E89E2758130B10A4F9B2E /* Security.framework */; };
+		0BB2473CDCAB87B941BEA3EB /* MetalKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2F06DA13CE75AF6C6E8F3FCC /* MetalKit.framework */; };
+		106922B65E505C2CA0E2610D /* main.mm in Sources */ = {isa = PBXBuildFile; fileRef = 4B1048158552617F90502243 /* main.mm */; };
+		127B904C066ED61AC2C6FA95 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = EAA0368E31B04D6AE58F055A /* LaunchScreen.storyboard */; };
+		4C42B12484C46496B591E6A2 /* assets in Resources */ = {isa = PBXBuildFile; fileRef = A4EC66CA0F954072F03B8B05 /* assets */; };
+		510C1C1C751C6B767EEFD71B /* WebKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 6C144A9D25B52F247DE18DBE /* WebKit.framework */; };
+		742E5003C8D64DFC3FBFC983 /* QuartzCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 163659E637B10B5123EE6B39 /* QuartzCore.framework */; };
+		8D2925AC6A6D5E85CCDBF371 /* UIKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E5C2CDD81759E3D4D70B3404 /* UIKit.framework */; };
+		A5C3295B6F339865C92A7AFA /* libapp.a in Frameworks */ = {isa = PBXBuildFile; fileRef = CFD788E4693FAA547FAB3533 /* libapp.a */; };
+		B00B6D210F6B5531F9ABF2AD /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D16765B12884FA8C4EBA5FD2 /* Assets.xcassets */; };
+		B7ABEC298BA32A00AD34B776 /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 5CA5D43B1D7303A3EAB6A3DC /* Metal.framework */; };
+		C546F0E3E52ED1FC97670EB1 /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4CAAAB3EF0B1F22C8D28032F /* CoreGraphics.framework */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		163659E637B10B5123EE6B39 /* QuartzCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = QuartzCore.framework; path = System/Library/Frameworks/QuartzCore.framework; sourceTree = SDKROOT; };
+		19A57612CABC9B9129A74444 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		1B2A1C7C01B71D3ED89E6920 /* lib.rs */ = {isa = PBXFileReference; path = lib.rs; sourceTree = "<group>"; };
+		2F06DA13CE75AF6C6E8F3FCC /* MetalKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MetalKit.framework; path = System/Library/Frameworks/MetalKit.framework; sourceTree = SDKROOT; };
+		39F83DA2DB1FD32FD91AA682 /* bindings.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = bindings.h; sourceTree = "<group>"; };
+		4B1048158552617F90502243 /* main.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = main.mm; sourceTree = "<group>"; };
+		4CAAAB3EF0B1F22C8D28032F /* CoreGraphics.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreGraphics.framework; path = System/Library/Frameworks/CoreGraphics.framework; sourceTree = SDKROOT; };
+		5CA5D43B1D7303A3EAB6A3DC /* Metal.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Metal.framework; path = System/Library/Frameworks/Metal.framework; sourceTree = SDKROOT; };
+		6C144A9D25B52F247DE18DBE /* WebKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WebKit.framework; path = System/Library/Frameworks/WebKit.framework; sourceTree = SDKROOT; };
+		782792810704F49EE9610C26 /* openjarvis-desktop_iOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = "openjarvis-desktop_iOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		8C2E89E2758130B10A4F9B2E /* Security.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Security.framework; path = System/Library/Frameworks/Security.framework; sourceTree = SDKROOT; };
+		A4EC66CA0F954072F03B8B05 /* assets */ = {isa = PBXFileReference; lastKnownFileType = folder; path = assets; sourceTree = SOURCE_ROOT; };
+		BDBFDB7F8DEF05038833E05E /* openjarvis-desktop_iOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "openjarvis-desktop_iOS.entitlements"; sourceTree = "<group>"; };
+		CFD788E4693FAA547FAB3533 /* libapp.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = libapp.a; sourceTree = "<group>"; };
+		D16765B12884FA8C4EBA5FD2 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		E20F7129335C9D7477C8780B /* main.rs */ = {isa = PBXFileReference; path = main.rs; sourceTree = "<group>"; };
+		E5C2CDD81759E3D4D70B3404 /* UIKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UIKit.framework; path = System/Library/Frameworks/UIKit.framework; sourceTree = SDKROOT; };
+		EAA0368E31B04D6AE58F055A /* LaunchScreen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = LaunchScreen.storyboard; sourceTree = "<group>"; };
+		EE93ACAE33C0C09651E63E9B /* overlay.html */ = {isa = PBXFileReference; lastKnownFileType = text.html; path = overlay.html; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		F37ADEB30DC2B16C289882DB /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A5C3295B6F339865C92A7AFA /* libapp.a in Frameworks */,
+				C546F0E3E52ED1FC97670EB1 /* CoreGraphics.framework in Frameworks */,
+				B7ABEC298BA32A00AD34B776 /* Metal.framework in Frameworks */,
+				0BB2473CDCAB87B941BEA3EB /* MetalKit.framework in Frameworks */,
+				742E5003C8D64DFC3FBFC983 /* QuartzCore.framework in Frameworks */,
+				05E76726E3F5BBB69053FFEE /* Security.framework in Frameworks */,
+				8D2925AC6A6D5E85CCDBF371 /* UIKit.framework in Frameworks */,
+				510C1C1C751C6B767EEFD71B /* WebKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		0C4F92706E0B03063741DC26 = {
+			isa = PBXGroup;
+			children = (
+				A4EC66CA0F954072F03B8B05 /* assets */,
+				D16765B12884FA8C4EBA5FD2 /* Assets.xcassets */,
+				EAA0368E31B04D6AE58F055A /* LaunchScreen.storyboard */,
+				6B80C404BB360847D6382CF6 /* Externals */,
+				91DB182B3167B2C35C3523D5 /* openjarvis-desktop_iOS */,
+				DD6302566540966E2B941037 /* Sources */,
+				85EF2D03BEC8D1B35EEDC699 /* src */,
+				B16935A67DA59E4FF18A9EF1 /* Frameworks */,
+				389A355C1D9A25A94AD78C96 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		1E067E199F81A9E932110EFD /* openjarvis-desktop */ = {
+			isa = PBXGroup;
+			children = (
+				4B1048158552617F90502243 /* main.mm */,
+				C784DDB7C56D081AC02E4979 /* bindings */,
+			);
+			path = "openjarvis-desktop";
+			sourceTree = "<group>";
+		};
+		389A355C1D9A25A94AD78C96 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				782792810704F49EE9610C26 /* openjarvis-desktop_iOS.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		6B80C404BB360847D6382CF6 /* Externals */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			path = Externals;
+			sourceTree = "<group>";
+		};
+		85EF2D03BEC8D1B35EEDC699 /* src */ = {
+			isa = PBXGroup;
+			children = (
+				1B2A1C7C01B71D3ED89E6920 /* lib.rs */,
+				E20F7129335C9D7477C8780B /* main.rs */,
+				EE93ACAE33C0C09651E63E9B /* overlay.html */,
+			);
+			name = src;
+			path = ../../src;
+			sourceTree = "<group>";
+		};
+		91DB182B3167B2C35C3523D5 /* openjarvis-desktop_iOS */ = {
+			isa = PBXGroup;
+			children = (
+				19A57612CABC9B9129A74444 /* Info.plist */,
+				BDBFDB7F8DEF05038833E05E /* openjarvis-desktop_iOS.entitlements */,
+			);
+			path = "openjarvis-desktop_iOS";
+			sourceTree = "<group>";
+		};
+		B16935A67DA59E4FF18A9EF1 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				4CAAAB3EF0B1F22C8D28032F /* CoreGraphics.framework */,
+				CFD788E4693FAA547FAB3533 /* libapp.a */,
+				5CA5D43B1D7303A3EAB6A3DC /* Metal.framework */,
+				2F06DA13CE75AF6C6E8F3FCC /* MetalKit.framework */,
+				163659E637B10B5123EE6B39 /* QuartzCore.framework */,
+				8C2E89E2758130B10A4F9B2E /* Security.framework */,
+				E5C2CDD81759E3D4D70B3404 /* UIKit.framework */,
+				6C144A9D25B52F247DE18DBE /* WebKit.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		C784DDB7C56D081AC02E4979 /* bindings */ = {
+			isa = PBXGroup;
+			children = (
+				39F83DA2DB1FD32FD91AA682 /* bindings.h */,
+			);
+			path = bindings;
+			sourceTree = "<group>";
+		};
+		DD6302566540966E2B941037 /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				1E067E199F81A9E932110EFD /* openjarvis-desktop */,
+			);
+			path = Sources;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		26E8A88EED22B9624182DB38 /* openjarvis-desktop_iOS */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 32F9A0F26A863ECD49CF4DD9 /* Build configuration list for PBXNativeTarget "openjarvis-desktop_iOS" */;
+			buildPhases = (
+				A3B50DF3E60B4444F910D668 /* Build Rust Code */,
+				6191E7AF0538D3B12E7D9762 /* Sources */,
+				065533FC3AE168C76D9AB5BA /* Resources */,
+				F37ADEB30DC2B16C289882DB /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = "openjarvis-desktop_iOS";
+			packageProductDependencies = (
+			);
+			productName = "openjarvis-desktop_iOS";
+			productReference = 782792810704F49EE9610C26 /* openjarvis-desktop_iOS.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		3099DF04FC3A77AAF029AEB9 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+				};
+			};
+			buildConfigurationList = 80DE4066DDA383B4C64DB64B /* Build configuration list for PBXProject "openjarvis-desktop" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 0C4F92706E0B03063741DC26;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 389A355C1D9A25A94AD78C96 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				26E8A88EED22B9624182DB38 /* openjarvis-desktop_iOS */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		065533FC3AE168C76D9AB5BA /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B00B6D210F6B5531F9ABF2AD /* Assets.xcassets in Resources */,
+				127B904C066ED61AC2C6FA95 /* LaunchScreen.storyboard in Resources */,
+				4C42B12484C46496B591E6A2 /* assets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		A3B50DF3E60B4444F910D668 /* Build Rust Code */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Build Rust Code";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(SRCROOT)/Externals/x86_64/${CONFIGURATION}/libapp.a",
+				"$(SRCROOT)/Externals/arm64/${CONFIGURATION}/libapp.a",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "npm run -- tauri ios xcode-script -v --platform ${PLATFORM_DISPLAY_NAME:?} --sdk-root ${SDKROOT:?} --framework-search-paths \"${FRAMEWORK_SEARCH_PATHS:?}\" --header-search-paths \"${HEADER_SEARCH_PATHS:?}\" --gcc-preprocessor-definitions \"${GCC_PREPROCESSOR_DEFINITIONS:-}\" --configuration ${CONFIGURATION:?} ${FORCE_COLOR} ${ARCHS:?}";
+		};
+/* End PBXShellScriptBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		6191E7AF0538D3B12E7D9762 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				106922B65E505C2CA0E2610D /* main.mm in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		503A9B1C1F7771EF5005CA0E /* debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = debug;
+		};
+		9C7BAF4E86262A73118DFEEF /* release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
+				ARCHS = (
+					arm64,
+					x86_64,
+				);
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = "openjarvis-desktop_iOS/openjarvis-desktop_iOS.entitlements";
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				ENABLE_BITCODE = NO;
+				"EXCLUDED_ARCHS[sdk=iphoneos*]" = x86_64;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"\".\"",
+				);
+				INFOPLIST_FILE = "openjarvis-desktop_iOS/Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				"LIBRARY_SEARCH_PATHS[arch=arm64]" = "$(inherited) $(PROJECT_DIR)/Externals/arm64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME) $(TOOLCHAIN_DIR)/usr/lib/swift-5.0/$(PLATFORM_NAME)";
+				"LIBRARY_SEARCH_PATHS[arch=x86_64]" = "$(inherited) $(PROJECT_DIR)/Externals/x86_64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME) $(TOOLCHAIN_DIR)/usr/lib/swift-5.0/$(PLATFORM_NAME)";
+				PRODUCT_BUNDLE_IDENTIFIER = com.openjarvis.desktop;
+				PRODUCT_NAME = OpenJarvis;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALID_ARCHS = "arm64  x86_64";
+			};
+			name = release;
+		};
+		AC47655F4E3210BC98E0D8E1 /* release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = release;
+		};
+		DB00DD1A183E1DD14E7DD1CE /* debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
+				ARCHS = (
+					arm64,
+					x86_64,
+				);
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = "openjarvis-desktop_iOS/openjarvis-desktop_iOS.entitlements";
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				ENABLE_BITCODE = NO;
+				"EXCLUDED_ARCHS[sdk=iphoneos*]" = x86_64;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"\".\"",
+				);
+				INFOPLIST_FILE = "openjarvis-desktop_iOS/Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				"LIBRARY_SEARCH_PATHS[arch=arm64]" = "$(inherited) $(PROJECT_DIR)/Externals/arm64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME) $(TOOLCHAIN_DIR)/usr/lib/swift-5.0/$(PLATFORM_NAME)";
+				"LIBRARY_SEARCH_PATHS[arch=x86_64]" = "$(inherited) $(PROJECT_DIR)/Externals/x86_64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME) $(TOOLCHAIN_DIR)/usr/lib/swift-5.0/$(PLATFORM_NAME)";
+				PRODUCT_BUNDLE_IDENTIFIER = com.openjarvis.desktop;
+				PRODUCT_NAME = OpenJarvis;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALID_ARCHS = "arm64  x86_64";
+			};
+			name = debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		32F9A0F26A863ECD49CF4DD9 /* Build configuration list for PBXNativeTarget "openjarvis-desktop_iOS" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				DB00DD1A183E1DD14E7DD1CE /* debug */,
+				9C7BAF4E86262A73118DFEEF /* release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = debug;
+		};
+		80DE4066DDA383B4C64DB64B /* Build configuration list for PBXProject "openjarvis-desktop" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				503A9B1C1F7771EF5005CA0E /* debug */,
+				AC47655F4E3210BC98E0D8E1 /* release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 3099DF04FC3A77AAF029AEB9 /* Project object */;
+}
