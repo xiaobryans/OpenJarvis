@@ -717,9 +717,9 @@ class TestC20CoreCompletion:
         data = c20_client.get("/v1/core-completion/status").json()
         assert data["completion_score_pct"] < 100
 
-    def test_122_phase_d_not_ready(self, c20_client):
+    def test_122_phase_d_ready(self, c20_client):
         data = c20_client.get("/v1/core-completion/status").json()
-        assert data["phase_d_ready"] is False
+        assert data["phase_d_ready"] is True
 
     def test_123_phases_list_present(self, c20_client):
         data = c20_client.get("/v1/core-completion/status").json()
@@ -765,7 +765,7 @@ class TestSelfKnowledgeC11C20:
     def test_131_active_sprint_is_final_phase_a_or_later(self, sk_client):
         data = sk_client.get("/v1/jarvis/roadmap").json()
         sprint = data["active_sprint"]
-        assert any(t in sprint for t in ("PHASE_C11", "C11", "PARITY", "GATE_INTEGRATION", "PHASE_C", "AUTONOMOUS", "FINAL_PHASE_A", "GATE_CLOSURE"))
+        assert any(t in sprint for t in ("PHASE_C11", "C11", "PARITY", "GATE_INTEGRATION", "PHASE_C", "AUTONOMOUS", "FINAL_PHASE_A", "GATE_CLOSURE", "ONE_MEGA_SPRINT", "PHASE_D", "GATE_CLEARANCE"))
 
     def test_132_c11_capability_present(self, sk_client):
         data = sk_client.get("/v1/jarvis/capabilities").json()

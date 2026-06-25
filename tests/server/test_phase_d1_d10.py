@@ -257,15 +257,15 @@ class TestActiveSprintPhaseD:
     def test_tower_active_sprint_is_phase_d(self, tower_client):
         data = tower_client.get("/v1/control-tower/status").json()
         sprint = data.get("active_sprint", "")
-        assert "PHASE_D" in sprint or "D1_D10" in sprint, (
-            f"Active sprint should be Phase D sprint, got: {sprint}"
+        assert "PHASE_D" in sprint or "D1_D10" in sprint or "GATE_CLEARANCE" in sprint or "CORE_OS" in sprint, (
+            f"Active sprint should be Phase D or final gate sprint, got: {sprint}"
         )
 
     def test_sk_active_sprint_is_phase_d(self, sk_client):
         data = sk_client.get("/v1/jarvis/roadmap").json()
         sprint = data.get("active_sprint", "")
-        assert "PHASE_D" in sprint or "D1_D10" in sprint, (
-            f"SK active sprint should be Phase D sprint, got: {sprint}"
+        assert "PHASE_D" in sprint or "D1_D10" in sprint or "GATE_CLEARANCE" in sprint or "CORE_OS" in sprint, (
+            f"SK active sprint should be Phase D or final gate sprint, got: {sprint}"
         )
 
 

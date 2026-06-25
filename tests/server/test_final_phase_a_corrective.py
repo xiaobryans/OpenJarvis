@@ -49,7 +49,8 @@ class TestBackendTaxonomy:
         assert (
             "CORRECTIVE" in sprint or "TAXONOMY_ROUTINES" in sprint
             or "PHASE_D" in sprint or "ONE_MEGA_SPRINT" in sprint
-        ), f"Expected Final Phase A or Phase D sprint name, got: {sprint!r}"
+            or "GATE_CLEARANCE" in sprint or "CORE_OS" in sprint
+        ), f"Expected Final Phase A, Phase D, or final gate sprint name, got: {sprint!r}"
 
     def test_plan2_accepted_in_phases(self, tower_client):
         """GET /v1/control-tower/status phases must have an entry where plan/phase is 'Plan 2' and status is 'ACCEPTED'."""

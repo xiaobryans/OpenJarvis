@@ -184,10 +184,10 @@ async def control_tower_status() -> Dict[str, Any]:
 
     return {
         "phases": phases,
-        "active_sprint": "ONE_MEGA_SPRINT_PHASE_D1_D10_AND_FINAL_RELEASE_CUTOVER",
+        "active_sprint": "FINAL_GATE_CLEARANCE_AND_CORE_OS_DECISION_SPRINT",
         "fake_acceptance": False,
         "fake_data": False,
-        "note": "ONE_MEGA_SPRINT: Phase D1-D10 classified, mobile access path documented, security decisions made, daily-driver cert pending Bryan usage sessions.",
+        "note": "Final gate clearance: v1.0.3 signed+notarized+installed, mobile LAN URLs live (192.168.1.16:5173, 100.103.51.30:5173), Phase D gates closed, all mechanical gates complete. Daily-driver cert and Core OS decision pending Bryan usage session.",
     }
 
 
