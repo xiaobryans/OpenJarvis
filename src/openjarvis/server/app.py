@@ -83,6 +83,7 @@ from openjarvis.server.cloud_readiness_routes import router as cloud_readiness_r
 from openjarvis.server.final_smoke_routes import router as final_smoke_router
 from openjarvis.server.daily_driver_routes import router as daily_driver_router
 from openjarvis.server.core_completion_routes import router as core_completion_router
+from openjarvis.server.phase_d_routes import router as phase_d_router
 
 logger = logging.getLogger(__name__)
 
@@ -414,6 +415,7 @@ def create_app(
     app.include_router(final_smoke_router)
     app.include_router(daily_driver_router)
     app.include_router(core_completion_router)
+    app.include_router(phase_d_router)
     include_all_routes(app)
 
     # Restore SendBlue channel bindings from database on startup

@@ -60,15 +60,15 @@ class TestActiveSprintUIUnification:
     def test_sk_roadmap_active_sprint_is_ui_unification(self, sk_client):
         data = sk_client.get("/v1/jarvis/roadmap").json()
         sprint = data["active_sprint"]
-        assert "UI_UNIFICATION" in sprint or "FINAL_PHASE_A" in sprint, (
-            f"Expected UI unification or Final Phase A sprint, got: {sprint}"
+        assert "UI_UNIFICATION" in sprint or "FINAL_PHASE_A" in sprint or "PHASE_D" in sprint or "ONE_MEGA_SPRINT" in sprint, (
+            f"Expected UI unification, Final Phase A, or Phase D sprint, got: {sprint}"
         )
 
     def test_tower_active_sprint_is_ui_unification(self, tower_client):
         data = tower_client.get("/v1/control-tower/status").json()
         sprint = data["active_sprint"]
-        assert "UI_UNIFICATION" in sprint or "CORRECTIVE" in sprint or "FINAL_PHASE_A" in sprint, (
-            f"Expected UI unification sprint in control tower, got: {sprint}"
+        assert "UI_UNIFICATION" in sprint or "CORRECTIVE" in sprint or "FINAL_PHASE_A" in sprint or "PHASE_D" in sprint or "ONE_MEGA_SPRINT" in sprint, (
+            f"Expected UI unification, corrective, Final Phase A, or Phase D sprint in control tower, got: {sprint}"
         )
 
     def test_sk_roadmap_note_mentions_ui_or_rebuild(self, sk_client):
@@ -151,8 +151,8 @@ class TestNeuralCommandCenterSprint:
     def test_active_sprint_is_neural_command_center(self, sk_client):
         data = sk_client.get("/v1/jarvis/roadmap").json()
         sprint = data["active_sprint"]
-        assert "NEURAL" in sprint or "UI_UNIFICATION" in sprint or "FINAL_PHASE_A" in sprint, (
-            f"Expected neural command center sprint, got: {sprint}"
+        assert "NEURAL" in sprint or "UI_UNIFICATION" in sprint or "FINAL_PHASE_A" in sprint or "PHASE_D" in sprint or "ONE_MEGA_SPRINT" in sprint, (
+            f"Expected neural command center, UI unification, Final Phase A, or Phase D sprint, got: {sprint}"
         )
 
     def test_installed_visual_smoke_still_needs_proof(self, smoke_client):

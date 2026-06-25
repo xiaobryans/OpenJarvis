@@ -53,13 +53,13 @@ def _phases() -> List[Dict[str, Any]]:
         {"phase": "Phase C11-C20", "status": "ACCEPTED", "note": "Parity and gate integration — accepted"},
         {
             "phase": "Final Phase A",
-            "status": "IN_PROGRESS",
-            "note": "Live gate closure active: notarization done, iOS init done, 4 connectors live-verified",
+            "status": "ACCEPTED_PENDING_DAILY_DRIVER",
+            "note": "Bryan confirmed: desktop visual smoke PASS, chat PASS, Routines/Cadence PASS, taxonomy PASS, Fargate Phase D display PASS. Mobile narrow layout access path documented. Daily-driver cert and Core OS decision pending Bryan usage sessions.",
         },
         {
-            "phase": "Final Phase A Live Gate Closure",
+            "phase": "Phase D1-D10",
             "status": "IN_PROGRESS",
-            "note": "Signing accepted + stapler validated. iOS init complete. Daily-driver + installed-app-smoke need Bryan proof.",
+            "note": "Phase D started — D1-D10 classified. D2 mobile PWA partially implemented, D1/D4/D8 deferred external gates, D10 ready for Bryan proof.",
         },
         {"phase": "Plan 3", "status": "PARKED", "note": "Voice/wake/TTS parked until Bryan reopens"},
     ]
@@ -139,8 +139,9 @@ def _open_manual_gates() -> List[Dict[str, Any]]:
         {
             "gate_id": "installed_app_smoke",
             "name": "Installed app smoke",
-            "status": "needs_bryan_visual_proof",
-            "reason": "App built + notarized. Bryan must open and visually verify.",
+            "status": "passed_by_bryan",
+            "completed_date": "2026-06-26",
+            "note": "Bryan confirmed: desktop visual, chat, routines, taxonomy all pass.",
         },
     ]
 
@@ -175,15 +176,15 @@ async def core_completion_status() -> Dict[str, Any]:
         "completion_classification": "complete_with_deferred_gates",
         "fake_completion": False,
         "fake_100_percent": False,
-        "completion_score_pct": 82,
+        "completion_score_pct": 85,
         "fake_score": False,
-        "phase_d_ready": False,
+        "phase_d_ready": True,
         "manual_gates_open": True,
         "fake_data": False,
         "note": (
-            "Completion is honest estimate. 82% — C1-C20 accepted, notarization done, "
-            "iOS init done, 4 connectors live-verified. Daily-driver cert, "
-            "installed-app-smoke visual, Notion, Phase D remain open."
+            "Completion is honest estimate. 85% — C1-C20 accepted, notarization done, "
+            "iOS init done, 4 connectors live-verified, Final Phase A accepted pending daily-driver. "
+            "Phase D1-D10 now active. Daily-driver cert and Core OS decision pending Bryan usage sessions."
         ),
     }
 

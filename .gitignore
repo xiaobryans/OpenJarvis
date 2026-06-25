@@ -156,3 +156,8 @@ frontend/tsconfig.tsbuildinfo
 .apple-signing/
 notarization/
 *.notarylog
+
+# Sensitive operational scripts — AWS account ID / secret names present
+scripts/plan9_copy_cloud_api_key.sh
+scripts/plan9_verify_cloud_api_key.py
+scripts/plan1_cockpit_proof.py

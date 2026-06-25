@@ -184,10 +184,10 @@ async def control_tower_status() -> Dict[str, Any]:
 
     return {
         "phases": phases,
-        "active_sprint": "FINAL_PHASE_A_NEURAL_COMMAND_CENTER_TAXONOMY_ROUTINES_AND_VISUAL_LANGUAGE_CORRECTIVE",
+        "active_sprint": "ONE_MEGA_SPRINT_PHASE_D1_D10_AND_FINAL_RELEASE_CUTOVER",
         "fake_acceptance": False,
         "fake_data": False,
-        "note": "FINAL_PHASE_A corrective sprint: taxonomy fixed, HUD visual language implemented, Routines/Cadence panel added. Installed-app-smoke visual needs Bryan proof. Daily-driver cert needs Bryan usage sessions. Fargate cloud deploy = Phase D not started.",
+        "note": "ONE_MEGA_SPRINT: Phase D1-D10 classified, mobile access path documented, security decisions made, daily-driver cert pending Bryan usage sessions.",
     }
 
 

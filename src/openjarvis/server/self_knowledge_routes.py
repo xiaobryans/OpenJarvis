@@ -559,8 +559,8 @@ _CAPABILITIES: List[Dict[str, Any]] = [
         "name": "Native iOS / Mobile App Readiness Gate",
         "status": "available",
         "description": (
-            "tauri ios init completed Jun 25 2026 — Xcode project at gen/apple/openjarvis-desktop.xcodeproj. "
-            "Xcode 16.4, iOS Rust targets, CocoaPods, Apple certs all cleared. "
+            "tauri ios init completed Jun 25 2026 — Xcode project and Apple source files generated. "
+            "Xcode, iOS Rust targets, CocoaPods, Apple certs all cleared. "
             "Native app distribution requires Xcode signing + TestFlight + Bryan auth. "
             "See GET /v1/ios-readiness/status."
         ),
@@ -576,7 +576,7 @@ _CAPABILITIES: List[Dict[str, Any]] = [
         "description": (
             "macOS app signed + notarized Jun 25 2026 via build-sign-personal.sh --notarize. "
             "spctl: accepted (source=Notarized Developer ID). stapler: validated. "
-            "Developer ID Application: Bryan Aw (TQL4A44WDJ). "
+            "Developer ID Application: Bryan Aw ([TEAM_ID_PRESENCE_ONLY]). "
             "See GET /v1/signing-readiness/status."
         ),
         "plan": "Phase C16",
@@ -802,7 +802,7 @@ async def get_roadmap() -> Dict[str, Any]:
     """Current Jarvis roadmap and plan acceptance state."""
     return {
         "roadmap": _ROADMAP,
-        "active_sprint": "FINAL_PHASE_A_NEURAL_COMMAND_CENTER_TAXONOMY_ROUTINES_AND_VISUAL_LANGUAGE_CORRECTIVE",
+        "active_sprint": "ONE_MEGA_SPRINT_PHASE_D1_D10_AND_FINAL_RELEASE_CUTOVER",
         "next": "Neural Command Center UI complete: full 3-column DesktopCommandCenter + MobileCommandCenter layout around Jarvis orb. 12 panels visible by default, inline CommandInputStrip, status mini-cards. App rebuilt, signed, notarized (Apple Accepted). Installed-app-smoke visual needs Bryan proof. Daily-driver cert needs Bryan usage sessions. Plan 3 voice parked.",
         "note": "Only Bryan can mark plans as ACCEPTED.",
     }
