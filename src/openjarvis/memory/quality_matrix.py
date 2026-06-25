@@ -88,7 +88,7 @@ class MemoryQualityMatrix:
 
     Usage:
         matrix = MemoryQualityMatrix(memory)
-        report = matrix.assess(namespace="project:omnix", project_id="omnix")
+        report = matrix.assess(namespace="project:default", project_id="default")
     """
 
     def __init__(

@@ -42,7 +42,7 @@ logger = logging.getLogger(__name__)
 def _exec_sources_list(inputs: Dict[str, Any], ctx: Dict[str, Any]) -> Dict[str, Any]:
     from openjarvis.projects.source_links import ProjectSourceRegistry
 
-    project_id = inputs.get("project_id") or ctx.get("project_id") or "omnix"
+    project_id = inputs.get("project_id") or ctx.get("project_id") or "default"
     links = ProjectSourceRegistry.list_for_project(project_id)
     return {
         "project_id": project_id,
@@ -54,7 +54,7 @@ def _exec_sources_list(inputs: Dict[str, Any], ctx: Dict[str, Any]) -> Dict[str,
 def _exec_sources_validate_all(inputs: Dict[str, Any], ctx: Dict[str, Any]) -> Dict[str, Any]:
     from openjarvis.projects.source_links import ProjectSourceRegistry
 
-    project_id = inputs.get("project_id") or ctx.get("project_id") or "omnix"
+    project_id = inputs.get("project_id") or ctx.get("project_id") or "default"
     report = ProjectSourceRegistry.get_linkage_status(project_id)
     return report
 
@@ -65,7 +65,7 @@ def _exec_source_validate(inputs: Dict[str, Any], ctx: Dict[str, Any]) -> Dict[s
         validate_source_link,
     )
 
-    project_id = inputs.get("project_id") or ctx.get("project_id") or "omnix"
+    project_id = inputs.get("project_id") or ctx.get("project_id") or "default"
     source_id = inputs.get("source_id", "")
     if not source_id:
         return {"error": "source_id is required", "project_id": project_id}
@@ -92,7 +92,7 @@ def _exec_link_local_repo_plan(inputs: Dict[str, Any], ctx: Dict[str, Any]) -> D
         validate_source_link,
     )
 
-    project_id = inputs.get("project_id") or ctx.get("project_id") or "omnix"
+    project_id = inputs.get("project_id") or ctx.get("project_id") or "default"
     repo_path = inputs.get("repo_path", "")
 
     if not repo_path:
@@ -151,7 +151,7 @@ def _exec_link_local_repo(inputs: Dict[str, Any], ctx: Dict[str, Any]) -> Dict[s
         validate_source_link,
     )
 
-    project_id = inputs.get("project_id") or ctx.get("project_id") or "omnix"
+    project_id = inputs.get("project_id") or ctx.get("project_id") or "default"
     repo_path = inputs.get("repo_path", "")
 
     if not repo_path:
@@ -185,7 +185,7 @@ def _exec_link_handoff_file(inputs: Dict[str, Any], ctx: Dict[str, Any]) -> Dict
         validate_source_link,
     )
 
-    project_id = inputs.get("project_id") or ctx.get("project_id") or "omnix"
+    project_id = inputs.get("project_id") or ctx.get("project_id") or "default"
     file_path = inputs.get("file_path", "")
 
     if not file_path:
@@ -215,7 +215,7 @@ def _exec_link_openclaw_workspace(inputs: Dict[str, Any], ctx: Dict[str, Any]) -
         validate_source_link,
     )
 
-    project_id = inputs.get("project_id") or ctx.get("project_id") or "omnix"
+    project_id = inputs.get("project_id") or ctx.get("project_id") or "default"
     workspace_path = inputs.get("workspace_path", "")
     source_type = inputs.get("source_type", "openclaw_workspace")
 
@@ -259,7 +259,7 @@ def _exec_link_runtime_endpoint(inputs: Dict[str, Any], ctx: Dict[str, Any]) -> 
         validate_source_link,
     )
 
-    project_id = inputs.get("project_id") or ctx.get("project_id") or "omnix"
+    project_id = inputs.get("project_id") or ctx.get("project_id") or "default"
     url = inputs.get("url", "")
     endpoint_type = inputs.get("endpoint_type", "runtime_health_endpoint")
 
@@ -302,7 +302,7 @@ def _exec_link_memory_namespace(inputs: Dict[str, Any], ctx: Dict[str, Any]) -> 
         validate_source_link,
     )
 
-    project_id = inputs.get("project_id") or ctx.get("project_id") or "omnix"
+    project_id = inputs.get("project_id") or ctx.get("project_id") or "default"
     namespace = inputs.get("namespace", "") or f"project:{project_id}"
 
     link = ProjectSourceLink(
@@ -325,7 +325,7 @@ def _exec_linkage_doctor(inputs: Dict[str, Any], ctx: Dict[str, Any]) -> Dict[st
     from openjarvis.projects.source_links import ProjectSourceRegistry
     from openjarvis.doctor.checks import check_project_linkage_status
 
-    project_id = inputs.get("project_id") or ctx.get("project_id") or "omnix"
+    project_id = inputs.get("project_id") or ctx.get("project_id") or "default"
 
     linkage_report = ProjectSourceRegistry.get_linkage_status(project_id)
     check_result = check_project_linkage_status(project_id)

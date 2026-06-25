@@ -67,7 +67,7 @@ class CheckResult:
 # ---------------------------------------------------------------------------
 
 
-def check_backend_health(project_id: str = "omnix") -> CheckResult:
+def check_backend_health(project_id: str = "default") -> CheckResult:
     """Verify that all core internal modules are importable."""
     evidence: Dict[str, Any] = {}
     failures: List[str] = []
@@ -115,7 +115,7 @@ def check_backend_health(project_id: str = "omnix") -> CheckResult:
 # ---------------------------------------------------------------------------
 
 
-def check_project_registry_health(project_id: str = "omnix") -> CheckResult:
+def check_project_registry_health(project_id: str = "default") -> CheckResult:
     """Verify ProjectRegistry has entries and at least one project is registered.
 
     OMNIX (Project 1) is the default and is always pre-registered. This check
@@ -181,7 +181,7 @@ def check_project_registry_health(project_id: str = "omnix") -> CheckResult:
 # ---------------------------------------------------------------------------
 
 
-def check_tool_registry_counts(project_id: str = "omnix") -> CheckResult:
+def check_tool_registry_counts(project_id: str = "default") -> CheckResult:
     """Verify tool registry counts and report unavailable reasons."""
     evidence: Dict[str, Any] = {}
     try:
@@ -255,7 +255,7 @@ def check_tool_registry_counts(project_id: str = "omnix") -> CheckResult:
 # ---------------------------------------------------------------------------
 
 
-def check_skill_registry_counts(project_id: str = "omnix") -> CheckResult:
+def check_skill_registry_counts(project_id: str = "default") -> CheckResult:
     """Verify skill registry counts and report degraded reasons."""
     evidence: Dict[str, Any] = {}
     try:
@@ -333,7 +333,7 @@ def check_skill_registry_counts(project_id: str = "omnix") -> CheckResult:
 # ---------------------------------------------------------------------------
 
 
-def check_memory_store_health(project_id: str = "omnix") -> CheckResult:
+def check_memory_store_health(project_id: str = "default") -> CheckResult:
     """Verify memory store: SQLite reachable and secret rejection functional."""
     evidence: Dict[str, Any] = {}
     try:
@@ -407,7 +407,7 @@ def check_memory_store_health(project_id: str = "omnix") -> CheckResult:
 # ---------------------------------------------------------------------------
 
 
-def check_autonomy_mode_status(project_id: str = "omnix") -> CheckResult:
+def check_autonomy_mode_status(project_id: str = "default") -> CheckResult:
     """Verify autonomy mode and governance hard gate enforcement."""
     evidence: Dict[str, Any] = {}
     try:
@@ -465,7 +465,7 @@ def check_autonomy_mode_status(project_id: str = "omnix") -> CheckResult:
 # ---------------------------------------------------------------------------
 
 
-def check_watchdog_status(project_id: str = "omnix") -> CheckResult:
+def check_watchdog_status(project_id: str = "default") -> CheckResult:
     """Verify watchdog registry and run all watchdogs to collect status."""
     evidence: Dict[str, Any] = {}
     try:
@@ -550,7 +550,7 @@ def check_watchdog_status(project_id: str = "omnix") -> CheckResult:
 # ---------------------------------------------------------------------------
 
 
-def check_alert_status(project_id: str = "omnix") -> CheckResult:
+def check_alert_status(project_id: str = "default") -> CheckResult:
     """Verify alert store health and open alert count."""
     evidence: Dict[str, Any] = {}
     try:
@@ -618,7 +618,7 @@ def check_alert_status(project_id: str = "omnix") -> CheckResult:
 # ---------------------------------------------------------------------------
 
 
-def check_execution_log_health(project_id: str = "omnix") -> CheckResult:
+def check_execution_log_health(project_id: str = "default") -> CheckResult:
     """Verify execution log SQLite reachable and recent entry count."""
     evidence: Dict[str, Any] = {}
     try:
@@ -659,7 +659,7 @@ def check_execution_log_health(project_id: str = "omnix") -> CheckResult:
 # ---------------------------------------------------------------------------
 
 
-def check_git_worktree_status(project_id: str = "omnix") -> CheckResult:
+def check_git_worktree_status(project_id: str = "default") -> CheckResult:
     """Verify git branch, HEAD, and clean/dirty working tree."""
     evidence: Dict[str, Any] = {}
     try:
@@ -742,7 +742,7 @@ def check_git_worktree_status(project_id: str = "omnix") -> CheckResult:
 # ---------------------------------------------------------------------------
 
 
-def check_handoff_freshness(project_id: str = "omnix") -> CheckResult:
+def check_handoff_freshness(project_id: str = "default") -> CheckResult:
     """Verify handoff document exists and is within the staleness threshold."""
     evidence: Dict[str, Any] = {}
     _STALE_DAYS = 7
@@ -832,7 +832,7 @@ def check_handoff_freshness(project_id: str = "omnix") -> CheckResult:
 # ---------------------------------------------------------------------------
 
 
-def check_packaged_app_build_metadata(project_id: str = "omnix") -> CheckResult:
+def check_packaged_app_build_metadata(project_id: str = "default") -> CheckResult:
     """Report Tauri packaged app build presence (not_configured is acceptable)."""
     evidence: Dict[str, Any] = {}
     try:
@@ -889,7 +889,7 @@ def check_packaged_app_build_metadata(project_id: str = "omnix") -> CheckResult:
 # ---------------------------------------------------------------------------
 
 
-def check_project_linkage_status(project_id: str = "omnix") -> CheckResult:
+def check_project_linkage_status(project_id: str = "default") -> CheckResult:
     """Verify project source linkage — is the project linked to its real source?
 
     FAIL if:
@@ -1001,7 +1001,7 @@ def check_project_linkage_status(project_id: str = "omnix") -> CheckResult:
 # ---------------------------------------------------------------------------
 
 
-def check_automation_policy_health(project_id: str = "omnix") -> CheckResult:
+def check_automation_policy_health(project_id: str = "default") -> CheckResult:
     """Verify automation policy hard gates are enforced and approval store is reachable."""
     evidence: Dict[str, Any] = {}
     try:
@@ -1075,7 +1075,7 @@ def check_automation_policy_health(project_id: str = "omnix") -> CheckResult:
 # ---------------------------------------------------------------------------
 
 
-def check_voice_pipeline_status(project_id: str = "omnix") -> CheckResult:
+def check_voice_pipeline_status(project_id: str = "default") -> CheckResult:
     """Check voice pipeline status: wake-word, STT, TTS."""
     evidence: Dict[str, Any] = {}
     try:
@@ -1157,7 +1157,7 @@ def check_voice_pipeline_status(project_id: str = "omnix") -> CheckResult:
 # ---------------------------------------------------------------------------
 
 
-def check_desktop_operator_status(project_id: str = "omnix") -> CheckResult:
+def check_desktop_operator_status(project_id: str = "default") -> CheckResult:
     """Check macOS desktop operator permissions status."""
     evidence: Dict[str, Any] = {}
     try:
@@ -1234,7 +1234,7 @@ def check_desktop_operator_status(project_id: str = "omnix") -> CheckResult:
 # ---------------------------------------------------------------------------
 
 
-def check_connector_readiness(project_id: str = "omnix") -> CheckResult:
+def check_connector_readiness(project_id: str = "default") -> CheckResult:
     """Check readiness of all outbound connectors."""
     evidence: Dict[str, Any] = {}
     try:
@@ -1322,7 +1322,7 @@ def check_connector_readiness(project_id: str = "omnix") -> CheckResult:
 # ---------------------------------------------------------------------------
 
 
-def check_persistent_ops_status(project_id: str = "omnix") -> CheckResult:
+def check_persistent_ops_status(project_id: str = "default") -> CheckResult:
     """Verify no unauthorized persistent runner is installed."""
     evidence: Dict[str, Any] = {}
     try:
@@ -1370,7 +1370,7 @@ def check_persistent_ops_status(project_id: str = "omnix") -> CheckResult:
 # ---------------------------------------------------------------------------
 
 
-def check_mobile_readiness(project_id: str = "omnix") -> CheckResult:
+def check_mobile_readiness(project_id: str = "default") -> CheckResult:
     """Check mobile access path readiness."""
     evidence: Dict[str, Any] = {}
     try:
@@ -1423,7 +1423,7 @@ def check_mobile_readiness(project_id: str = "omnix") -> CheckResult:
 # ---------------------------------------------------------------------------
 
 
-def check_secrets_backend(project_id: str = "omnix") -> CheckResult:
+def check_secrets_backend(project_id: str = "default") -> CheckResult:
     """Verify secrets backend availability and key presence (values redacted)."""
     evidence: Dict[str, Any] = {}
     try:
@@ -1480,7 +1480,7 @@ def check_secrets_backend(project_id: str = "omnix") -> CheckResult:
 # ---------------------------------------------------------------------------
 
 
-def check_budget_guard(project_id: str = "omnix") -> CheckResult:
+def check_budget_guard(project_id: str = "default") -> CheckResult:
     """Verify runtime budget guard is active and within limits."""
     evidence: Dict[str, Any] = {}
     try:
@@ -1536,7 +1536,7 @@ def check_budget_guard(project_id: str = "omnix") -> CheckResult:
 # ---------------------------------------------------------------------------
 
 
-def check_job_queue(project_id: str = "omnix") -> CheckResult:
+def check_job_queue(project_id: str = "default") -> CheckResult:
     """Verify durable job queue is accessible and report queue state."""
     evidence: Dict[str, Any] = {}
     try:
@@ -1590,7 +1590,7 @@ def check_job_queue(project_id: str = "omnix") -> CheckResult:
 # ---------------------------------------------------------------------------
 
 
-def check_rollback_policy(project_id: str = "omnix") -> CheckResult:
+def check_rollback_policy(project_id: str = "default") -> CheckResult:
     """Verify rollback policy is active."""
     evidence: Dict[str, Any] = {}
     try:
@@ -1630,7 +1630,7 @@ def check_rollback_policy(project_id: str = "omnix") -> CheckResult:
 # ---------------------------------------------------------------------------
 
 
-def check_inject_guard(project_id: str = "omnix") -> CheckResult:
+def check_inject_guard(project_id: str = "default") -> CheckResult:
     """Verify prompt-injection guard is active."""
     evidence: Dict[str, Any] = {}
     try:
@@ -1673,7 +1673,7 @@ def check_inject_guard(project_id: str = "omnix") -> CheckResult:
 # ---------------------------------------------------------------------------
 
 
-def check_voice_identity(project_id: str = "omnix") -> CheckResult:
+def check_voice_identity(project_id: str = "default") -> CheckResult:
     """Verify voice identity/auth hardening status."""
     evidence: Dict[str, Any] = {}
     try:
@@ -1725,7 +1725,7 @@ def check_voice_identity(project_id: str = "omnix") -> CheckResult:
 # ---------------------------------------------------------------------------
 
 
-def check_connector_health_monitor(project_id: str = "omnix") -> CheckResult:
+def check_connector_health_monitor(project_id: str = "default") -> CheckResult:
     """Verify connector health monitor and report connector health."""
     evidence: Dict[str, Any] = {}
     try:
@@ -1777,7 +1777,7 @@ def check_connector_health_monitor(project_id: str = "omnix") -> CheckResult:
 # ---------------------------------------------------------------------------
 
 
-def check_alert_rate_limiter(project_id: str = "omnix") -> CheckResult:
+def check_alert_rate_limiter(project_id: str = "default") -> CheckResult:
     """Verify alert rate limiter is active."""
     evidence: Dict[str, Any] = {}
     try:
@@ -1827,7 +1827,7 @@ def check_alert_rate_limiter(project_id: str = "omnix") -> CheckResult:
 # ---------------------------------------------------------------------------
 
 
-def check_memory_backup(project_id: str = "omnix") -> CheckResult:
+def check_memory_backup(project_id: str = "default") -> CheckResult:
     """Verify memory backup system is ready."""
     evidence: Dict[str, Any] = {}
     try:
@@ -1861,7 +1861,7 @@ def check_memory_backup(project_id: str = "omnix") -> CheckResult:
 # ---------------------------------------------------------------------------
 
 
-def check_dogfood_loop(project_id: str = "omnix") -> CheckResult:
+def check_dogfood_loop(project_id: str = "default") -> CheckResult:
     """Verify dogfood loop is available and report last snapshot age."""
     evidence: Dict[str, Any] = {}
     try:
@@ -1906,7 +1906,7 @@ def check_dogfood_loop(project_id: str = "omnix") -> CheckResult:
         )
 
 
-def check_strict_operating_rules_present(project_id: str = "omnix") -> CheckResult:
+def check_strict_operating_rules_present(project_id: str = "default") -> CheckResult:
     """Verify strict operating rules are persisted in core governance docs.
 
     Checks:
@@ -2004,7 +2004,7 @@ def check_strict_operating_rules_present(project_id: str = "omnix") -> CheckResu
 # ---------------------------------------------------------------------------
 
 
-def check_runtime_lifecycle(project_id: str = "omnix") -> CheckResult:
+def check_runtime_lifecycle(project_id: str = "default") -> CheckResult:
     """Verify runtime lifecycle manager components are functional.
 
     Checks:
@@ -2090,7 +2090,7 @@ def check_runtime_lifecycle(project_id: str = "omnix") -> CheckResult:
 # ---------------------------------------------------------------------------
 
 
-def check_trust_layer(project_id: str = "omnix") -> CheckResult:
+def check_trust_layer(project_id: str = "default") -> CheckResult:
     """Verify trust/evidence layer module is functional (US11).
 
     Checks:
@@ -2267,7 +2267,7 @@ def check_trust_layer(project_id: str = "omnix") -> CheckResult:
 # ---------------------------------------------------------------------------
 
 
-def check_certification_matrix(project_id: str = "omnix") -> CheckResult:
+def check_certification_matrix(project_id: str = "default") -> CheckResult:
     """Verify the V1 daily-driver certification matrix builds without truthfulness violations.
 
     Passes pre-run check results from the current check_map context to avoid
@@ -2365,7 +2365,7 @@ def check_certification_matrix(project_id: str = "omnix") -> CheckResult:
 # ---------------------------------------------------------------------------
 
 
-def check_nus1a_learning_foundation(project_id: str = "omnix") -> CheckResult:
+def check_nus1a_learning_foundation(project_id: str = "default") -> CheckResult:
     """Verify NUS 1A learning foundation module is available and safe."""
     evidence: Dict[str, Any] = {}
     try:
@@ -2425,7 +2425,7 @@ def check_nus1a_learning_foundation(project_id: str = "omnix") -> CheckResult:
 # ---------------------------------------------------------------------------
 
 
-def check_nus1b_recommendation_workflow(project_id: str = "omnix") -> CheckResult:
+def check_nus1b_recommendation_workflow(project_id: str = "default") -> CheckResult:
     """Verify NUS 1B recommendation workflow modules are available and safe."""
     evidence: Dict[str, Any] = {}
     try:
@@ -2515,7 +2515,7 @@ def check_nus1b_recommendation_workflow(project_id: str = "omnix") -> CheckResul
         )
 
 
-def check_nus1c_safe_autopilot(project_id: str = "omnix") -> CheckResult:
+def check_nus1c_safe_autopilot(project_id: str = "default") -> CheckResult:
     """NUS 1C — Safe Autopilot Learning doctor check.
 
     Verifies:
@@ -2684,7 +2684,7 @@ def check_nus1c_safe_autopilot(project_id: str = "omnix") -> CheckResult:
         )
 
 
-def check_nus1d_eval_rollback(project_id: str = "omnix") -> CheckResult:
+def check_nus1d_eval_rollback(project_id: str = "default") -> CheckResult:
     """NUS 1D — Eval Gates, Rollback, Approval Workflow, Power Autopilot Boundary doctor check."""
     import tempfile
     from pathlib import Path
@@ -2826,7 +2826,7 @@ def check_nus1d_eval_rollback(project_id: str = "omnix") -> CheckResult:
         )
 
 
-def check_nus1e_low_risk_execution(project_id: str = "omnix") -> CheckResult:
+def check_nus1e_low_risk_execution(project_id: str = "default") -> CheckResult:
     """NUS 1E — Low-Risk Execution Foundation doctor check."""
     import tempfile
     from pathlib import Path
@@ -2967,7 +2967,7 @@ def check_nus1e_low_risk_execution(project_id: str = "omnix") -> CheckResult:
         )
 
 
-def check_nus1f_high_autonomy(project_id: str = "omnix") -> CheckResult:
+def check_nus1f_high_autonomy(project_id: str = "default") -> CheckResult:
     """NUS 1F — Controlled High-Autonomy Session Framework check."""
     evidence: Dict[str, Any] = {"project_id": project_id}
     try:
@@ -3198,7 +3198,7 @@ def check_nus1f_high_autonomy(project_id: str = "omnix") -> CheckResult:
         )
 
 
-def check_post_nus_orchestrator(project_id: str = "omnix") -> CheckResult:
+def check_post_nus_orchestrator(project_id: str = "default") -> CheckResult:
     """Post-NUS Hierarchical Orchestrator — readiness check.
 
     Verifies:
@@ -3438,7 +3438,7 @@ def check_post_nus_orchestrator(project_id: str = "omnix") -> CheckResult:
 # ---------------------------------------------------------------------------
 
 
-def check_universal_front_door(project_id: str = "omnix") -> CheckResult:
+def check_universal_front_door(project_id: str = "default") -> CheckResult:
     """Verify JarvisFrontDoor, UniversalTaskRequest, and CosGmOrchestrator exist and work.
 
     Proves:
@@ -3577,7 +3577,7 @@ def check_universal_front_door(project_id: str = "omnix") -> CheckResult:
         )
 
 
-def check_worker_execution_adapters(project_id: str = "omnix") -> CheckResult:
+def check_worker_execution_adapters(project_id: str = "default") -> CheckResult:
     """Verify worker execution adapters exist, refuse blocked actions, and emit structured results."""
     evidence: Dict[str, Any] = {"project_id": project_id}
     try:
@@ -3647,7 +3647,7 @@ def check_worker_execution_adapters(project_id: str = "omnix") -> CheckResult:
         )
 
 
-def check_nus_scorecard_feedback_loop(project_id: str = "omnix") -> CheckResult:
+def check_nus_scorecard_feedback_loop(project_id: str = "default") -> CheckResult:
     """Verify activation planner reads NUS scorecard/failure data to inform routing."""
     evidence: Dict[str, Any] = {"project_id": project_id}
     try:
@@ -3708,7 +3708,7 @@ def check_nus_scorecard_feedback_loop(project_id: str = "omnix") -> CheckResult:
         )
 
 
-def check_inactive_manager_classification(project_id: str = "omnix") -> CheckResult:
+def check_inactive_manager_classification(project_id: str = "default") -> CheckResult:
     """Verify inactive managers are explicitly classified with exact blockers."""
     evidence: Dict[str, Any] = {"project_id": project_id}
     try:
@@ -3785,7 +3785,7 @@ def check_inactive_manager_classification(project_id: str = "omnix") -> CheckRes
 # ---------------------------------------------------------------------------
 
 
-def check_provider_readiness(project_id: str = "omnix") -> CheckResult:
+def check_provider_readiness(project_id: str = "default") -> CheckResult:
     """Check provider/key/blocker dashboard — which LLM providers are configured."""
     evidence: Dict[str, Any] = {"project_id": project_id}
     try:
@@ -3831,7 +3831,7 @@ def check_provider_readiness(project_id: str = "omnix") -> CheckResult:
         )
 
 
-def check_trace_persistence(project_id: str = "omnix") -> CheckResult:
+def check_trace_persistence(project_id: str = "default") -> CheckResult:
     """Check trace persistence to disk — can traces survive restart?"""
     evidence: Dict[str, Any] = {"project_id": project_id}
     try:
@@ -3884,7 +3884,7 @@ def check_trace_persistence(project_id: str = "omnix") -> CheckResult:
         )
 
 
-def check_project_registry_persistence(project_id: str = "omnix") -> CheckResult:
+def check_project_registry_persistence(project_id: str = "default") -> CheckResult:
     """Check ProjectRegistry persistence — can registry survive restart?"""
     evidence: Dict[str, Any] = {"project_id": project_id}
     try:
@@ -3937,7 +3937,7 @@ def check_project_registry_persistence(project_id: str = "omnix") -> CheckResult
         )
 
 
-def check_runtime_recovery(project_id: str = "omnix") -> CheckResult:
+def check_runtime_recovery(project_id: str = "default") -> CheckResult:
     """Check runtime recovery store — last status, failed task records."""
     evidence: Dict[str, Any] = {"project_id": project_id}
     try:
@@ -3980,7 +3980,7 @@ def check_runtime_recovery(project_id: str = "omnix") -> CheckResult:
         )
 
 
-def check_connector_dryrun_framework(project_id: str = "omnix") -> CheckResult:
+def check_connector_dryrun_framework(project_id: str = "default") -> CheckResult:
     """Check connector dry-run framework — connectors registered, plans producible."""
     evidence: Dict[str, Any] = {"project_id": project_id}
     try:
@@ -4032,7 +4032,7 @@ def check_connector_dryrun_framework(project_id: str = "omnix") -> CheckResult:
         )
 
 
-def check_memory_quality_matrix(project_id: str = "omnix") -> CheckResult:
+def check_memory_quality_matrix(project_id: str = "default") -> CheckResult:
     """Check memory quality matrix — stale/conflict detection operational."""
     evidence: Dict[str, Any] = {"project_id": project_id}
     try:
@@ -4079,7 +4079,7 @@ def check_memory_quality_matrix(project_id: str = "omnix") -> CheckResult:
         )
 
 
-def check_human_correction_store(project_id: str = "omnix") -> CheckResult:
+def check_human_correction_store(project_id: str = "default") -> CheckResult:
     """Check human correction ingestion store — schema and NUS hook operational."""
     evidence: Dict[str, Any] = {"project_id": project_id}
     try:
@@ -4120,7 +4120,7 @@ def check_human_correction_store(project_id: str = "omnix") -> CheckResult:
 # ---------------------------------------------------------------------------
 
 
-def check_llm_gateway(project_id: str = "omnix") -> CheckResult:
+def check_llm_gateway(project_id: str = "default") -> CheckResult:
     """Check real LLM-in-loop gateway — provider keys present, gateway importable."""
     evidence: Dict[str, Any] = {"project_id": project_id}
     try:
@@ -4168,7 +4168,7 @@ def check_llm_gateway(project_id: str = "omnix") -> CheckResult:
         )
 
 
-def check_slack_workspace_identity(project_id: str = "omnix") -> CheckResult:
+def check_slack_workspace_identity(project_id: str = "default") -> CheckResult:
     """Check Slack workspace identity model and migration status."""
     evidence: Dict[str, Any] = {"project_id": project_id}
     try:
@@ -4208,7 +4208,7 @@ def check_slack_workspace_identity(project_id: str = "omnix") -> CheckResult:
         )
 
 
-def check_platform_scorecard(project_id: str = "omnix") -> CheckResult:
+def check_platform_scorecard(project_id: str = "default") -> CheckResult:
     """Check single AI platform scorecard framework importable."""
     evidence: Dict[str, Any] = {"project_id": project_id}
     try:
@@ -4253,7 +4253,7 @@ def check_platform_scorecard(project_id: str = "omnix") -> CheckResult:
         )
 
 
-def check_semantic_memory(project_id: str = "omnix") -> CheckResult:
+def check_semantic_memory(project_id: str = "default") -> CheckResult:
     """Check semantic memory module — OpenAI embeddings for project-scoped memory continuity."""
     evidence: Dict[str, Any] = {"project_id": project_id}
     try:
@@ -4310,7 +4310,7 @@ def check_semantic_memory(project_id: str = "omnix") -> CheckResult:
         )
 
 
-def check_connector_live_reader(project_id: str = "omnix") -> CheckResult:
+def check_connector_live_reader(project_id: str = "default") -> CheckResult:
     """Check connector live reader — live read capability for credentialed connectors."""
     evidence: Dict[str, Any] = {"project_id": project_id}
     try:
@@ -4364,7 +4364,7 @@ def check_connector_live_reader(project_id: str = "omnix") -> CheckResult:
         )
 
 
-def check_coding_proof_ladder_framework(project_id: str = "omnix") -> CheckResult:
+def check_coding_proof_ladder_framework(project_id: str = "default") -> CheckResult:
     """Check coding proof ladder framework importable and structured correctly."""
     evidence: Dict[str, Any] = {"project_id": project_id}
     try:
@@ -4408,7 +4408,7 @@ def check_coding_proof_ladder_framework(project_id: str = "omnix") -> CheckResul
         )
 
 
-def check_provider_capability_matrix(project_id: str = "omnix") -> CheckResult:
+def check_provider_capability_matrix(project_id: str = "default") -> CheckResult:
     """Check that the provider capability matrix is present and coverage is adequate."""
     try:
         from openjarvis.orchestrator.provider_capability_matrix import get_matrix_summary
@@ -4450,7 +4450,7 @@ def check_provider_capability_matrix(project_id: str = "omnix") -> CheckResult:
         )
 
 
-def check_memory_continuity_proofs(project_id: str = "omnix") -> CheckResult:
+def check_memory_continuity_proofs(project_id: str = "default") -> CheckResult:
     """Run the 7 daily-driver memory continuity proof cases."""
     try:
         from openjarvis.memory.memory_continuity import run_memory_continuity_proofs
@@ -4488,7 +4488,7 @@ def check_memory_continuity_proofs(project_id: str = "omnix") -> CheckResult:
         )
 
 
-def check_google_oauth_status(project_id: str = "omnix") -> CheckResult:
+def check_google_oauth_status(project_id: str = "default") -> CheckResult:
     """Check Google OAuth credential completeness for Gmail/Calendar/Drive."""
     try:
         from openjarvis.orchestrator.connector_live_reader import get_google_oauth_status
@@ -4631,9 +4631,10 @@ def run_all_checks(project_id: Optional[str] = None) -> List[CheckResult]:
     if project_id is None:
         try:
             from openjarvis.governance.constitution import ProjectRegistry
-            project_id = ProjectRegistry.get_default().project_id
+            _default = ProjectRegistry.get_default()
+            project_id = _default.project_id if _default is not None else "default"
         except Exception:
-            project_id = "omnix"
+            project_id = "default"
     results: List[CheckResult] = []
     for fn in _ALL_CHECK_FNS:
         try:

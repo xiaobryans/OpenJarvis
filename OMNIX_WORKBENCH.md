@@ -1,3 +1,5 @@
+> **NOTE: This document is OMNIX project-specific.** It describes the workbench tools for the OMNIX project — one optional integration built on top of Jarvis OS. Jarvis does not require OMNIX. For Jarvis core documentation, see README.md.
+
 # Jarvis OMNIX Workbench v1
 
 Functional local front door for OMNIX upgrade work using Jarvis agents.

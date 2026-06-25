@@ -90,7 +90,7 @@ router = APIRouter()
 
 
 class SetModeRequest(BaseModel):
-    project_id: str = "omnix"
+    project_id: str = "default"
     mode: str = Field(
         ...,
         description="One of: off, observe_only, propose_only, safe_execute_approved, blocked, requires_approval",
@@ -100,12 +100,12 @@ class SetModeRequest(BaseModel):
 
 
 class RunWatchdogRequest(BaseModel):
-    project_id: str = "omnix"
+    project_id: str = "default"
     watchdog_id: Optional[str] = None
 
 
 class CreateAlertRequest(BaseModel):
-    project_id: str = "omnix"
+    project_id: str = "default"
     title: str
     evidence: str
     severity: str = AlertSeverity.INFO
@@ -119,7 +119,7 @@ class CreateAlertRequest(BaseModel):
 
 
 @router.get("/v1/autonomy/status")
-async def get_autonomy_status(project_id: str = "omnix") -> Dict[str, Any]:
+async def get_autonomy_status(project_id: str = "default") -> Dict[str, Any]:
     """Return autonomy mode and policy status for a project.
 
     Always shows: mode, can_observe, can_propose, hard_gates_always_blocked.
@@ -170,7 +170,7 @@ async def set_autonomy_mode(req: SetModeRequest) -> Dict[str, Any]:
 
 
 @router.get("/v1/watchdogs")
-async def list_watchdogs(project_id: str = "omnix") -> Dict[str, Any]:
+async def list_watchdogs(project_id: str = "default") -> Dict[str, Any]:
     """Return available watchdog IDs and run the pack for a project.
 
     Watchdogs observe only. No system modifications.
@@ -215,7 +215,7 @@ async def run_watchdogs(req: RunWatchdogRequest) -> Dict[str, Any]:
 
 @router.get("/v1/alerts")
 async def list_alerts(
-    project_id: str = "omnix",
+    project_id: str = "default",
     status: Optional[str] = None,
     limit: int = 50,
 ) -> Dict[str, Any]:
@@ -276,7 +276,7 @@ async def resolve_alert(alert_id: str) -> Dict[str, Any]:
 
 
 @router.get("/v1/mobile/status")
-async def mobile_status(project_id: str = "omnix") -> Dict[str, Any]:
+async def mobile_status(project_id: str = "default") -> Dict[str, Any]:
     """Mobile-readable compact status payload.
 
     Returns: autonomy_mode, tool counts, skill counts, alert summary, watchdog registry.

@@ -139,7 +139,7 @@ async def chat_completions(request_body: ChatCompletionRequest, request: Request
                 import time as _time
                 try:
                     from openjarvis.autonomy.modes import AutonomyPolicy
-                    _astat = AutonomyPolicy.get_status("omnix")
+                    _astat = AutonomyPolicy.get_status("default")
                     _amode = _astat.get("mode", "unknown")
                     _hard_gates = _astat.get("hard_gates_always_blocked", True)
                 except Exception:

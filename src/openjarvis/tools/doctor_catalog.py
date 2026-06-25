@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 def _exec_doctor_run(inputs: Dict[str, Any], ctx: Dict[str, Any]) -> Dict[str, Any]:
     from openjarvis.doctor.checks import run_all_checks
 
-    project_id = inputs.get("project_id") or ctx.get("project_id") or "omnix"
+    project_id = inputs.get("project_id") or ctx.get("project_id") or "default"
     results = run_all_checks(project_id=project_id)
     by_status: Dict[str, int] = {}
     for r in results:
@@ -56,7 +56,7 @@ def _exec_doctor_project(inputs: Dict[str, Any], ctx: Dict[str, Any]) -> Dict[st
         check_packaged_app_build_metadata,
     )
 
-    project_id = inputs.get("project_id") or ctx.get("project_id") or "omnix"
+    project_id = inputs.get("project_id") or ctx.get("project_id") or "default"
     checks = [
         check_project_registry_health(project_id),
         check_git_worktree_status(project_id),
@@ -77,7 +77,7 @@ def _exec_doctor_project(inputs: Dict[str, Any], ctx: Dict[str, Any]) -> Dict[st
 def _exec_doctor_report(inputs: Dict[str, Any], ctx: Dict[str, Any]) -> Dict[str, Any]:
     from openjarvis.doctor.checks import run_all_checks
 
-    project_id = inputs.get("project_id") or ctx.get("project_id") or "omnix"
+    project_id = inputs.get("project_id") or ctx.get("project_id") or "default"
     results = run_all_checks(project_id=project_id)
     by_status: Dict[str, int] = {}
     by_category: Dict[str, Any] = {}
@@ -99,7 +99,7 @@ def _exec_doctor_report(inputs: Dict[str, Any], ctx: Dict[str, Any]) -> Dict[str
 def _exec_readiness_evaluate(inputs: Dict[str, Any], ctx: Dict[str, Any]) -> Dict[str, Any]:
     from openjarvis.doctor.readiness import evaluate_readiness
 
-    project_id = inputs.get("project_id") or ctx.get("project_id") or "omnix"
+    project_id = inputs.get("project_id") or ctx.get("project_id") or "default"
     report = evaluate_readiness(project_id=project_id)
     return report.to_dict()
 
@@ -107,7 +107,7 @@ def _exec_readiness_evaluate(inputs: Dict[str, Any], ctx: Dict[str, Any]) -> Dic
 def _exec_readiness_evidence_summary(inputs: Dict[str, Any], ctx: Dict[str, Any]) -> Dict[str, Any]:
     from openjarvis.doctor.readiness import generate_v1_report
 
-    project_id = inputs.get("project_id") or ctx.get("project_id") or "omnix"
+    project_id = inputs.get("project_id") or ctx.get("project_id") or "default"
     return generate_v1_report(project_id=project_id)
 
 

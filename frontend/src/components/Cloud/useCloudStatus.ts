@@ -2,7 +2,8 @@ import { useEffect, useState, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 
 const DEFAULT_CLOUD_URL = 'http://100.118.81.37:3091';
-const CLOUD_URL_KEY = 'omnix-cloud-node-url';
+const CLOUD_URL_KEY = 'jarvis-cloud-node-url';
+const CLOUD_URL_KEY_LEGACY = 'omnix-cloud-node-url';
 const POLL_INTERVAL = 30000;
 
 export interface CloudStatusBundle {
@@ -25,9 +26,19 @@ export interface CloudStatus {
 }
 
 export function useCloudStatus(): CloudStatus {
-  const [cloudUrl] = useState<string>(
-    () => localStorage.getItem(CLOUD_URL_KEY) || DEFAULT_CLOUD_URL,
-  );
+  const [cloudUrl] = useState<string>(() => {
+    let storedValue = localStorage.getItem(CLOUD_URL_KEY);
+    // Migrate from legacy key if needed
+    if (!storedValue) {
+      const legacyValue = localStorage.getItem(CLOUD_URL_KEY_LEGACY);
+      if (legacyValue) {
+        localStorage.setItem(CLOUD_URL_KEY, legacyValue);
+        localStorage.removeItem(CLOUD_URL_KEY_LEGACY);
+        storedValue = legacyValue;
+      }
+    }
+    return storedValue || DEFAULT_CLOUD_URL;
+  });
   const [nodeStatus, setNodeStatus] = useState<CloudNodeStatus>('checking');
   const [bundle, setBundle] = useState<CloudStatusBundle | null>(null);
   const [lastChecked, setLastChecked] = useState<string>('—');

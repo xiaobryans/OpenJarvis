@@ -171,7 +171,7 @@ _KNOWN_LIMITATIONS: List[Dict[str, str]] = [
 
 
 @router.get("/v1/doctor")
-async def run_doctor(project_id: str = "omnix") -> Dict[str, Any]:
+async def run_doctor(project_id: str = "default") -> Dict[str, Any]:
     """Run all 12 Jarvis diagnostic checks for a project.
 
     Returns pass/warn/fail/not_configured for each check with evidence.
@@ -192,7 +192,7 @@ async def run_doctor(project_id: str = "omnix") -> Dict[str, Any]:
 
 
 @router.get("/v1/doctor/project")
-async def run_doctor_project(project_id: str = "omnix") -> Dict[str, Any]:
+async def run_doctor_project(project_id: str = "default") -> Dict[str, Any]:
     """Run project-specific diagnostic checks.
 
     Checks: project registry, git status, handoff freshness,
@@ -223,7 +223,7 @@ async def run_doctor_project(project_id: str = "omnix") -> Dict[str, Any]:
 
 
 @router.get("/v1/readiness")
-async def evaluate_readiness(project_id: str = "omnix") -> Dict[str, Any]:
+async def evaluate_readiness(project_id: str = "default") -> Dict[str, Any]:
     """Evaluate Jarvis V1 daily-driver readiness gate for a project.
 
     8 categories, 4 verdicts: ready / warn / hold / unsafe.
@@ -238,7 +238,7 @@ async def evaluate_readiness(project_id: str = "omnix") -> Dict[str, Any]:
 
 
 @router.get("/v1/readiness/report")
-async def readiness_report(project_id: str = "omnix") -> Dict[str, Any]:
+async def readiness_report(project_id: str = "default") -> Dict[str, Any]:
     """Generate full V1 readiness evidence summary.
 
     Includes: tool/skill/watchdog counts, accepted checkpoints,

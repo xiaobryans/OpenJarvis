@@ -4,7 +4,7 @@ Routes:
   GET /v1/projects              — list all registered projects
   GET /v1/projects/{project_id} — get a single project profile
 
-OMNIX is Project 1 but the registry supports future projects.
+Projects are registered dynamically. OMNIX is an example project.
 No project-specific credentials are exposed in responses.
 """
 

@@ -51,13 +51,13 @@ logger = logging.getLogger(__name__)
 
 def _exec_autonomy_get_status(inputs: Dict[str, Any], ctx: Dict[str, Any]) -> Dict[str, Any]:
     from openjarvis.autonomy.modes import AutonomyPolicy
-    project_id = inputs.get("project_id") or ctx.get("project_id") or "omnix"
+    project_id = inputs.get("project_id") or ctx.get("project_id") or "default"
     return AutonomyPolicy.get_status(project_id)
 
 
 def _exec_autonomy_set_mode(inputs: Dict[str, Any], ctx: Dict[str, Any]) -> Dict[str, Any]:
     from openjarvis.autonomy.modes import AutonomyMode, AutonomyPolicy
-    project_id = inputs.get("project_id") or ctx.get("project_id") or "omnix"
+    project_id = inputs.get("project_id") or ctx.get("project_id") or "default"
     mode_str = inputs.get("mode", "observe_only")
     set_by = inputs.get("set_by", ctx.get("agent_id", "api"))
     reason = inputs.get("reason", "")
@@ -83,7 +83,7 @@ def _exec_autonomy_set_mode(inputs: Dict[str, Any], ctx: Dict[str, Any]) -> Dict
 
 def _exec_watchdog_run_project_pack(inputs: Dict[str, Any], ctx: Dict[str, Any]) -> Dict[str, Any]:
     from openjarvis.autonomy.watchdogs import WatchdogRunner
-    project_id = inputs.get("project_id") or ctx.get("project_id") or "omnix"
+    project_id = inputs.get("project_id") or ctx.get("project_id") or "default"
     results = WatchdogRunner.run_project_pack(project_id)
     summary = WatchdogRunner.summarize(results)
     return {
@@ -97,7 +97,7 @@ def _exec_watchdog_run_project_pack(inputs: Dict[str, Any], ctx: Dict[str, Any])
 
 def _exec_watchdog_run_once(inputs: Dict[str, Any], ctx: Dict[str, Any]) -> Dict[str, Any]:
     from openjarvis.autonomy.watchdogs import WatchdogRunner
-    project_id = inputs.get("project_id") or ctx.get("project_id") or "omnix"
+    project_id = inputs.get("project_id") or ctx.get("project_id") or "default"
     watchdog_id = inputs.get("watchdog_id", "")
     if not watchdog_id:
         raise ValueError("watchdog_id is required")
@@ -113,7 +113,7 @@ def _exec_watchdog_list_ids(inputs: Dict[str, Any], ctx: Dict[str, Any]) -> Dict
 
 def _exec_alert_create(inputs: Dict[str, Any], ctx: Dict[str, Any]) -> Dict[str, Any]:
     from openjarvis.autonomy.alerts import AlertSeverity, get_alert_store
-    project_id = inputs.get("project_id") or ctx.get("project_id") or "omnix"
+    project_id = inputs.get("project_id") or ctx.get("project_id") or "default"
     title = inputs.get("title", "")
     evidence = inputs.get("evidence", "")
     if not title:
@@ -137,7 +137,7 @@ def _exec_alert_create(inputs: Dict[str, Any], ctx: Dict[str, Any]) -> Dict[str,
 
 def _exec_alert_list(inputs: Dict[str, Any], ctx: Dict[str, Any]) -> Dict[str, Any]:
     from openjarvis.autonomy.alerts import get_alert_store
-    project_id = inputs.get("project_id") or ctx.get("project_id") or "omnix"
+    project_id = inputs.get("project_id") or ctx.get("project_id") or "default"
     status = inputs.get("status")
     limit = int(inputs.get("limit", 50))
     store = get_alert_store()
@@ -175,7 +175,7 @@ def _exec_alert_resolve(inputs: Dict[str, Any], ctx: Dict[str, Any]) -> Dict[str
 
 def _exec_alert_draft_slack(inputs: Dict[str, Any], ctx: Dict[str, Any]) -> Dict[str, Any]:
     from openjarvis.autonomy.alerts import get_alert_store
-    project_id = inputs.get("project_id") or ctx.get("project_id") or "omnix"
+    project_id = inputs.get("project_id") or ctx.get("project_id") or "default"
     alert_ids: Optional[List[str]] = inputs.get("alert_ids")
     store = get_alert_store()
     return store.draft_slack_update(project_id, alert_ids=alert_ids)
@@ -183,7 +183,7 @@ def _exec_alert_draft_slack(inputs: Dict[str, Any], ctx: Dict[str, Any]) -> Dict
 
 def _exec_alert_draft_telegram(inputs: Dict[str, Any], ctx: Dict[str, Any]) -> Dict[str, Any]:
     from openjarvis.autonomy.alerts import get_alert_store
-    project_id = inputs.get("project_id") or ctx.get("project_id") or "omnix"
+    project_id = inputs.get("project_id") or ctx.get("project_id") or "default"
     alert_ids: Optional[List[str]] = inputs.get("alert_ids")
     store = get_alert_store()
     return store.draft_telegram_update(project_id, alert_ids=alert_ids)
@@ -191,14 +191,14 @@ def _exec_alert_draft_telegram(inputs: Dict[str, Any], ctx: Dict[str, Any]) -> D
 
 def _exec_alert_daily_digest(inputs: Dict[str, Any], ctx: Dict[str, Any]) -> Dict[str, Any]:
     from openjarvis.autonomy.alerts import get_alert_store
-    project_id = inputs.get("project_id") or ctx.get("project_id") or "omnix"
+    project_id = inputs.get("project_id") or ctx.get("project_id") or "default"
     store = get_alert_store()
     return store.daily_digest(project_id)
 
 
 def _exec_mobile_status(inputs: Dict[str, Any], ctx: Dict[str, Any]) -> Dict[str, Any]:
     """Return a compact mobile-readable status payload for a project."""
-    project_id = inputs.get("project_id") or ctx.get("project_id") or "omnix"
+    project_id = inputs.get("project_id") or ctx.get("project_id") or "default"
 
     from openjarvis.autonomy.modes import AutonomyPolicy
     from openjarvis.autonomy.alerts import get_alert_store, AlertStatus

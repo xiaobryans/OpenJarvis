@@ -140,7 +140,7 @@ def _collect_blockers(
 
 
 def run_dogfood_snapshot(
-    project_id: str = "omnix",
+    project_id: str = "default",
     save_report: bool = True,
 ) -> Dict[str, Any]:
     """Run a complete dogfood snapshot. Read-only. No external posting."""

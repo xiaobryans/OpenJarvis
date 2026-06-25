@@ -79,7 +79,7 @@ class AutoDistillEngine:
     Usage
     -----
     engine = AutoDistillEngine()
-    result = engine.auto_distill(project_id="omnix")
+    result = engine.auto_distill(project_id="default")
 
     The engine is idempotent: calling auto_distill() multiple times will not
     create duplicate distilled entries for the same source raw entries.

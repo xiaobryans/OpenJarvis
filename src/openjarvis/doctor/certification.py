@@ -236,7 +236,7 @@ def _find_check(check_map: Dict[str, Any], check_id: str) -> Optional[Any]:
 
 
 def build_certification_matrix(
-    project_id: str = "omnix",
+    project_id: str = "default",
     check_results: Optional[List[Any]] = None,
 ) -> CertificationMatrix:
     """Build the V1 daily-driver certification matrix.

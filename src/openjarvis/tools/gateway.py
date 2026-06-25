@@ -38,7 +38,7 @@ class ToolExecutionGateway:
     Usage
     -----
     gateway = ToolExecutionGateway()
-    result = gateway.execute("mission.list", inputs={}, project_id="omnix")
+    result = gateway.execute("mission.list", inputs={}, project_id="default")
 
     The gateway never raises.  Always returns a ToolExecutionResult.
     """

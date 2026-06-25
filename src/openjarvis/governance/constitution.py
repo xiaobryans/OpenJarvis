@@ -34,12 +34,11 @@ JARVIS_IDENTITY = {
     "role": "Personal AI assistant and command center for Bryan",
     "scope": "project_agnostic",
     "owner": "Bryan",
-    "primary_project": "omnix",
+    "primary_project": None,
     "architecture": (
         "Jarvis supervises all active projects concurrently. "
-        "OMNIX is Project 1 / current primary managed project. "
-        "Future projects are added as concurrent workspaces. "
-        "Jarvis is not OMNIX-only."
+        "Projects are registered and managed dynamically. "
+        "Jarvis is project-agnostic."
     ),
 }
 
@@ -347,8 +346,8 @@ OMNIX_PROJECT = ProjectProfile(
 class ProjectRegistry:
     """Registry of all active projects Jarvis manages concurrently.
 
-    OMNIX is pre-registered as Project 1 / default. Future projects
-    are added via register(). Jarvis supervises all active projects
+    Projects are registered dynamically. OMNIX is an optional example project.
+    Future projects are added via register(). Jarvis supervises all active projects
     simultaneously — not one project at a time.
 
     Implementation note: this is an in-process registry. A future sprint
@@ -377,12 +376,12 @@ class ProjectRegistry:
         return cls._projects.get(project_id)
 
     @classmethod
-    def get_default(cls) -> ProjectProfile:
-        """Return the default / highest-priority active project (OMNIX)."""
+    def get_default(cls) -> Optional[ProjectProfile]:
+        """Return the highest-priority active project, or None if no projects are registered."""
         cls._ensure_initialized()
         active = [p for p in cls._projects.values() if p.active]
         if not active:
-            return OMNIX_PROJECT
+            return None
         return min(active, key=lambda p: p.priority)
 
     @classmethod

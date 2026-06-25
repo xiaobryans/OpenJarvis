@@ -121,7 +121,7 @@ async def memory_status() -> Dict[str, Any]:
         sync_status = JarvisMemoryS3Sync().get_status()
         result["cloud_sync"] = {
             "available": sync_status.available,
-            "backend": "omnix_s3",
+            "backend": "jarvis_s3",
             "bucket": sync_status.bucket,
             "last_error": sync_status.last_error,
         }

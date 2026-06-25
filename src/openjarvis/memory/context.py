@@ -101,7 +101,7 @@ class MemoryContextBuilder:
         builder = MemoryContextBuilder(db_path=...)
         ctx = builder.build_context(
             query="user preferences for code review",
-            project_id="omnix",
+            project_id="default",
             context_from_memory=True,
         )
         if ctx.context_text:

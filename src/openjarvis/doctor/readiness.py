@@ -307,7 +307,7 @@ _ACCEPTED_CHECKPOINTS = [
 
 
 def evaluate_readiness(
-    project_id: str = "omnix",
+    project_id: str = "default",
     check_results: Optional[List[CheckResult]] = None,
 ) -> ReadinessReport:
     """Evaluate readiness gate for a project.
@@ -465,7 +465,7 @@ def _run_fake_capability_check() -> Dict[str, Any]:
         }
 
 
-def generate_v1_report(project_id: str = "omnix") -> Dict[str, Any]:
+def generate_v1_report(project_id: str = "default") -> Dict[str, Any]:
     """Generate a V1 readiness report with all counts and evidence.
 
     This is the single-command V1 report for Phase F QA closeout.

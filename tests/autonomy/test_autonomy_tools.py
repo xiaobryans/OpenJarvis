@@ -114,10 +114,10 @@ class TestAutonomyCatalogRegistration:
         total = len(ToolRegistry.list_all())
         assert total == 129, f"Expected 129 total tools, got {total}"
 
-    def test_available_count_is_126(self):
-        """US5: 46. US6: +14. US7: +15. US8: +51. Total available must be 126."""
+    def test_available_count_is_127(self):
+        """US5: 46. US6: +14. US7: +15. US8: +51. Phase X: +1. Total available must be 127."""
         available = len(ToolRegistry.list_available())
-        assert available == 126, f"Expected 126 available tools, got {available}"
+        assert available == 127, f"Expected 127 available tools, got {available}"
 
 
 class TestAutonomyExecutors:

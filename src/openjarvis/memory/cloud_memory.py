@@ -223,7 +223,7 @@ def _check_omnix_s3() -> BackendReadiness:
 
     if not bucket_present:
         return BackendReadiness(
-            backend="omnix_s3",
+            backend="jarvis_s3",
             status=CloudMemoryBackendStatus.BLOCKED_CREDENTIALS,
             available=False,
             credential_env_vars=[
@@ -253,7 +253,7 @@ def _check_omnix_s3() -> BackendReadiness:
         s3 = session.client("s3", region_name=region)
         s3.head_bucket(Bucket=bucket)
         return BackendReadiness(
-            backend="omnix_s3",
+            backend="jarvis_s3",
             status=CloudMemoryBackendStatus.DAILY_DRIVER_ACCEPT,
             available=True,
             credential_env_vars=[
@@ -266,7 +266,7 @@ def _check_omnix_s3() -> BackendReadiness:
         )
     except ImportError:
         return BackendReadiness(
-            backend="omnix_s3",
+            backend="jarvis_s3",
             status=CloudMemoryBackendStatus.BLOCKED_CREDENTIALS,
             available=False,
             credential_env_vars=[
@@ -280,7 +280,7 @@ def _check_omnix_s3() -> BackendReadiness:
         )
     except Exception as exc:
         return BackendReadiness(
-            backend="omnix_s3",
+            backend="jarvis_s3",
             status=CloudMemoryBackendStatus.BLOCKED_CREDENTIALS,
             available=False,
             credential_env_vars=[

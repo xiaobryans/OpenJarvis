@@ -1008,7 +1008,7 @@ async def system_health() -> dict:
             from openjarvis.memory.cloud_sync import JarvisMemoryS3Sync
             sync_status = JarvisMemoryS3Sync().get_status()
             result["memory_os"]["cloud_sync_available"] = sync_status.available
-            result["memory_os"]["cloud_sync_backend"] = "omnix_s3"
+            result["memory_os"]["cloud_sync_backend"] = "jarvis_s3"
         except Exception:
             pass
         # AI distillation

@@ -562,6 +562,7 @@ class ProjectSourceRegistry:
         local.env (auto-loaded by _load_openjarvis_env) are picked up.
 
         Priority:
+          # Optional: path to OMNIX project repo (not required — OMNIX is one optional project)
           JARVIS_PROJECT_OMNIX_REPO_PATH > OMNIX_PROJECT.repo_path
           OPENCLAW_WORKSPACE_PATH        > "" (not_configured)
           OPENCLAW_HANDOFF_PATH          > "" (not_configured)

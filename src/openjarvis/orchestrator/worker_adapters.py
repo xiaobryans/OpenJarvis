@@ -320,7 +320,7 @@ class DoctorValidationWorkerAdapter(WorkerAdapter):
         check_id = inputs.get("check_id", "project_registry_health")
         try:
             from openjarvis.doctor.checks import check_project_registry_health
-            result = check_project_registry_health(project_id=project_id or "omnix")
+            result = check_project_registry_health(project_id=project_id or "default")
             return WorkerAdapterResult(
                 worker_id=self.worker_id,
                 action_type=action_type,

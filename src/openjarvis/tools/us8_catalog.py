@@ -64,7 +64,7 @@ def _exec_project_onboarding_status(
     from openjarvis.projects.source_links import ProjectSourceRegistry
     from openjarvis.governance.constitution import ProjectRegistry
 
-    project_id = inputs.get("project_id") or ctx.get("project_id") or "omnix"
+    project_id = inputs.get("project_id") or ctx.get("project_id") or "default"
     linkage = ProjectSourceRegistry.get_linkage_status(project_id)
 
     try:
@@ -144,7 +144,7 @@ def _exec_project_link_wizard_state(
         ProjectSourceStatus,
     )
 
-    project_id = inputs.get("project_id") or ctx.get("project_id") or "omnix"
+    project_id = inputs.get("project_id") or ctx.get("project_id") or "default"
     links = ProjectSourceRegistry.list_for_project(project_id)
     link_map = {lnk.link_type: lnk for lnk in links}
 
@@ -202,7 +202,7 @@ def _exec_project_source_config_needed(
         make_future_project_source_template,
     )
 
-    project_id = inputs.get("project_id") or ctx.get("project_id") or "omnix"
+    project_id = inputs.get("project_id") or ctx.get("project_id") or "default"
     linkage = ProjectSourceRegistry.get_linkage_status(project_id)
 
     template = make_future_project_source_template("new_project")
@@ -251,7 +251,7 @@ def _exec_automation_policy_evaluate(
     from openjarvis.autonomy.automation_policy import AutomationPolicy
     action_class = inputs.get("action_class", "")
     description = inputs.get("description", "")
-    project_id = inputs.get("project_id") or ctx.get("project_id") or "omnix"
+    project_id = inputs.get("project_id") or ctx.get("project_id") or "default"
     if not action_class:
         return {"error": "action_class is required"}
     return AutomationPolicy.evaluate(action_class, description, project_id)
@@ -263,7 +263,7 @@ def _exec_automation_approval_request(
     from openjarvis.autonomy.automation_policy import AutomationPolicy
     action_class = inputs.get("action_class", "")
     description = inputs.get("description", "")
-    project_id = inputs.get("project_id") or ctx.get("project_id") or "omnix"
+    project_id = inputs.get("project_id") or ctx.get("project_id") or "default"
     ttl = int(inputs.get("ttl_seconds", 300))
     if not action_class:
         return {"error": "action_class is required"}
@@ -314,7 +314,7 @@ def _exec_automation_approval_list(
     inputs: Dict[str, Any], ctx: Dict[str, Any]
 ) -> Dict[str, Any]:
     from openjarvis.autonomy.automation_policy import AutomationPolicy
-    project_id = inputs.get("project_id") or ctx.get("project_id") or "omnix"
+    project_id = inputs.get("project_id") or ctx.get("project_id") or "default"
     records = AutomationPolicy.list_pending(project_id)
     return {
         "project_id": project_id,
@@ -327,7 +327,7 @@ def _exec_automation_autopilot_run_once(
     inputs: Dict[str, Any], ctx: Dict[str, Any]
 ) -> Dict[str, Any]:
     from openjarvis.autonomy.automation_policy import AutomationPolicy
-    project_id = inputs.get("project_id") or ctx.get("project_id") or "omnix"
+    project_id = inputs.get("project_id") or ctx.get("project_id") or "default"
     return AutomationPolicy.run_autopilot_once(project_id)
 
 
@@ -336,7 +336,7 @@ def _exec_automation_autopilot_status(
 ) -> Dict[str, Any]:
     from openjarvis.autonomy.automation_policy import AutomationPolicy
     from openjarvis.autonomy.modes import AutonomyPolicy
-    project_id = inputs.get("project_id") or ctx.get("project_id") or "omnix"
+    project_id = inputs.get("project_id") or ctx.get("project_id") or "default"
     autonomy = AutonomyPolicy.get_status(project_id)
     pending = AutomationPolicy.list_pending(project_id)
     return {
@@ -550,7 +550,7 @@ def _exec_mobile_pending_approvals(
     inputs: Dict[str, Any], ctx: Dict[str, Any]
 ) -> Dict[str, Any]:
     from openjarvis.autonomy.automation_policy import AutomationPolicy
-    project_id = inputs.get("project_id") or ctx.get("project_id") or "omnix"
+    project_id = inputs.get("project_id") or ctx.get("project_id") or "default"
     records = AutomationPolicy.list_pending(project_id)
     return {
         "project_id": project_id,
@@ -677,7 +677,7 @@ def _exec_ops_run_once(
     inputs: Dict[str, Any], ctx: Dict[str, Any]
 ) -> Dict[str, Any]:
     from openjarvis.autonomy.persistent_ops import run_once
-    project_id = inputs.get("project_id") or ctx.get("project_id") or "omnix"
+    project_id = inputs.get("project_id") or ctx.get("project_id") or "default"
     dry_run = inputs.get("dry_run", True)
     return run_once(project_id, dry_run=dry_run)
 
@@ -686,7 +686,7 @@ def _exec_ops_schedule_plan(
     inputs: Dict[str, Any], ctx: Dict[str, Any]
 ) -> Dict[str, Any]:
     from openjarvis.autonomy.persistent_ops import generate_schedule_plan
-    project_id = inputs.get("project_id") or ctx.get("project_id") or "omnix"
+    project_id = inputs.get("project_id") or ctx.get("project_id") or "default"
     cadence = int(inputs.get("cadence_minutes", 60))
     return generate_schedule_plan(project_id, cadence)
 
@@ -695,7 +695,7 @@ def _exec_ops_install_plan(
     inputs: Dict[str, Any], ctx: Dict[str, Any]
 ) -> Dict[str, Any]:
     from openjarvis.autonomy.persistent_ops import generate_install_plan
-    project_id = inputs.get("project_id") or ctx.get("project_id") or "omnix"
+    project_id = inputs.get("project_id") or ctx.get("project_id") or "default"
     cadence = int(inputs.get("cadence_minutes", 60))
     return generate_install_plan(project_id, cadence)
 
@@ -711,7 +711,7 @@ def _exec_ops_dry_run_schedule(
     inputs: Dict[str, Any], ctx: Dict[str, Any]
 ) -> Dict[str, Any]:
     from openjarvis.autonomy.persistent_ops import dry_run_schedule
-    project_id = inputs.get("project_id") or ctx.get("project_id") or "omnix"
+    project_id = inputs.get("project_id") or ctx.get("project_id") or "default"
     cadence = int(inputs.get("cadence_minutes", 60))
     return dry_run_schedule(project_id, cadence)
 
@@ -794,7 +794,7 @@ def _exec_openclaw_link_status(
         ProjectSourceRegistry,
         ProjectSourceLinkType,
     )
-    project_id = inputs.get("project_id") or ctx.get("project_id") or "omnix"
+    project_id = inputs.get("project_id") or ctx.get("project_id") or "default"
     oc_env = get_openclaw_status()
     links = ProjectSourceRegistry.list_for_project(project_id)
     openclaw_links = [

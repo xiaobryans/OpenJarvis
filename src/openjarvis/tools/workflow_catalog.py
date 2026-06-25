@@ -108,7 +108,7 @@ def _exec_project_status(inputs: Dict[str, Any], ctx: Dict[str, Any]) -> Dict[st
     project_id = inputs.get("project_id", "") or ctx.get("project_id", "")
     if not project_id:
         # Default to OMNIX if none specified
-        project_id = "omnix"
+        project_id = "default"
     proj = ProjectRegistry.get(project_id)
     if proj is None:
         return {"ok": False, "error": f"Project '{project_id}' not found"}
@@ -143,7 +143,7 @@ def _exec_project_status(inputs: Dict[str, Any], ctx: Dict[str, Any]) -> Dict[st
 
 def _exec_project_handoff_read(inputs: Dict[str, Any], ctx: Dict[str, Any]) -> Dict[str, Any]:
     from openjarvis.governance.constitution import ProjectRegistry
-    project_id = inputs.get("project_id", "") or ctx.get("project_id", "omnix")
+    project_id = inputs.get("project_id", "") or ctx.get("project_id", "default")
     section = inputs.get("section", "")  # optional: read only a named section
     proj = ProjectRegistry.get(project_id)
     if proj is None:
@@ -189,7 +189,7 @@ def _exec_project_handoff_update_plan(
     """
     from openjarvis.governance.constitution import ProjectRegistry
     from openjarvis.memory.store import _looks_like_secret
-    project_id = inputs.get("project_id", "") or ctx.get("project_id", "omnix")
+    project_id = inputs.get("project_id", "") or ctx.get("project_id", "default")
     content = inputs.get("content", "")
     section_label = inputs.get("section_label", "Draft Plan Update")
     if not content:
@@ -236,7 +236,7 @@ def _exec_project_handoff_update_plan(
 
 
 def _exec_repo_status(inputs: Dict[str, Any], ctx: Dict[str, Any]) -> Dict[str, Any]:
-    project_id = inputs.get("project_id", "") or ctx.get("project_id", "omnix")
+    project_id = inputs.get("project_id", "") or ctx.get("project_id", "default")
     repo_path = inputs.get("repo_path", "") or _resolve_project_repo(project_id) or "."
     result = _run_git_cmd(["git", "status", "--short"], cwd=repo_path)
     return {
@@ -250,7 +250,7 @@ def _exec_repo_status(inputs: Dict[str, Any], ctx: Dict[str, Any]) -> Dict[str, 
 
 
 def _exec_repo_branch_info(inputs: Dict[str, Any], ctx: Dict[str, Any]) -> Dict[str, Any]:
-    project_id = inputs.get("project_id", "") or ctx.get("project_id", "omnix")
+    project_id = inputs.get("project_id", "") or ctx.get("project_id", "default")
     repo_path = inputs.get("repo_path", "") or _resolve_project_repo(project_id) or "."
     branch = _run_git_cmd(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=repo_path)
     head = _run_git_cmd(["git", "rev-parse", "HEAD"], cwd=repo_path)
@@ -269,7 +269,7 @@ def _exec_repo_branch_info(inputs: Dict[str, Any], ctx: Dict[str, Any]) -> Dict[
 
 
 def _exec_repo_diff_summary(inputs: Dict[str, Any], ctx: Dict[str, Any]) -> Dict[str, Any]:
-    project_id = inputs.get("project_id", "") or ctx.get("project_id", "omnix")
+    project_id = inputs.get("project_id", "") or ctx.get("project_id", "default")
     repo_path = inputs.get("repo_path", "") or _resolve_project_repo(project_id) or "."
     target = inputs.get("target", "HEAD")  # e.g. 'HEAD', 'main..HEAD', 'HEAD~5..HEAD'
     result = _run_git_cmd(["git", "diff", "--stat", target], cwd=repo_path)
@@ -284,7 +284,7 @@ def _exec_repo_diff_summary(inputs: Dict[str, Any], ctx: Dict[str, Any]) -> Dict
 
 
 def _exec_repo_recent_commits(inputs: Dict[str, Any], ctx: Dict[str, Any]) -> Dict[str, Any]:
-    project_id = inputs.get("project_id", "") or ctx.get("project_id", "omnix")
+    project_id = inputs.get("project_id", "") or ctx.get("project_id", "default")
     repo_path = inputs.get("repo_path", "") or _resolve_project_repo(project_id) or "."
     n = min(int(inputs.get("n", 10)), 50)  # max 50 commits
     result = _run_git_cmd(
@@ -303,7 +303,7 @@ def _exec_repo_recent_commits(inputs: Dict[str, Any], ctx: Dict[str, Any]) -> Di
 
 
 def _exec_tests_discover(inputs: Dict[str, Any], ctx: Dict[str, Any]) -> Dict[str, Any]:
-    project_id = inputs.get("project_id", "") or ctx.get("project_id", "omnix")
+    project_id = inputs.get("project_id", "") or ctx.get("project_id", "default")
     repo_path = inputs.get("repo_path", "") or _resolve_project_repo(project_id) or "."
     tests_dir = inputs.get("tests_dir", "tests")
     base = Path(repo_path) / tests_dir
@@ -329,7 +329,7 @@ def _exec_tests_run_targeted(inputs: Dict[str, Any], ctx: Dict[str, Any]) -> Dic
     - Timeout: 120 seconds.
     - Output truncated to 50 KB.
     """
-    project_id = inputs.get("project_id", "") or ctx.get("project_id", "omnix")
+    project_id = inputs.get("project_id", "") or ctx.get("project_id", "default")
     test_path = inputs.get("test_path", "")
     extra_args = inputs.get("extra_args", [])
     if not test_path:
@@ -863,7 +863,7 @@ def _exec_web_search(inputs: Dict[str, Any], ctx: Dict[str, Any]) -> Dict[str, A
 
 def _exec_slack_draft_update(inputs: Dict[str, Any], ctx: Dict[str, Any]) -> Dict[str, Any]:
     """Draft a Slack update message. Does NOT send. Returns formatted text only."""
-    project_id = inputs.get("project_id", "") or ctx.get("project_id", "omnix")
+    project_id = inputs.get("project_id", "") or ctx.get("project_id", "default")
     title = inputs.get("title", "Status Update")
     body = inputs.get("body", "")
     urgency = inputs.get("urgency", "normal")
@@ -887,7 +887,7 @@ def _exec_slack_draft_update(inputs: Dict[str, Any], ctx: Dict[str, Any]) -> Dic
 
 def _exec_telegram_draft_alert(inputs: Dict[str, Any], ctx: Dict[str, Any]) -> Dict[str, Any]:
     """Draft a Telegram alert message. Does NOT send. Returns formatted text only."""
-    project_id = inputs.get("project_id", "") or ctx.get("project_id", "omnix")
+    project_id = inputs.get("project_id", "") or ctx.get("project_id", "default")
     title = inputs.get("title", "Alert")
     body = inputs.get("body", "")
     urgency = inputs.get("urgency", "normal")
@@ -914,7 +914,7 @@ def _exec_report_generate_status(inputs: Dict[str, Any], ctx: Dict[str, Any]) ->
     from openjarvis.governance.constitution import ProjectRegistry
     from openjarvis.mission.store import MissionStore
     from openjarvis.mission.models import MissionStatus
-    project_id = inputs.get("project_id", "") or ctx.get("project_id", "omnix")
+    project_id = inputs.get("project_id", "") or ctx.get("project_id", "default")
     proj = ProjectRegistry.get(project_id)
     if proj is None:
         return {"ok": False, "error": f"Project '{project_id}' not found"}
@@ -1167,7 +1167,7 @@ _WORKFLOW_TOOL_DEFS = [
             category="project",
             input_schema={
                 "type": "object",
-                "properties": {"project_id": {"type": "string", "default": "omnix"}},
+                "properties": {"project_id": {"type": "string", "default": "default"}},
                 "required": [],
             },
             output_schema={"type": "object"},
@@ -1195,7 +1195,7 @@ _WORKFLOW_TOOL_DEFS = [
             input_schema={
                 "type": "object",
                 "properties": {
-                    "project_id": {"type": "string", "default": "omnix"},
+                    "project_id": {"type": "string", "default": "default"},
                     "section": {"type": "string", "description": "Optional section header to extract"},
                 },
                 "required": [],
@@ -1898,7 +1898,7 @@ _WORKFLOW_TOOL_DEFS = [
             category="report",
             input_schema={
                 "type": "object",
-                "properties": {"project_id": {"type": "string", "default": "omnix"}},
+                "properties": {"project_id": {"type": "string", "default": "default"}},
                 "required": [],
             },
             output_schema={"type": "object"},

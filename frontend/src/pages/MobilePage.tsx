@@ -592,7 +592,7 @@ export function MobilePage() {
       const route = isRemote && !backendUrl.includes(':8000') ? '/v1/tasks' : '/v1/company-org/task';
       const body = route === '/v1/tasks'
         ? { description: taskInput }
-        : { task: taskInput, project_id: 'omnix' };
+        : { task: taskInput };
       const res = await backendFetch(backendUrl, route, apiKey, {
         method: 'POST',
         body: JSON.stringify(body),

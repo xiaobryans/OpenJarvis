@@ -109,7 +109,7 @@ def get_runner_status() -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
-def run_once(project_id: str = "omnix", dry_run: bool = True) -> Dict[str, Any]:
+def run_once(project_id: str = "default", dry_run: bool = True) -> Dict[str, Any]:
     """Run safe Level 1-4 actions once.
 
     dry_run=True (default): simulate only, no real execution.
@@ -199,7 +199,7 @@ def _append_log_entry(
 
 
 def generate_schedule_plan(
-    project_id: str = "omnix",
+    project_id: str = "default",
     cadence_minutes: int = 60,
 ) -> Dict[str, Any]:
     """Generate a persistent runner schedule plan. Does NOT install anything."""
@@ -261,7 +261,7 @@ def generate_schedule_plan(
 
 
 def generate_install_plan(
-    project_id: str = "omnix",
+    project_id: str = "default",
     cadence_minutes: int = 60,
 ) -> Dict[str, Any]:
     """Generate install plan as a reviewable JSON file. Does NOT install anything.
@@ -370,7 +370,7 @@ def generate_install_plan(
 
 
 def dry_run_schedule(
-    project_id: str = "omnix",
+    project_id: str = "default",
     cadence_minutes: int = 60,
 ) -> Dict[str, Any]:
     """Simulate what a scheduled run would do. No real execution."""

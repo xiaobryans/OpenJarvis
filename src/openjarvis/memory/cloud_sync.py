@@ -1,9 +1,10 @@
 """Memory OS Cloud Sync — S3-backed push/pull/merge for JarvisMemory.
 
-Uses existing OMNIX project AWS configuration:
-  - OMNIX_WORKBENCH_AWS_PROFILE   AWS named profile (default credential chain)
-  - OMNIX_WORKBENCH_AWS_REGION    AWS region (default: ap-southeast-1)
-  - OMNIX_WORKBENCH_MEMORY_BUCKET Target S3 bucket (reuses workbench bucket)
+Uses Jarvis S3 cloud sync configuration:
+  - JARVIS_S3_PROFILE     AWS named profile (default credential chain)
+  - JARVIS_S3_REGION      AWS region (default: ap-southeast-1)
+  - JARVIS_S3_BUCKET      Target S3 bucket
+Legacy: OMNIX_WORKBENCH_* env vars are supported as fallback for backward compatibility.
 
 S3 key layout (under 'jarvis_memory/' prefix, separate from workbench data):
   jarvis_memory/raw_entries.jsonl        — all raw memory entries
@@ -49,10 +50,14 @@ _S3_DISTILLED_KEY = f"{_S3_PREFIX}/distilled_entries.jsonl"
 _S3_AUDIT_KEY = f"{_S3_PREFIX}/audit_records.jsonl"
 _MAX_ENTRIES = 10_000
 
-# Env var names (reuse existing OMNIX config)
-_ENV_PROFILE = "OMNIX_WORKBENCH_AWS_PROFILE"
-_ENV_REGION = "OMNIX_WORKBENCH_AWS_REGION"
-_ENV_BUCKET = "OMNIX_WORKBENCH_MEMORY_BUCKET"
+# Primary env var names (universal — not OMNIX-specific)
+_ENV_PROFILE = "JARVIS_S3_PROFILE"
+_ENV_REGION = "JARVIS_S3_REGION"
+_ENV_BUCKET = "JARVIS_S3_BUCKET"
+# Legacy env var names (backward-compatible — checked if primary not set)
+_ENV_PROFILE_LEGACY = "OMNIX_WORKBENCH_AWS_PROFILE"
+_ENV_REGION_LEGACY = "OMNIX_WORKBENCH_AWS_REGION"
+_ENV_BUCKET_LEGACY = "OMNIX_WORKBENCH_MEMORY_BUCKET"
 
 
 # ---------------------------------------------------------------------------
@@ -119,7 +124,7 @@ class CloudSyncStatus:
 # ---------------------------------------------------------------------------
 
 
-def _load_env_from_file(env_file: str = ".env") -> None:
+def _load_s3_config_from_env_file(env_file: str = ".env") -> None:
     """Load env vars from .env file if present. Idempotent."""
     p = Path(env_file)
     if not p.exists():
@@ -134,12 +139,20 @@ def _load_env_from_file(env_file: str = ".env") -> None:
             os.environ[k] = v.strip()
 
 
+# Backward-compatible alias
+_load_env_from_file = _load_s3_config_from_env_file
+
+
 def _get_config() -> Dict[str, str]:
-    """Return current S3 config (no secrets logged)."""
+    """Return current S3 config (no secrets logged).
+
+    Checks JARVIS_S3_* vars first, falls back to OMNIX_WORKBENCH_* for
+    backward compatibility.
+    """
     return {
-        "profile": os.environ.get(_ENV_PROFILE, ""),
-        "region": os.environ.get(_ENV_REGION, "ap-southeast-1"),
-        "bucket": os.environ.get(_ENV_BUCKET, ""),
+        "profile": os.environ.get(_ENV_PROFILE) or os.environ.get(_ENV_PROFILE_LEGACY, ""),
+        "region": os.environ.get(_ENV_REGION) or os.environ.get(_ENV_REGION_LEGACY, "ap-southeast-1"),
+        "bucket": os.environ.get(_ENV_BUCKET) or os.environ.get(_ENV_BUCKET_LEGACY, ""),
     }
 
 
@@ -151,7 +164,7 @@ def _make_s3_client():
         raise ImportError(
             "boto3 is required for cloud sync. Install: pip install boto3"
         )
-    _load_env_from_file()
+    _load_s3_config_from_env_file()
     cfg = _get_config()
     if not cfg["bucket"]:
         raise ValueError(
@@ -245,9 +258,10 @@ def _merge_audit_records(
 
 
 class JarvisMemoryS3Sync:
-    """Cloud sync for JarvisMemory entries using existing S3 bucket config.
+    """Cloud sync for JarvisMemory entries using Jarvis S3 bucket config.
 
-    Uses OMNIX_WORKBENCH_MEMORY_BUCKET under 'jarvis_memory/' prefix.
+    Uses JARVIS_S3_BUCKET (or OMNIX_WORKBENCH_MEMORY_BUCKET as legacy fallback)
+    under 'jarvis_memory/' prefix.
     All operations are graceful: return CloudSyncResult on failure.
 
     Usage
@@ -259,7 +273,7 @@ class JarvisMemoryS3Sync:
     """
 
     def __init__(self) -> None:
-        _load_env_from_file()
+        _load_s3_config_from_env_file()
 
     # ------------------------------------------------------------------
     # Push operations
@@ -437,7 +451,7 @@ class JarvisMemoryS3Sync:
 
     def get_status(self) -> CloudSyncStatus:
         """Non-destructive readiness check. Attempts a lightweight S3 head call."""
-        _load_env_from_file()
+        _load_s3_config_from_env_file()
         cfg = _get_config()
         profile_configured = bool(cfg["profile"])
         bucket = cfg["bucket"]
@@ -452,7 +466,7 @@ class JarvisMemoryS3Sync:
                 can_read=False,
                 can_write=False,
                 last_error=f"{_ENV_BUCKET} not set",
-                detail="Cloud sync requires OMNIX_WORKBENCH_MEMORY_BUCKET",
+                detail=f"Cloud sync requires {_ENV_BUCKET} (or {_ENV_BUCKET_LEGACY} as fallback)",
             )
 
         try:

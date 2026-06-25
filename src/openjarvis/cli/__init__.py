@@ -27,6 +27,7 @@ from openjarvis.cli.init_cmd import init
 from openjarvis.cli.memory_cmd import memory
 from openjarvis.cli.mine_cmd import mine
 from openjarvis.cli.model import model
+# OMNIX project-specific commands (optional adapter — not a Jarvis core command)
 from openjarvis.cli.omnix_cmd import omnix
 from openjarvis.cli.operators_cmd import operators
 from openjarvis.cli.optimize_cmd import optimize_group

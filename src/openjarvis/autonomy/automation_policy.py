@@ -338,7 +338,7 @@ class AutomationPolicy:
         cls,
         action_class: str,
         description: str = "",
-        project_id: str = "omnix",
+        project_id: str = "default",
     ) -> Dict[str, Any]:
         """Evaluate whether an action requires approval."""
         level = cls.classify_action(action_class)
@@ -372,7 +372,7 @@ class AutomationPolicy:
         cls,
         action_class: str,
         description: str,
-        project_id: str = "omnix",
+        project_id: str = "default",
         ttl_seconds: int = _DEFAULT_TTL,
     ) -> ApprovalRecord:
         eval_result = cls.evaluate(action_class, description, project_id)
@@ -466,7 +466,7 @@ class AutomationPolicy:
         return record
 
     @classmethod
-    def list_pending(cls, project_id: str = "omnix") -> List[ApprovalRecord]:
+    def list_pending(cls, project_id: str = "default") -> List[ApprovalRecord]:
         try:
             _ensure_schema(cls._db_path)
             with _get_conn(cls._db_path) as conn:
@@ -486,7 +486,7 @@ class AutomationPolicy:
             return []
 
     @classmethod
-    def run_autopilot_once(cls, project_id: str = "omnix") -> Dict[str, Any]:
+    def run_autopilot_once(cls, project_id: str = "default") -> Dict[str, Any]:
         """Simulate running pre-approved safe actions. All simulated — no real execution."""
         safe_actions = [
             {"action": "watchdog.run_project_pack", "class": "watchdog_run"},

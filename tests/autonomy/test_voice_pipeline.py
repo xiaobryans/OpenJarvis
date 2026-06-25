@@ -107,6 +107,7 @@ class TestTTSStatus:
         assert status["tts_status"] in (
             TTSEngine.MACOS_SAY,
             TTSEngine.OPENAI_TTS,
+            TTSEngine.DEEPGRAM,
             TTSEngine.NOT_CONFIGURED,
         )
 
