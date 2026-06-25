@@ -602,3 +602,292 @@ export async function fetchExpertRoutingStatus(): Promise<ExpertRoutingStatus> {
   const res = await apiFetch('/v1/expert-roles/routing-status');
   return res.json();
 }
+
+// ---------------------------------------------------------------------------
+// Skills Expansion types + API  (Phase B7)
+// ---------------------------------------------------------------------------
+
+export interface SkillsCatalogSummary {
+  total: number;
+  available: number;
+  blocked: number;
+  disabled: number;
+  not_configured: number;
+  planned: number;
+  has_intake_queue: boolean;
+  intake_queue_size: number;
+  marketplace_live: boolean;
+  fake_data: boolean;
+  automation_honesty: boolean;
+  note: string;
+}
+
+export interface SkillPermission {
+  skill_id: string;
+  name: string;
+  safety_level: string;
+  requires_approval: boolean;
+  network_access: boolean;
+  data_access: boolean;
+  approval_tier: string;
+}
+
+export async function fetchSkillsCatalogSummary(): Promise<SkillsCatalogSummary> {
+  const res = await apiFetch('/v1/skills/catalog/summary');
+  return res.json();
+}
+
+export async function fetchSkillPermissions(): Promise<{ skills: SkillPermission[]; count: number; permission_gates_active: boolean; fake_data: boolean }> {
+  const res = await apiFetch('/v1/skills/permissions');
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Connector Workflows types + API  (Phase B8)
+// ---------------------------------------------------------------------------
+
+export interface ConnectorWorkflow {
+  workflow_id: string;
+  name: string;
+  dry_run_only: boolean;
+  requires_approval: boolean;
+}
+
+export interface ConnectorEntry {
+  connector_id: string;
+  name: string;
+  status: string;
+  credential_gate: string;
+  available_workflows: ConnectorWorkflow[];
+  live: boolean;
+  fake_live: boolean;
+}
+
+export interface ConnectorWorkflowsResponse {
+  connectors: ConnectorEntry[];
+  live_connector_count: number;
+  configured_count: number;
+  total: number;
+  fake_live: boolean;
+  fake_data: boolean;
+  note: string;
+}
+
+export async function fetchConnectorWorkflows(): Promise<ConnectorWorkflowsResponse> {
+  const res = await apiFetch('/v1/connector-workflows');
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Proactive Operator types + API  (Phase B9)
+// ---------------------------------------------------------------------------
+
+export interface ProactiveSuggestion {
+  type: string;
+  title: string;
+  description: string;
+  source: string;
+  source_id?: string;
+  action_required?: string;
+  priority: string;
+  approval_route?: string;
+  action_type?: string;
+  cli_command?: string;
+}
+
+export interface ProactiveSuggestionsResponse {
+  suggestions: ProactiveSuggestion[];
+  count: number;
+  sources_probed: string[];
+  execution_blocked: boolean;
+  approval_gates_preserved: boolean;
+  fake_data: boolean;
+  automation_honesty: boolean;
+  note: string;
+}
+
+export interface StaleItem {
+  task_id: string;
+  title: string;
+  status: string;
+  age_days: number;
+  source: string;
+}
+
+export interface NextAction {
+  rank: number;
+  action: string;
+  reason: string;
+  source: string;
+  approval_required: boolean;
+  priority: string;
+}
+
+export async function fetchProactiveSuggestions(): Promise<ProactiveSuggestionsResponse> {
+  const res = await apiFetch('/v1/proactive/suggestions');
+  return res.json();
+}
+
+export async function fetchStaleItems(): Promise<{ stale_tasks: StaleItem[]; count: number; threshold_days: number; action_blocked: boolean; fake_data: boolean }> {
+  const res = await apiFetch('/v1/proactive/stale-items');
+  return res.json();
+}
+
+export async function fetchNextActions(): Promise<{ next_actions: NextAction[]; count: number; auto_execute: boolean; approval_required_for_any_action: boolean; fake_data: boolean }> {
+  const res = await apiFetch('/v1/proactive/next-actions');
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Business/Admin types + API  (Phase B10)
+// ---------------------------------------------------------------------------
+
+export interface AdminAction {
+  action_id: string;
+  name: string;
+  approval_required: boolean;
+  live: boolean;
+}
+
+export interface AdminCategory {
+  category_id: string;
+  name: string;
+  description: string;
+  status: string;
+  actions: AdminAction[];
+  external_gate: string | null;
+  fake_completion: boolean;
+}
+
+export interface BusinessAdminDashboard {
+  categories: AdminCategory[];
+  total_categories: number;
+  available_now: number;
+  approval_gates_active: boolean;
+  fake_completion: boolean;
+  fake_data: boolean;
+  note: string;
+}
+
+export interface BusinessWorkflow {
+  workflow_id: string;
+  name: string;
+  category: string;
+  source_route: string | null;
+  approval_required: boolean;
+  available: boolean;
+  gate?: string;
+}
+
+export async function fetchBusinessAdminDashboard(): Promise<BusinessAdminDashboard> {
+  const res = await apiFetch('/v1/business-admin/dashboard');
+  return res.json();
+}
+
+export async function fetchBusinessAdminWorkflows(): Promise<{ workflows: BusinessWorkflow[]; count: number; available_count: number; fake_data: boolean }> {
+  const res = await apiFetch('/v1/business-admin/workflows');
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Observability types + API  (Phase B11)
+// ---------------------------------------------------------------------------
+
+export interface HealthComponent {
+  component_id: string;
+  name: string;
+  status: 'healthy' | 'degraded' | 'unavailable' | string;
+  note: string;
+}
+
+export interface HealthSummary {
+  components: HealthComponent[];
+  healthy_count: number;
+  degraded_count: number;
+  unavailable_count: number;
+  overall_status: string;
+  fake_data: boolean;
+  note: string;
+}
+
+export interface ObservabilityAlert {
+  level: 'warn' | 'error' | string;
+  message: string;
+}
+
+export interface ReliabilityMetrics {
+  metrics: Record<string, unknown>;
+  thresholds: Record<string, unknown>;
+  alerts: ObservabilityAlert[];
+  cost_tracking: { budget_metadata_available: boolean; live_cost_data: boolean; note: string };
+  fake_data: boolean;
+  secret_safe: boolean;
+}
+
+export async function fetchHealthSummary(): Promise<HealthSummary> {
+  const res = await apiFetch('/v1/observability/health-summary');
+  return res.json();
+}
+
+export async function fetchReliabilityMetrics(): Promise<ReliabilityMetrics> {
+  const res = await apiFetch('/v1/observability/reliability-metrics');
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Long-Horizon Goals types + API  (Phase B12)
+// ---------------------------------------------------------------------------
+
+export interface LongHorizonGoal {
+  goal_id: string;
+  title: string;
+  description: string;
+  horizon: string;
+  status: string;
+  owner: string;
+  tags: string[];
+  milestones_total: number;
+  milestones_completed: number;
+  milestones_pending: number;
+  next_actions_total: number;
+  next_actions_pending: number;
+  has_continuation_state: boolean;
+  follow_up_count: number;
+  auto_execute: false;
+  approval_required_for_actions: true;
+  execution_honesty: string;
+}
+
+export interface LongHorizonGoalsResponse {
+  goals: LongHorizonGoal[];
+  count: number;
+  active_count: number;
+  paused_count: number;
+  completed_count: number;
+  auto_execute: false;
+  fake_data: boolean;
+  note: string;
+}
+
+export interface LongHorizonSummary {
+  total_goals: number;
+  active: number;
+  paused: number;
+  completed: number;
+  abandoned: number;
+  total_pending_milestones: number;
+  total_pending_actions: number;
+  approval_required_for_execution: true;
+  auto_execute: false;
+  fake_data: boolean;
+}
+
+export async function fetchLongHorizonGoals(): Promise<LongHorizonGoalsResponse> {
+  const res = await apiFetch('/v1/long-horizon/goals');
+  return res.json();
+}
+
+export async function fetchLongHorizonSummary(): Promise<LongHorizonSummary> {
+  const res = await apiFetch('/v1/long-horizon/summary');
+  return res.json();
+}

@@ -236,6 +236,73 @@ _CAPABILITIES: List[Dict[str, Any]] = [
         ),
         "plan": "Phase B5",
     },
+    {
+        "id": "skills_plugin_expansion",
+        "name": "Skills / Plugin Expansion Pack",
+        "status": "available",
+        "description": (
+            "Expanded skill catalog summary, permission/risk matrix, dry-run intake validation, "
+            "and intake review queue. Third-party marketplace integration requires external gate. "
+            "See GET /v1/skills/catalog/summary, GET /v1/skills/permissions."
+        ),
+        "plan": "Phase B7",
+    },
+    {
+        "id": "connector_workflow_expansion",
+        "name": "Connector Workflow Expansion",
+        "status": "partial",
+        "description": (
+            "Per-connector workflow capability matrix (Gmail, Slack, Telegram, GitHub, Notion, Google Calendar). "
+            "Status based on env var presence. Live workflows blocked until credentials are configured. "
+            "All live actions require approval gates. See GET /v1/connector-workflows."
+        ),
+        "plan": "Phase B8",
+        "blocker": "Connector credentials required for live execution (external gate).",
+    },
+    {
+        "id": "proactive_operator",
+        "name": "Proactive Operator Layer",
+        "status": "available",
+        "description": (
+            "Proactive suggestions from existing local data (pending approvals, failed routines, stale items). "
+            "Suggestions only — no autonomous execution. Approval gates fully preserved. "
+            "See GET /v1/proactive/suggestions."
+        ),
+        "plan": "Phase B9",
+    },
+    {
+        "id": "business_admin_operator",
+        "name": "Business / Admin Operator Expansion",
+        "status": "available",
+        "description": (
+            "Admin task categories, research/analysis, company-building templates, communications drafting. "
+            "External action requires connector credentials + approval gates. No fake completed work. "
+            "See GET /v1/business-admin/dashboard."
+        ),
+        "plan": "Phase B10",
+    },
+    {
+        "id": "observability_reliability",
+        "name": "Observability / Reliability / Cost Controls",
+        "status": "available",
+        "description": (
+            "Local component health summary, reliability metrics, audit log access. "
+            "Cost tracking requires provider billing API (external gate — not yet live). "
+            "No secrets in any response. See GET /v1/observability/health-summary."
+        ),
+        "plan": "Phase B11",
+    },
+    {
+        "id": "long_horizon_goals",
+        "name": "Long-Horizon Goal Execution Foundation",
+        "status": "available",
+        "description": (
+            "Goal checkpoint tracking, execution plan timelines, pause/resume/cancel state. "
+            "All execution steps require explicit approval. No autonomous execution. "
+            "See GET /v1/long-horizon/goals."
+        ),
+        "plan": "Phase B12",
+    },
 ]
 
 _ROADMAP: List[Dict[str, Any]] = [
@@ -257,6 +324,12 @@ _ROADMAP: List[Dict[str, Any]] = [
     {"plan": "Phase B4", "name": "Task / Project / Goal Command Center", "status": "IN_PROGRESS"},
     {"plan": "Phase B5", "name": "Expert Organization Expansion", "status": "IN_PROGRESS"},
     {"plan": "Phase B6", "name": "Desktop + Mobile UI/UX Product Polish", "status": "IN_PROGRESS"},
+    {"plan": "Phase B7", "name": "Skills / Plugin Expansion Pack", "status": "IN_PROGRESS"},
+    {"plan": "Phase B8", "name": "Connector Workflow Expansion", "status": "IN_PROGRESS"},
+    {"plan": "Phase B9", "name": "Proactive Operator Layer", "status": "IN_PROGRESS"},
+    {"plan": "Phase B10", "name": "Business / Admin Operator Expansion", "status": "IN_PROGRESS"},
+    {"plan": "Phase B11", "name": "Observability / Reliability / Cost Controls", "status": "IN_PROGRESS"},
+    {"plan": "Phase B12", "name": "Long-Horizon Goal Execution Foundation", "status": "IN_PROGRESS"},
 ]
 
 
@@ -315,6 +388,12 @@ async def get_jarvis_status() -> Dict[str, Any]:
             "phase_b4_command_center": "IN_PROGRESS",
             "phase_b5_expert_org": "IN_PROGRESS",
             "phase_b6_ui_polish": "IN_PROGRESS",
+            "phase_b7_skills_expansion": "IN_PROGRESS",
+            "phase_b8_connector_workflows": "IN_PROGRESS",
+            "phase_b9_proactive_operator": "IN_PROGRESS",
+            "phase_b10_business_admin": "IN_PROGRESS",
+            "phase_b11_observability": "IN_PROGRESS",
+            "phase_b12_long_horizon": "IN_PROGRESS",
         },
         "capability_summary": {
             "available": available_count,
@@ -333,8 +412,8 @@ async def get_roadmap() -> Dict[str, Any]:
     """Current Jarvis roadmap and plan acceptance state."""
     return {
         "roadmap": _ROADMAP,
-        "active_sprint": "PHASE_B2_TO_B6_SAFE_JARVIS_OS_EXPANSION",
-        "next": "Complete Phase B2-B6. Final Phase A manual gates remain open (DMG/signing/credentials). Plan 3 voice when Bryan reopens it.",
+        "active_sprint": "PHASE_B7_TO_B12_ADVANCED_JARVIS_OS_EXPANSION",
+        "next": "Complete Phase B7-B12. Final Phase A manual gates remain open (DMG/signing/credentials). Plan 3 voice when Bryan reopens it.",
         "note": "Only Bryan can mark plans as ACCEPTED.",
     }
 

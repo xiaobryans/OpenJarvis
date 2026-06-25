@@ -22,6 +22,12 @@ import { FollowUpCenterPage } from './pages/FollowUpCenterPage';
 import { RoutinesCenterPage } from './pages/RoutinesCenterPage';
 import { MemoryOSPage } from './pages/MemoryOSPage';
 import { CommandCenterPage } from './pages/CommandCenterPage';
+import { SkillsPluginsPage } from './pages/SkillsPluginsPage';
+import { ConnectorWorkflowsPage } from './pages/ConnectorWorkflowsPage';
+import { ProactiveOperatorPage } from './pages/ProactiveOperatorPage';
+import { BusinessAdminPage } from './pages/BusinessAdminPage';
+import { ObservabilityPage } from './pages/ObservabilityPage';
+import { LongHorizonGoalsPage } from './pages/LongHorizonGoalsPage';
 import { CommandPalette } from './components/CommandPalette';
 import { TextFallbackPanel } from './components/TextFallbackPanel';
 import { SetupScreen } from './components/SetupScreen';
@@ -237,6 +243,12 @@ export default function App() {
           <Route path="routines" element={<RoutinesCenterPage />} />
           <Route path="memory-os" element={<MemoryOSPage />} />
           <Route path="command-center" element={<CommandCenterPage />} />
+          <Route path="skills-plugins" element={<SkillsPluginsPage />} />
+          <Route path="connector-workflows" element={<ConnectorWorkflowsPage />} />
+          <Route path="proactive" element={<ProactiveOperatorPage />} />
+          <Route path="business-admin" element={<BusinessAdminPage />} />
+          <Route path="observability" element={<ObservabilityPage />} />
+          <Route path="long-horizon" element={<LongHorizonGoalsPage />} />
         </Route>
       </Routes>
       <Toaster position="bottom-right" />

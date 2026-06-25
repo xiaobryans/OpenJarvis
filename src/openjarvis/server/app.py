@@ -49,6 +49,12 @@ from openjarvis.server.system_status_routes import router as system_status_route
 from openjarvis.server.routines_routes import router as routines_router
 from openjarvis.server.follow_up_center_routes import router as follow_up_center_router
 from openjarvis.server.command_center_routes import router as command_center_router
+from openjarvis.server.skills_expansion_routes import router as skills_expansion_router
+from openjarvis.server.connector_workflow_routes import router as connector_workflow_router
+from openjarvis.server.proactive_routes import router as proactive_router
+from openjarvis.server.business_admin_routes import router as business_admin_router
+from openjarvis.server.observability_routes import router as observability_router
+from openjarvis.server.long_horizon_routes import router as long_horizon_router
 
 logger = logging.getLogger(__name__)
 
@@ -346,6 +352,12 @@ def create_app(
     app.include_router(routines_router)
     app.include_router(follow_up_center_router)
     app.include_router(command_center_router)
+    app.include_router(skills_expansion_router)
+    app.include_router(connector_workflow_router)
+    app.include_router(proactive_router)
+    app.include_router(business_admin_router)
+    app.include_router(observability_router)
+    app.include_router(long_horizon_router)
     include_all_routes(app)
 
     # Restore SendBlue channel bindings from database on startup

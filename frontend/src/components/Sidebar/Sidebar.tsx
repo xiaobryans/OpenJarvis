@@ -29,6 +29,12 @@ import {
   RefreshCw,
   Brain,
   Command,
+  Package,
+  Zap,
+  Lightbulb,
+  Briefcase,
+  BarChart2,
+  Flag,
 } from 'lucide-react';
 import { ConversationList } from './ConversationList';
 import { useAppStore } from '../../lib/store';
@@ -81,6 +87,12 @@ export function Sidebar() {
     { path: '/routines', icon: RefreshCw, label: 'Routines', badge: null },
     { path: '/memory-os', icon: Brain, label: 'Memory OS', badge: null },
     { path: '/command-center', icon: Command, label: 'Command Center', badge: null },
+    { path: '/skills-plugins', icon: Package, label: 'Skills & Plugins', badge: null },
+    { path: '/connector-workflows', icon: Zap, label: 'Connector Flows', badge: null },
+    { path: '/proactive', icon: Lightbulb, label: 'Proactive', badge: null },
+    { path: '/business-admin', icon: Briefcase, label: 'Business OS', badge: null },
+    { path: '/observability', icon: BarChart2, label: 'Observability', badge: null },
+    { path: '/long-horizon', icon: Flag, label: 'Long-Horizon', badge: null },
     { path: '/agents', icon: Bot, label: 'Agents', badge: null },
     { path: '/logs', icon: ScrollText, label: 'Logs', badge: null },
     { path: '/settings', icon: Settings, label: 'Settings', badge: null },
