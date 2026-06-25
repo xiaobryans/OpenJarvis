@@ -141,3 +141,30 @@ class TestDailyDriverHonesty:
     def test_no_fake_data_in_score(self, score_client):
         data = score_client.get("/v1/control-tower/completion-score").json()
         assert data.get("fake_data") is False
+
+
+# ---------------------------------------------------------------------------
+# Tests: Neural Command Center sprint
+# ---------------------------------------------------------------------------
+
+class TestNeuralCommandCenterSprint:
+    def test_active_sprint_is_neural_command_center(self, sk_client):
+        data = sk_client.get("/v1/jarvis/roadmap").json()
+        sprint = data["active_sprint"]
+        assert "NEURAL" in sprint or "UI_UNIFICATION" in sprint or "FINAL_PHASE_A" in sprint, (
+            f"Expected neural command center sprint, got: {sprint}"
+        )
+
+    def test_installed_visual_smoke_still_needs_proof(self, smoke_client):
+        data = smoke_client.get("/v1/final-smoke/status").json()
+        assert data["claimed_passed"] is False
+        assert data["fake_smoke_result"] is False
+        assert data["manual_proof_required"] is True
+
+    def test_completion_score_route_returns_200(self, score_client):
+        assert score_client.get("/v1/control-tower/completion-score").status_code == 200
+
+    def test_completion_score_not_fake(self, score_client):
+        data = score_client.get("/v1/control-tower/completion-score").json()
+        assert data.get("fake_data") is False
+        assert data.get("core_os_completion", {}).get("fake_score") is False

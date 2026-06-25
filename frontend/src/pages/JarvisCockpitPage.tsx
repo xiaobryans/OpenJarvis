@@ -37,6 +37,7 @@ import { useAppStore } from '../lib/store';
 import { fetchRelevantMemory, buildJarvisMessages } from '../lib/jarvis-context';
 import type { ChatMessage } from '../types';
 import type { TurnPhase } from '../hooks/useVoiceTurn';
+import { DesktopCommandCenter, MobileCommandCenter, type FinalSmokeStatus, type SigningStatus, type CompletionScore } from './NeuralCommandCenter';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -107,6 +108,12 @@ interface ApprovalItem {
   status?: string;
   action_type?: string;
   tier?: string;
+}
+
+interface RoutinesStatus {
+  total_routines?: number;
+  active_count?: number;
+  last_run?: string;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1108,9 +1115,17 @@ interface MissionSurfaceProps {
   connectorLive: number;
   connectorTotal: number;
   auditEntries: { action_type?: string; execution_status?: string; actor?: string }[];
+  memStatus: MemoryStatus | null;
+  finalSmoke: FinalSmokeStatus | null;
+  signingStatus: SigningStatus | null;
+  completionScore: CompletionScore | null;
+  workflowStatus: { status?: string; workflow_id?: string; commit_hash?: string } | null;
+  macWorkerStatus: { queued: number; running: number; failed: number } | null;
+  connectors: ConnectorInfo[];
+  plan9: Plan9Status | null;
 }
 
-function MissionSurface({ phase, apiOk, input, sending, lastReply, onInputChange, onKeyDown, onSubmit, pendingApprovals, orgHierarchy: _orgHierarchy, orgFetchOk, registry, routingStatus, onExpandPanel, onMode, isNarrow, inputRef, connectorLive, connectorTotal, auditEntries }: MissionSurfaceProps) {
+function MissionSurface({ phase, apiOk, input, sending, lastReply, onInputChange, onKeyDown, onSubmit, pendingApprovals, orgHierarchy: _orgHierarchy, orgFetchOk, registry, routingStatus, onExpandPanel, onMode, isNarrow, inputRef, connectorLive, connectorTotal, auditEntries, memStatus, finalSmoke, signingStatus, completionScore, workflowStatus, macWorkerStatus, connectors, plan9 }: MissionSurfaceProps) {
   const [chatExpanded, setChatExpanded] = useState(false);
 
   // Esc closes chat drawer
@@ -1158,38 +1173,86 @@ function MissionSurface({ phase, apiOk, input, sending, lastReply, onInputChange
         </button>
       )}
 
-      {/* ── Main cockpit area (center + right panel) ──────────────── */}
-      <div style={{ flex: 1, display: 'flex', overflow: 'hidden', minHeight: 0 }}>
+      {/* Neural Command Center — Desktop or Mobile layout */}
+      {isNarrow ? (
+        <MobileCommandCenter
+          phase={phase as import('./NeuralCommandCenter').TurnPhase}
+          apiOk={apiOk}
+          pendingApprovals={pendingApprovals}
+          approvalCount={pendingApprovals}
+          connectors={connectors}
+          memStatus={memStatus}
+          auditEntries={auditEntries}
+          workflowStatus={workflowStatus}
+          finalSmoke={finalSmoke}
+          signingStatus={signingStatus}
+          completionScore={completionScore}
+          routingStatus={routingStatus}
+          registry={registry}
+          plan9Gaps={plan9?.gaps ?? null}
+          connectorLive={connectorLive}
+          connectorTotal={connectorTotal}
+          onExpandPanel={(id: string) => onExpandPanel(id as PanelId)}
+          onMode={(m: string) => onMode(m as FocusMode)}
+          input={input}
+          sending={sending}
+          lastReply={lastReply}
+          onInputChange={onInputChange}
+          onSubmit={onSubmit}
+          onKeyDown={onKeyDown}
+          inputRef={inputRef}
+          isNarrow={isNarrow}
+          orbChildren={
+            <MissionCore
+              phase={phase}
+              registry={registry}
+              onOrgChain={() => onExpandPanel('org-chain')}
+              orgFetchOk={orgFetchOk}
+              isNarrow={isNarrow}
+            />
+          }
+        />
+      ) : (
+        <DesktopCommandCenter
+          phase={phase as import('./NeuralCommandCenter').TurnPhase}
+          apiOk={apiOk}
+          pendingApprovals={pendingApprovals}
+          approvalCount={pendingApprovals}
+          connectors={connectors}
+          memStatus={memStatus}
+          auditEntries={auditEntries}
+          workflowStatus={workflowStatus}
+          finalSmoke={finalSmoke}
+          signingStatus={signingStatus}
+          completionScore={completionScore}
+          routingStatus={routingStatus}
+          registry={registry}
+          plan9Gaps={plan9?.gaps ?? null}
+          connectorLive={connectorLive}
+          connectorTotal={connectorTotal}
+          onExpandPanel={(id: string) => onExpandPanel(id as PanelId)}
+          onMode={(m: string) => onMode(m as FocusMode)}
+          input={input}
+          sending={sending}
+          lastReply={lastReply}
+          onInputChange={onInputChange}
+          onSubmit={onSubmit}
+          onKeyDown={onKeyDown}
+          inputRef={inputRef}
+          isNarrow={isNarrow}
+          orbChildren={
+            <MissionCore
+              phase={phase}
+              registry={registry}
+              onOrgChain={() => onExpandPanel('org-chain')}
+              orgFetchOk={orgFetchOk}
+              isNarrow={isNarrow}
+            />
+          }
+        />
+      )}
 
-        {/* Center: Jarvis orbital core */}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', position: 'relative', minWidth: 0 }}>
-          <MissionCore
-            phase={phase}
-            registry={registry}
-            onOrgChain={() => onExpandPanel('org-chain')}
-            orgFetchOk={orgFetchOk}
-            isNarrow={isNarrow}
-          />
-        </div>
-
-        {/* Right panel — desktop only */}
-        {!isNarrow && (
-          <MissionRightPanel
-            apiOk={apiOk}
-            model={''}
-            connectorLive={connectorLive}
-            connectorTotal={connectorTotal}
-            pendingApprovals={pendingApprovals}
-            registry={registry}
-            auditEntries={auditEntries}
-            routingStatus={routingStatus}
-            onOrgChain={() => onExpandPanel('org-chain')}
-            onMode={onMode}
-          />
-        )}
-      </div>
-
-      {/* ── Comprehensive status strip — one-page cockpit summary ── */}
+      {/* Status summary strip */}
       <MissionStatusStrip
         apiOk={apiOk}
         connectorLive={connectorLive}
@@ -1198,83 +1261,6 @@ function MissionSurface({ phase, apiOk, input, sending, lastReply, onInputChange
         routingStatus={routingStatus}
         isNarrow={isNarrow}
       />
-
-      {/* ── Bottom strip ──────────────────────────────────────────── */}
-      <div style={{
-        flexShrink: 0, height: 60,
-        borderTop: '1px solid rgba(34,211,238,0.06)',
-        background: 'rgba(2,4,12,0.70)',
-        backdropFilter: 'blur(8px)',
-        display: 'flex', alignItems: 'center',
-        padding: isNarrow ? '0 12px' : '0 20px',
-        gap: 12,
-      }}>
-        {/* Left: recent event summary */}
-        {!isNarrow && (
-          <div style={{ flex: 1, fontSize: 9, color: 'rgba(80,120,160,0.45)', fontFamily: 'var(--font-hud, monospace)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {auditEntries[0]
-              ? `${auditEntries[0].action_type ?? 'event'} · ${auditEntries[0].execution_status ?? '—'}`
-              : 'System quiet'}
-          </div>
-        )}
-
-        {/* Center: Ask Jarvis pill */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-          <button
-            onClick={() => setChatExpanded(c => !c)}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 6,
-              padding: '6px 14px',
-              background: chatExpanded ? 'rgba(34,211,238,0.14)' : 'rgba(34,211,238,0.07)',
-              border: `1px solid ${chatExpanded ? 'rgba(34,211,238,0.35)' : 'rgba(34,211,238,0.18)'}`,
-              borderRadius: 20,
-              color: 'rgba(120,200,230,0.85)',
-              cursor: 'pointer',
-              fontSize: 11,
-              fontFamily: 'var(--font-display, sans-serif)',
-              boxShadow: chatExpanded ? '0 0 12px rgba(34,211,238,0.12)' : 'none',
-              transition: 'all 0.15s ease',
-            }}
-          >
-            <span>↗</span>
-            <span>Ask Jarvis</span>
-            {sending && <span style={{ fontSize: 9, color: 'rgba(34,211,238,0.5)' }}>…</span>}
-          </button>
-          <span style={{ fontSize: 8, color: 'rgba(50,90,130,0.40)', fontFamily: 'var(--font-hud, monospace)' }}>⌘K history</span>
-        </div>
-
-        {/* Right: routing info (desktop only) */}
-        {!isNarrow && routingStatus && (
-          <div style={{ flex: 1, textAlign: 'right', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8, fontSize: 9, color: 'rgba(60,100,140,0.40)', fontFamily: 'var(--font-hud, monospace)' }}>
-            <span>{routingStatus.pa_front_door_model.split('/').pop()?.slice(0, 16) ?? '—'}</span>
-            <span>·</span>
-            <span>{routingStatus.provider_count} providers</span>
-            <span>·</span>
-            <button onClick={() => onExpandPanel('routing')} style={{ background: 'none', border: 'none', color: 'rgba(34,211,238,0.28)', fontSize: 9, cursor: 'pointer', textDecoration: 'underline', fontFamily: 'inherit' }}>routing →</button>
-          </div>
-        )}
-        {isNarrow && (
-          <div style={{ flex: 1, textAlign: 'right', fontSize: 9, color: 'rgba(50,90,130,0.35)', fontFamily: 'var(--font-hud, monospace)' }}>
-            Bryan → PA only
-          </div>
-        )}
-      </div>
-
-      {/* ── Chat drawer — slide-up overlay over center area ──────── */}
-      {chatExpanded && (
-        <ChatDrawer
-          input={input}
-          sending={sending}
-          lastReply={lastReply}
-          apiOk={apiOk}
-          onInputChange={onInputChange}
-          onKeyDown={onKeyDown}
-          onSubmit={onSubmit}
-          inputRef={inputRef}
-          onClose={() => setChatExpanded(false)}
-          isNarrow={isNarrow}
-        />
-      )}
     </div>
   );
 }
@@ -1780,6 +1766,9 @@ export function JarvisCockpitPage() {
   const [orgHierarchy, setOrgHierarchy] = useState<OrgHierarchyData | null>(null);
   const [orgChainFetch, setOrgChainFetch] = useState<OrgChainFetchState>({ status: 'idle' });
   const [fetchState, setFetchState] = useState<Record<string, PanelFetchState>>({});
+  const [finalSmoke, setFinalSmoke] = useState<FinalSmokeStatus | null>(null);
+  const [signingStatus, setSigningStatus] = useState<SigningStatus | null>(null);
+  const [completionScore, setCompletionScore] = useState<CompletionScore | null>(null);
 
   const setPanelFetch = (key: string) => (s: PanelFetchState) => setFetchState(prev => ({ ...prev, [key]: s }));
   const connectorLive = connectors.filter(c => c.connected).length;
@@ -1898,6 +1887,21 @@ export function JarvisCockpitPage() {
     await fetchTracked('/v1/plan9/runtime-proof-checklist', setPanelFetch('runtimeProof'), async (r) => {
       const d = await r.json();
       setRuntimeProof({ total_items: d.total_items ?? 0, verified_count: d.verified_count ?? 0, pending_count: d.pending_count ?? 0 });
+    });
+
+    await fetchTracked('/v1/final-smoke/status', setPanelFetch('smoke'), async (r) => {
+      const d = await r.json();
+      setFinalSmoke(d as FinalSmokeStatus);
+    });
+
+    await fetchTracked('/v1/signing-readiness/status', setPanelFetch('signing'), async (r) => {
+      const d = await r.json();
+      setSigningStatus(d as SigningStatus);
+    });
+
+    await fetchTracked('/v1/control-tower/completion-score', setPanelFetch('completion'), async (r) => {
+      const d = await r.json();
+      setCompletionScore(d as CompletionScore);
     });
 
     setOrgChainFetch({ status: 'loading' });
@@ -2386,6 +2390,14 @@ export function JarvisCockpitPage() {
             connectorLive={connectorLive}
             connectorTotal={connectors.length}
             auditEntries={auditEntries}
+            memStatus={memStatus}
+            finalSmoke={finalSmoke}
+            signingStatus={signingStatus}
+            completionScore={completionScore}
+            workflowStatus={workflowStatus}
+            macWorkerStatus={macWorkerStatus}
+            connectors={connectors}
+            plan9={plan9}
           />
         );
       case 'workbench':
