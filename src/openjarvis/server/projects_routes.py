@@ -35,7 +35,7 @@ async def list_projects() -> Dict[str, Any]:
     return {
         "projects": [p.to_dict() for p in projects],
         "count": len(projects),
-        "default_project_id": ProjectRegistry.get_default().project_id,
+        "default_project_id": (lambda d: d.project_id if d is not None else None)(ProjectRegistry.get_default()),
     }
 
 

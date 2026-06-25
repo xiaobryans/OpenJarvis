@@ -111,7 +111,7 @@ function StatsStrip({ stats }: { stats: RulesStats }) {
     { label: 'Draft', value: stats.draft, color: C.warning },
   ];
   return (
-    <div className="grid grid-cols-5 gap-3 mb-6">
+    <div className="grid grid-cols-3 sm:grid-cols-5 gap-3 mb-6">
       {cells.map((c) => (
         <div
           key={c.label}
@@ -234,7 +234,7 @@ function RuleRow({
 
       {expanded && (
         <div
-          className="px-4 py-3 text-xs grid grid-cols-2 gap-x-6 gap-y-1.5"
+          className="px-4 py-3 text-xs grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5"
           style={{ borderTop: `1px solid ${C.border}`, color: C.textSec }}
         >
           <div><span style={{ color: C.textTert }}>rule_id: </span>{rule.rule_id}</div>
@@ -243,13 +243,13 @@ function RuleRow({
           <div><span style={{ color: C.textTert }}>priority: </span>{rule.priority}</div>
           <div><span style={{ color: C.textTert }}>source: </span>{rule.source}</div>
           {rule.tags.length > 0 && (
-            <div className="col-span-2">
+            <div className="col-span-1 sm:col-span-2">
               <span style={{ color: C.textTert }}>tags: </span>
               {rule.tags.join(', ')}
             </div>
           )}
           {rule.conflict_ids.length > 0 && (
-            <div className="col-span-2">
+            <div className="col-span-1 sm:col-span-2">
               <span style={{ color: C.error }}>conflicts: </span>
               {rule.conflict_ids.join(', ')}
             </div>
@@ -322,8 +322,8 @@ function CreateRuleForm({ onCreated }: { onCreated: () => void }) {
       style={{ background: C.surface, border: `1px solid ${C.border}` }}
     >
       <div className="text-sm font-medium mb-3" style={{ color: C.text }}>New Rule</div>
-      <div className="grid grid-cols-2 gap-3">
-        <div className="col-span-2">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="col-span-1 sm:col-span-2">
           <label className="text-xs mb-1 block" style={{ color: C.textTert }}>Name *</label>
           <input
             value={name}
@@ -333,7 +333,7 @@ function CreateRuleForm({ onCreated }: { onCreated: () => void }) {
             placeholder="e.g. Block external API calls"
           />
         </div>
-        <div className="col-span-2">
+        <div className="col-span-1 sm:col-span-2">
           <label className="text-xs mb-1 block" style={{ color: C.textTert }}>Description</label>
           <input
             value={desc}

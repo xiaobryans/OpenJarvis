@@ -166,7 +166,7 @@ function StatusHeader({ status }: { status: JarvisStatus }) {
           </div>
         </div>
 
-        <div className="mt-3 grid grid-cols-2 gap-x-8 gap-y-1.5 text-xs">
+        <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-1.5 text-xs">
           <div style={{ color: C.textSec }}>
             <span style={{ color: C.textTert }}>Capabilities: </span>
             {status.capability_summary.available}/{status.capability_summary.total} available
@@ -349,7 +349,7 @@ function ProductizationSection({ data }: { data: ProductizationStatus }) {
     <Section title="Mobile / iOS / Productization" icon={<Smartphone size={14} />} defaultOpen={false}>
       <div className="px-4 py-3">
         {/* Summary grid */}
-        <div className="grid grid-cols-3 gap-3 mb-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
           <div className="rounded-lg px-3 py-2 text-center" style={{ background: C.surfaceAlt, border: `1px solid ${C.border}` }}>
             <Globe size={16} className="mx-auto mb-1" style={{ color: summary.pwa_ready ? C.success : C.textSec }} />
             <div className="text-xs font-medium" style={{ color: summary.pwa_ready ? C.success : C.textSec }}>

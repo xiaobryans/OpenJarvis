@@ -375,9 +375,24 @@ export function ExpertRolesPage() {
         {!loading && !error && (
           <div>
             <div className="text-xs mb-3" style={{ color: C.textTert }}>All registered roles</div>
-            {roles.map((r) => (
-              <RoleCard key={r.role_id} role={r} highlighted={false} />
-            ))}
+            {roles.length === 0 ? (
+              <div
+                className="rounded-lg px-4 py-10 text-center"
+                style={{ background: C.surface, border: `1px solid ${C.border}` }}
+              >
+                <Brain size={28} className="mx-auto mb-3 opacity-30" style={{ color: C.textTert }} />
+                <div className="text-sm" style={{ color: C.textTert }}>No expert roles registered</div>
+                <div className="text-xs mt-1" style={{ color: C.textTert }}>
+                  Roles load from{' '}
+                  <code style={{ fontFamily: 'monospace' }}>/v1/expert-roles</code>{' '}
+                  — check backend connectivity.
+                </div>
+              </div>
+            ) : (
+              roles.map((r) => (
+                <RoleCard key={r.role_id} role={r} highlighted={false} />
+              ))
+            )}
           </div>
         )}
       </div>

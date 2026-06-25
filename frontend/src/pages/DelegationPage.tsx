@@ -295,7 +295,7 @@ function DelegationRow({
           className="px-4 pb-4 text-xs"
           style={{ borderTop: `1px solid ${C.border}`, color: C.textSec }}
         >
-          <div className="mt-3 grid grid-cols-2 gap-x-6 gap-y-1.5">
+          <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5">
             <div><span style={{ color: C.textTert }}>audit_id: </span>
               <span style={{ fontFamily: 'monospace' }}>{item.audit_id}</span>
             </div>
@@ -312,7 +312,7 @@ function DelegationRow({
               </div>
             )}
             {item.tags.length > 0 && (
-              <div className="col-span-2">
+              <div className="col-span-1 sm:col-span-2">
                 <span style={{ color: C.textTert }}>tags: </span>{item.tags.join(', ')}
               </div>
             )}
@@ -443,7 +443,7 @@ export function DelegationPage() {
         )}
 
         {/* Filter */}
-        <div className="flex items-center gap-2 mb-4">
+        <div className="flex flex-wrap items-center gap-2 mb-4">
           {(['all', 'life_os', 'agent_action', 'mission'] as const).map((f) => (
             <button
               key={f}

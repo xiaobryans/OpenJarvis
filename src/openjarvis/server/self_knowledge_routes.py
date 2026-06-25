@@ -167,19 +167,34 @@ _CAPABILITIES: List[Dict[str, Any]] = [
         ),
         "plan": "Plan 4-6",
     },
+    {
+        "id": "routines",
+        "name": "Recurring routines / scheduled tasks",
+        "status": "partial",
+        "description": (
+            "Scheduler module exists (cron/interval/once with SQLite persistence). "
+            "Recurring task visibility at GET /v1/routines. "
+            "Automated execution requires scheduler to be started via CLI. "
+            "No fake recurring automations claimed as fully running."
+        ),
+        "plan": "Final Phase A",
+        "note": "Visibility only in current release — automated execution is CLI-controlled.",
+    },
 ]
 
 _ROADMAP: List[Dict[str, Any]] = [
     {"plan": "Plan 1", "name": "Dual-Platform Jarvis Neural Command Center", "status": "ACCEPTED"},
     {"plan": "Plan 2", "name": "Full Mobile MacBook-Off Parity Runtime", "status": "ACCEPTED"},
     {"plan": "Post-Plan-2", "name": "Claude Code Automation Expansion", "status": "ACCEPTED"},
+    {"plan": "Phase X", "name": "Universal Jarvis Decoupling (OMNIX → optional adapter)", "status": "ACCEPTED"},
     {"plan": "Plan 3", "name": "Voice / Wake / TTS", "status": "PARKED — text-first priority"},
-    {"plan": "Plan 4-6", "name": "Text-First Jarvis OS Mega-Sprint", "status": "IN_PROGRESS"},
+    {"plan": "Plan 4-6", "name": "Text-First Jarvis OS Mega-Sprint", "status": "ACCEPTED"},
     {"plan": "Plan 4-6 B3/B5/B6", "name": "iOS/Productization + UI Surfaces + RoleSelector Wiring", "status": "ACCEPTED"},
     {"plan": "Plan 4-6 B7", "name": "Delegation Queue UI + Connector Status Polish", "status": "ACCEPTED"},
     {"plan": "Plan 4", "name": "Skills / Rules / Third-Party Skill Intake", "status": "COMPLETE"},
-    {"plan": "Plan 5", "name": "Life-Business OS + Trusted Delegation + iOS", "status": "IN_PROGRESS"},
-    {"plan": "Plan 6", "name": "Chat Intelligence + Expert Roles + UI/UX Polish", "status": "IN_PROGRESS"},
+    {"plan": "Plan 5", "name": "Life-Business OS + Trusted Delegation + iOS", "status": "COMPLETE"},
+    {"plan": "Plan 6", "name": "Chat Intelligence + Expert Roles + UI/UX Polish", "status": "COMPLETE"},
+    {"plan": "Final Phase A", "name": "Production Certification + Daily-Driver Readiness", "status": "IN_PROGRESS"},
 ]
 
 
@@ -228,8 +243,10 @@ async def get_jarvis_status() -> Dict[str, Any]:
             "plan_1": "ACCEPTED",
             "plan_2": "ACCEPTED",
             "post_plan2_automation": "ACCEPTED",
+            "phase_x_decoupling": "ACCEPTED",
             "plan_3_voice": "PARKED",
-            "plan_4_6_mega_sprint": "IN_PROGRESS",
+            "plan_4_6_mega_sprint": "ACCEPTED",
+            "final_phase_a": "IN_PROGRESS",
         },
         "capability_summary": {
             "available": available_count,
@@ -248,8 +265,8 @@ async def get_roadmap() -> Dict[str, Any]:
     """Current Jarvis roadmap and plan acceptance state."""
     return {
         "roadmap": _ROADMAP,
-        "active_sprint": "PLAN_4_6_MEGA_SPRINT_TEXT_FIRST_JARVIS_OS",
-        "next": "Complete Plan 4-6 pillars, then Plan 3 voice when Bryan reopens it.",
+        "active_sprint": "FINAL_PHASE_A_PRODUCTION_CERTIFICATION_DAILY_DRIVER_READINESS",
+        "next": "Complete Final Phase A certification, then Phase B expansion. Plan 3 voice when Bryan reopens it.",
         "note": "Only Bryan can mark plans as ACCEPTED.",
     }
 

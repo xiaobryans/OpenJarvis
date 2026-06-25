@@ -63,10 +63,10 @@ class TestStatusRoute:
         assert data["text_first"] is True
         assert data["voice_parked"] is True
 
-    def test_status_plan46_in_progress(self, client):
+    def test_status_plan46_accepted(self, client):
         r = client.get("/v1/jarvis/status")
         data = r.json()
-        assert "IN_PROGRESS" in data["plan_state"]["plan_4_6_mega_sprint"]
+        assert data["plan_state"]["plan_4_6_mega_sprint"] == "ACCEPTED"
 
 
 class TestRoadmapRoute:
