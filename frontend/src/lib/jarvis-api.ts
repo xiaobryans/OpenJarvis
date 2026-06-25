@@ -1371,3 +1371,218 @@ export async function fetchCompletionScore(): Promise<{ core_os_completion: { co
   const res = await apiFetch('/v1/control-tower/completion-score');
   return res.json();
 }
+
+// ─── Phase C11-C20 Types ────────────────────────────────────────
+
+export interface ExecutionReadinessStatus {
+  systems: Array<{ system_id: string; name: string; status: string; approval_required: boolean; gate?: string }>
+  overall_readiness: string
+  autonomous_execution_live: boolean
+  approval_required_for_all_actions: boolean
+  fake_readiness: boolean
+  fake_data: boolean
+}
+
+export interface ActionPlannerSystems {
+  systems: Array<{ system_id: string; name: string; capabilities: string[] }>
+  cross_system_planning: boolean
+  fake_data: boolean
+}
+
+export interface PolicyAuthorityMatrix {
+  domains: Array<{ domain_id: string; name: string; risk_tier: number; approval_required: boolean; hard_gated: boolean }>
+  hard_gates_count: number
+  hard_gates_preserved: boolean
+  approval_gates_weakened: boolean
+  fake_data: boolean
+}
+
+export interface ConnectorReadinessStatus {
+  connectors: Array<{ connector_id: string; name: string; status: string; bryan_cleared: boolean; presence_only: boolean; no_credential_value: boolean }>
+  total: number
+  ready_prerequisite_count: number
+  blocked_count: number
+  not_configured_count: number
+  fake_live_claims: boolean
+  secrets_in_response: boolean
+  fake_data: boolean
+}
+
+export interface IOSReadinessStatus {
+  xcode_present: boolean
+  xcode_version: string
+  cocoapods_present: boolean
+  ios_rust_targets: string[]
+  ios_rust_targets_count: number
+  prerequisites_bryan_cleared: boolean
+  tauri_ios_init_run: boolean
+  tauri_ios_init_deferred: boolean
+  native_ios_app_ready: boolean
+  fake_ios_readiness: boolean
+  fake_data: boolean
+}
+
+export interface SigningReadinessStatus {
+  notarytool_present: boolean
+  apple_api_issuer_present: boolean
+  apple_api_key_present: boolean
+  apple_api_key_path_present: boolean
+  apple_team_id_present: boolean
+  apple_signing_identity_present: boolean
+  prerequisites_bryan_cleared: boolean
+  actual_signing_run: boolean
+  actual_notarization_run: boolean
+  signing_deferred: boolean
+  fake_notarization: boolean
+  fake_data: boolean
+}
+
+export interface CloudReadinessStatus {
+  aws_credentials_present: boolean
+  s3_configured: boolean
+  fargate_configured: boolean
+  tailscale_configured: boolean
+  bryan_cleared: boolean
+  cloud_execution_live: boolean
+  macbook_off_live: boolean
+  fake_cloud_execution: boolean
+  fake_data: boolean
+}
+
+export interface FinalSmokeChecklist {
+  checklist: Array<{ item_id: string; name: string; status: string; requires_manual_proof: boolean; auto_passable: boolean; blocked_reason?: string }>
+  total: number
+  passed: number
+  pending_manual_proof: number
+  manual_proof_required: boolean
+  auto_pass_blocked: boolean
+  fake_data: boolean
+}
+
+export interface DailyDriverStatus {
+  certification_status: string
+  certified: boolean
+  auto_certification_blocked: boolean
+  daily_driver_sessions_recorded: number
+  manual_certification_required: boolean
+  fake_certification: boolean
+  fake_data: boolean
+}
+
+export interface CoreCompletionStatus {
+  phases: Array<{ phase: string; status: string; note: string }>
+  completion_classification: string
+  fake_completion: boolean
+  fake_100_percent: boolean
+  completion_score_pct: number
+  fake_score: boolean
+  phase_d_ready: boolean
+  fake_data: boolean
+}
+
+// ─── Phase C11-C20 Fetch Functions ──────────────────────────────
+
+export async function fetchExecutionReadinessStatus(): Promise<ExecutionReadinessStatus> {
+  const res = await apiFetch('/v1/execution-readiness/status')
+  return res.json()
+}
+
+export async function fetchExecutionReadinessMatrix(): Promise<Record<string, unknown>> {
+  const res = await apiFetch('/v1/execution-readiness/matrix')
+  return res.json()
+}
+
+export async function fetchActionPlannerSystems(): Promise<ActionPlannerSystems> {
+  const res = await apiFetch('/v1/action-planner/systems')
+  return res.json()
+}
+
+export async function fetchActionPlannerTemplates(): Promise<Record<string, unknown>> {
+  const res = await apiFetch('/v1/action-planner/templates')
+  return res.json()
+}
+
+export async function fetchPolicyAuthorityMatrix(): Promise<PolicyAuthorityMatrix> {
+  const res = await apiFetch('/v1/policy-compiler/authority-matrix')
+  return res.json()
+}
+
+export async function fetchPolicySummary(): Promise<Record<string, unknown>> {
+  const res = await apiFetch('/v1/policy-compiler/policy-summary')
+  return res.json()
+}
+
+export async function fetchConnectorReadinessStatus(): Promise<ConnectorReadinessStatus> {
+  const res = await apiFetch('/v1/connector-readiness/status')
+  return res.json()
+}
+
+export async function fetchIOSReadinessStatus(): Promise<IOSReadinessStatus> {
+  const res = await apiFetch('/v1/ios-readiness/status')
+  return res.json()
+}
+
+export async function fetchIOSPrerequisites(): Promise<Record<string, unknown>> {
+  const res = await apiFetch('/v1/ios-readiness/prerequisites')
+  return res.json()
+}
+
+export async function fetchSigningReadinessStatus(): Promise<SigningReadinessStatus> {
+  const res = await apiFetch('/v1/signing-readiness/status')
+  return res.json()
+}
+
+export async function fetchSigningPrerequisites(): Promise<Record<string, unknown>> {
+  const res = await apiFetch('/v1/signing-readiness/prerequisites')
+  return res.json()
+}
+
+export async function fetchCloudReadinessStatus(): Promise<CloudReadinessStatus> {
+  const res = await apiFetch('/v1/cloud-readiness/status')
+  return res.json()
+}
+
+export async function fetchCloudPrerequisitesMatrix(): Promise<Record<string, unknown>> {
+  const res = await apiFetch('/v1/cloud-readiness/prerequisites-matrix')
+  return res.json()
+}
+
+export async function fetchFinalSmokeChecklist(): Promise<FinalSmokeChecklist> {
+  const res = await apiFetch('/v1/final-smoke/checklist')
+  return res.json()
+}
+
+export async function fetchFinalSmokeStatus(): Promise<Record<string, unknown>> {
+  const res = await apiFetch('/v1/final-smoke/status')
+  return res.json()
+}
+
+export async function fetchDailyDriverStatus(): Promise<DailyDriverStatus> {
+  const res = await apiFetch('/v1/daily-driver/status')
+  return res.json()
+}
+
+export async function fetchDailyDriverChecklist(): Promise<Record<string, unknown>> {
+  const res = await apiFetch('/v1/daily-driver/checklist')
+  return res.json()
+}
+
+export async function fetchDailyDriverBlockers(): Promise<Record<string, unknown>> {
+  const res = await apiFetch('/v1/daily-driver/blockers')
+  return res.json()
+}
+
+export async function fetchCoreCompletionStatus(): Promise<CoreCompletionStatus> {
+  const res = await apiFetch('/v1/core-completion/status')
+  return res.json()
+}
+
+export async function fetchPhaseDOptions(): Promise<Record<string, unknown>> {
+  const res = await apiFetch('/v1/core-completion/phase-d-options')
+  return res.json()
+}
+
+export async function fetchReadinessClassification(): Promise<Record<string, unknown>> {
+  const res = await apiFetch('/v1/core-completion/readiness-classification')
+  return res.json()
+}

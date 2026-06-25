@@ -73,6 +73,16 @@ from openjarvis.server.scale_control_routes import router as scale_control_route
 from openjarvis.server.company_os_routes import router as company_os_router
 from openjarvis.server.safety_simulation_routes import router as safety_simulation_router
 from openjarvis.server.control_tower_routes import router as control_tower_router
+from openjarvis.server.execution_readiness_routes import router as execution_readiness_router
+from openjarvis.server.action_planner_routes import router as action_planner_router
+from openjarvis.server.policy_compiler_routes import router as policy_compiler_router
+from openjarvis.server.connector_readiness_routes import router as connector_readiness_router
+from openjarvis.server.ios_readiness_routes import router as ios_readiness_router
+from openjarvis.server.signing_readiness_routes import router as signing_readiness_router
+from openjarvis.server.cloud_readiness_routes import router as cloud_readiness_router
+from openjarvis.server.final_smoke_routes import router as final_smoke_router
+from openjarvis.server.daily_driver_routes import router as daily_driver_router
+from openjarvis.server.core_completion_routes import router as core_completion_router
 
 logger = logging.getLogger(__name__)
 
@@ -394,6 +404,16 @@ def create_app(
     app.include_router(company_os_router)
     app.include_router(safety_simulation_router)
     app.include_router(control_tower_router)
+    app.include_router(execution_readiness_router)
+    app.include_router(action_planner_router)
+    app.include_router(policy_compiler_router)
+    app.include_router(connector_readiness_router)
+    app.include_router(ios_readiness_router)
+    app.include_router(signing_readiness_router)
+    app.include_router(cloud_readiness_router)
+    app.include_router(final_smoke_router)
+    app.include_router(daily_driver_router)
+    app.include_router(core_completion_router)
     include_all_routes(app)
 
     # Restore SendBlue channel bindings from database on startup

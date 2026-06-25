@@ -46,6 +46,16 @@ import { ScaleControlPage } from './pages/ScaleControlPage';
 import { CompanyOSPage } from './pages/CompanyOSPage';
 import { SafetySimulationPage } from './pages/SafetySimulationPage';
 import { ControlTowerPage } from './pages/ControlTowerPage';
+import ExecutionReadinessPage from './pages/ExecutionReadinessPage'
+import ActionPlannerPage from './pages/ActionPlannerPage'
+import PolicyCompilerPage from './pages/PolicyCompilerPage'
+import ConnectorReadinessPage from './pages/ConnectorReadinessPage'
+import IOSReadinessPage from './pages/IOSReadinessPage'
+import SigningReadinessPage from './pages/SigningReadinessPage'
+import CloudReadinessPage from './pages/CloudReadinessPage'
+import FinalSmokePage from './pages/FinalSmokePage'
+import DailyDriverPage from './pages/DailyDriverPage'
+import CoreCompletionPage from './pages/CoreCompletionPage'
 import { CommandPalette } from './components/CommandPalette';
 import { TextFallbackPanel } from './components/TextFallbackPanel';
 import { SetupScreen } from './components/SetupScreen';
@@ -285,6 +295,16 @@ export default function App() {
           <Route path="company-os" element={<CompanyOSPage />} />
           <Route path="safety-simulation" element={<SafetySimulationPage />} />
           <Route path="control-tower" element={<ControlTowerPage />} />
+          <Route path="/execution-readiness" element={<ExecutionReadinessPage />} />
+          <Route path="/action-planner" element={<ActionPlannerPage />} />
+          <Route path="/policy-compiler" element={<PolicyCompilerPage />} />
+          <Route path="/connector-readiness" element={<ConnectorReadinessPage />} />
+          <Route path="/ios-readiness" element={<IOSReadinessPage />} />
+          <Route path="/signing-readiness" element={<SigningReadinessPage />} />
+          <Route path="/cloud-readiness" element={<CloudReadinessPage />} />
+          <Route path="/final-smoke" element={<FinalSmokePage />} />
+          <Route path="/daily-driver" element={<DailyDriverPage />} />
+          <Route path="/core-completion" element={<CoreCompletionPage />} />
         </Route>
       </Routes>
       <Toaster position="bottom-right" />

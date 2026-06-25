@@ -38,8 +38,13 @@ _PHASES: List[Dict[str, Any]] = [
     },
     {
         "phase": "Phase C1-C10",
+        "status": "ACCEPTED",
+        "note": "Autonomous ecosystem / scale sprint accepted",
+    },
+    {
+        "phase": "Phase C11-C20",
         "status": "IN_PROGRESS",
-        "note": "Autonomous ecosystem / scale sprint in progress",
+        "note": "Parity and gate integration sprint in progress",
     },
     {
         "phase": "Plan 3",
@@ -172,7 +177,7 @@ async def control_tower_status() -> Dict[str, Any]:
 
     return {
         "phases": phases,
-        "active_sprint": "PHASE_C1_TO_C10_AUTONOMOUS_ECOSYSTEM",
+        "active_sprint": "PHASE_C11_TO_C20_PARITY_AND_GATE_INTEGRATION",
         "fake_acceptance": False,
         "fake_data": False,
         "note": "Phase C Control Tower. Consolidated gate and phase status.",

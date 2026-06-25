@@ -508,6 +508,124 @@ _CAPABILITIES: List[Dict[str, Any]] = [
         ),
         "plan": "Phase C10",
     },
+    # ── Phase C11-C20 ──────────────────────────────────────────────────────────
+    {
+        "id": "execution_readiness",
+        "name": "Autonomous Execution Readiness Manager",
+        "status": "available",
+        "description": (
+            "Execution readiness matrix across all action-bearing systems. "
+            "Safe/unsafe/missing-gate classification. No real execution without approval. "
+            "See GET /v1/execution-readiness/status."
+        ),
+        "plan": "Phase C11",
+    },
+    {
+        "id": "action_planner",
+        "name": "Cross-System Action Planner",
+        "status": "available",
+        "description": (
+            "Multi-step cross-system plans with dependency ordering and owner approval checkpoints. "
+            "Dry-run only. No real execution. See GET /v1/action-planner/systems."
+        ),
+        "plan": "Phase C12",
+    },
+    {
+        "id": "policy_compiler",
+        "name": "Approval Policy Compiler + Authority Matrix",
+        "status": "available",
+        "description": (
+            "Authority matrix by domain, risk tiers, hard gate mapping. "
+            "Approval gates never weakened. See GET /v1/policy-compiler/authority-matrix."
+        ),
+        "plan": "Phase C13",
+    },
+    {
+        "id": "connector_readiness",
+        "name": "Live Connector Readiness Verification Layer",
+        "status": "partial",
+        "description": (
+            "Presence-only checks for Gmail, Slack, Telegram, GitHub, Tavily, AWS, S3, Fargate, Tailscale. "
+            "Notion: blocked (Bryan: retry later). No credential values in responses. "
+            "See GET /v1/connector-readiness/status."
+        ),
+        "plan": "Phase C14",
+        "blocker": "Notion blocked. Live connector verification requires safe read-only API probe.",
+        "bryan_cleared": ["Gmail", "Slack", "Telegram", "GitHub", "Tavily", "AWS", "S3", "Fargate", "Tailscale"],
+    },
+    {
+        "id": "ios_readiness",
+        "name": "Native iOS / Mobile App Readiness Gate",
+        "status": "partial",
+        "description": (
+            "Xcode 16.4, iOS Rust targets, CocoaPods all cleared by Bryan. "
+            "tauri ios init deferred — unrelated dirty files + CLAUDE.md rebuild constraint. "
+            "See GET /v1/ios-readiness/status."
+        ),
+        "plan": "Phase C15",
+        "blocker": "tauri ios init requires explicit Bryan authorization. Native iOS app not yet built.",
+        "prerequisites_cleared": True,
+    },
+    {
+        "id": "signing_readiness",
+        "name": "macOS Signing / Notarization Readiness Gate",
+        "status": "partial",
+        "description": (
+            "notarytool, stapler, Apple credentials all cleared by Bryan (presence-only). "
+            "Actual signing/notarization deferred — no stable build artifact in this sprint. "
+            "See GET /v1/signing-readiness/status."
+        ),
+        "plan": "Phase C16",
+        "blocker": "No completed macOS DMG build to sign. Notarization deferred until build available.",
+        "prerequisites_cleared": True,
+    },
+    {
+        "id": "cloud_readiness",
+        "name": "Cloud / Fargate / Tailscale Execution Readiness Gate",
+        "status": "partial",
+        "description": (
+            "AWS, S3, Fargate, Tailscale cleared by Bryan (presence-only). "
+            "No live cloud execution in this sprint. Deployment requires Bryan authorization. "
+            "See GET /v1/cloud-readiness/status."
+        ),
+        "plan": "Phase C17",
+        "blocker": "Live cloud deployment requires Docker image + ECS task definition + Bryan authorization.",
+        "prerequisites_cleared": True,
+    },
+    {
+        "id": "final_smoke",
+        "name": "Core OS Final Smoke Orchestrator",
+        "status": "partial",
+        "description": (
+            "Smoke checklist API with endpoint health, frontend coverage, installed-app, and daily-driver slots. "
+            "Manual proof required for all items. Auto-pass blocked. "
+            "See GET /v1/final-smoke/checklist."
+        ),
+        "plan": "Phase C18",
+        "blocker": "Installed app smoke and daily-driver held pending latest accepted build.",
+    },
+    {
+        "id": "daily_driver",
+        "name": "Daily-Driver Certification Harness",
+        "status": "partial",
+        "description": (
+            "Certification checklist, blocker log, manual usage session tracker. "
+            "Cannot auto-certify. Bryan sign-off required. "
+            "See GET /v1/daily-driver/status."
+        ),
+        "plan": "Phase C19",
+        "blocker": "No daily-driver sessions recorded yet. Held pending latest build.",
+    },
+    {
+        "id": "core_completion",
+        "name": "Jarvis Core OS Completion + Phase D Decision Gate",
+        "status": "available",
+        "description": (
+            "Consolidated C11-C20 completion gate: phase status, readiness classification, Phase D options. "
+            "No fake 100%. Bryan decides all. See GET /v1/core-completion/status."
+        ),
+        "plan": "Phase C20",
+    },
 ]
 
 _ROADMAP: List[Dict[str, Any]] = [
@@ -553,6 +671,16 @@ _ROADMAP: List[Dict[str, Any]] = [
     {"plan": "Phase C8", "name": "Autonomous Business / Company OS Scale", "status": "IN_PROGRESS"},
     {"plan": "Phase C9", "name": "Safety / Policy / Rollback / Simulation", "status": "IN_PROGRESS"},
     {"plan": "Phase C10", "name": "Control Tower / Core OS Completion Gate", "status": "IN_PROGRESS"},
+    {"plan": "Phase C11", "name": "Autonomous Execution Readiness Manager", "status": "IN_PROGRESS"},
+    {"plan": "Phase C12", "name": "Cross-System Action Planner", "status": "IN_PROGRESS"},
+    {"plan": "Phase C13", "name": "Approval Policy Compiler + Authority Matrix", "status": "IN_PROGRESS"},
+    {"plan": "Phase C14", "name": "Live Connector Readiness Verification", "status": "IN_PROGRESS"},
+    {"plan": "Phase C15", "name": "Native iOS / Mobile App Readiness Gate", "status": "IN_PROGRESS"},
+    {"plan": "Phase C16", "name": "macOS Signing / Notarization Readiness Gate", "status": "IN_PROGRESS"},
+    {"plan": "Phase C17", "name": "Cloud / Fargate / Tailscale Execution Readiness", "status": "IN_PROGRESS"},
+    {"plan": "Phase C18", "name": "Core OS Final Smoke Orchestrator", "status": "IN_PROGRESS"},
+    {"plan": "Phase C19", "name": "Daily-Driver Certification Harness", "status": "IN_PROGRESS"},
+    {"plan": "Phase C20", "name": "Core OS Completion + Phase D Decision Gate", "status": "IN_PROGRESS"},
 ]
 
 
@@ -635,7 +763,18 @@ async def get_jarvis_status() -> Dict[str, Any]:
             "phase_c8_company_os": "IN_PROGRESS",
             "phase_c9_safety_simulation": "IN_PROGRESS",
             "phase_c10_control_tower": "IN_PROGRESS",
+            "phase_c11_execution_readiness": "IN_PROGRESS",
+            "phase_c12_action_planner": "IN_PROGRESS",
+            "phase_c13_policy_compiler": "IN_PROGRESS",
+            "phase_c14_connector_readiness": "IN_PROGRESS",
+            "phase_c15_ios_readiness": "IN_PROGRESS",
+            "phase_c16_signing_readiness": "IN_PROGRESS",
+            "phase_c17_cloud_readiness": "IN_PROGRESS",
+            "phase_c18_final_smoke": "IN_PROGRESS",
+            "phase_c19_daily_driver": "IN_PROGRESS",
+            "phase_c20_core_completion": "IN_PROGRESS",
             "phase_b1_to_b20": "ACCEPTED_ON_HOLD",
+            "phase_c1_to_c10": "ACCEPTED",
         },
         "capability_summary": {
             "available": available_count,
@@ -654,8 +793,8 @@ async def get_roadmap() -> Dict[str, Any]:
     """Current Jarvis roadmap and plan acceptance state."""
     return {
         "roadmap": _ROADMAP,
-        "active_sprint": "PHASE_C1_TO_C10_AUTONOMOUS_ECOSYSTEM",
-        "next": "Phase C1-C10 in progress. Final Phase A on hold (MacBook/Apple gates). Plan 3 voice parked. Phase B accepted, on hold.",
+        "active_sprint": "PHASE_C11_TO_C20_PARITY_AND_GATE_INTEGRATION",
+        "next": "Phase C11-C20 parity and gate integration in progress. C1-C10 accepted. Final Phase A on hold. Plan 3 voice parked. Phase B accepted, on hold.",
         "note": "Only Bryan can mark plans as ACCEPTED.",
     }
 
