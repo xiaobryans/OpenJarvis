@@ -182,10 +182,10 @@ async def control_tower_status() -> Dict[str, Any]:
 
     return {
         "phases": phases,
-        "active_sprint": "FINAL_PHASE_A_INSTALLED_APP_UI_UNIFICATION_CORRECTIVE_SPRINT",
+        "active_sprint": "FINAL_PHASE_A_NEURAL_COMMAND_CENTER_UI_COMPLETION_SPRINT",
         "fake_acceptance": False,
         "fake_data": False,
-        "note": "Installed-app UI unification corrective sprint active. UI fix applied: mission mode comprehensive status strip, system mode demoted to secondary rail. Rebuild+notarize pending. Installed-app-smoke needs Bryan visual proof after rebuild.",
+        "note": "Neural Command Center UI completion sprint. Full 3-column layout with 12 panels visible by default around Jarvis orb. DesktopCommandCenter + MobileCommandCenter implemented. App rebuilt, signed, notarized (Apple Accepted, ID ddd69bc8). Installed-app-smoke visual needs Bryan proof. Daily-driver cert needs Bryan usage sessions.",
     }
 
 
