@@ -18,6 +18,7 @@ import { RulesManagerPage } from './pages/RulesManagerPage';
 import { ExpertRolesPage } from './pages/ExpertRolesPage';
 import { JarvisCapabilitiesPage } from './pages/JarvisCapabilitiesPage';
 import { DelegationPage } from './pages/DelegationPage';
+import { FollowUpCenterPage } from './pages/FollowUpCenterPage';
 import { CommandPalette } from './components/CommandPalette';
 import { TextFallbackPanel } from './components/TextFallbackPanel';
 import { SetupScreen } from './components/SetupScreen';
@@ -229,6 +230,7 @@ export default function App() {
           <Route path="expert-roles" element={<ExpertRolesPage />} />
           <Route path="capabilities" element={<JarvisCapabilitiesPage />} />
           <Route path="delegation" element={<DelegationPage />} />
+          <Route path="follow-ups" element={<FollowUpCenterPage />} />
         </Route>
       </Routes>
       <Toaster position="bottom-right" />

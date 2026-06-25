@@ -180,6 +180,18 @@ _CAPABILITIES: List[Dict[str, Any]] = [
         "plan": "Final Phase A",
         "note": "Visibility only in current release — automated execution is CLI-controlled.",
     },
+    {
+        "id": "follow_up_center",
+        "name": "Follow-Up Center",
+        "status": "available",
+        "description": (
+            "Unified follow-up visibility aggregating life-os tasks (waiting_followup status "
+            "or active follow_up_state) and goal follow-up queue items. "
+            "Safe mark-done and snooze actions preserve existing approval gates. "
+            "No connector credentials required. See GET /v1/follow-up-center."
+        ),
+        "plan": "Phase B1",
+    },
 ]
 
 _ROADMAP: List[Dict[str, Any]] = [
@@ -195,6 +207,7 @@ _ROADMAP: List[Dict[str, Any]] = [
     {"plan": "Plan 5", "name": "Life-Business OS + Trusted Delegation + iOS", "status": "COMPLETE"},
     {"plan": "Plan 6", "name": "Chat Intelligence + Expert Roles + UI/UX Polish", "status": "COMPLETE"},
     {"plan": "Final Phase A", "name": "Production Certification + Daily-Driver Readiness", "status": "IN_PROGRESS"},
+    {"plan": "Phase B1", "name": "Follow-Up Center + Life-Business OS Expansion", "status": "IN_PROGRESS"},
 ]
 
 
@@ -247,6 +260,7 @@ async def get_jarvis_status() -> Dict[str, Any]:
             "plan_3_voice": "PARKED",
             "plan_4_6_mega_sprint": "ACCEPTED",
             "final_phase_a": "IN_PROGRESS",
+            "phase_b1_follow_up_center": "IN_PROGRESS",
         },
         "capability_summary": {
             "available": available_count,
@@ -265,8 +279,8 @@ async def get_roadmap() -> Dict[str, Any]:
     """Current Jarvis roadmap and plan acceptance state."""
     return {
         "roadmap": _ROADMAP,
-        "active_sprint": "FINAL_PHASE_A_PRODUCTION_CERTIFICATION_DAILY_DRIVER_READINESS",
-        "next": "Complete Final Phase A certification, then Phase B expansion. Plan 3 voice when Bryan reopens it.",
+        "active_sprint": "PHASE_B1_SAFE_CODE_EXPANSION_JARVIS_OS",
+        "next": "Complete Phase B1 Follow-Up Center. Final Phase A manual gates remain open (DMG/signing/credentials). Plan 3 voice when Bryan reopens it.",
         "note": "Only Bryan can mark plans as ACCEPTED.",
     }
 

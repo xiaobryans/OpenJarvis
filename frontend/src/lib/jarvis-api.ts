@@ -391,3 +391,83 @@ export async function rejectItem(rejectRoute: string): Promise<Record<string, un
   const res = await apiFetch(rejectRoute, { method: 'POST' });
   return res.json();
 }
+
+// ---------------------------------------------------------------------------
+// Follow-Up Center types + API  (Phase B1)
+// ---------------------------------------------------------------------------
+
+export interface FollowUpItem {
+  item_id: string;
+  source: 'life_os_task' | 'goal' | string;
+  source_id: string;
+  title: string;
+  description: string;
+  status: 'due' | 'upcoming' | 'waiting_approval' | 'snoozed' | 'completed' | string;
+  due_at: number | null;
+  priority: string;
+  tags: string[];
+  approval_required: boolean;
+  approval_route: string | null;
+  source_route: string | null;
+  follow_up_state: Record<string, unknown> | null;
+  created_at: number;
+}
+
+export interface FollowUpCenterResponse {
+  items: FollowUpItem[];
+  count: number;
+  due_count: number;
+  pending_approval_count: number;
+  sources_probed: string[];
+  fake_data: boolean;
+  automation_honesty: boolean;
+  note: string;
+}
+
+export interface FollowUpSummary {
+  total: number;
+  by_source: Record<string, number>;
+  by_status: Record<string, number>;
+  due: number;
+  upcoming: number;
+  waiting_approval: number;
+  snoozed: number;
+  fake_data: boolean;
+}
+
+export async function fetchFollowUpCenter(opts?: {
+  source?: string;
+  status?: string;
+  limit?: number;
+}): Promise<FollowUpCenterResponse> {
+  const params = new URLSearchParams();
+  if (opts?.source) params.set('source', opts.source);
+  if (opts?.status) params.set('status', opts.status);
+  if (opts?.limit) params.set('limit', String(opts.limit));
+  const qs = params.toString();
+  const res = await apiFetch(`/v1/follow-up-center${qs ? `?${qs}` : ''}`);
+  return res.json();
+}
+
+export async function fetchFollowUpSummary(): Promise<FollowUpSummary> {
+  const res = await apiFetch('/v1/follow-up-center/summary');
+  return res.json();
+}
+
+export async function completeTaskFollowUp(taskId: string): Promise<Record<string, unknown>> {
+  const res = await apiFetch(`/v1/follow-up-center/tasks/${taskId}/complete`, { method: 'POST' });
+  return res.json();
+}
+
+export async function snoozeTaskFollowUp(
+  taskId: string,
+  snoozeUntil: number,
+  reason?: string,
+): Promise<Record<string, unknown>> {
+  const res = await apiFetch(`/v1/follow-up-center/tasks/${taskId}/snooze`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ snooze_until: snoozeUntil, reason: reason ?? '' }),
+  });
+  return res.json();
+}
