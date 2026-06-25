@@ -28,6 +28,14 @@ import { ProactiveOperatorPage } from './pages/ProactiveOperatorPage';
 import { BusinessAdminPage } from './pages/BusinessAdminPage';
 import { ObservabilityPage } from './pages/ObservabilityPage';
 import { LongHorizonGoalsPage } from './pages/LongHorizonGoalsPage';
+import { FinanceAdminOSPage } from './pages/FinanceAdminOSPage';
+import { ResearchOSPage } from './pages/ResearchOSPage';
+import { BrowserOperatorPage } from './pages/BrowserOperatorPage';
+import { MemoryGraphPage } from './pages/MemoryGraphPage';
+import { MultiDevicePage } from './pages/MultiDevicePage';
+import { MarketplacePage } from './pages/MarketplacePage';
+import { OrgModePage } from './pages/OrgModePage';
+import { DeviceControllerPage } from './pages/DeviceControllerPage';
 import { CommandPalette } from './components/CommandPalette';
 import { TextFallbackPanel } from './components/TextFallbackPanel';
 import { SetupScreen } from './components/SetupScreen';
@@ -249,6 +257,14 @@ export default function App() {
           <Route path="business-admin" element={<BusinessAdminPage />} />
           <Route path="observability" element={<ObservabilityPage />} />
           <Route path="long-horizon" element={<LongHorizonGoalsPage />} />
+          <Route path="finance-admin" element={<FinanceAdminOSPage />} />
+          <Route path="research-os" element={<ResearchOSPage />} />
+          <Route path="browser-operator" element={<BrowserOperatorPage />} />
+          <Route path="memory-graph" element={<MemoryGraphPage />} />
+          <Route path="multi-device" element={<MultiDevicePage />} />
+          <Route path="marketplace" element={<MarketplacePage />} />
+          <Route path="org-mode" element={<OrgModePage />} />
+          <Route path="device-controller" element={<DeviceControllerPage />} />
         </Route>
       </Routes>
       <Toaster position="bottom-right" />

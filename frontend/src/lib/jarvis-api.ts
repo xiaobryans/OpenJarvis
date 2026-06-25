@@ -891,3 +891,264 @@ export async function fetchLongHorizonSummary(): Promise<LongHorizonSummary> {
   const res = await apiFetch('/v1/long-horizon/summary');
   return res.json();
 }
+
+// ---------------------------------------------------------------------------
+// Finance/Admin OS types + API  (Phase B13)
+// ---------------------------------------------------------------------------
+
+export interface FinanceAdminCategory {
+  category_id: string;
+  name: string;
+  status: string;
+  description: string;
+  actions: Array<{ action_id: string; name: string; approval_required: boolean; live: boolean; route?: string }>;
+  external_gate: string | null;
+  fake_completion: boolean;
+}
+
+export interface FinanceAdminDashboard {
+  categories: FinanceAdminCategory[];
+  total_categories: number;
+  available_now: number;
+  approval_gates_active: boolean;
+  live_financial_execution: boolean;
+  fake_completion: boolean;
+  fake_data: boolean;
+  note: string;
+}
+
+export async function fetchFinanceAdminDashboard(): Promise<FinanceAdminDashboard> {
+  const res = await apiFetch('/v1/finance-admin/dashboard');
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Research OS types + API  (Phase B14)
+// ---------------------------------------------------------------------------
+
+export interface ResearchSection {
+  section_id: string;
+  name: string;
+  status: string;
+  description: string;
+  source_route: string | null;
+  live_web_retrieval: boolean;
+  fake_research: boolean;
+  external_gate?: string;
+}
+
+export interface ResearchTemplate {
+  template_id: string;
+  name: string;
+  description: string;
+  fields: string[];
+  live_output: boolean;
+}
+
+export interface ResearchOSDashboard {
+  sections: ResearchSection[];
+  live_web_retrieval: boolean;
+  fake_research: boolean;
+  fake_data: boolean;
+  provenance: string;
+  note: string;
+}
+
+export async function fetchResearchOSDashboard(): Promise<ResearchOSDashboard> {
+  const res = await apiFetch('/v1/research-os/dashboard');
+  return res.json();
+}
+
+export async function fetchResearchTemplates(): Promise<{ templates: ResearchTemplate[]; count: number; live_output: boolean; fake_research: boolean; fake_data: boolean; note: string }> {
+  const res = await apiFetch('/v1/research-os/templates');
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Browser Operator types + API  (Phase B15)
+// ---------------------------------------------------------------------------
+
+export interface BrowserAction {
+  action_id: string;
+  name: string;
+  dry_run_only: boolean;
+  approval_required: boolean;
+}
+
+export interface BrowserOperatorStatus {
+  browser_operator_available: boolean;
+  dry_run_only: boolean;
+  supported_actions: BrowserAction[];
+  external_gates: string[];
+  safety: Record<string, boolean>;
+  fake_live: boolean;
+  fake_data: boolean;
+  note: string;
+}
+
+export async function fetchBrowserOperatorStatus(): Promise<BrowserOperatorStatus> {
+  const res = await apiFetch('/v1/browser-operator/status');
+  return res.json();
+}
+
+export async function fetchBrowserCapabilityMatrix(): Promise<{ categories: Array<{ category: string; available: boolean; dry_run_only: boolean; approval_tier: string; reason?: string }>; live_browser: boolean; fake_live: boolean; fake_data: boolean; note: string }> {
+  const res = await apiFetch('/v1/browser-operator/capability-matrix');
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Memory Graph types + API  (Phase B16)
+// ---------------------------------------------------------------------------
+
+export interface MemoryGraphStatus {
+  graph_available: boolean;
+  namespace_count: number;
+  total_entries: number;
+  entity_extraction: boolean;
+  relation_mapping: boolean;
+  contradiction_detection: boolean;
+  cloud_sync_live: boolean;
+  knowledge_graph_live: boolean;
+  fake_data: boolean;
+  note: string;
+}
+
+export interface MemoryGraphNamespace {
+  name: string;
+  entry_count: number;
+  searchable: boolean;
+  source: string;
+}
+
+export async function fetchMemoryGraphStatus(): Promise<MemoryGraphStatus> {
+  const res = await apiFetch('/v1/memory-graph/status');
+  return res.json();
+}
+
+export async function fetchMemoryGraphNamespaces(): Promise<{ namespaces: MemoryGraphNamespace[]; count: number; cloud_backed: boolean; knowledge_graph_entities: number; fake_data: boolean; source: string }> {
+  const res = await apiFetch('/v1/memory-graph/namespaces');
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Multi-Device types + API  (Phase B17)
+// ---------------------------------------------------------------------------
+
+export interface DeviceSession {
+  session_id: string;
+  device_type: string;
+  status: string;
+  capabilities: string[];
+  live: boolean;
+  gate?: string;
+}
+
+export interface MultiDeviceStatus {
+  sessions: DeviceSession[];
+  active_sessions: number;
+  phone_control_live: boolean;
+  macbook_off_cloud_execution_live: boolean;
+  fargate_cloud_live: boolean;
+  pwa_installed: boolean;
+  fake_live: boolean;
+  fake_data: boolean;
+  note: string;
+}
+
+export async function fetchMultiDeviceStatus(): Promise<MultiDeviceStatus> {
+  const res = await apiFetch('/v1/multi-device/status');
+  return res.json();
+}
+
+export async function fetchMultiDeviceCapabilityMatrix(): Promise<{ devices: unknown[]; fake_live: boolean; fake_data: boolean; note: string }> {
+  const res = await apiFetch('/v1/multi-device/capability-matrix');
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Marketplace types + API  (Phase B18)
+// ---------------------------------------------------------------------------
+
+export interface MarketplacePlugin {
+  plugin_id: string;
+  name: string;
+  version: string;
+  status: string;
+  safety_level: string;
+  source: string;
+  marketplace_verified: boolean;
+  auto_installed: boolean;
+}
+
+export interface MarketplaceStatus {
+  marketplace_live: boolean;
+  local_registry_available: boolean;
+  local_skill_count: number;
+  review_queue_size: number;
+  auto_install: boolean;
+  network_install: boolean;
+  fake_data: boolean;
+  fake_marketplace: boolean;
+  note: string;
+}
+
+export async function fetchMarketplaceStatus(): Promise<MarketplaceStatus> {
+  const res = await apiFetch('/v1/marketplace/status');
+  return res.json();
+}
+
+export async function fetchMarketplacePlugins(): Promise<{ plugins: MarketplacePlugin[]; count: number; marketplace_live: boolean; fake_marketplace: boolean; fake_data: boolean }> {
+  const res = await apiFetch('/v1/marketplace/plugins');
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Org Mode types + API  (Phase B19)
+// ---------------------------------------------------------------------------
+
+export interface OrgModeStatus {
+  multi_user_live: boolean;
+  org_mode_available: boolean;
+  single_user_mode: boolean;
+  production_auth_ready: boolean;
+  external_gate: string;
+  dry_run_only: boolean;
+  fake_data: boolean;
+  note: string;
+}
+
+export async function fetchOrgModeStatus(): Promise<OrgModeStatus> {
+  const res = await apiFetch('/v1/org-mode/status');
+  return res.json();
+}
+
+export async function fetchOrgModeCapabilityMatrix(): Promise<{ capabilities: unknown[]; role_model: unknown; multi_user_live: boolean; fake_data: boolean; note: string }> {
+  const res = await apiFetch('/v1/org-mode/capability-matrix');
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Device Controller types + API  (Phase B20)
+// ---------------------------------------------------------------------------
+
+export interface DeviceControllerStatus {
+  robotics_available: boolean;
+  device_control_live: boolean;
+  simulator_mode: boolean;
+  supported_device_types: Array<{ type: string; live: boolean; gate: string }>;
+  physical_world_execution: boolean;
+  fake_live: boolean;
+  fake_data: boolean;
+  safety: Record<string, unknown>;
+  note: string;
+}
+
+export async function fetchDeviceControllerStatus(): Promise<DeviceControllerStatus> {
+  const res = await apiFetch('/v1/device-controller/status');
+  return res.json();
+}
+
+export async function fetchDeviceSafetyMatrix(): Promise<{ safety_rules: Array<{ rule_id: string; description: string; enforced: boolean }>; physical_world_execution: boolean; fake_live: boolean; fake_data: boolean }> {
+  const res = await apiFetch('/v1/device-controller/safety-matrix');
+  return res.json();
+}

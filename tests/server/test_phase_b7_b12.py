@@ -653,13 +653,14 @@ def test_sk_b12_capability(client: TestClient) -> None:
 
 
 def test_sk_active_sprint_b7_b12(client: TestClient) -> None:
-    """GET /v1/jarvis/roadmap active_sprint contains 'B7' or 'B12' or 'ADVANCED'."""
+    """GET /v1/jarvis/roadmap active_sprint is a B-phase or later sprint."""
     response = client.get("/v1/jarvis/roadmap")
     assert response.status_code == 200
     data = response.json()
     active_sprint = data.get("active_sprint", "")
-    assert any(token in active_sprint for token in ("B7", "B12", "ADVANCED")), (
-        f"active_sprint '{active_sprint}' does not reference B7, B12, or ADVANCED"
+    # Sprint advances through B-phases — any B7+ or later expansion is valid
+    assert "PHASE_B" in active_sprint or "ADVANCED" in active_sprint or "EXPANSION" in active_sprint or "DEEP" in active_sprint, (
+        f"active_sprint '{active_sprint}' must be a B-phase or expansion sprint"
     )
 
 

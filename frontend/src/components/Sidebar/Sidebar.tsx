@@ -35,6 +35,11 @@ import {
   Briefcase,
   BarChart2,
   Flag,
+  DollarSign,
+  Globe,
+  Share2,
+  ShoppingBag,
+  UserPlus,
 } from 'lucide-react';
 import { ConversationList } from './ConversationList';
 import { useAppStore } from '../../lib/store';
@@ -93,6 +98,14 @@ export function Sidebar() {
     { path: '/business-admin', icon: Briefcase, label: 'Business OS', badge: null },
     { path: '/observability', icon: BarChart2, label: 'Observability', badge: null },
     { path: '/long-horizon', icon: Flag, label: 'Long-Horizon', badge: null },
+    { path: '/finance-admin', icon: DollarSign, label: 'Finance OS', badge: null },
+    { path: '/research-os', icon: BookOpen, label: 'Research OS', badge: null },
+    { path: '/browser-operator', icon: Globe, label: 'Browser Ops', badge: null },
+    { path: '/memory-graph', icon: Share2, label: 'Memory Graph', badge: null },
+    { path: '/multi-device', icon: Monitor, label: 'Multi-Device', badge: null },
+    { path: '/marketplace', icon: ShoppingBag, label: 'Marketplace', badge: null },
+    { path: '/org-mode', icon: UserPlus, label: 'Org Mode', badge: null },
+    { path: '/device-controller', icon: Cpu, label: 'Device Ctrl', badge: null },
     { path: '/agents', icon: Bot, label: 'Agents', badge: null },
     { path: '/logs', icon: ScrollText, label: 'Logs', badge: null },
     { path: '/settings', icon: Settings, label: 'Settings', badge: null },

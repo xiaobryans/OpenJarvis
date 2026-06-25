@@ -303,6 +303,100 @@ _CAPABILITIES: List[Dict[str, Any]] = [
         ),
         "plan": "Phase B12",
     },
+    {
+        "id": "finance_admin_os",
+        "name": "Personal Finance / Admin OS",
+        "status": "available",
+        "description": (
+            "Finance and admin task categories, budget/bill tracking templates, "
+            "document drafting, tax compliance checklists. "
+            "No live financial execution. See GET /v1/finance-admin/dashboard."
+        ),
+        "plan": "Phase B13",
+    },
+    {
+        "id": "research_os",
+        "name": "Research / Learning / Company-Building OS",
+        "status": "available",
+        "description": (
+            "Research queue, learning plans, company-building project templates. "
+            "Local task/goal/memory integration. No fake web research. "
+            "See GET /v1/research-os/dashboard."
+        ),
+        "plan": "Phase B14",
+    },
+    {
+        "id": "browser_operator",
+        "name": "Browser / Web Operator Foundation",
+        "status": "partial",
+        "description": (
+            "Browser operator capability matrix, dry-run action plans, safety gates. "
+            "No live browser control. All actions require approval. "
+            "See GET /v1/browser-operator/status."
+        ),
+        "plan": "Phase B15",
+        "blocker": "Browser automation library not yet integrated (external gate).",
+    },
+    {
+        "id": "memory_graph",
+        "name": "Advanced Memory + Knowledge Graph",
+        "status": "partial",
+        "description": (
+            "Memory namespace metadata, entity extraction and knowledge graph planned but not yet implemented. "
+            "Local SQLite storage. Cloud sync requires Fargate credentials. "
+            "See GET /v1/memory-graph/status."
+        ),
+        "plan": "Phase B16",
+        "blocker": "Entity extraction and knowledge graph not yet implemented.",
+    },
+    {
+        "id": "multi_device",
+        "name": "Multi-Device / Phone-Controlled Workbench",
+        "status": "partial",
+        "description": (
+            "Device/session status, capability matrix, workbench queue. "
+            "Desktop local session active. Mobile PWA and cloud execution require Tailscale + Fargate. "
+            "See GET /v1/multi-device/status."
+        ),
+        "plan": "Phase B17",
+        "blocker": "Mobile PWA and cloud execution require Tailscale + Fargate deployment.",
+    },
+    {
+        "id": "marketplace",
+        "name": "Skills Marketplace / Third-Party Plugin Ecosystem",
+        "status": "partial",
+        "description": (
+            "Local skill registry view, plugin review matrix, dry-run review. "
+            "No live marketplace. Manual security vetting required for all third-party plugins. "
+            "See GET /v1/marketplace/status."
+        ),
+        "plan": "Phase B18",
+        "blocker": "Live marketplace requires vetted plugin registry and security review pipeline.",
+    },
+    {
+        "id": "org_mode",
+        "name": "Team / Multi-User / Organization Mode Foundation",
+        "status": "partial",
+        "description": (
+            "Org mode capability matrix, role model planning, dry-run invitation. "
+            "Single-user mode only. Multi-user/org requires production auth (external gate). "
+            "See GET /v1/org-mode/status."
+        ),
+        "plan": "Phase B19",
+        "blocker": "Multi-user auth and RBAC not yet implemented (external gate).",
+    },
+    {
+        "id": "device_controller",
+        "name": "Robotics / Device Controller Foundation",
+        "status": "partial",
+        "description": (
+            "Device controller capability matrix, dry-run command plans, safety gates. "
+            "Simulator mode only. No physical device control. All commands require Tier 4 approval. "
+            "See GET /v1/device-controller/status."
+        ),
+        "plan": "Phase B20",
+        "blocker": "Device integration libraries not yet deployed (external gate).",
+    },
 ]
 
 _ROADMAP: List[Dict[str, Any]] = [
@@ -330,6 +424,14 @@ _ROADMAP: List[Dict[str, Any]] = [
     {"plan": "Phase B10", "name": "Business / Admin Operator Expansion", "status": "IN_PROGRESS"},
     {"plan": "Phase B11", "name": "Observability / Reliability / Cost Controls", "status": "IN_PROGRESS"},
     {"plan": "Phase B12", "name": "Long-Horizon Goal Execution Foundation", "status": "IN_PROGRESS"},
+    {"plan": "Phase B13", "name": "Personal Finance / Admin OS", "status": "IN_PROGRESS"},
+    {"plan": "Phase B14", "name": "Research / Learning / Company-Building OS", "status": "IN_PROGRESS"},
+    {"plan": "Phase B15", "name": "Browser / Web Operator Foundation", "status": "IN_PROGRESS"},
+    {"plan": "Phase B16", "name": "Advanced Memory + Knowledge Graph", "status": "IN_PROGRESS"},
+    {"plan": "Phase B17", "name": "Multi-Device / Phone-Controlled Workbench", "status": "IN_PROGRESS"},
+    {"plan": "Phase B18", "name": "Skills Marketplace / Plugin Ecosystem", "status": "IN_PROGRESS"},
+    {"plan": "Phase B19", "name": "Team / Multi-User / Organization Mode", "status": "IN_PROGRESS"},
+    {"plan": "Phase B20", "name": "Robotics / Device Controller Foundation", "status": "IN_PROGRESS"},
 ]
 
 
@@ -394,6 +496,14 @@ async def get_jarvis_status() -> Dict[str, Any]:
             "phase_b10_business_admin": "IN_PROGRESS",
             "phase_b11_observability": "IN_PROGRESS",
             "phase_b12_long_horizon": "IN_PROGRESS",
+            "phase_b13_finance_admin": "IN_PROGRESS",
+            "phase_b14_research_os": "IN_PROGRESS",
+            "phase_b15_browser_operator": "IN_PROGRESS",
+            "phase_b16_memory_graph": "IN_PROGRESS",
+            "phase_b17_multi_device": "IN_PROGRESS",
+            "phase_b18_marketplace": "IN_PROGRESS",
+            "phase_b19_org_mode": "IN_PROGRESS",
+            "phase_b20_device_controller": "IN_PROGRESS",
         },
         "capability_summary": {
             "available": available_count,
@@ -412,8 +522,8 @@ async def get_roadmap() -> Dict[str, Any]:
     """Current Jarvis roadmap and plan acceptance state."""
     return {
         "roadmap": _ROADMAP,
-        "active_sprint": "PHASE_B7_TO_B12_ADVANCED_JARVIS_OS_EXPANSION",
-        "next": "Complete Phase B7-B12. Final Phase A manual gates remain open (DMG/signing/credentials). Plan 3 voice when Bryan reopens it.",
+        "active_sprint": "PHASE_B13_TO_B20_DEEP_JARVIS_OS_EXPANSION",
+        "next": "Complete Phase B13-B20. Final Phase A manual gates remain open. Plan 3 voice when Bryan reopens it.",
         "note": "Only Bryan can mark plans as ACCEPTED.",
     }
 
