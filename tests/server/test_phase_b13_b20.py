@@ -585,10 +585,11 @@ class TestSelfKnowledgeB13ToB20:
             assert key in plan_state, f"plan_state missing key: {key}"
             assert plan_state[key] == "IN_PROGRESS"
 
-    def test_90_active_sprint_is_b13_b20_expansion(self, sk_client):
+    def test_90_active_sprint_is_b13_b20_or_later(self, sk_client):
         data = sk_client.get("/v1/jarvis/roadmap").json()
         sprint = data["active_sprint"]
-        assert "PHASE_B13" in sprint or "B13_TO_B20" in sprint or "DEEP" in sprint or "EXPANSION" in sprint
+        # Sprint advances through phases — B13-B20, Phase C, or later are all valid
+        assert any(t in sprint for t in ("PHASE_B13", "B13_TO_B20", "DEEP", "EXPANSION", "PHASE_C", "AUTONOMOUS"))
 
 
 # ---------------------------------------------------------------------------

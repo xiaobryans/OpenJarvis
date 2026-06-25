@@ -113,13 +113,13 @@ class TestSelfKnowledgeAcceptanceState:
         data = res.json()
         assert data["plan_state"].get("final_phase_a") == "IN_PROGRESS"
 
-    def test_active_sprint_is_phase_b1_or_final_a(self, sk_client):
+    def test_active_sprint_is_phase_b1_or_later(self, sk_client):
         res = sk_client.get("/v1/jarvis/roadmap")
         assert res.status_code == 200
         data = res.json()
         sprint = data["active_sprint"]
-        # Sprint advances through phases — any B-phase or Final Phase A is valid
-        assert "PHASE_B" in sprint or "FINAL_PHASE_A" in sprint or "EXPANSION" in sprint or "Final" in sprint
+        # Sprint advances through phases — any B-phase, C-phase, or later is valid
+        assert any(t in sprint for t in ("PHASE_B", "FINAL_PHASE_A", "EXPANSION", "Final", "PHASE_C", "AUTONOMOUS"))
 
     def test_no_fake_claims(self, sk_client):
         res = sk_client.get("/v1/jarvis/status")

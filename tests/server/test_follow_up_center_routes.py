@@ -251,7 +251,8 @@ class TestSelfKnowledgeFollowUpCenter:
     def test_active_sprint_is_phase_b1_or_later(self, sk_client):
         data = sk_client.get("/v1/jarvis/roadmap").json()
         sprint = data["active_sprint"]
-        assert "PHASE_B1" in sprint or "PHASE_B2" in sprint or "EXPANSION" in sprint or "FINAL_PHASE" in sprint
+        # Sprint advances through phases — any B/C or later sprint is valid
+        assert any(t in sprint for t in ("PHASE_B", "EXPANSION", "FINAL_PHASE", "PHASE_C", "AUTONOMOUS"))
 
     def test_plan_4_6_still_accepted(self, sk_client):
         data = sk_client.get("/v1/jarvis/status").json()

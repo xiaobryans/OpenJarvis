@@ -361,13 +361,14 @@ def test_self_knowledge_b5_capability(client: TestClient) -> None:
 
 
 def test_self_knowledge_active_sprint_b2_b6(client: TestClient) -> None:
-    """GET /v1/jarvis/roadmap returns active_sprint containing 'B2' or 'B6' or 'EXPANSION'."""
+    """GET /v1/jarvis/roadmap returns active_sprint for B2+ or any later phase."""
     response = client.get("/v1/jarvis/roadmap")
     assert response.status_code == 200
     data = response.json()
     active = data.get("active_sprint", "")
-    assert any(token in active for token in ("B2", "B6", "EXPANSION")), (
-        f"active_sprint does not reference B2/B6/EXPANSION: {active!r}"
+    # Sprint advances — any B or C phase or later expansion is valid
+    assert any(token in active for token in ("B2", "B6", "EXPANSION", "PHASE_B", "PHASE_C", "AUTONOMOUS")), (
+        f"active_sprint does not reference B2/B6+ or C-phase: {active!r}"
     )
 
 

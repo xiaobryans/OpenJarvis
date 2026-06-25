@@ -36,6 +36,16 @@ import { MultiDevicePage } from './pages/MultiDevicePage';
 import { MarketplacePage } from './pages/MarketplacePage';
 import { OrgModePage } from './pages/OrgModePage';
 import { DeviceControllerPage } from './pages/DeviceControllerPage';
+import { AutonomousOrgPage } from './pages/AutonomousOrgPage';
+import { MissionControlCPage } from './pages/MissionControlCPage';
+import { ReviewGovernancePage } from './pages/ReviewGovernancePage';
+import { ProductReadinessPage } from './pages/ProductReadinessPage';
+import { MarketplaceGovernancePage } from './pages/MarketplaceGovernancePage';
+import { EnterpriseGovernancePage } from './pages/EnterpriseGovernancePage';
+import { ScaleControlPage } from './pages/ScaleControlPage';
+import { CompanyOSPage } from './pages/CompanyOSPage';
+import { SafetySimulationPage } from './pages/SafetySimulationPage';
+import { ControlTowerPage } from './pages/ControlTowerPage';
 import { CommandPalette } from './components/CommandPalette';
 import { TextFallbackPanel } from './components/TextFallbackPanel';
 import { SetupScreen } from './components/SetupScreen';
@@ -265,6 +275,16 @@ export default function App() {
           <Route path="marketplace" element={<MarketplacePage />} />
           <Route path="org-mode" element={<OrgModePage />} />
           <Route path="device-controller" element={<DeviceControllerPage />} />
+          <Route path="autonomous-org" element={<AutonomousOrgPage />} />
+          <Route path="mission-control-c" element={<MissionControlCPage />} />
+          <Route path="review-governance" element={<ReviewGovernancePage />} />
+          <Route path="product-readiness" element={<ProductReadinessPage />} />
+          <Route path="marketplace-governance" element={<MarketplaceGovernancePage />} />
+          <Route path="enterprise-governance" element={<EnterpriseGovernancePage />} />
+          <Route path="scale-control" element={<ScaleControlPage />} />
+          <Route path="company-os" element={<CompanyOSPage />} />
+          <Route path="safety-simulation" element={<SafetySimulationPage />} />
+          <Route path="control-tower" element={<ControlTowerPage />} />
         </Route>
       </Routes>
       <Toaster position="bottom-right" />

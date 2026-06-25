@@ -63,6 +63,16 @@ from openjarvis.server.multi_device_routes import router as multi_device_router
 from openjarvis.server.marketplace_routes import router as marketplace_router
 from openjarvis.server.org_mode_routes import router as org_mode_router
 from openjarvis.server.device_controller_routes import router as device_controller_router
+from openjarvis.server.autonomous_org_routes import router as autonomous_org_router
+from openjarvis.server.mission_control_routes import router as mission_control_router
+from openjarvis.server.review_governance_routes import router as review_governance_router
+from openjarvis.server.product_readiness_routes import router as product_readiness_router
+from openjarvis.server.marketplace_governance_routes import router as marketplace_governance_router
+from openjarvis.server.enterprise_governance_routes import router as enterprise_governance_router
+from openjarvis.server.scale_control_routes import router as scale_control_router
+from openjarvis.server.company_os_routes import router as company_os_router
+from openjarvis.server.safety_simulation_routes import router as safety_simulation_router
+from openjarvis.server.control_tower_routes import router as control_tower_router
 
 logger = logging.getLogger(__name__)
 
@@ -374,6 +384,16 @@ def create_app(
     app.include_router(marketplace_router)
     app.include_router(org_mode_router)
     app.include_router(device_controller_router)
+    app.include_router(autonomous_org_router)
+    app.include_router(mission_control_router)
+    app.include_router(review_governance_router)
+    app.include_router(product_readiness_router)
+    app.include_router(marketplace_governance_router)
+    app.include_router(enterprise_governance_router)
+    app.include_router(scale_control_router)
+    app.include_router(company_os_router)
+    app.include_router(safety_simulation_router)
+    app.include_router(control_tower_router)
     include_all_routes(app)
 
     # Restore SendBlue channel bindings from database on startup

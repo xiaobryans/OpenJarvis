@@ -1152,3 +1152,222 @@ export async function fetchDeviceSafetyMatrix(): Promise<{ safety_rules: Array<{
   const res = await apiFetch('/v1/device-controller/safety-matrix');
   return res.json();
 }
+
+// ---------------------------------------------------------------------------
+// Phase C1 — Autonomous Org types + API
+// ---------------------------------------------------------------------------
+export interface AutonomousOrgStatus {
+  org_kernel_available: boolean;
+  one_jarvis_pa_identity: boolean;
+  single_pa_voice: string;
+  internal_team: Array<{ role_id: string; name: string; type: string; live: boolean; approval_gated: boolean; gate?: string }>;
+  active_roles: number;
+  autonomous_execution_live: boolean;
+  omnix_is_jarvis_core: boolean;
+  fake_data: boolean;
+  note: string;
+}
+export async function fetchAutonomousOrgStatus(): Promise<AutonomousOrgStatus> {
+  const res = await apiFetch('/v1/autonomous-org/status');
+  return res.json();
+}
+export async function fetchAutonomousOrgCapabilityMatrix(): Promise<{ capabilities: unknown[]; one_jarvis_pa_identity: boolean; fake_data: boolean }> {
+  const res = await apiFetch('/v1/autonomous-org/capability-matrix');
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Phase C2 — Mission Control types + API
+// ---------------------------------------------------------------------------
+export interface MissionControlDashboard {
+  missions: Array<{ mission_id: string; title: string; status: string; milestones: unknown[]; approval_required: boolean; auto_execute: boolean }>;
+  total: number;
+  active: number;
+  paused: number;
+  unapproved_execution: boolean;
+  fake_data: boolean;
+  note: string;
+}
+export async function fetchMissionControlDashboard(): Promise<MissionControlDashboard> {
+  const res = await apiFetch('/v1/mission-control/dashboard');
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Phase C3 — Review/Governance types + API
+// ---------------------------------------------------------------------------
+export interface ReviewGovernanceStatus {
+  governance_available: boolean;
+  reviewer_lanes: Array<{ lane_id: string; name: string; active: boolean; auto_approve: boolean; approval_tier: string; gate?: string }>;
+  active_lanes: number;
+  approval_gates_active: boolean;
+  bypassing_approval_gates: boolean;
+  fake_data: boolean;
+}
+export async function fetchReviewGovernanceStatus(): Promise<ReviewGovernanceStatus> {
+  const res = await apiFetch('/v1/review-governance/status');
+  return res.json();
+}
+export async function fetchArbitrationStatus(): Promise<{ arbitration_available: boolean; conflicts: unknown[]; conflict_resolution: string; auto_resolve: boolean; fake_data: boolean }> {
+  const res = await apiFetch('/v1/review-governance/arbitration');
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Phase C4 — Product Readiness types + API
+// ---------------------------------------------------------------------------
+export interface ProductReadinessDimension {
+  dimension_id: string;
+  name: string;
+  status: string;
+  description: string;
+  production_multi_user: boolean;
+  gap?: string;
+}
+export interface ProductReadinessMatrix {
+  readiness_dimensions: ProductReadinessDimension[];
+  production_multi_user_ready: boolean;
+  claiming_production_support: boolean;
+  fake_data: boolean;
+}
+export async function fetchProductReadinessMatrix(): Promise<ProductReadinessMatrix> {
+  const res = await apiFetch('/v1/product-readiness/matrix');
+  return res.json();
+}
+export async function fetchMultiUserStatus(): Promise<{ multi_user_live: boolean; local_dry_run_model: boolean; admin_approval_required: boolean; inviting_real_users: boolean; fake_data: boolean }> {
+  const res = await apiFetch('/v1/product-readiness/multi-user-status');
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Phase C5 — Marketplace Governance types + API
+// ---------------------------------------------------------------------------
+export interface MarketplaceGovernanceStatus {
+  governance_framework_available: boolean;
+  review_pipeline_live: boolean;
+  permission_scoring_live: boolean;
+  dry_run_only: boolean;
+  live_marketplace_claims: boolean;
+  fake_data: boolean;
+}
+export async function fetchMarketplaceGovernanceStatus(): Promise<MarketplaceGovernanceStatus> {
+  const res = await apiFetch('/v1/marketplace-governance/status');
+  return res.json();
+}
+export async function fetchMarketplaceGovernancePolicy(): Promise<{ policies: Array<{ policy_id: string; name: string; enforced: boolean; description: string; gate?: string }>; live_marketplace: boolean; fake_data: boolean }> {
+  const res = await apiFetch('/v1/marketplace-governance/policy');
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Phase C6 — Enterprise Governance types + API
+// ---------------------------------------------------------------------------
+export interface EnterpriseAuditSummary {
+  audit_entries: unknown[];
+  total_entries: number;
+  audit_live: boolean;
+  secret_safe: boolean;
+  fake_data: boolean;
+}
+export async function fetchEnterpriseAuditSummary(): Promise<EnterpriseAuditSummary> {
+  const res = await apiFetch('/v1/enterprise-governance/audit-summary');
+  return res.json();
+}
+export async function fetchEnterpriseReliability(): Promise<{ slo_targets: unknown[]; live_billing_integration: boolean; fake_data: boolean }> {
+  const res = await apiFetch('/v1/enterprise-governance/reliability');
+  return res.json();
+}
+export async function fetchEnterpriseCostControl(): Promise<{ cost_tracking_available: boolean; live_billing_integration: boolean; provider_routing_visible: boolean; fake_data: boolean }> {
+  const res = await apiFetch('/v1/enterprise-governance/cost-control');
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Phase C7 — Scale Control types + API
+// ---------------------------------------------------------------------------
+export interface ScaleControlStatus {
+  control_plane_available: boolean;
+  device_readiness: Record<string, string>;
+  cloud_execution_live: boolean;
+  approval_gates_active: boolean;
+  fake_cloud_readiness: boolean;
+  fake_data: boolean;
+}
+export async function fetchScaleControlStatus(): Promise<ScaleControlStatus> {
+  const res = await apiFetch('/v1/scale-control/status');
+  return res.json();
+}
+export async function fetchMacbookOffReadiness(): Promise<{ macbook_off_live: boolean; requirements: unknown[]; requirements_met: number; requirements_total: number; fake_data: boolean }> {
+  const res = await apiFetch('/v1/scale-control/macbook-off-readiness');
+  return res.json();
+}
+export async function fetchParityStatus(): Promise<{ desktop_status: string; mobile_pwa_status: string; parity_achieved: boolean; parity_gaps: unknown[]; fake_data: boolean }> {
+  const res = await apiFetch('/v1/scale-control/parity-status');
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Phase C8 — Company OS types + API
+// ---------------------------------------------------------------------------
+export interface CompanyOSDashboard {
+  operating_status: string;
+  workflow_lanes: Array<{ lane_id: string; name: string; active: boolean; approval_required: boolean; gate?: string }>;
+  active_lanes: number;
+  live_business_execution: boolean;
+  goals_count: number;
+  tasks_count: number;
+  fake_data: boolean;
+}
+export async function fetchCompanyOSDashboard(): Promise<CompanyOSDashboard> {
+  const res = await apiFetch('/v1/company-os/dashboard');
+  return res.json();
+}
+export async function fetchCompanyOSLanes(): Promise<{ lanes: unknown[]; owner_approval_required: boolean; live_business_execution: boolean; fake_data: boolean }> {
+  const res = await apiFetch('/v1/company-os/workflow-lanes');
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Phase C9 — Safety Simulation types + API
+// ---------------------------------------------------------------------------
+export interface SafetySimulationStatus {
+  simulation_framework_available: boolean;
+  dry_run_only: boolean;
+  real_execution: boolean;
+  destructive_actions_blocked: boolean;
+  fake_data: boolean;
+}
+export async function fetchSafetySimulationStatus(): Promise<SafetySimulationStatus> {
+  const res = await apiFetch('/v1/safety-simulation/status');
+  return res.json();
+}
+export async function fetchRollbackMatrix(): Promise<{ rollback_capabilities: unknown[]; automated_rollback_live: boolean; fake_data: boolean }> {
+  const res = await apiFetch('/v1/safety-simulation/rollback-matrix');
+  return res.json();
+}
+export async function fetchPolicyChecks(): Promise<{ hard_gate_count: number; soft_gate_count: number; gates_enforced: boolean; bypassing_gates: boolean; fake_data: boolean }> {
+  const res = await apiFetch('/v1/safety-simulation/policy-checks');
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Phase C10 — Control Tower types + API
+// ---------------------------------------------------------------------------
+export interface ControlTowerStatus {
+  phases: Array<{ phase: string; status: string; note: string }>;
+  active_sprint: string;
+  fake_acceptance: boolean;
+  fake_data: boolean;
+}
+export async function fetchControlTowerStatus(): Promise<ControlTowerStatus> {
+  const res = await apiFetch('/v1/control-tower/status');
+  return res.json();
+}
+export async function fetchGateRegistry(): Promise<{ open_gates: unknown[]; closed_gates: unknown[]; open_count: number; closed_count: number; fake_data: boolean }> {
+  const res = await apiFetch('/v1/control-tower/gate-registry');
+  return res.json();
+}
+export async function fetchCompletionScore(): Promise<{ core_os_completion: { completion_score_pct: number; plans_accepted: string[]; phases_in_progress: string[] }; capability_coverage: Record<string, boolean>; fake_data: boolean }> {
+  const res = await apiFetch('/v1/control-tower/completion-score');
+  return res.json();
+}

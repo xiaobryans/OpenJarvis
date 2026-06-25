@@ -397,6 +397,117 @@ _CAPABILITIES: List[Dict[str, Any]] = [
         "plan": "Phase B20",
         "blocker": "Device integration libraries not yet deployed (external gate).",
     },
+    {
+        "id": "autonomous_org_kernel",
+        "name": "Autonomous Jarvis Organization Kernel",
+        "status": "available",
+        "description": (
+            "Internal team registry, capability matrix, mission routing. "
+            "One Jarvis PA identity enforced. No autonomous external execution without approval. "
+            "See GET /v1/autonomous-org/status."
+        ),
+        "plan": "Phase C1",
+    },
+    {
+        "id": "mission_control_c",
+        "name": "Long-Horizon Mission Control (Phase C)",
+        "status": "available",
+        "description": (
+            "Mission dashboard, milestone/checkpoint tracking, dependency graph, risk assessment. "
+            "No unapproved execution. See GET /v1/mission-control/dashboard."
+        ),
+        "plan": "Phase C2",
+    },
+    {
+        "id": "review_governance",
+        "name": "Multi-Agent Review / Governance / Arbitration",
+        "status": "available",
+        "description": (
+            "Reviewer lanes, decision records, arbitration proposals. "
+            "Approval gates always active. No auto-approve. "
+            "See GET /v1/review-governance/status."
+        ),
+        "plan": "Phase C3",
+    },
+    {
+        "id": "product_readiness",
+        "name": "Product / Multi-User Readiness Layer",
+        "status": "partial",
+        "description": (
+            "Readiness matrix, tenancy/auth gap analysis, data isolation checklist. "
+            "Multi-user not live. Single-user core ready. "
+            "See GET /v1/product-readiness/matrix."
+        ),
+        "plan": "Phase C4",
+        "blocker": "Multi-user auth and RBAC require external implementation.",
+    },
+    {
+        "id": "marketplace_governance_c",
+        "name": "Plugin / Marketplace Governance Layer (Phase C)",
+        "status": "available",
+        "description": (
+            "Plugin review workflow, permission/risk scoring, version/rollback policy. "
+            "Manual review required. No live marketplace. "
+            "See GET /v1/marketplace-governance/status."
+        ),
+        "plan": "Phase C5",
+    },
+    {
+        "id": "enterprise_governance",
+        "name": "Enterprise-Grade Audit / Observability / Cost / Reliability",
+        "status": "available",
+        "description": (
+            "Audit summary, reliability SLO metadata, cost/token tracking, incident status. "
+            "Secret-safe. Live billing integration not deployed. "
+            "See GET /v1/enterprise-governance/audit-summary."
+        ),
+        "plan": "Phase C6",
+    },
+    {
+        "id": "scale_control",
+        "name": "Cross-Device / Cloud / Workbench Scale Control Plane",
+        "status": "partial",
+        "description": (
+            "Device/cloud capability matrix, MacBook-off readiness, queue status, parity status. "
+            "Desktop active. Mobile PWA and Fargate require external deployment. "
+            "See GET /v1/scale-control/status."
+        ),
+        "plan": "Phase C7",
+        "blocker": "Mobile PWA and Fargate cloud execution require external deployment.",
+    },
+    {
+        "id": "company_os_c",
+        "name": "Autonomous Business / Company OS Scale Layer (Phase C)",
+        "status": "available",
+        "description": (
+            "Company operating dashboard, research/admin/product/coding/legal/finance lanes. "
+            "No live business execution. Local task/goal integration. "
+            "See GET /v1/company-os/dashboard."
+        ),
+        "plan": "Phase C8",
+    },
+    {
+        "id": "safety_simulation",
+        "name": "Safety / Policy / Rollback / Simulation Framework",
+        "status": "available",
+        "description": (
+            "Dry-run action simulations, rollback matrix, policy checks, blast-radius estimates. "
+            "No real execution. Destructive actions always blocked. "
+            "See GET /v1/safety-simulation/status."
+        ),
+        "plan": "Phase C9",
+    },
+    {
+        "id": "control_tower",
+        "name": "Phase C Control Tower + Core OS Completion Gate",
+        "status": "available",
+        "description": (
+            "Consolidated phase/gate status across A/B/C, next decisions, completion score. "
+            "No fake acceptance. Bryan decides all acceptances. "
+            "See GET /v1/control-tower/status."
+        ),
+        "plan": "Phase C10",
+    },
 ]
 
 _ROADMAP: List[Dict[str, Any]] = [
@@ -432,6 +543,16 @@ _ROADMAP: List[Dict[str, Any]] = [
     {"plan": "Phase B18", "name": "Skills Marketplace / Plugin Ecosystem", "status": "IN_PROGRESS"},
     {"plan": "Phase B19", "name": "Team / Multi-User / Organization Mode", "status": "IN_PROGRESS"},
     {"plan": "Phase B20", "name": "Robotics / Device Controller Foundation", "status": "IN_PROGRESS"},
+    {"plan": "Phase C1", "name": "Autonomous Jarvis Organization Kernel", "status": "IN_PROGRESS"},
+    {"plan": "Phase C2", "name": "Long-Horizon Mission Control", "status": "IN_PROGRESS"},
+    {"plan": "Phase C3", "name": "Multi-Agent Review / Governance / Arbitration", "status": "IN_PROGRESS"},
+    {"plan": "Phase C4", "name": "Product / Multi-User Readiness Layer", "status": "IN_PROGRESS"},
+    {"plan": "Phase C5", "name": "Plugin / Marketplace Governance Layer", "status": "IN_PROGRESS"},
+    {"plan": "Phase C6", "name": "Enterprise-Grade Audit / Observability", "status": "IN_PROGRESS"},
+    {"plan": "Phase C7", "name": "Cross-Device / Cloud Scale Control Plane", "status": "IN_PROGRESS"},
+    {"plan": "Phase C8", "name": "Autonomous Business / Company OS Scale", "status": "IN_PROGRESS"},
+    {"plan": "Phase C9", "name": "Safety / Policy / Rollback / Simulation", "status": "IN_PROGRESS"},
+    {"plan": "Phase C10", "name": "Control Tower / Core OS Completion Gate", "status": "IN_PROGRESS"},
 ]
 
 
@@ -504,6 +625,17 @@ async def get_jarvis_status() -> Dict[str, Any]:
             "phase_b18_marketplace": "IN_PROGRESS",
             "phase_b19_org_mode": "IN_PROGRESS",
             "phase_b20_device_controller": "IN_PROGRESS",
+            "phase_c1_autonomous_org": "IN_PROGRESS",
+            "phase_c2_mission_control": "IN_PROGRESS",
+            "phase_c3_review_governance": "IN_PROGRESS",
+            "phase_c4_product_readiness": "IN_PROGRESS",
+            "phase_c5_marketplace_governance": "IN_PROGRESS",
+            "phase_c6_enterprise_governance": "IN_PROGRESS",
+            "phase_c7_scale_control": "IN_PROGRESS",
+            "phase_c8_company_os": "IN_PROGRESS",
+            "phase_c9_safety_simulation": "IN_PROGRESS",
+            "phase_c10_control_tower": "IN_PROGRESS",
+            "phase_b1_to_b20": "ACCEPTED_ON_HOLD",
         },
         "capability_summary": {
             "available": available_count,
@@ -522,8 +654,8 @@ async def get_roadmap() -> Dict[str, Any]:
     """Current Jarvis roadmap and plan acceptance state."""
     return {
         "roadmap": _ROADMAP,
-        "active_sprint": "PHASE_B13_TO_B20_DEEP_JARVIS_OS_EXPANSION",
-        "next": "Complete Phase B13-B20. Final Phase A manual gates remain open. Plan 3 voice when Bryan reopens it.",
+        "active_sprint": "PHASE_C1_TO_C10_AUTONOMOUS_ECOSYSTEM",
+        "next": "Phase C1-C10 in progress. Final Phase A on hold (MacBook/Apple gates). Plan 3 voice parked. Phase B accepted, on hold.",
         "note": "Only Bryan can mark plans as ACCEPTED.",
     }
 
