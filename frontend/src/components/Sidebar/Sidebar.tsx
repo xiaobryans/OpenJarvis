@@ -26,6 +26,9 @@ import {
   Activity,
   ListTodo,
   Bell,
+  RefreshCw,
+  Brain,
+  Command,
 } from 'lucide-react';
 import { ConversationList } from './ConversationList';
 import { useAppStore } from '../../lib/store';
@@ -75,6 +78,9 @@ export function Sidebar() {
     { path: '/capabilities', icon: Activity, label: 'Capabilities', badge: null },
     { path: '/delegation', icon: ListTodo, label: 'Delegation', badge: null },
     { path: '/follow-ups', icon: Bell, label: 'Follow-Ups', badge: null },
+    { path: '/routines', icon: RefreshCw, label: 'Routines', badge: null },
+    { path: '/memory-os', icon: Brain, label: 'Memory OS', badge: null },
+    { path: '/command-center', icon: Command, label: 'Command Center', badge: null },
     { path: '/agents', icon: Bot, label: 'Agents', badge: null },
     { path: '/logs', icon: ScrollText, label: 'Logs', badge: null },
     { path: '/settings', icon: Settings, label: 'Settings', badge: null },

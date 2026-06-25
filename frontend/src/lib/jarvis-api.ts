@@ -471,3 +471,134 @@ export async function snoozeTaskFollowUp(
   });
   return res.json();
 }
+
+// ---------------------------------------------------------------------------
+// Routines Center types + API  (Phase B2)
+// ---------------------------------------------------------------------------
+
+export interface RoutinesSummary {
+  total: number;
+  by_type: Record<string, number>;
+  by_status: Record<string, number>;
+  active: number;
+  paused: number;
+  completed: number;
+  failed: number;
+  scheduler_started: boolean;
+  fake_data: boolean;
+  automation_honesty: boolean;
+  note: string;
+}
+
+export async function fetchRoutinesSummary(): Promise<RoutinesSummary> {
+  const res = await apiFetch('/v1/routines/summary');
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Memory OS types + API  (Phase B3)
+// ---------------------------------------------------------------------------
+
+export interface MemoryDashboard {
+  store_ok: boolean;
+  namespace_count: number;
+  total_entries: number;
+  namespaces: Array<{ name: string; count: number } | Record<string, unknown>>;
+  search_available: boolean;
+  cloud_sync_configured: boolean;
+  cloud_sync_live_claimed: boolean;
+  fake_data: boolean;
+  note: string;
+}
+
+export async function fetchMemoryDashboard(): Promise<MemoryDashboard> {
+  const res = await apiFetch('/v1/memory/dashboard');
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Command Center types + API  (Phase B4)
+// ---------------------------------------------------------------------------
+
+export interface CommandCenterItem {
+  item_id: string;
+  source: 'life_os_task' | 'goal' | 'project' | string;
+  source_id: string;
+  title: string;
+  description: string;
+  status: string;
+  priority: string;
+  tags: string[];
+  approval_required: boolean;
+  due_at: number | null;
+  source_route: string | null;
+  horizon?: string;
+  pending_milestones?: number;
+  pending_actions?: number;
+  follow_up_count?: number;
+}
+
+export interface CommandCenterResponse {
+  items: CommandCenterItem[];
+  count: number;
+  by_source: Record<string, number>;
+  by_status: Record<string, number>;
+  sources_probed: string[];
+  fake_data: boolean;
+  note: string;
+}
+
+export interface CommandCenterSummary {
+  tasks: { total: number; pending: number; in_progress: number; waiting_approval: number };
+  goals: { total: number; active: number; paused: number };
+  projects: { total: number; active: number };
+  grand_total: number;
+  fake_data: boolean;
+}
+
+export async function fetchCommandCenter(opts?: {
+  source?: string;
+  status?: string;
+  limit?: number;
+}): Promise<CommandCenterResponse> {
+  const params = new URLSearchParams();
+  if (opts?.source) params.set('source', opts.source);
+  if (opts?.status) params.set('status', opts.status);
+  if (opts?.limit) params.set('limit', String(opts.limit));
+  const qs = params.toString();
+  const res = await apiFetch(`/v1/command-center${qs ? `?${qs}` : ''}`);
+  return res.json();
+}
+
+export async function fetchCommandCenterSummary(): Promise<CommandCenterSummary> {
+  const res = await apiFetch('/v1/command-center/summary');
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Expert routing status types + API  (Phase B5)
+// ---------------------------------------------------------------------------
+
+export interface ExpertRoutingStatus {
+  selector_available: boolean;
+  selector_wired_to_frontdoor: boolean;
+  role_count: number;
+  active_role_count: number;
+  jarvis_pa_identity: {
+    single_voice: boolean;
+    internal_routing_only: boolean;
+    no_multi_personality_output: boolean;
+    note: string;
+  };
+  audit: {
+    routing_is_internal: boolean;
+    approval_gates_unaffected: boolean;
+    no_autonomous_role_switching: boolean;
+  };
+  fake_data: boolean;
+}
+
+export async function fetchExpertRoutingStatus(): Promise<ExpertRoutingStatus> {
+  const res = await apiFetch('/v1/expert-roles/routing-status');
+  return res.json();
+}

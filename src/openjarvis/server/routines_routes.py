@@ -1,8 +1,9 @@
 """Routines Routes — recurring scheduled task visibility.
 
 Routes:
-  GET /v1/routines        — list all scheduled tasks from scheduler store
-  GET /v1/routines/status — honest status of the scheduler engine
+  GET /v1/routines         — list all scheduled tasks from scheduler store
+  GET /v1/routines/status  — honest status of the scheduler engine
+  GET /v1/routines/summary — counts by schedule_type and status
 
 Design rules:
   - No fake recurring automations.
@@ -90,6 +91,38 @@ async def get_routines_status() -> Dict[str, Any]:
             ),
         },
         "how_to_start": "jarvis scheduler start  (CLI, not auto-started in server)",
+    }
+
+
+@router.get("/v1/routines/summary")
+async def get_routines_summary() -> Dict[str, Any]:
+    """Summary of scheduled routines by type and status.
+
+    Returns counts by schedule_type (cron/interval/once) and status.
+    Honest about scheduler not being auto-started.
+    No fake automation claims.
+    """
+    tasks = _read_scheduled_tasks()
+    by_type: Dict[str, int] = {}
+    by_status: Dict[str, int] = {}
+    for t in tasks:
+        st = t.get("schedule_type", "unknown")
+        ss = t.get("status", "unknown")
+        by_type[st] = by_type.get(st, 0) + 1
+        by_status[ss] = by_status.get(ss, 0) + 1
+
+    return {
+        "total": len(tasks),
+        "by_type": by_type,
+        "by_status": by_status,
+        "active": by_status.get("active", 0),
+        "paused": by_status.get("paused", 0),
+        "completed": by_status.get("completed", 0),
+        "failed": by_status.get("failed", 0),
+        "scheduler_started": False,
+        "fake_data": False,
+        "automation_honesty": True,
+        "note": "Scheduler not auto-started. Use 'jarvis scheduler start' CLI to run automations.",
     }
 
 

@@ -192,6 +192,50 @@ _CAPABILITIES: List[Dict[str, Any]] = [
         ),
         "plan": "Phase B1",
     },
+    {
+        "id": "routines_command_center",
+        "name": "Routines / Cadence Command Center",
+        "status": "available",
+        "description": (
+            "Unified visibility of all scheduled routines (cron/interval/once). "
+            "Summary by type and status. Scheduler module available but not auto-started. "
+            "No fake automation claims. See GET /v1/routines/summary."
+        ),
+        "plan": "Phase B2",
+    },
+    {
+        "id": "memory_os",
+        "name": "Memory OS deepening",
+        "status": "available",
+        "description": (
+            "Memory namespace dashboard, entry counts, search availability, "
+            "cloud sync presence (honest — not claimed live without proof). "
+            "See GET /v1/memory/dashboard."
+        ),
+        "plan": "Phase B3",
+    },
+    {
+        "id": "command_center",
+        "name": "Task / Project / Goal Command Center",
+        "status": "available",
+        "description": (
+            "Unified aggregated view of life-os tasks, long-horizon goals, and projects. "
+            "Read-only, approval gates preserved. "
+            "See GET /v1/command-center."
+        ),
+        "plan": "Phase B4",
+    },
+    {
+        "id": "expert_org",
+        "name": "Expert Organization routing status",
+        "status": "available",
+        "description": (
+            "Routing audit for expert role selection. One Jarvis PA identity confirmed. "
+            "Internal routing only — no multi-personality output. "
+            "See GET /v1/expert-roles/routing-status."
+        ),
+        "plan": "Phase B5",
+    },
 ]
 
 _ROADMAP: List[Dict[str, Any]] = [
@@ -208,6 +252,11 @@ _ROADMAP: List[Dict[str, Any]] = [
     {"plan": "Plan 6", "name": "Chat Intelligence + Expert Roles + UI/UX Polish", "status": "COMPLETE"},
     {"plan": "Final Phase A", "name": "Production Certification + Daily-Driver Readiness", "status": "IN_PROGRESS"},
     {"plan": "Phase B1", "name": "Follow-Up Center + Life-Business OS Expansion", "status": "IN_PROGRESS"},
+    {"plan": "Phase B2", "name": "Routines / Cadence Command Center", "status": "IN_PROGRESS"},
+    {"plan": "Phase B3", "name": "Memory OS Deepening", "status": "IN_PROGRESS"},
+    {"plan": "Phase B4", "name": "Task / Project / Goal Command Center", "status": "IN_PROGRESS"},
+    {"plan": "Phase B5", "name": "Expert Organization Expansion", "status": "IN_PROGRESS"},
+    {"plan": "Phase B6", "name": "Desktop + Mobile UI/UX Product Polish", "status": "IN_PROGRESS"},
 ]
 
 
@@ -261,6 +310,11 @@ async def get_jarvis_status() -> Dict[str, Any]:
             "plan_4_6_mega_sprint": "ACCEPTED",
             "final_phase_a": "IN_PROGRESS",
             "phase_b1_follow_up_center": "IN_PROGRESS",
+            "phase_b2_routines": "IN_PROGRESS",
+            "phase_b3_memory_os": "IN_PROGRESS",
+            "phase_b4_command_center": "IN_PROGRESS",
+            "phase_b5_expert_org": "IN_PROGRESS",
+            "phase_b6_ui_polish": "IN_PROGRESS",
         },
         "capability_summary": {
             "available": available_count,
@@ -279,8 +333,8 @@ async def get_roadmap() -> Dict[str, Any]:
     """Current Jarvis roadmap and plan acceptance state."""
     return {
         "roadmap": _ROADMAP,
-        "active_sprint": "PHASE_B1_SAFE_CODE_EXPANSION_JARVIS_OS",
-        "next": "Complete Phase B1 Follow-Up Center. Final Phase A manual gates remain open (DMG/signing/credentials). Plan 3 voice when Bryan reopens it.",
+        "active_sprint": "PHASE_B2_TO_B6_SAFE_JARVIS_OS_EXPANSION",
+        "next": "Complete Phase B2-B6. Final Phase A manual gates remain open (DMG/signing/credentials). Plan 3 voice when Bryan reopens it.",
         "note": "Only Bryan can mark plans as ACCEPTED.",
     }
 

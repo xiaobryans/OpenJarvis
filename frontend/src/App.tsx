@@ -19,6 +19,9 @@ import { ExpertRolesPage } from './pages/ExpertRolesPage';
 import { JarvisCapabilitiesPage } from './pages/JarvisCapabilitiesPage';
 import { DelegationPage } from './pages/DelegationPage';
 import { FollowUpCenterPage } from './pages/FollowUpCenterPage';
+import { RoutinesCenterPage } from './pages/RoutinesCenterPage';
+import { MemoryOSPage } from './pages/MemoryOSPage';
+import { CommandCenterPage } from './pages/CommandCenterPage';
 import { CommandPalette } from './components/CommandPalette';
 import { TextFallbackPanel } from './components/TextFallbackPanel';
 import { SetupScreen } from './components/SetupScreen';
@@ -231,6 +234,9 @@ export default function App() {
           <Route path="capabilities" element={<JarvisCapabilitiesPage />} />
           <Route path="delegation" element={<DelegationPage />} />
           <Route path="follow-ups" element={<FollowUpCenterPage />} />
+          <Route path="routines" element={<RoutinesCenterPage />} />
+          <Route path="memory-os" element={<MemoryOSPage />} />
+          <Route path="command-center" element={<CommandCenterPage />} />
         </Route>
       </Routes>
       <Toaster position="bottom-right" />

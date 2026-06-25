@@ -6,6 +6,7 @@ Routes:
   GET  /v1/memory/search      — search memory (query, namespace, project_id)
   GET  /v1/memory/status      — Memory OS full status (Sprint 2B surface)
   POST /v1/memory/sync        — push local→S3 / pull S3→local for cross-device parity
+  GET  /v1/memory/dashboard   — frontend-friendly Memory OS dashboard summary
 
 Governance:
   - No secrets accepted (ValueError → 400)
@@ -271,6 +272,65 @@ async def memory_rust_status() -> Dict[str, Any]:
             }
     except Exception as exc:
         return {"rust_available": False, "status": "ERROR", "detail": str(exc)}
+
+
+@router.get("/v1/memory/dashboard")
+async def memory_dashboard() -> Dict[str, Any]:
+    """Frontend-friendly Memory OS dashboard.
+
+    Returns:
+    - namespace list with counts
+    - total entry count
+    - memory store health (ok/error)
+    - search capability status
+    - cloud sync presence (honest — not claimed live unless proven)
+    - No secret values. No fake cloud-ready claims.
+    """
+    mem = _get_memory()
+
+    # Namespace summary
+    try:
+        namespaces = mem.list_namespaces()
+        ns_count = len(namespaces)
+        total_entries = sum(n.get("count", 0) if isinstance(n, dict) else 0 for n in namespaces)
+        store_ok = True
+    except Exception as exc:
+        namespaces = []
+        ns_count = 0
+        total_entries = 0
+        store_ok = False
+
+    # Search capability
+    try:
+        from openjarvis.memory.retrieval import SemanticSearchStatus
+        search_info = SemanticSearchStatus.to_dict()
+        search_available = search_info.get("available", False)
+    except Exception:
+        search_available = False
+        search_info = {"available": False, "note": "semantic search module not loaded"}
+
+    # Cloud sync — presence only, never claim live
+    try:
+        from openjarvis.memory.cloud_sync import JarvisMemoryS3Sync
+        sync_status = JarvisMemoryS3Sync().get_status()
+        cloud_configured = sync_status.available
+    except Exception:
+        cloud_configured = False
+
+    return {
+        "store_ok": store_ok,
+        "namespace_count": ns_count,
+        "total_entries": total_entries,
+        "namespaces": namespaces[:20],  # first 20 for UI
+        "search_available": search_available,
+        "cloud_sync_configured": cloud_configured,
+        "cloud_sync_live_claimed": False,  # Never claim live without proof
+        "fake_data": False,
+        "note": (
+            "Memory store summary. Cloud sync requires S3 credentials in Fargate env. "
+            "Search availability depends on retrieval module."
+        ),
+    }
 
 
 __all__ = ["router"]

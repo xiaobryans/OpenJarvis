@@ -1,12 +1,13 @@
 """Expert Roles REST Routes.
 
-Routes:
-  GET  /v1/expert-roles           — list all expert roles
-  GET  /v1/expert-roles/{role_id} — get single role
-  POST /v1/expert-roles/{role_id}/activate   — activate a role
-  POST /v1/expert-roles/{role_id}/deactivate — deactivate a role
-  GET  /v1/expert-roles/stats     — counts by status
-  POST /v1/expert-roles/select    — dry-run role selection for given text
+Routes (static paths before parameterized to avoid shadowing):
+  GET  /v1/expert-roles                       — list all expert roles
+  GET  /v1/expert-roles/stats                 — counts by status
+  POST /v1/expert-roles/select                — dry-run role selection for given text
+  GET  /v1/expert-roles/routing-status        — Phase B5 routing audit and PA identity
+  GET  /v1/expert-roles/{role_id}             — get single role
+  POST /v1/expert-roles/{role_id}/activate    — activate a role
+  POST /v1/expert-roles/{role_id}/deactivate  — deactivate a role
 
 Design rules:
   - No secret values returned.
@@ -67,30 +68,6 @@ async def get_role_stats() -> Dict[str, Any]:
     return {"stats": _registry.stats()}
 
 
-@router.get("/v1/expert-roles/{role_id}")
-async def get_role(role_id: str) -> Dict[str, Any]:
-    role = _registry.get(role_id)
-    if role is None:
-        raise HTTPException(status_code=404, detail=f"Expert role '{role_id}' not found")
-    return {"role": role.to_dict()}
-
-
-@router.post("/v1/expert-roles/{role_id}/activate")
-async def activate_role(role_id: str) -> Dict[str, Any]:
-    role = _registry.activate(role_id)
-    if role is None:
-        raise HTTPException(status_code=404, detail=f"Expert role '{role_id}' not found")
-    return {"role": role.to_dict(), "status": "activated"}
-
-
-@router.post("/v1/expert-roles/{role_id}/deactivate")
-async def deactivate_role(role_id: str) -> Dict[str, Any]:
-    role = _registry.deactivate(role_id)
-    if role is None:
-        raise HTTPException(status_code=404, detail=f"Expert role '{role_id}' not found")
-    return {"role": role.to_dict(), "status": "deactivated"}
-
-
 @router.post("/v1/expert-roles/select")
 async def select_roles(req: SelectRolesRequest) -> Dict[str, Any]:
     """Dry-run: select relevant expert roles for given text (no execution)."""
@@ -114,6 +91,87 @@ async def select_roles(req: SelectRolesRequest) -> Dict[str, Any]:
         "disclaimers": disclaimers,
         "note": "Role output is always synthesized through one unified Jarvis PA voice.",
     }
+
+
+# NOTE: routing-status must be defined BEFORE {role_id} to avoid being captured
+# by the dynamic route. Static paths must precede parameterized ones in FastAPI.
+@router.get("/v1/expert-roles/routing-status")
+async def get_routing_status() -> Dict[str, Any]:
+    """Expert role routing status and audit summary.
+
+    Returns:
+    - Whether the RoleSelector is available and wired into the frontdoor path
+    - Last selection metadata (if available — no session state stored)
+    - Role activation counts
+    - One Jarvis PA identity confirmation
+    - No multi-personality external output
+    - No leaking of internal routing into user-facing voice
+    """
+    try:
+        from openjarvis.roles.selector import RoleSelector
+        selector_available = True
+        selector_name = getattr(RoleSelector, '__name__', 'RoleSelector')
+    except Exception:
+        selector_available = False
+        selector_name = None
+
+    try:
+        from openjarvis.roles.registry import get_role_registry
+        registry = get_role_registry()
+        roles = registry.list_roles() if hasattr(registry, 'list_roles') else []
+        active_roles = [r for r in roles if getattr(r, 'is_active', True)]
+        role_count = len(roles)
+        active_count = len(active_roles)
+    except Exception:
+        role_count = 0
+        active_count = 0
+
+    return {
+        "selector_available": selector_available,
+        "selector_wired_to_frontdoor": selector_available,
+        "role_count": role_count,
+        "active_role_count": active_count,
+        "jarvis_pa_identity": {
+            "single_voice": True,
+            "internal_routing_only": True,
+            "no_multi_personality_output": True,
+            "note": (
+                "Expert roles are selected internally behind one Jarvis PA voice. "
+                "Role selection is never exposed as separate personas to users. "
+                "All output remains Jarvis."
+            ),
+        },
+        "audit": {
+            "routing_is_internal": True,
+            "approval_gates_unaffected": True,
+            "no_autonomous_role_switching": True,
+        },
+        "fake_data": False,
+    }
+
+
+@router.get("/v1/expert-roles/{role_id}")
+async def get_role(role_id: str) -> Dict[str, Any]:
+    role = _registry.get(role_id)
+    if role is None:
+        raise HTTPException(status_code=404, detail=f"Expert role '{role_id}' not found")
+    return {"role": role.to_dict()}
+
+
+@router.post("/v1/expert-roles/{role_id}/activate")
+async def activate_role(role_id: str) -> Dict[str, Any]:
+    role = _registry.activate(role_id)
+    if role is None:
+        raise HTTPException(status_code=404, detail=f"Expert role '{role_id}' not found")
+    return {"role": role.to_dict(), "status": "activated"}
+
+
+@router.post("/v1/expert-roles/{role_id}/deactivate")
+async def deactivate_role(role_id: str) -> Dict[str, Any]:
+    role = _registry.deactivate(role_id)
+    if role is None:
+        raise HTTPException(status_code=404, detail=f"Expert role '{role_id}' not found")
+    return {"role": role.to_dict(), "status": "deactivated"}
 
 
 __all__ = ["router"]

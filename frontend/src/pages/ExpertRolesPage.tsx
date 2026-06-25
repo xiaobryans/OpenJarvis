@@ -23,9 +23,11 @@ import {
   Brain,
   Search,
   Info,
+  Router,
 } from 'lucide-react';
 import type { ExpertRole, RolesStats, SelectRolesResponse } from '../lib/jarvis-api';
 import { fetchExpertRoles, selectRoles } from '../lib/jarvis-api';
+import { apiFetch } from '../lib/api';
 
 // ---------------------------------------------------------------------------
 // Style tokens
@@ -42,6 +44,90 @@ const C = {
   warning: 'var(--color-warning, #f9e2af)',
   error: 'var(--color-error, #f38ba8)',
 };
+
+// ---------------------------------------------------------------------------
+// Routing status type
+// ---------------------------------------------------------------------------
+
+interface RoutingStatus {
+  jarvis_pa_identity: string;
+  internal_routing_only: boolean;
+  no_multi_personality_output: boolean;
+  selector_available: boolean;
+  role_count: number;
+  active_count: number;
+  note?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Routing status panel
+// ---------------------------------------------------------------------------
+
+function RoutingStatusPanel({ status }: { status: RoutingStatus | null }) {
+  if (status === null) {
+    return (
+      <div
+        className="rounded-lg px-4 py-3 flex items-center gap-2 text-xs"
+        style={{ background: C.surface, border: `1px solid ${C.border}`, color: C.textTert }}
+      >
+        <Info size={12} />
+        Routing status unavailable — check backend connectivity to{' '}
+        <code style={{ fontFamily: 'monospace' }}>/v1/expert-roles/routing-status</code>.
+      </div>
+    );
+  }
+
+  const boolRow = (label: string, value: boolean) => (
+    <div className="flex items-center gap-2">
+      <span style={{ color: C.textTert }}>{label}:</span>
+      <span
+        className="inline-flex items-center gap-1 text-[10px] font-mono px-1.5 py-0.5 rounded"
+        style={{ background: value ? 'rgba(166,227,161,0.10)' : 'rgba(243,139,168,0.10)', color: value ? C.success : C.error }}
+      >
+        <CheckCircle size={9} />
+        {value ? 'Yes' : 'No'}
+      </span>
+    </div>
+  );
+
+  return (
+    <div
+      className="rounded-lg overflow-hidden"
+      style={{ background: C.surface, border: `1px solid ${C.border}` }}
+    >
+      <div className="flex items-center gap-2 px-4 py-3" style={{ borderBottom: `1px solid ${C.border}` }}>
+        <Router size={14} style={{ color: C.accent }} />
+        <span className="text-sm font-medium" style={{ color: C.text }}>Routing &amp; Identity Status</span>
+      </div>
+      <div className="px-4 py-3 grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2 text-xs">
+        <div className="flex items-center gap-2">
+          <span style={{ color: C.textTert }}>Jarvis PA Identity:</span>
+          <span
+            className="inline-flex items-center gap-1 text-[10px] font-mono px-1.5 py-0.5 rounded"
+            style={{ background: 'rgba(166,227,161,0.10)', color: C.success }}
+          >
+            <CheckCircle size={9} />
+            {status.jarvis_pa_identity || 'Single voice'}
+          </span>
+        </div>
+        {boolRow('Internal routing only', status.internal_routing_only)}
+        {boolRow('No multi-personality output', status.no_multi_personality_output)}
+        {boolRow('Selector available', status.selector_available)}
+        <div className="flex items-center gap-2">
+          <span style={{ color: C.textTert }}>Roles:</span>
+          <span style={{ color: C.text, fontFamily: 'monospace' }}>
+            {status.active_count} active / {status.role_count} total
+          </span>
+        </div>
+      </div>
+      {status.note && (
+        <div className="px-4 pb-3 text-xs italic" style={{ color: C.textTert }}>
+          {status.note}
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Domain icon mapping
@@ -305,6 +391,7 @@ function DryRunPanel({ roles }: { roles: ExpertRole[] }) {
 export function ExpertRolesPage() {
   const [roles, setRoles] = useState<ExpertRole[]>([]);
   const [stats, setStats] = useState<RolesStats | null>(null);
+  const [routingStatus, setRoutingStatus] = useState<RoutingStatus | null | undefined>(undefined);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -312,9 +399,29 @@ export function ExpertRolesPage() {
     setLoading(true);
     setError('');
     try {
-      const res = await fetchExpertRoles();
-      setRoles(res.roles);
-      setStats(res.stats);
+      const [rolesRes, routingRes] = await Promise.allSettled([
+        fetchExpertRoles(),
+        apiFetch('/v1/expert-roles/routing-status').then((r) => {
+          if (!r.ok) throw new Error(`routing-status ${r.status}`);
+          return r.json() as Promise<RoutingStatus>;
+        }),
+      ]);
+
+      if (rolesRes.status === 'fulfilled') {
+        setRoles(rolesRes.value.roles);
+        setStats(rolesRes.value.stats);
+      } else {
+        throw rolesRes.reason instanceof Error
+          ? rolesRes.reason
+          : new Error('Failed to load expert roles');
+      }
+
+      if (routingRes.status === 'fulfilled') {
+        setRoutingStatus(routingRes.value);
+      } else {
+        // Graceful degradation — routing status panel shows a notice instead of crashing
+        setRoutingStatus(null);
+      }
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to load expert roles');
     } finally {
@@ -393,6 +500,14 @@ export function ExpertRolesPage() {
                 <RoleCard key={r.role_id} role={r} highlighted={false} />
               ))
             )}
+          </div>
+        )}
+
+        {/* Routing status panel — shown when not in initial loading state */}
+        {!loading && routingStatus !== undefined && (
+          <div className="mt-6">
+            <div className="text-xs mb-3" style={{ color: C.textTert }}>Routing configuration</div>
+            <RoutingStatusPanel status={routingStatus} />
           </div>
         )}
       </div>

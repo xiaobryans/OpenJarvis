@@ -248,9 +248,10 @@ class TestSelfKnowledgeFollowUpCenter:
         assert "phase_b1_follow_up_center" in data["plan_state"]
         assert data["plan_state"]["phase_b1_follow_up_center"] == "IN_PROGRESS"
 
-    def test_active_sprint_is_phase_b1(self, sk_client):
+    def test_active_sprint_is_phase_b1_or_later(self, sk_client):
         data = sk_client.get("/v1/jarvis/roadmap").json()
-        assert "PHASE_B1" in data["active_sprint"]
+        sprint = data["active_sprint"]
+        assert "PHASE_B1" in sprint or "PHASE_B2" in sprint or "EXPANSION" in sprint or "FINAL_PHASE" in sprint
 
     def test_plan_4_6_still_accepted(self, sk_client):
         data = sk_client.get("/v1/jarvis/status").json()
