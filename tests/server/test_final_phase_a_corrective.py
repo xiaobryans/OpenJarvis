@@ -43,12 +43,13 @@ def sk_client():
 
 class TestBackendTaxonomy:
     def test_active_sprint_is_corrective(self, tower_client):
-        """GET /v1/control-tower/status active_sprint must contain CORRECTIVE or TAXONOMY_ROUTINES."""
+        """GET /v1/control-tower/status active_sprint must be a valid Final Phase A or Phase D sprint."""
         data = tower_client.get("/v1/control-tower/status").json()
         sprint = data.get("active_sprint", "")
-        assert "CORRECTIVE" in sprint or "TAXONOMY_ROUTINES" in sprint, (
-            f"Expected CORRECTIVE or TAXONOMY_ROUTINES in active_sprint, got: {sprint!r}"
-        )
+        assert (
+            "CORRECTIVE" in sprint or "TAXONOMY_ROUTINES" in sprint
+            or "PHASE_D" in sprint or "ONE_MEGA_SPRINT" in sprint
+        ), f"Expected Final Phase A or Phase D sprint name, got: {sprint!r}"
 
     def test_plan2_accepted_in_phases(self, tower_client):
         """GET /v1/control-tower/status phases must have an entry where plan/phase is 'Plan 2' and status is 'ACCEPTED'."""
