@@ -138,3 +138,22 @@
 | B7 | Life-Business OS delegation queue UI | CLOSED — DelegationPage + delegation_routes + system_status_routes | fcf623d0 |
 
 **No open Plan 4-6 code blockers.** Apple Developer Account enrollment is an external gate, not a code blocker.
+
+---
+
+## Phase X — Universal Jarvis Decoupling (separate sprint, ACCEPTED)
+
+| Component | Change | Status |
+|-----------|--------|--------|
+| `constitution.py` — `JARVIS_IDENTITY["primary_project"]` | `"omnix"` → `None` | DONE |
+| `constitution.py` — `ProjectRegistry.get_default()` | Returns `Optional[ProjectProfile]` (None when no default) | DONE |
+| `automation_policy.py` — all `project_id` defaults | `"omnix"` → `"default"` | DONE |
+| `memory/cloud_sync.py` — env vars | `JARVIS_S3_*` canonical; `OMNIX_WORKBENCH_*` kept as fallback | DONE |
+| `frontend/useCloudStatus.ts` — localStorage key | `jarvis-cloud-node-url` (auto-migrates from legacy) | DONE |
+| Tool catalogs (5 files) — `project_id` defaults | `"omnix"` → `"default"` | DONE |
+| `projects/omnix/` subpackage | OMNIX moved here as optional connector | DONE |
+| Root `omnix_*.py` stubs | Backward-compat re-exports | DONE |
+| `doctor/checks.py` — null-safety | `get_default()` null guard added | DONE |
+| Test fixes | `test_available_count_is_127`, TTSEngine.DEEPGRAM allowlist | DONE |
+
+**Phase X accepted at HEAD 5ce18042. Bryan accepted 2026-06-25.**
