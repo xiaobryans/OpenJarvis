@@ -448,6 +448,11 @@ def serve(
                         "notion_search",
                         "notion_read",
                         "audit_trail",
+                        "slack_send",
+                        "gmail_send",
+                        "calendar_create",
+                        "calendar_delete",
+                        "file_write",
                     }
                     configured = config.agent.tools
                     if configured:

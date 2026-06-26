@@ -112,13 +112,36 @@ class LeanOrchestrator:
         except Exception as exc:
             return False, f"(worker '{tool}' error: {exc})"
 
+    @staticmethod
+    def _tool_params_catalog() -> str:
+        """List each worker tool with its parameters so the planner fills args."""
+        import openjarvis.tools  # noqa: F401
+        from openjarvis.core.registry import ToolRegistry
+
+        seen, lines = set(), []
+        for m in MANAGERS.values():
+            for t in m.workers:
+                if t in seen or t not in ToolRegistry.keys():
+                    continue
+                seen.add(t)
+                try:
+                    spec = ToolRegistry.get(t)().spec
+                    props = (spec.parameters or {}).get("properties", {})
+                    req = set((spec.parameters or {}).get("required", []))
+                    params = ", ".join(f"{k}{'*' if k in req else ''}" for k in props)
+                    lines.append(f"  {t}({params})")
+                except Exception:
+                    lines.append(f"  {t}()")
+        return "\n".join(lines)
+
     # ------------------------------------------------------------------ plan
     def plan(self, request: str) -> Dict[str, Any]:
         raw = self._llm(
             _PLAN_SYSTEM,
-            f"Request: {request}\n\nAvailable managers and workers:\n"
-            f"{managers_catalog()}",
-            max_tokens=600, temperature=0.1,
+            f"Request: {request}\n\nManagers and their workers:\n"
+            f"{managers_catalog()}\n\nWorker tool signatures (fill 'args' from "
+            f"the request; * = required):\n{self._tool_params_catalog()}",
+            max_tokens=700, temperature=0.1,
         )
         # Strip code fences and parse the first JSON object.
         cleaned = re.sub(r"^```(?:json)?|```$", "", raw.strip(), flags=re.MULTILINE).strip()

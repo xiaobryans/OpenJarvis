@@ -46,13 +46,14 @@ MANAGERS: Dict[str, ManagerSpec] = {
         ),
         ManagerSpec(
             "code_build", "Code/Build Manager",
-            "Writing, reading, inspecting and running code; engineering tasks.",
-            ["file_read", "file_search", "shell_exec", "git_status", "git_diff"],
+            "Read/write files, run code/commands, git — engineering tasks.",
+            ["file_read", "file_search", "file_write", "shell_exec",
+             "git_status", "git_diff"],
         ),
         ManagerSpec(
             "communications", "Communications Manager",
-            "Email, Slack and messaging — reading and summarizing.",
-            ["gmail_important", "slack_recent"],
+            "Email and Slack — read, summarize, AND send/reply.",
+            ["gmail_important", "slack_recent", "gmail_send", "slack_send"],
         ),
         ManagerSpec(
             "finance", "Finance Manager",
@@ -61,8 +62,9 @@ MANAGERS: Dict[str, ManagerSpec] = {
         ),
         ManagerSpec(
             "personal_life", "Personal/Life Manager",
-            "Calendar, weather, time, daily life, reminders and important dates.",
-            ["calendar_today", "current_weather", "current_time", "morning_briefing"],
+            "Calendar (read + create/delete events), weather, time, reminders.",
+            ["calendar_today", "current_weather", "current_time",
+             "morning_briefing", "calendar_create", "calendar_delete"],
         ),
         ManagerSpec(
             "security", "Security Manager",
