@@ -25,6 +25,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { CosmicBackdrop } from '../components/Jarvis/CosmicBackdrop';
+import { BriefingBanner } from '../components/Jarvis/BriefingBanner';
 import { LivingOrb } from '../components/Jarvis/LivingOrb';
 import { SettingsPage } from './SettingsPage';
 import { OrgChainPanel } from '../components/OrgChainPanel';
@@ -2498,6 +2499,9 @@ export function JarvisCockpitPage() {
   return (
     <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', width: '100%', height: '100%', overflow: 'hidden', background: '#02040a', fontFamily: 'var(--font-display, sans-serif)' }}>
       <CosmicBackdrop phase={cockpitPhase} voiceEnabled={pendingApprovals > 0 || sending} />
+
+      {/* Morning briefing — shows on load if unread, dismissible (Task 5.4) */}
+      <BriefingBanner />
 
       {/* Command palette */}
       <CockpitCommandPalette

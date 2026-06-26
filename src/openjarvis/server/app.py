@@ -344,6 +344,12 @@ def create_app(
     app.include_router(router)
     app.include_router(dashboard_router)
     app.include_router(comparison_router)
+    try:
+        from openjarvis.server.briefing_routes import router as briefing_router
+
+        app.include_router(briefing_router)
+    except Exception as _exc:  # optional; never block startup
+        logger.debug("Briefing route not mounted: %s", _exc)
     app.include_router(create_connectors_router())
     app.include_router(create_digest_router())
     app.include_router(upload_router)
