@@ -15,7 +15,18 @@ def test_twelve_required_managers_present():
     assert REQUIRED.issubset(set(MANAGERS)), MANAGERS.keys()
 
 
+def _ensure_current_time_registered():
+    # The shared autouse _clean_registries fixture empties ToolRegistry; re-add
+    # the real current_time tool so the worker executes for real in-test.
+    from openjarvis.core.registry import ToolRegistry
+    from openjarvis.tools.datetime_tool import CurrentDateTimeTool
+
+    if "current_time" not in ToolRegistry.keys():
+        ToolRegistry.register("current_time")(CurrentDateTimeTool)
+
+
 def test_run_standard_offline_flow(monkeypatch):
+    _ensure_current_time_registered()
     orch = LeanOrchestrator(model="mock")
 
     def fake_llm(system, user, **kw):
