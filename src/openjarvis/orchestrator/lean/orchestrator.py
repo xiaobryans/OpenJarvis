@@ -52,6 +52,8 @@ class OrchestratorResult:
     elapsed_ms: int = 0
     rationale: str = ""
     error: str = ""
+    escalated: bool = False
+    notes: List[str] = field(default_factory=list)
 
 
 _PLAN_SYSTEM = (
@@ -228,22 +230,61 @@ class LeanOrchestrator:
                 runs.append(run)
         return runs
 
+    # --------------------------------------------------- error recovery
+    def _direct_answer(self, request: str, note: str = "") -> str:
+        """COS/GM alternative approach: answer directly with the cloud model when
+        planning/workers can't help. Never returns empty (final fallback)."""
+        persona = (
+            "You are Jarvis, Bryan's personal AI. Answer his request directly and "
+            "helpfully in his voice (Bryan/boss/brother, vary naturally). If you "
+            "genuinely cannot do something, say exactly what's needed — never a "
+            "vague refusal."
+        )
+        if self.user_profile:
+            persona += "\n\nAbout Bryan:\n" + self.user_profile[:1200]
+        prompt = request if not note else f"{request}\n\n(Context: {note})"
+        try:
+            ans = self._llm(persona, prompt, max_tokens=800, temperature=0.5)
+            return ans or ("I hit a snag handling that — try rephrasing and I'll "
+                           "get right on it, boss.")
+        except Exception as exc:
+            logger.error("direct answer failed: %s", exc, exc_info=True)
+            return (f"I couldn't reach my reasoning model just now ({exc}). "
+                    "Everything else is up — try again in a moment, boss.")
+
     # ------------------------------------------------------------------- run
     def _run(self, request: str, tier: str, parallel: bool) -> OrchestratorResult:
         start = time.time()
+        notes: List[str] = []
         self._status("On it, boss — working out the best way to handle this…")
+
+        # Plan failure → escalate to a direct COS/GM answer (never silent).
         try:
             plan = self.plan(request)
         except Exception as exc:
             logger.error("planning failed: %s", exc, exc_info=True)
-            return OrchestratorResult(answer="", tier=tier,
-                                      error=f"planning failed: {exc}",
-                                      elapsed_ms=int((time.time() - start) * 1000))
+            self._status("Planner hit a snag — handling it directly…")
+            answer = self._direct_answer(request, note="planner unavailable")
+            return OrchestratorResult(
+                answer=answer, tier=tier, escalated=True,
+                error=f"planning failed: {exc}", notes=["planning failed; direct answer"],
+                elapsed_ms=int((time.time() - start) * 1000))
 
         steps = plan.get("steps", [])
         estimate = int(plan.get("estimate_seconds", 0) or 0)
         rationale = str(plan.get("rationale", ""))
-        # Time estimate given UP FRONT (required for COMPLEX).
+
+        # No actionable steps → COS/GM answers directly (alternative approach).
+        if not steps:
+            self._status("No tools needed — answering directly…")
+            answer = self._direct_answer(request)
+            elapsed = int((time.time() - start) * 1000)
+            self._status(f"Done — took {elapsed/1000:.1f}s.")
+            return OrchestratorResult(
+                answer=answer, tier=tier, escalated=True, estimate_seconds=estimate,
+                elapsed_ms=elapsed, rationale=rationale or "direct answer",
+                notes=["no steps planned; direct answer"])
+
         est_str = f" This should take about {estimate}s." if estimate else ""
         self._status(f"Plan ready — {rationale}.{est_str}")
 
@@ -255,22 +296,45 @@ class LeanOrchestrator:
         runs = (self._execute_parallel(steps) if parallel
                 else self._execute_sequential(steps))
 
+        # If EVERY worker was rejected, escalate to a direct answer that explains
+        # what failed — Bryan never gets an empty/silent response.
+        if runs and not any(r.approved for r in runs):
+            self._status("Workers couldn't complete — escalating to a direct answer…")
+            fails = "; ".join(f"{r.tool}: {r.review_reason}" for r in runs)
+            answer = self._direct_answer(
+                request, note=f"the tools failed ({fails}); explain to Bryan "
+                              "what's needed and help however you can")
+            elapsed = int((time.time() - start) * 1000)
+            self._status(f"Done (escalated) — took {elapsed/1000:.1f}s.")
+            return OrchestratorResult(
+                answer=answer, tier=tier, managers_used=managers_used, workers=runs,
+                estimate_seconds=estimate, elapsed_ms=elapsed, rationale=rationale,
+                escalated=True, notes=[f"all workers rejected: {fails}"])
+
         self._status("Pulling it together…")
         try:
             answer = self._synthesize(request, runs)
         except Exception as exc:
+            # Synthesis failure → compile a plain answer from approved output
+            # rather than failing silently.
             logger.error("synthesis failed: %s", exc, exc_info=True)
-            return OrchestratorResult(answer="", tier=tier, workers=runs,
-                                      managers_used=managers_used,
-                                      error=f"synthesis failed: {exc}",
-                                      elapsed_ms=int((time.time() - start) * 1000))
+            approved = [r for r in runs if r.approved]
+            answer = ("Here's what I gathered, boss (couldn't do the final "
+                      "write-up):\n\n" + "\n\n".join(
+                          f"• {r.tool}: {r.content}" for r in approved)) or \
+                     f"I gathered the data but synthesis failed ({exc})."
+            notes.append(f"synthesis failed: {exc}")
+
+        if not (answer or "").strip():  # absolute never-empty guard
+            answer = self._direct_answer(request)
+            notes.append("empty synthesis; direct fallback")
 
         elapsed = int((time.time() - start) * 1000)
-        # Actual time reported on completion (required).
         self._status(f"Done — took {elapsed/1000:.1f}s (estimated {estimate}s).")
         return OrchestratorResult(
             answer=answer, tier=tier, managers_used=managers_used, workers=runs,
             estimate_seconds=estimate, elapsed_ms=elapsed, rationale=rationale,
+            notes=notes,
         )
 
     def run_standard(self, request: str) -> OrchestratorResult:

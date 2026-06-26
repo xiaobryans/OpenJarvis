@@ -77,6 +77,44 @@ def test_run_complex_parallel(monkeypatch):
     assert any("estimated" in s.lower() or "about 30s" in s.lower() for s in statuses)
 
 
+def test_recovery_planning_failure_escalates(monkeypatch):
+    orch = LeanOrchestrator(model="mock")
+    monkeypatch.setattr(orch, "plan",
+                        lambda r: (_ for _ in ()).throw(RuntimeError("planner down")))
+    monkeypatch.setattr(orch, "_llm", lambda s, u, **k: "Direct answer, boss.")
+    orch._status = lambda *_: None
+    res = orch.run_standard("do something")
+    assert res.escalated is True and res.answer.strip()  # never empty
+
+
+def test_recovery_no_steps_direct_answer(monkeypatch):
+    orch = LeanOrchestrator(model="mock")
+    monkeypatch.setattr(orch, "_llm",
+                        lambda s, u, **k: '{"steps":[]}' if "COS/GM" in s
+                        else "Direct answer.")
+    orch._status = lambda *_: None
+    res = orch.run_standard("something with no tools")
+    assert res.escalated is True and res.answer.strip()
+
+
+def test_recovery_all_workers_rejected_escalates(monkeypatch):
+    _ensure_current_time_registered()
+    orch = LeanOrchestrator(model="mock")
+    monkeypatch.setattr(
+        orch, "_llm",
+        lambda s, u, **k: (
+            '{"steps":[{"manager":"personal_life","tool":"current_time","args":{}}]}'
+            if "COS/GM" in s else "Explanation answer, boss."
+        ),
+    )
+    monkeypatch.setattr(orch, "_run_tool",
+                        staticmethod(lambda tool, args: (False, "boom")))
+    orch._status = lambda *_: None
+    res = orch.run_standard("x")
+    assert res.escalated is True and res.answer.strip()
+    assert res.workers and not any(w.approved for w in res.workers)
+
+
 def test_plan_rejects_invalid_steps(monkeypatch):
     orch = LeanOrchestrator(model="mock")
     monkeypatch.setattr(
