@@ -504,6 +504,32 @@ async def chat_completions(request_body: ChatCompletionRequest, request: Request
                 exc_info=True,
             )
 
+    # Option A Stage 2: classify the request tier and record an audit entry.
+    # This is observability only — it does NOT change routing yet (the
+    # hierarchical routing is a later stage). Best-effort; never breaks chat.
+    _req_tier = "instant"
+    _request_id = f"req-{uuid.uuid4().hex[:12]}"
+    if query_text_for_complexity:
+        try:
+            from openjarvis.orchestrator.request_audit import record_request
+            from openjarvis.orchestrator.request_classifier import classify_request
+
+            _cls = classify_request(query_text_for_complexity)
+            _req_tier = _cls.tier
+            record_request(
+                request_id=_request_id,
+                tier=_cls.tier,
+                reason=_cls.reason,
+                score=_cls.score,
+                model=model,
+                query_preview=query_text_for_complexity,
+                outcome="dispatched",
+            )
+        except Exception:
+            logging.getLogger("openjarvis.server").debug(
+                "Request classification/audit failed", exc_info=True
+            )
+
     if request_body.stream:
         # When the client passes `tools`, stream the model's raw
         # OpenAI-compat function-calling decision directly from the engine
@@ -535,6 +561,7 @@ async def chat_completions(request_body: ChatCompletionRequest, request: Request
                 trace_store=getattr(request.app.state, "trace_store", None),
                 bus=getattr(request.app.state, "bus", None),
                 memory_backend=memory_backend,
+                tier=_req_tier,
             )
         return await _handle_stream(
             engine,
@@ -833,6 +860,7 @@ async def _handle_stream_agent(
     trace_store=None,
     bus=None,
     memory_backend=None,
+    tier: str = "",
 ):
     """Run the agent's tool loop, then stream its final answer as SSE.
 
@@ -950,6 +978,8 @@ async def _handle_stream_agent(
         finish_dict["telemetry"]["engine"] = "cloud" if use_cloud else "ollama"
         finish_dict["telemetry"]["agent"] = getattr(agent, "agent_id", "agent")
         finish_dict["telemetry"]["tools_used"] = tools_used
+        if tier:
+            finish_dict["telemetry"]["tier"] = tier
         if complexity_info is not None:
             finish_dict["complexity"] = complexity_info.model_dump()
         yield f"data: {_json.dumps(finish_dict)}\n\n"
