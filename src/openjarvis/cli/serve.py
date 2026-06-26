@@ -440,6 +440,10 @@ def serve(
                         "file_read",
                         "file_search",
                         "http_request",
+                        "current_weather",
+                        "calendar_today",
+                        "gmail_important",
+                        "slack_recent",
                     }
                     configured = config.agent.tools
                     if configured:
