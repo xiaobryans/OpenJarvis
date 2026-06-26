@@ -377,7 +377,7 @@ export function MobilePage() {
 
   const isRemote = backendUrl.trim() !== '';
   const targetLabel = isRemote
-    ? `AWS Full Jarvis (HTTPS — ${backendUrl.replace(/^https?:\/\//, '').split('/')[0]})`
+    ? `AWS Full VANTA (HTTPS — ${backendUrl.replace(/^https?:\/\//, '').split('/')[0]})`
     : 'Local (MacBook)';
 
   const fetchAll = async (url?: string, key?: string) => {

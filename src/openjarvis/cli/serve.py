@@ -78,11 +78,11 @@ def _check_port_lifecycle(
     if data.get("app") != "openjarvis":
         return (
             _PortDecision.FOREIGN,
-            f"Port {port} is in use by a non-OpenJarvis process. "
+            f"Port {port} is in use by a non-VANTA process. "
             f"Identify it with: lsof -i :{port}",
         )
 
-    # It is an OpenJarvis backend — check compatibility
+    # It is a VANTA backend — check compatibility
     existing_engine = data.get("engine", "")
     existing_model = data.get("model", "")
     existing_pid = data.get("pid")
@@ -94,12 +94,12 @@ def _check_port_lifecycle(
     if engine_matches and model_matches and data.get("status") == "ok":
         return (
             _PortDecision.REUSE,
-            f"Reusing existing OpenJarvis backend on port {port} "
+            f"Reusing existing VANTA backend on port {port} "
             f"(pid={existing_pid}, engine={existing_engine}, "
             f"model={existing_model}, commit={existing_commit}).",
         )
 
-    # Wrong config or unhealthy — stop the existing OpenJarvis process
+    # Wrong config or unhealthy — stop the existing VANTA process
     reason = []
     if not engine_matches:
         reason.append(f"engine mismatch: running={existing_engine!r} wanted={engine_name!r}")
@@ -109,7 +109,7 @@ def _check_port_lifecycle(
         reason.append(f"status={data.get('status')!r}")
 
     msg = (
-        f"Stopping stale OpenJarvis backend on port {port} "
+        f"Stopping stale VANTA backend on port {port} "
         f"(pid={existing_pid}, {', '.join(reason)}) and restarting."
     )
 

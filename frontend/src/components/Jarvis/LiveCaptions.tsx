@@ -46,7 +46,7 @@ export function LiveCaptions({
   const isPartial = !transcript && !!partialTranscript && (isRecording || isFollowUp);
 
   const hintText = (() => {
-    if (!voiceEnabled) return 'Voice off — tap the mic below to enable Jarvis';
+    if (!voiceEnabled) return 'Voice off — tap the mic below to enable VANTA';
     if (phase === 'idle') return 'Tap mic to speak · ⌘K for transcript & text';
     if (phase === 'recording' || phase === 'waiting_for_silence') return 'Listening…';
     if (phase === 'follow_up_listening') return 'Listening for follow-up…';
