@@ -147,63 +147,97 @@ class LeanOrchestrator:
             max_tokens=900, temperature=0.5,
         )
 
-    # ------------------------------------------------------------------- run
-    def run_standard(self, request: str) -> OrchestratorResult:
-        """STANDARD tier: plan -> sequential workers -> synthesize."""
-        start = time.time()
-        # Immediate acknowledgement (< 2s requirement).
-        self._status("On it, boss — working out the best way to handle this…")
+    # -------------------------------------------------------- step execution
+    def _execute_one(self, step: Dict[str, Any]) -> WorkerRun:
+        mgr, tool, args = step["manager"], step["tool"], step["args"]
+        t0 = time.time()
+        ok, content = self._run_tool(tool, args)
+        return WorkerRun(mgr, tool, args, ok, content,
+                         int((time.time() - t0) * 1000))
 
+    def _execute_sequential(self, steps: List[Dict[str, Any]]) -> List[WorkerRun]:
+        runs: List[WorkerRun] = []
+        for i, step in enumerate(steps, 1):
+            self._status(
+                f"[{i}/{len(steps)}] {MANAGERS[step['manager']].name}: "
+                f"running {step['tool']}…"
+            )
+            runs.append(self._execute_one(step))
+        return runs
+
+    def _execute_parallel(self, steps: List[Dict[str, Any]]) -> List[WorkerRun]:
+        """Run independent workers concurrently; report each as it finishes."""
+        import concurrent.futures as _cf
+
+        runs: List[WorkerRun] = []
+        total = len(steps)
+        self._status(f"Dispatching {total} workers in parallel…")
+        with _cf.ThreadPoolExecutor(max_workers=min(8, total)) as ex:
+            futs = {ex.submit(self._execute_one, s): s for s in steps}
+            done = 0
+            for fut in _cf.as_completed(futs):
+                run = fut.result()
+                done += 1
+                self._status(
+                    f"[{done}/{total}] {MANAGERS[run.manager].name}/{run.tool} "
+                    f"{'✓' if run.success else '✗'}"
+                )
+                runs.append(run)
+        return runs
+
+    # ------------------------------------------------------------------- run
+    def _run(self, request: str, tier: str, parallel: bool) -> OrchestratorResult:
+        start = time.time()
+        self._status("On it, boss — working out the best way to handle this…")
         try:
             plan = self.plan(request)
         except Exception as exc:
             logger.error("planning failed: %s", exc, exc_info=True)
-            return OrchestratorResult(
-                answer="", tier="standard", error=f"planning failed: {exc}",
-                elapsed_ms=int((time.time() - start) * 1000),
-            )
+            return OrchestratorResult(answer="", tier=tier,
+                                      error=f"planning failed: {exc}",
+                                      elapsed_ms=int((time.time() - start) * 1000))
 
         steps = plan.get("steps", [])
         estimate = int(plan.get("estimate_seconds", 0) or 0)
         rationale = str(plan.get("rationale", ""))
-        if estimate:
-            self._status(f"Plan ready — {rationale} (≈{estimate}s).")
-        else:
-            self._status(f"Plan ready — {rationale}.")
+        # Time estimate given UP FRONT (required for COMPLEX).
+        est_str = f" This should take about {estimate}s." if estimate else ""
+        self._status(f"Plan ready — {rationale}.{est_str}")
 
-        runs: List[WorkerRun] = []
         managers_used: List[str] = []
-        for i, step in enumerate(steps, 1):
-            mgr, tool, args = step["manager"], step["tool"], step["args"]
-            if mgr not in managers_used:
-                managers_used.append(mgr)
-            self._status(
-                f"[{i}/{len(steps)}] {MANAGERS[mgr].name}: running {tool}…"
-            )
-            t0 = time.time()
-            ok, content = self._run_tool(tool, args)
-            runs.append(WorkerRun(mgr, tool, args, ok, content,
-                                  int((time.time() - t0) * 1000)))
+        for s in steps:
+            if s["manager"] not in managers_used:
+                managers_used.append(s["manager"])
+
+        runs = (self._execute_parallel(steps) if parallel
+                else self._execute_sequential(steps))
 
         self._status("Pulling it together…")
         try:
             answer = self._synthesize(request, runs)
         except Exception as exc:
             logger.error("synthesis failed: %s", exc, exc_info=True)
-            return OrchestratorResult(
-                answer="", tier="standard", workers=runs,
-                managers_used=managers_used,
-                error=f"synthesis failed: {exc}",
-                elapsed_ms=int((time.time() - start) * 1000),
-            )
+            return OrchestratorResult(answer="", tier=tier, workers=runs,
+                                      managers_used=managers_used,
+                                      error=f"synthesis failed: {exc}",
+                                      elapsed_ms=int((time.time() - start) * 1000))
 
         elapsed = int((time.time() - start) * 1000)
-        self._status(f"Done — took {elapsed/1000:.1f}s.")
+        # Actual time reported on completion (required).
+        self._status(f"Done — took {elapsed/1000:.1f}s (estimated {estimate}s).")
         return OrchestratorResult(
-            answer=answer, tier="standard", managers_used=managers_used,
-            workers=runs, estimate_seconds=estimate, elapsed_ms=elapsed,
-            rationale=rationale,
+            answer=answer, tier=tier, managers_used=managers_used, workers=runs,
+            estimate_seconds=estimate, elapsed_ms=elapsed, rationale=rationale,
         )
+
+    def run_standard(self, request: str) -> OrchestratorResult:
+        """STANDARD tier: plan -> sequential workers -> synthesize."""
+        return self._run(request, "standard", parallel=False)
+
+    def run_complex(self, request: str) -> OrchestratorResult:
+        """COMPLEX tier: plan -> PARALLEL workers -> synthesize, with upfront
+        estimate and per-worker progress (never leaves Bryan in silence)."""
+        return self._run(request, "complex", parallel=True)
 
 
 __all__ = ["LeanOrchestrator", "OrchestratorResult", "WorkerRun"]

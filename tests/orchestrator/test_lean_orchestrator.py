@@ -52,6 +52,31 @@ def test_run_standard_offline_flow(monkeypatch):
     assert any("Done" in s for s in statuses)
 
 
+def test_run_complex_parallel(monkeypatch):
+    _ensure_current_time_registered()
+    orch = LeanOrchestrator(model="mock")
+
+    def fake_llm(system, user, **kw):
+        if "COS/GM" in system:
+            return (
+                '{"estimate_seconds": 30, "rationale": "parallel test", "steps": ['
+                '{"manager":"personal_life","tool":"current_time","args":{}},'
+                '{"manager":"personal_life","tool":"current_time","args":{"timezone":"UTC"}}]}'
+            )
+        return "Compiled answer from parallel workers."
+
+    monkeypatch.setattr(orch, "_llm", fake_llm)
+    statuses = []
+    orch._status = statuses.append
+
+    res = orch.run_complex("do two things at once")
+    assert res.error == ""
+    assert res.tier == "complex"
+    assert len(res.workers) == 2 and all(w.success for w in res.workers)
+    assert any("parallel" in s.lower() for s in statuses)
+    assert any("estimated" in s.lower() or "about 30s" in s.lower() for s in statuses)
+
+
 def test_plan_rejects_invalid_steps(monkeypatch):
     orch = LeanOrchestrator(model="mock")
     monkeypatch.setattr(
