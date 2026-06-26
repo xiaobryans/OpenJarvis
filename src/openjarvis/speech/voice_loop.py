@@ -133,10 +133,11 @@ class VoiceLoop:
                     break
         return b"".join(chunks)
 
-    def _transcribe(self, pcm: bytes) -> str:
+    def _transcribe(self, pcm: bytes, language: str = "en") -> str:
         try:
             wav = _pcm_to_wav_bytes(pcm, self._rate)
-            tr = self._stt.transcribe(wav, format="wav")
+            # Pin English (detect_language is slower + unreliable on short audio).
+            tr = self._stt.transcribe(wav, format="wav", language=language)
             return (getattr(tr, "text", "") or "").strip()
         except Exception as exc:
             logger.error("STT failed: %s", exc, exc_info=True)
@@ -160,52 +161,105 @@ class VoiceLoop:
             self._playing.terminate()
             self._playing = None
 
-    # ---- main loop ----
-    def run(self) -> None:
-        self._ensure()
-        self._status("listening")
-        logger.info("VANTA voice loop running — say '%s'", WAKE_WORD)
-        while True:
+    def _collect(self, q, seconds: float) -> bytes:
+        """Drain `seconds` of audio from the callback queue. Warns (instead of
+        hanging) if the mic delivers nothing — e.g. permissions/device issue."""
+        import queue as _q
+        want = int(seconds * self._rate * 2)  # int16 mono
+        out = b""
+        empties = 0
+        while len(out) < want:
             try:
-                # 1. Rolling 3s window; detect wake word (punctuation-normalized).
-                raw = self._transcribe(self._record(3.0))
-                heard = _normalize(raw)
-                if not heard:
-                    continue
-                if any(w in heard for w in _INTERRUPT):
-                    self._stop_playback()
-                    continue
-                if not any(t in heard for t in _WAKE_TOKENS):
-                    logger.debug("no wake in: %r", heard)
-                    continue
-                self._status(f"🔵 heard wake word ({heard[:40]})")
-                # 2. Awake — capture the command.
-                self._status("awake")
-                # Anything said after the wake token in the same window counts.
-                after = heard
-                for t in _WAKE_TOKENS:
-                    if t in after:
-                        after = after.split(t, 1)[1].strip()
-                        break
-                self._status("transcribing")
-                command = after or self._transcribe(self._record_until_silence())
-                if not command:
-                    self._speak("I'm listening, boss — go ahead.")
-                    continue
-                # 3. Think (orchestrator) + speak.
-                self._status("thinking")
-                from openjarvis.orchestrator.request_classifier import classify_request
-                tier = classify_request(command).tier
-                res = (self._orch.run_complex(command) if tier == "complex"
-                       else self._orch.run_standard(command))
-                self._speak(res.answer or "I hit a snag handling that, boss.")
-                self._status("listening")
-            except KeyboardInterrupt:
-                logger.info("voice loop stopped")
-                break
-            except Exception as exc:
-                logger.error("voice loop error: %s", exc, exc_info=True)
-                self._status("listening")
+                out += q.get(timeout=1.0)
+                empties = 0
+            except _q.Empty:
+                empties += 1
+                if empties == 2:
+                    print("⚠ no audio from the mic — check System Settings → "
+                          "Privacy & Security → Microphone (allow Terminal), and "
+                          "that the right input device is selected.")
+        return out
+
+    # ---- main loop (continuous, gapless) ----
+    def run(self) -> None:
+        import queue
+
+        import numpy as np
+        import sounddevice as sd
+
+        self._ensure()
+        try:
+            dev = sd.query_devices(kind="input")
+            print(f"🎙  input device: {dev.get('name')} @ {self._rate} Hz")
+        except Exception:
+            print(f"🎙  input @ {self._rate} Hz")
+        print(f"👂 VANTA listening — say \"{WAKE_WORD}\". "
+              f"(showing what I hear in real time; Ctrl-C to stop)\n")
+
+        q: "queue.Queue[bytes]" = queue.Queue()
+
+        def _cb(indata, frames, time_info, status):  # runs on a separate thread
+            if status:
+                logger.debug("audio status: %s", status)
+            q.put(bytes(indata))
+
+        rolling = b""
+        window = int(3.0 * self._rate * 2)  # last ~3s for wake detection
+        # Continuous stream — the mic NEVER stops (no gap that drops the wake word).
+        with sd.InputStream(samplerate=self._rate, channels=_CHANNELS,
+                            dtype="int16", callback=_cb,
+                            blocksize=int(0.1 * self._rate)):
+            while True:
+                try:
+                    chunk = self._collect(q, 1.2)            # ~1.2s of fresh audio
+                    rolling = (rolling + chunk)[-window:]    # rolling 3s buffer
+                    arr = np.frombuffer(chunk, dtype="int16")
+                    rms = int(np.sqrt(np.mean(arr.astype("float32") ** 2))) if arr.size else 0
+                    raw = self._transcribe(rolling)
+                    heard = _normalize(raw)
+                    bar = "▁▂▃▄▅▆▇█"[min(7, rms // 250)]
+                    print(f"🎤 vol {bar} {rms:5d} | heard: {raw!r}")
+
+                    if not heard:
+                        continue
+                    if any(w in heard for w in _INTERRUPT):
+                        self._stop_playback()
+                        continue
+                    if not any(t in heard for t in _WAKE_TOKENS):
+                        continue
+
+                    print(f"🔵 WAKE WORD DETECTED in: {raw!r}")
+                    rolling = b""  # reset so we don't re-trigger
+                    # Command = text after the wake token, else capture ~4s more.
+                    after = heard
+                    for t in _WAKE_TOKENS:
+                        if t in after:
+                            after = after.split(t, 1)[1].strip()
+                            break
+                    if not after:
+                        print("🟢 listening for your command…")
+                        after = _normalize(self._transcribe(self._collect(q, 4.0)))
+                    if not after:
+                        self._speak("I'm listening, boss — go ahead.")
+                        continue
+                    print(f"💬 command: {after!r}")
+                    self._status("thinking")
+                    from openjarvis.orchestrator.request_classifier import classify_request
+                    tier = classify_request(after).tier
+                    res = (self._orch.run_complex(after) if tier == "complex"
+                           else self._orch.run_standard(after))
+                    print(f"🗣  VANTA: {res.answer[:200]}")
+                    self._speak(res.answer or "I hit a snag handling that, boss.")
+                    # Drain anything captured while speaking, then resume.
+                    while not q.empty():
+                        q.get_nowait()
+                    print(f"\n👂 listening — say \"{WAKE_WORD}\"…")
+                except KeyboardInterrupt:
+                    print("\n🛑 voice loop stopped")
+                    break
+                except Exception as exc:
+                    logger.error("voice loop error: %s", exc, exc_info=True)
+                    print(f"⚠ error: {exc}")
 
 
 def main() -> int:
