@@ -1,6 +1,6 @@
 """Jarvis Workflow Catalog — Ultra Sprint 5 real workflow tool pack.
 
-Phase B: OMNIX project/repo/test/mission/qa/governance tools (15)
+Phase B: project/repo/test/mission/qa/governance tools (15)
 Phase C: Research/browser tools (5 available + 1 not_configured)
 Phase D: Communication/reporting tools (5)
 Phase E: Extended memory tools (8)
@@ -107,7 +107,7 @@ def _exec_project_status(inputs: Dict[str, Any], ctx: Dict[str, Any]) -> Dict[st
     from openjarvis.governance.constitution import ProjectRegistry
     project_id = inputs.get("project_id", "") or ctx.get("project_id", "")
     if not project_id:
-        # Default to OMNIX if none specified
+        # Use the default project when none is specified
         project_id = "default"
     proj = ProjectRegistry.get(project_id)
     if proj is None:

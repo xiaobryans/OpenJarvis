@@ -131,7 +131,7 @@ _DOCTOR_TOOLS = [
                 "properties": {
                     "project_id": {
                         "type": "string",
-                        "description": "Project to diagnose (default: omnix)",
+                        "description": "Project to diagnose (defaults to the active project)",
                     }
                 },
                 "required": [],
@@ -172,7 +172,7 @@ _DOCTOR_TOOLS = [
                 "properties": {
                     "project_id": {
                         "type": "string",
-                        "description": "Project to check (default: omnix)",
+                        "description": "Project to check (defaults to the active project)",
                     }
                 },
                 "required": [],
@@ -213,7 +213,7 @@ _DOCTOR_TOOLS = [
                 "properties": {
                     "project_id": {
                         "type": "string",
-                        "description": "Project to report on (default: omnix)",
+                        "description": "Project to report on (defaults to the active project)",
                     }
                 },
                 "required": [],
@@ -256,7 +256,7 @@ _DOCTOR_TOOLS = [
                 "properties": {
                     "project_id": {
                         "type": "string",
-                        "description": "Project to evaluate (default: omnix)",
+                        "description": "Project to evaluate (defaults to the active project)",
                     }
                 },
                 "required": [],
@@ -303,7 +303,7 @@ _DOCTOR_TOOLS = [
                 "properties": {
                     "project_id": {
                         "type": "string",
-                        "description": "Project to summarize (default: omnix)",
+                        "description": "Project to summarize (defaults to the active project)",
                     }
                 },
                 "required": [],

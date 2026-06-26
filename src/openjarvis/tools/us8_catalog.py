@@ -79,8 +79,9 @@ def _exec_project_onboarding_status(
     status_message = ""
     if is_placeholder:
         status_message = (
-            f"OMNIX is registered but local_repo points to the Jarvis/OpenJarvis codebase. "
-            "Real OMNIX source is not configured."
+            f"{project_name} is registered but local_repo points to the "
+            f"Jarvis/OpenJarvis codebase. Real source for {project_name} is "
+            "not configured."
         )
     elif is_not_configured:
         status_message = "No sources configured for this project."
@@ -92,16 +93,16 @@ def _exec_project_onboarding_status(
         config_needed = [
             {
                 "step": 1,
-                "field": "JARVIS_PROJECT_OMNIX_REPO_PATH",
-                "description": "Real local OMNIX repo path (not the Jarvis codebase)",
-                "example": "/path/to/real/omnix/repo",
+                "field": f"JARVIS_PROJECT_{project_id.upper()}_REPO_PATH",
+                "description": f"Real local {project_name} repo path (not the Jarvis codebase)",
+                "example": "/path/to/your/project/repo",
                 "tool": "project.link_local_repo",
             },
             {
                 "step": 2,
-                "field": "JARVIS_PROJECT_OMNIX_GITHUB_REMOTE",
-                "description": "OMNIX GitHub owner/repo remote URL",
-                "example": "https://github.com/owner/omnix",
+                "field": f"JARVIS_PROJECT_{project_id.upper()}_GITHUB_REMOTE",
+                "description": f"{project_name} GitHub owner/repo remote URL",
+                "example": "https://github.com/owner/repo",
                 "tool": "project.link_runtime_endpoint",
             },
             {
@@ -205,7 +206,9 @@ def _exec_project_source_config_needed(
     project_id = inputs.get("project_id") or ctx.get("project_id") or "default"
     linkage = ProjectSourceRegistry.get_linkage_status(project_id)
 
-    template = make_future_project_source_template("new_project")
+    # Pre-existing bug fix: this required (project_id, name) but was called with
+    # one arg, so this tool always raised. Provide both.
+    template = make_future_project_source_template("new_project", "New Project")
 
     missing_steps = []
     for src in linkage.get("sources", []):
@@ -226,9 +229,10 @@ def _exec_project_source_config_needed(
         "linkage_status": linkage.get("linkage_status", "unknown"),
         "config_needed": missing_steps,
         "future_project_template": template,
-        "omnix_specific_instruction": (
-            "Provide real local OMNIX repo path or GitHub remote. "
-            "Current local_repo points to the Jarvis/OpenJarvis codebase — not a valid OMNIX source."
+        "project_specific_instruction": (
+            "Provide a real local repo path or GitHub remote for this project. "
+            "Current local_repo points to the Jarvis/OpenJarvis codebase — "
+            "not a valid project source."
         ) if linkage.get("linkage_status") == "placeholder" else None,
     }
 
@@ -829,8 +833,9 @@ _US8_TOOL_DEFS = [
             tool_id="project.onboarding_status",
             display_name="Project Onboarding Status",
             description=(
-                "Show OMNIX linkage status: placeholder detection, exact config needed, "
-                "readiness impact. Founder-friendly onboarding view."
+                "Show a project's source-linkage status: placeholder detection, "
+                "exact config needed, readiness impact. Founder-friendly "
+                "onboarding view."
             ),
             category="project",
             input_schema={
@@ -882,7 +887,8 @@ _US8_TOOL_DEFS = [
             display_name="Project Source Config Needed",
             description=(
                 "Show exact configuration steps needed to link a project's sources. "
-                "Includes future project template and OMNIX-specific instructions."
+                "Includes a reusable future-project template and "
+                "project-specific instructions."
             ),
             category="project",
             input_schema={

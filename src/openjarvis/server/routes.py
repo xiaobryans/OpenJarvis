@@ -93,6 +93,52 @@ def _save_chat_memory(memory_backend, content: str, *, role: str = "user", model
         )
 
 
+def _inject_persona_context(req, config) -> None:
+    """Inject the user's profile (USER.md) into the turn — dynamically.
+
+    Replaces the previously hardcoded, quickly-stale "project status" block in
+    the frontend prompt. Personal/universal context now lives in USER.md and is
+    read fresh each turn, so editing that file updates Jarvis with no code
+    change — and Jarvis never assumes a specific project. Honors the persona
+    "none" opt-out (empty ``user_path``). Best-effort; never raises.
+    """
+    try:
+        from pathlib import Path
+
+        user_path = "~/.openjarvis/USER.md"
+        mf = getattr(config, "memory_files", None) if config is not None else None
+        if mf is not None:
+            # Empty path == persona opt-out ("none"); respect it.
+            user_path = getattr(mf, "user_path", user_path)
+        if not user_path:
+            return
+        p = Path(user_path).expanduser()
+        if not p.exists():
+            return
+        content = p.read_text(encoding="utf-8").strip()
+        # Skip empty / placeholder stub files.
+        if not content or content.lstrip("#").strip().lower() in {"user profile", "user"}:
+            return
+
+        from openjarvis.server.models import ChatMessage
+
+        note = (
+            "About the principal you serve (from their profile — treat as "
+            "authoritative background, not a task):\n\n" + content
+        )
+        msgs = list(req.messages or [])
+        idx = 0
+        while idx < len(msgs) and getattr(msgs[idx], "role", "") == "system":
+            idx += 1
+        msgs.insert(idx, ChatMessage(role="system", content=note))
+        req.messages = msgs
+    except Exception:
+        logging.getLogger("openjarvis.server").debug(
+            "Persona (USER.md) injection failed",
+            exc_info=True,
+        )
+
+
 def _to_messages(chat_messages) -> list[Message]:
     """Convert Pydantic ChatMessage objects to core Message objects."""
     messages = []
@@ -162,6 +208,10 @@ async def chat_completions(request_body: ChatCompletionRequest, request: Request
     # never wrong about "now" and never deflects on time/date questions.
     if request_body.messages:
         _inject_datetime_context(request_body)
+        # Dynamic user profile (USER.md) — who the user is, read fresh each turn.
+        _inject_persona_context(
+            request_body, getattr(request.app.state, "config", None)
+        )
 
     # Front-door utility shortcut: time/date queries answered from system
     # clock without LLM round-trip. LLMs cannot access the current time, so
