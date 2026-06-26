@@ -104,46 +104,80 @@ class CalendarTodayTool(BaseTool):
 
     def execute(self, **params: Any) -> ToolResult:
         try:
-            from openjarvis.connectors.gcalendar import GCalendarConnector
+            # Query ONLY the user's primary calendar — not the merged calendar
+            # list — so auto-generated "Birthdays"/"Holidays"/contacts calendars
+            # (e.g. "Aunt Maria's birthday") are excluded. These are Bryan's own
+            # events.
+            from openjarvis.connectors.gcalendar import (
+                _DEFAULT_CREDENTIALS_PATH,
+                _gcal_api_events_list,
+            )
+            from openjarvis.connectors.google_auth import call_with_refresh
+            from openjarvis.connectors.oauth import load_tokens
 
-            cal = GCalendarConnector()
-            if not cal.is_connected():
+            toks = load_tokens(_DEFAULT_CREDENTIALS_PATH)
+            if not toks or not (toks.get("access_token") or toks.get("token")):
                 return ToolResult(
                     tool_name="calendar_today",
                     content="Google Calendar is not connected. Complete the "
                     "Google OAuth flow to enable it.",
                     success=False,
                 )
-            start = datetime.now(timezone.utc).replace(
-                hour=0, minute=0, second=0, microsecond=0
+            now = datetime.now().astimezone()
+            day = now.date()
+            start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            time_min = start.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+            resp = call_with_refresh(
+                _gcal_api_events_list, _DEFAULT_CREDENTIALS_PATH,
+                "primary", time_min=time_min,
             )
+            from datetime import date as _date
+
             events = []
-            seen = set()  # dedupe: the same event recurs across multiple calendars
-            scanned = 0
-            for doc in cal.sync(since=start):
-                scanned += 1
-                title = getattr(doc, "title", "") or "(untitled event)"
-                meta = getattr(doc, "metadata", {}) or {}
-                when = meta.get("start") or meta.get("start_time") or ""
-                key = (title.strip().lower(), str(when))
+            seen = set()
+            for ev in resp.get("items", []):
+                summary = ev.get("summary", "") or "(untitled event)"
+                st = ev.get("start", {}) or {}
+                # Parse the event's actual date directly — do NOT use a now()
+                # fallback, or future all-day events (e.g. recurring birthdays
+                # dated months ahead) wrongly count as "today".
+                when = ""
+                ev_date = None
+                if st.get("dateTime"):
+                    try:
+                        dt = datetime.fromisoformat(st["dateTime"].replace("Z", "+00:00")).astimezone()
+                        ev_date = dt.date()
+                        when = dt.strftime("%I:%M %p").lstrip("0")
+                    except Exception:
+                        ev_date = None
+                elif st.get("date"):
+                    try:
+                        ev_date = _date.fromisoformat(st["date"])
+                        when = "all day"
+                    except Exception:
+                        ev_date = None
+                if ev_date != day:  # only events actually on today
+                    continue
+                key = (summary.strip().lower(), when)
                 if key in seen:
                     continue
                 seen.add(key)
-                events.append(f"- {title}" + (f"  [{when}]" if when else ""))
-                if len(events) >= 12 or scanned >= 200:
+                events.append(f"- {summary}" + (f"  [{when}]" if when else ""))
+                if len(events) >= 12:
                     break
             if not events:
                 return ToolResult(
                     tool_name="calendar_today",
-                    content="No calendar events for today.",
+                    content="No events on your calendar today.",
                     success=True,
-                    metadata={"count": 0},
+                    metadata={"count": 0, "calendar": "primary"},
                 )
             return ToolResult(
                 tool_name="calendar_today",
-                content="Today's events:\n" + "\n".join(events),
+                content="Today's events (your calendar):\n" + "\n".join(events),
                 success=True,
-                metadata={"count": len(events)},
+                metadata={"count": len(events), "calendar": "primary"},
             )
         except Exception as exc:
             return ToolResult(
@@ -329,6 +363,168 @@ class SlackRecentTool(BaseTool):
             )
 
 
+def _notion_token() -> str:
+    import os
+
+    from openjarvis.core.env_loader import ensure_local_env_loaded
+
+    ensure_local_env_loaded()
+    return (os.environ.get("NOTION_API_KEY") or os.environ.get("NOTION_TOKEN") or "").strip()
+
+
+@ToolRegistry.register("notion_search")
+class NotionSearchTool(BaseTool):
+    """Search the user's Notion pages (real data)."""
+
+    tool_id = "notion_search"
+
+    @property
+    def spec(self) -> ToolSpec:
+        return ToolSpec(
+            name="notion_search",
+            description=(
+                "List/search the user's Notion pages the Jarvis integration can "
+                "access (real data). Optional 'query' filters by page title. Use "
+                "to find a Notion page before reading it."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Filter by title (optional)."}
+                },
+                "required": [],
+            },
+            category="personal",
+        )
+
+    def execute(self, **params: Any) -> ToolResult:
+        token = _notion_token()
+        if not token:
+            return ToolResult(
+                tool_name="notion_search",
+                content="Notion is not configured. Add NOTION_API_KEY to .env and "
+                "share pages with the integration.",
+                success=False,
+            )
+        q = (params.get("query") or "").strip().lower()
+        try:
+            from openjarvis.connectors.notion import (
+                _extract_page_title,
+                _notion_api_search,
+            )
+
+            resp = _notion_api_search(token)
+            rows = []
+            for page in resp.get("results", []):
+                title = _extract_page_title(page) or "(untitled)"
+                if q and q not in title.lower():
+                    continue
+                rows.append(f"- {title}  (id: {page.get('id','')})")
+                if len(rows) >= 25:
+                    break
+            if not rows:
+                return ToolResult(
+                    tool_name="notion_search",
+                    content=("No matching Notion pages." if q else
+                             "No Notion pages shared with the integration yet. "
+                             "Share pages with 'Jarvis' in Notion."),
+                    success=True,
+                    metadata={"count": 0},
+                )
+            return ToolResult(
+                tool_name="notion_search",
+                content=f"{len(rows)} Notion page(s):\n" + "\n".join(rows),
+                success=True,
+                metadata={"count": len(rows)},
+            )
+        except Exception as exc:
+            return ToolResult(
+                tool_name="notion_search",
+                content=f"Notion search failed: {exc}",
+                success=False,
+            )
+
+
+@ToolRegistry.register("notion_read")
+class NotionReadTool(BaseTool):
+    """Read a Notion page's content as markdown (real data)."""
+
+    tool_id = "notion_read"
+
+    @property
+    def spec(self) -> ToolSpec:
+        return ToolSpec(
+            name="notion_read",
+            description=(
+                "Read a Notion page's content (real data), rendered as markdown. "
+                "Pass 'page_id' (from notion_search) or 'query' to find a page by "
+                "title and read the first match."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "page_id": {"type": "string", "description": "Notion page id."},
+                    "query": {"type": "string", "description": "Title to find + read."},
+                },
+                "required": [],
+            },
+            category="personal",
+        )
+
+    def execute(self, **params: Any) -> ToolResult:
+        token = _notion_token()
+        if not token:
+            return ToolResult(
+                tool_name="notion_read",
+                content="Notion is not configured. Add NOTION_API_KEY to .env.",
+                success=False,
+            )
+        page_id = (params.get("page_id") or "").strip()
+        query = (params.get("query") or "").strip().lower()
+        try:
+            from openjarvis.connectors.notion import (
+                _extract_page_title,
+                _notion_api_get_blocks,
+                _notion_api_search,
+                _render_blocks_to_markdown,
+            )
+
+            title = ""
+            if not page_id:
+                if not query:
+                    return ToolResult(
+                        tool_name="notion_read",
+                        content="Provide page_id or query.",
+                        success=False,
+                    )
+                for page in _notion_api_search(token).get("results", []):
+                    t = _extract_page_title(page) or ""
+                    if query in t.lower():
+                        page_id, title = page.get("id", ""), t
+                        break
+                if not page_id:
+                    return ToolResult(
+                        tool_name="notion_read",
+                        content=f"No Notion page matching {query!r}.",
+                        success=True,
+                    )
+            blocks = _notion_api_get_blocks(token, page_id)
+            md = _render_blocks_to_markdown(blocks) or "(page is empty)"
+            head = f"# {title}\n\n" if title else ""
+            return ToolResult(
+                tool_name="notion_read",
+                content=(head + md)[:4000],
+                success=True,
+                metadata={"page_id": page_id},
+            )
+        except Exception as exc:
+            return ToolResult(
+                tool_name="notion_read",
+                content=f"Notion read failed: {exc}",
+                success=False,
+            )
+
+
 @ToolRegistry.register("morning_briefing")
 class MorningBriefingTool(BaseTool):
     """Generate Bryan's full morning briefing on demand (real data)."""
@@ -371,4 +567,6 @@ __all__ = [
     "GmailImportantTool",
     "SlackRecentTool",
     "MorningBriefingTool",
+    "NotionSearchTool",
+    "NotionReadTool",
 ]

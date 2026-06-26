@@ -445,6 +445,8 @@ def serve(
                         "gmail_important",
                         "slack_recent",
                         "morning_briefing",
+                        "notion_search",
+                        "notion_read",
                     }
                     configured = config.agent.tools
                     if configured:

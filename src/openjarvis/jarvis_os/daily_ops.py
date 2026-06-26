@@ -78,8 +78,20 @@ def _section(name: str, fn: Callable[[], str]) -> str:
         return f"_{name}: unavailable ({type(exc).__name__}: {exc})._"
 
 
+def _ensure_env() -> None:
+    """Load .env/.env.local/cloud-keys so connector tokens (Slack etc.) are
+    present even when run from the CLI / scheduler (not just the API server)."""
+    try:
+        from openjarvis.core.env_loader import ensure_local_env_loaded
+
+        ensure_local_env_loaded()
+    except Exception:
+        logger.debug("env load failed", exc_info=True)
+
+
 def _tool(name: str, **kw) -> str:
     """Execute a registered tool and return its content (or a clear error)."""
+    _ensure_env()
     import openjarvis.tools  # noqa: F401 ensure registration
     from openjarvis.core.registry import ToolRegistry
 
@@ -104,6 +116,7 @@ def _memory_backend():
 def run_overnight_monitor() -> dict:
     """Run the overnight system + memory check. Returns a structured report and
     persists it + a 'flagged for morning' summary the briefing reads."""
+    _ensure_env()
     started = datetime.now(timezone.utc)
     issues: list[str] = []
     fixed: list[str] = []
@@ -184,6 +197,7 @@ def run_overnight_monitor() -> dict:
 # ---------------------------------------------------------------------------
 def generate_morning_briefing() -> str:
     """Compose and persist the morning briefing. Returns the markdown text."""
+    _ensure_env()
     lines = [f"# Good morning, Bryan — {_now_sgt_str()}", ""]
 
     # 1. System health + overnight results
