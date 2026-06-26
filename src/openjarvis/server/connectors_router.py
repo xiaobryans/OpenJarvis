@@ -257,8 +257,12 @@ def create_connectors_router():
         _OUTBOUND_SEND = {"slack", "telegram"}
         _READ_ONLY_ACTIONS = ["search", "read", "fetch"]
         _OUTBOUND_ACTIONS = ["send_message", "post", "notify"]
-        # Connectors handled via explicit diagnostics calls (richer status)
-        _EXPLICIT_DIAG = {"slack", "telegram", "web_search", "github"}
+        # Connectors handled via explicit diagnostics calls (richer status).
+        # "weather" is handled explicitly too: the live weather path is the
+        # no-key wttr.in tool (current_weather), not the legacy keyed
+        # WeatherConnector — so the registry's is_connected() would wrongly
+        # report it offline. Report it live based on the no-key service.
+        _EXPLICIT_DIAG = {"slack", "telegram", "web_search", "github", "weather"}
 
         results = []
 
@@ -298,6 +302,19 @@ def create_connectors_router():
         except Exception as exc:
             results.append({"connector": "github", "state": "error", "detail": str(exc)})
 
+        # Weather — live via the no-key wttr.in tool (no credentials required).
+        results.append({
+            "connector": "weather",
+            "state": _CS.CONFIGURED,
+            "missing_credentials": [],
+            "allowed_actions": _READ_ONLY_ACTIONS,
+            "approval_required": False,
+            "real_send_allowed": False,
+            "last_error": None,
+            "summary": "Live weather via wttr.in (no API key required).",
+            "credential_source": "none_required",
+        })
+
         # Add remaining registered connectors with basic status
         try:
             _ensure_connectors_registered()
@@ -306,7 +323,19 @@ def create_connectors_router():
                     try:
                         inst = _get_or_create(key)
                         connected = inst.is_connected()
-                        sync_status = inst.sync_status() if hasattr(inst, "sync_status") else {}
+                        # sync_status() may return a SyncStatus dataclass or a
+                        # dict (or be absent). Normalise to (last_error, summary)
+                        # WITHOUT assuming .get() — calling .get() on the
+                        # dataclass raised AttributeError, which dropped every
+                        # connected registry connector (gmail, gcalendar, ...)
+                        # into the except branch and reported it not_configured.
+                        ss = inst.sync_status() if hasattr(inst, "sync_status") else None
+                        if isinstance(ss, dict):
+                            last_error = ss.get("last_error")
+                            summary = ss.get("summary", "")
+                        else:
+                            last_error = getattr(ss, "error", None)
+                            summary = getattr(ss, "summary", "") or ""
                         results.append({
                             "connector": key,
                             "state": (
@@ -317,8 +346,8 @@ def create_connectors_router():
                             "allowed_actions": _READ_ONLY_ACTIONS,
                             "approval_required": False,
                             "real_send_allowed": False,
-                            "last_error": sync_status.get("last_error") if sync_status else None,
-                            "summary": sync_status.get("summary", "") if sync_status else "",
+                            "last_error": last_error,
+                            "summary": summary,
                         })
                     except Exception as exc:
                         results.append({
