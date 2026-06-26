@@ -55,3 +55,33 @@ def test_result_has_audit_fields():
 def test_empty_is_instant():
     assert classify_request("").tier == INSTANT
     assert classify_request("   ").tier == INSTANT
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # Real-world actions must reach the orchestrator (never INSTANT), or
+        # the action tool never runs and Bryan gets a generic reply.
+        "post to vanta-logs hello",
+        "send a message to vanta-logs saying VANTA is live",
+        "send a slack message to vanta-logs",
+        "reply to that email",
+        "schedule a meeting tomorrow at 3pm",
+        "delete the dentist event",
+        "email john that I am running late",
+        "draft a reply to the last message",
+    ],
+)
+def test_action_intent_never_instant(text):
+    """Side-effecting action verbs must route through the orchestrator."""
+    r = classify_request(text)
+    assert r.tier != INSTANT, f"{text!r} wrongly classified INSTANT ({r.reason})"
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["what time is it", "hey", "what's my name", "who are you", "thanks"],
+)
+def test_genuine_instant_preserved(text):
+    """Action detection must not over-trigger on trivial direct queries."""
+    assert classify_request(text).tier == INSTANT

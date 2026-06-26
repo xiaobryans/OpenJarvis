@@ -51,6 +51,24 @@ _FAST_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# Real-world ACTION intent (side effects) → must route through the orchestrator
+# so the action tools actually run. These can NEVER be INSTANT (the INSTANT path
+# uses a bare agent that just *describes* an action instead of executing it —
+# this is why "post to vanta-logs ..." returned a generic reply and never sent).
+_ACTION_PATTERNS = re.compile(
+    r"\b(send|sent|sending|post|posting|reply|replying|respond|forward|"
+    r"dm|message\s+\w+|text\s+\w+|"
+    r"email\s+\w+|draft|compose|"
+    r"schedule|book|set\s*up\s+(a\s+)?(meeting|call|event|reminder)|"
+    r"add\s+.+\b(calendar|event|reminder|meeting)|"
+    r"create\s+(an?\s+)?(event|reminder|meeting|file|calendar)|"
+    r"new\s+(event|reminder|meeting|calendar)|"
+    r"delete|cancel|remove|move\s+.+\b(meeting|event|to)|"
+    r"mark\s+.+\b(read|done)|"
+    r"commit|push|run\s+the|execute)\b",
+    re.IGNORECASE,
+)
+
 # Trivial / direct → INSTANT.
 _INSTANT_PATTERNS = re.compile(
     r"^\s*(hi|hii|hey|yo|hello|sup|thanks|thank\s*you|thx|ok|okay|cool|"
@@ -104,10 +122,11 @@ def classify_request(text: str) -> ClassifiedRequest:
     is_complex = bool(_COMPLEX_PATTERNS.search(q))
     is_fast = bool(_FAST_PATTERNS.search(q))
     is_instant = bool(_INSTANT_PATTERNS.search(q))
+    is_action = bool(_ACTION_PATTERNS.search(q))
     multistep = bool(_MULTISTEP.search(q))
     signals.update(
         complex_kw=is_complex, fast_kw=is_fast,
-        instant_kw=is_instant, multistep=multistep,
+        instant_kw=is_instant, action_kw=is_action, multistep=multistep,
     )
 
     # 1. Substantial build/creation work, or very high complexity → COMPLEX.
@@ -118,8 +137,9 @@ def classify_request(text: str) -> ClassifiedRequest:
             score, signals,
         )
 
-    # 2. Trivial/direct (and not a build) → INSTANT. Short with no multi-step.
-    if is_instant and not multistep and n_words <= 12:
+    # 2. Trivial/direct (and not a build/action) → INSTANT. An action verb is
+    #    never INSTANT — it must reach the orchestrator to actually execute.
+    if is_instant and not is_action and not multistep and n_words <= 12:
         return ClassifiedRequest(INSTANT, "trivial/direct intent", score, signals)
 
     # 3. Multi-step OR clearly elevated complexity → STANDARD.
@@ -130,11 +150,16 @@ def classify_request(text: str) -> ClassifiedRequest:
             score, signals,
         )
 
-    # 4. Single bounded lookup/action → FAST.
-    if is_fast:
-        return ClassifiedRequest(FAST, "single bounded action/lookup", score, signals)
+    # 4. Single bounded lookup, or any real-world action → FAST (orchestrator).
+    if is_fast or is_action:
+        return ClassifiedRequest(
+            FAST,
+            "action intent (must execute)" if is_action
+            else "single bounded action/lookup",
+            score, signals,
+        )
 
-    # 5. Default: very short → INSTANT, otherwise FAST.
+    # 5. Default: very short → INSTANT, otherwise FAST. (Actions handled above.)
     if n_words <= 8 and score < 0.4:
         return ClassifiedRequest(INSTANT, "short, low-complexity", score, signals)
     return ClassifiedRequest(FAST, "default single-turn", score, signals)
