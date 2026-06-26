@@ -49,13 +49,17 @@ def test_voice_module_init_importable():
 # ---------------------------------------------------------------------------
 
 
-def test_deepgram_is_default_stt_provider(monkeypatch):
-    """Default STT provider is deepgram (no JARVIS_STT_PROVIDER set)."""
+def test_openai_whisper_is_default_stt_provider(monkeypatch):
+    """Default STT provider is OpenAI Whisper (no JARVIS_STT_PROVIDER set).
+
+    Changed from Deepgram: Deepgram mis-transcribed Bryan's accent
+    ("VANTA" -> "Event"); Whisper is markedly more accurate.
+    """
     monkeypatch.delenv("JARVIS_STT_PROVIDER", raising=False)
     monkeypatch.delenv("JARVIS_VOICE_PROVIDER", raising=False)
-    from openjarvis.voice.provider import VoiceProviderConfig, PROVIDER_DEEPGRAM
+    from openjarvis.voice.provider import VoiceProviderConfig, PROVIDER_OPENAI
     cfg = VoiceProviderConfig.from_env()
-    assert cfg.stt_provider == PROVIDER_DEEPGRAM
+    assert cfg.stt_provider == PROVIDER_OPENAI
 
 
 def test_deepgram_is_default_tts_provider(monkeypatch):
@@ -238,17 +242,18 @@ def test_tts_both_fail_returns_error_result(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# 7. STT pipeline check — Deepgram primary in voice_pipeline
+# 7. STT pipeline check — OpenAI Whisper primary in voice_pipeline
 # ---------------------------------------------------------------------------
 
 
-def test_stt_pipeline_deepgram_primary(monkeypatch):
-    """get_stt_status returns deepgram when DEEPGRAM_API_KEY set."""
-    monkeypatch.setenv("DEEPGRAM_API_KEY", "test-key")
+def test_stt_pipeline_openai_whisper_primary(monkeypatch):
+    """get_stt_status returns OpenAI Whisper (primary) when OPENAI_API_KEY set
+    and no override — Whisper replaced Deepgram as the default for accuracy."""
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     monkeypatch.delenv("JARVIS_STT_PROVIDER", raising=False)
     from openjarvis.autonomy.voice_pipeline import get_stt_status, STTEngine
     result = get_stt_status()
-    assert result["stt_status"] == STTEngine.DEEPGRAM
+    assert result["stt_status"] == STTEngine.OPENAI_WHISPER
     assert result["is_configured"] is True
     assert result.get("primary") is True
 
@@ -356,20 +361,22 @@ def test_deepgram_tts_registers_in_registry():
 
 
 # ---------------------------------------------------------------------------
-# 12. Discovery order — deepgram first
+# 12. Discovery order — OpenAI Whisper first (Deepgram fallback)
 # ---------------------------------------------------------------------------
 
 
-def test_discovery_order_deepgram_first():
+def test_discovery_order_openai_first():
     from openjarvis.speech._discovery import _DEFAULT_DISCOVERY_ORDER
-    assert _DEFAULT_DISCOVERY_ORDER[0] == "deepgram"
+    assert _DEFAULT_DISCOVERY_ORDER[0] == "openai"
+    # Deepgram retained as a fallback option.
+    assert "deepgram" in _DEFAULT_DISCOVERY_ORDER
 
 
 def test_discovery_get_order_default(monkeypatch):
     monkeypatch.delenv("JARVIS_STT_PROVIDER", raising=False)
     from openjarvis.speech._discovery import _get_discovery_order
     order = _get_discovery_order()
-    assert order[0] == "deepgram"
+    assert order[0] == "openai"
 
 
 def test_discovery_get_order_override(monkeypatch):

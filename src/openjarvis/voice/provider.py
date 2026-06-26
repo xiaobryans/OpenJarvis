@@ -33,11 +33,12 @@ PROVIDER_OPENAI = "openai"
 PROVIDER_MACOS_SAY = "macos_say"
 PROVIDER_NOT_CONFIGURED = "not_configured"
 
-# Canonical priority list for STT (deepgram is primary)
+# Canonical priority list for STT (OpenAI Whisper is primary — more accurate
+# than Deepgram for Bryan's accent; Deepgram kept as fallback).
 _STT_DISCOVERY_ORDER: List[str] = [
-    PROVIDER_DEEPGRAM,
-    PROVIDER_FASTER_WHISPER,
     PROVIDER_OPENAI,
+    PROVIDER_FASTER_WHISPER,
+    PROVIDER_DEEPGRAM,
 ]
 
 # Canonical priority list for TTS (deepgram is primary)
@@ -126,17 +127,17 @@ class VoiceProviderConfig:
     """Runtime voice provider configuration derived from env vars."""
 
     voice_provider: str = PROVIDER_DEEPGRAM       # JARVIS_VOICE_PROVIDER
-    stt_provider: str = PROVIDER_DEEPGRAM          # JARVIS_STT_PROVIDER
+    stt_provider: str = PROVIDER_OPENAI            # JARVIS_STT_PROVIDER (Whisper primary)
     tts_provider: str = PROVIDER_DEEPGRAM          # JARVIS_TTS_PROVIDER
-    stt_fallback: str = PROVIDER_FASTER_WHISPER    # first non-deepgram STT
+    stt_fallback: str = PROVIDER_FASTER_WHISPER    # local fallback if Whisper key missing
     tts_fallback: str = PROVIDER_MACOS_SAY         # first non-deepgram TTS
-    stt_model: str = "nova-2"
+    stt_model: str = "whisper-1"
     tts_model: str = "aura-asteria-en"
     language: str = "en"
 
     @classmethod
     def from_env(cls) -> "VoiceProviderConfig":
-        """Build config from env vars. Defaults to deepgram as primary."""
+        """Build config from env vars. STT defaults to OpenAI Whisper."""
         cfg = cls()
         voice = os.environ.get("JARVIS_VOICE_PROVIDER", "").strip().lower()
         stt = os.environ.get("JARVIS_STT_PROVIDER", "").strip().lower()

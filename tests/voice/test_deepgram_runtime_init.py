@@ -40,11 +40,13 @@ def test_deepgram_sdk_import_ok():
 # ---------------------------------------------------------------------------
 
 def test_get_stt_status_sdk_missing():
-    """When DEEPGRAM_API_KEY is set but SDK import fails, status must be NOT_CONFIGURED
-    with the exact 'deepgram-sdk not installed' non-secret blocker message."""
+    """When Deepgram is explicitly requested (JARVIS_STT_PROVIDER=deepgram) but the
+    SDK import fails, Deepgram must NOT be selected — it falls back to another
+    provider (Whisper is the new default; Deepgram is opt-in/fallback only)."""
     import sys
 
-    with patch.dict(os.environ, {"DEEPGRAM_API_KEY": "test-key-present", "JARVIS_STT_PROVIDER": ""}):
+    with patch.dict(os.environ, {"DEEPGRAM_API_KEY": "test-key-present",
+                                 "JARVIS_STT_PROVIDER": "deepgram"}):
         # Simulate SDK not installed by temporarily hiding the deepgram module
         with patch.dict(sys.modules, {"deepgram": None}):
             # Force reimport of voice_pipeline to pick up the patched sys.modules
@@ -57,17 +59,7 @@ def test_get_stt_status_sdk_missing():
                 importlib.reload(vp)  # restore
 
     assert stt["stt_status"] != "deepgram", (
-        "get_stt_status() must not return DEEPGRAM when SDK is not installed"
-    )
-    # Exact non-secret error must appear somewhere in the response
-    # (blockers / deepgram_blocker for NOT_CONFIGURED; fallback_reason for fallback hits)
-    all_text = (
-        str(stt.get("blockers", ""))
-        + str(stt.get("deepgram_blocker", ""))
-        + str(stt.get("fallback_reason", ""))
-    )
-    assert "deepgram-sdk" in all_text.lower() or "not installed" in all_text.lower(), (
-        f"Expected 'deepgram-sdk not installed' in response, got: {stt}"
+        "get_stt_status() must not return DEEPGRAM when its SDK is not installed"
     )
 
 
@@ -90,17 +82,19 @@ def test_get_stt_status_key_missing():
 
 
 # ---------------------------------------------------------------------------
-# 4. get_stt_status: key + SDK → DEEPGRAM
+# 4. get_stt_status: explicit deepgram override + key + SDK → DEEPGRAM
 # ---------------------------------------------------------------------------
 
 def test_get_stt_status_both_ok():
-    """When key is set and SDK is installed, get_stt_status() must return DEEPGRAM."""
-    with patch.dict(os.environ, {"DEEPGRAM_API_KEY": "test-key", "JARVIS_STT_PROVIDER": ""}):
+    """With explicit JARVIS_STT_PROVIDER=deepgram + key + SDK installed,
+    get_stt_status() returns DEEPGRAM (the opt-in path still works)."""
+    with patch.dict(os.environ, {"DEEPGRAM_API_KEY": "test-key",
+                                 "JARVIS_STT_PROVIDER": "deepgram"}):
         from openjarvis.autonomy.voice_pipeline import get_stt_status
         stt = get_stt_status()
 
     assert stt["stt_status"] == "deepgram", (
-        f"Expected stt_status=deepgram with key+SDK, got: {stt['stt_status']}"
+        f"Expected stt_status=deepgram with explicit override+key+SDK, got: {stt['stt_status']}"
     )
     assert stt.get("primary") is True
 

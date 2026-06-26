@@ -1,9 +1,9 @@
 """Auto-discover available speech-to-text backends.
 
-Priority (Voice Safety Sprint):
-  Deepgram is the primary/default STT provider.
-  JARVIS_STT_PROVIDER env var overrides discovery order.
-  Existing providers (faster-whisper, openai) remain as fallback.
+Priority (updated — Whisper accuracy fix):
+  OpenAI Whisper is the primary/default STT provider (Deepgram misheard
+  Bryan's accent). JARVIS_STT_PROVIDER env var overrides discovery order.
+  faster-whisper (local) and Deepgram remain as fallbacks.
 """
 
 from __future__ import annotations
@@ -15,11 +15,11 @@ if TYPE_CHECKING:
     from openjarvis.core.config import JarvisConfig
     from openjarvis.speech._stubs import SpeechBackend
 
-# Default priority: deepgram primary, local as fallback
+# Default priority: OpenAI Whisper primary, local + deepgram as fallback
 _DEFAULT_DISCOVERY_ORDER: List[str] = [
-    "deepgram",
-    "faster-whisper",
     "openai",
+    "faster-whisper",
+    "deepgram",
 ]
 
 # Legacy alias kept for import compatibility
@@ -29,8 +29,8 @@ DISCOVERY_ORDER = _DEFAULT_DISCOVERY_ORDER
 def _get_discovery_order() -> List[str]:
     """Return STT discovery order, respecting JARVIS_STT_PROVIDER override."""
     stt_provider = os.environ.get("JARVIS_STT_PROVIDER", "").strip().lower()
-    if not stt_provider or stt_provider == "deepgram":
-        # Deepgram first (default)
+    if not stt_provider or stt_provider in ("openai", "openai_whisper", "whisper"):
+        # OpenAI Whisper first (default)
         return _DEFAULT_DISCOVERY_ORDER
     # Explicit override: put the requested provider first, then default order
     order = [stt_provider]
