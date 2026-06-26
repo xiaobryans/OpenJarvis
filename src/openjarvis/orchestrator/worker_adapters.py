@@ -213,7 +213,18 @@ class WorkerAdapter:
             gate_result = manager.production_gate(action_type)
             return gate_result.get("allowed", False)
         except Exception:
-            return True  # graceful degradation if gate unavailable
+            # Fail CLOSED: a safety gate that cannot evaluate must DENY, never
+            # allow. This previously returned True (fail-open), which let
+            # non-dry-run execution through whenever the gate was unavailable —
+            # a safety hole. Dry-run paths are unaffected (they don't require
+            # the gate); only real execution is correctly blocked here.
+            logger.warning(
+                "NUS gate evaluation failed for action_type=%r; failing closed "
+                "(deny non-dry-run execution).",
+                action_type,
+                exc_info=True,
+            )
+            return False
 
     def _execute_safe(
         self,

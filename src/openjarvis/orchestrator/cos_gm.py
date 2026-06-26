@@ -160,7 +160,7 @@ class CosGmOrchestrator:
                     payload={"status": "blocked"},
                 )
             except Exception:
-                pass
+                logger.debug("cos_gm: trace event publish failed", exc_info=True)
             return FrontDoorResult.create(
                 request_id=request.request_id,
                 status="blocked",
@@ -212,7 +212,7 @@ class CosGmOrchestrator:
                     payload={"manager_id": mgr_id, "plan_id": plan.plan_id},
                 )
         except Exception:
-            pass
+            logger.debug("cos_gm: trace event publish failed", exc_info=True)
 
         # 6. Dispatch workers through adapters (dry-run by default)
         worker_results: list = []
@@ -258,7 +258,7 @@ class CosGmOrchestrator:
                         },
                     )
                 except Exception:
-                    pass
+                    logger.debug("cos_gm: trace event publish failed", exc_info=True)
             except Exception as exc:
                 logger.warning("Worker %s dispatch failed: %s", worker_id, exc)
                 try:
@@ -269,7 +269,7 @@ class CosGmOrchestrator:
                         payload={"worker_id": worker_id, "error": str(exc)},
                     )
                 except Exception:
-                    pass
+                    logger.debug("cos_gm: trace event publish failed", exc_info=True)
 
         # 7. Reviewer/Tester/Verifier integration (independent layer, before returning to PA)
         #    Runs when validation_required=True and at least one worker was dispatched.
@@ -328,7 +328,7 @@ class CosGmOrchestrator:
                         },
                     )
                 except Exception:
-                    pass
+                    logger.debug("cos_gm: trace event publish failed", exc_info=True)
             except Exception as _ve:
                 verification_outcome = "reviewer_error"
                 verification_summary = f"Reviewer gate error (non-fatal): {_ve}"
@@ -341,7 +341,7 @@ class CosGmOrchestrator:
                         payload={"outcome": "reviewer_error", "error": str(_ve)},
                     )
                 except Exception:
-                    pass
+                    logger.debug("cos_gm: trace event publish failed", exc_info=True)
 
         # 8. Validation event (if validation_required)
         validation_summary = "validation_not_required"
@@ -362,7 +362,7 @@ class CosGmOrchestrator:
                     },
                 )
             except Exception:
-                pass
+                logger.debug("cos_gm: trace event publish failed", exc_info=True)
 
         # 10. NUS feedback trace event
         nus_available = any("nus_feedback:loaded" in t for t in plan.nus_learning_tags)
@@ -374,7 +374,7 @@ class CosGmOrchestrator:
                 payload={"nus_feedback_available": nus_available},
             )
         except Exception:
-            pass
+            logger.debug("cos_gm: trace event publish failed", exc_info=True)
 
         # 11. Build result
         project_label = (
@@ -429,7 +429,7 @@ class CosGmOrchestrator:
                 payload={"status": status, "elapsed_ms": (time.time() - start) * 1000},
             )
         except Exception:
-            pass
+            logger.debug("cos_gm: trace event publish failed", exc_info=True)
 
         return FrontDoorResult.create(
             request_id=request.request_id,
