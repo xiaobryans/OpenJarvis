@@ -329,9 +329,46 @@ class SlackRecentTool(BaseTool):
             )
 
 
+@ToolRegistry.register("morning_briefing")
+class MorningBriefingTool(BaseTool):
+    """Generate Bryan's full morning briefing on demand (real data)."""
+
+    tool_id = "morning_briefing"
+
+    @property
+    def spec(self) -> ToolSpec:
+        return ToolSpec(
+            name="morning_briefing",
+            description=(
+                "Generate Bryan's morning briefing now: system/overnight health, "
+                "today's calendar, important unread email, messages, date + "
+                "Singapore weather, and top priorities. Use when he asks for his "
+                "briefing / 'what's happening today'."
+            ),
+            parameters={"type": "object", "properties": {}, "required": []},
+            category="personal",
+        )
+
+    def execute(self, **params: Any) -> ToolResult:
+        try:
+            from openjarvis.jarvis_os.daily_ops import generate_morning_briefing
+
+            text = generate_morning_briefing()
+            return ToolResult(
+                tool_name="morning_briefing", content=text, success=True
+            )
+        except Exception as exc:
+            return ToolResult(
+                tool_name="morning_briefing",
+                content=f"Briefing generation failed: {exc}",
+                success=False,
+            )
+
+
 __all__ = [
     "WeatherTool",
     "CalendarTodayTool",
     "GmailImportantTool",
     "SlackRecentTool",
+    "MorningBriefingTool",
 ]

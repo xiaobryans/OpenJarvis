@@ -444,6 +444,7 @@ def serve(
                         "calendar_today",
                         "gmail_important",
                         "slack_recent",
+                        "morning_briefing",
                     }
                     configured = config.agent.tools
                     if configured:
