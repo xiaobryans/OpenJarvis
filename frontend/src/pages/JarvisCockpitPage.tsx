@@ -2332,7 +2332,7 @@ export function JarvisCockpitPage() {
         );
       case 'routing':
         return (
-          <Overlay title="Model Routing — Jarvis Routing" icon="🔀" onClose={() => setExpandedPanel(null)}>
+          <Overlay title="Model Routing — VANTA Routing" icon="🔀" onClose={() => setExpandedPanel(null)}>
             <SectionHeading>Routing System Status</SectionHeading>
             {routingStatus ? (
               <>

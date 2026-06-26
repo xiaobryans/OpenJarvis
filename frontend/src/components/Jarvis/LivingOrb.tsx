@@ -112,7 +112,7 @@ export function LivingOrb({ phase, voiceEnabled, size = 240 }: Props) {
       className="relative flex items-center justify-center"
       style={{ width: size, height: size }}
       role="img"
-      aria-label={`Jarvis state: ${voiceEnabled ? phase : 'voice off'}`}
+      aria-label={`VANTA state: ${voiceEnabled ? phase : 'voice off'}`}
     >
       {/* Outer halo ring */}
       <div
