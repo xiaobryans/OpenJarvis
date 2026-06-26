@@ -222,6 +222,13 @@ def _resolve_server_model(
     default=None,
     help="Agent for non-streaming requests (simple, orchestrator, react, openhands).",
 )
+@click.option(
+    "--no-voice",
+    is_flag=True,
+    default=False,
+    help='Do not auto-start the always-on voice loop ("Hey VANTA"). '
+    "Equivalent to VANTA_NO_VOICE=1.",
+)
 @click.pass_context
 def serve(
     ctx: click.Context,
@@ -230,6 +237,7 @@ def serve(
     engine_key: str | None,
     model_name: str | None,
     agent_name: str | None,
+    no_voice: bool,
 ) -> None:
     """Start the OpenAI-compatible API server."""
     # Load project .env FIRST so Deepgram/provider keys are available before
@@ -912,6 +920,32 @@ def serve(
         )
         sys.exit(1)
     # FREE or RESTARTED — fall through to uvicorn.run()
+
+    # Always-on voice: start the supervised "Hey VANTA" loop in a background
+    # daemon thread. Non-blocking and crash-resilient — if the mic can't be
+    # opened (permission not granted, device busy) it logs a warning and the
+    # server still starts normally. Opt out with --no-voice or VANTA_NO_VOICE=1.
+    try:
+        from openjarvis.speech.voice_supervisor import (
+            start_voice_supervisor,
+            voice_disabled,
+        )
+
+        if no_voice or voice_disabled():
+            console.print("  Voice:     [dim]off (--no-voice)[/dim]")
+        else:
+            started = start_voice_supervisor(
+                status_log=lambda m: console.print(f"  Voice:     [cyan]{m}[/cyan]")
+            )
+            if not started:
+                console.print(
+                    "  Voice:     [yellow]not started "
+                    "(disabled or already running)[/yellow]"
+                )
+    except Exception as _voice_exc:  # never let voice wiring block serve
+        console.print(
+            f"  Voice:     [yellow]unavailable ({_voice_exc})[/yellow]"
+        )
 
     import uvicorn
 
