@@ -537,6 +537,47 @@ class NotionReadTool(BaseTool):
             )
 
 
+@ToolRegistry.register("audit_trail")
+class AuditTrailTool(BaseTool):
+    """Show Bryan the recent request audit trail in plain English."""
+
+    tool_id = "audit_trail"
+
+    @property
+    def spec(self) -> ToolSpec:
+        return ToolSpec(
+            name="audit_trail",
+            description=(
+                "Show the recent request audit trail in plain English — what was "
+                "asked, how it was routed (tier/managers/workers), retries, time "
+                "and tokens. Use when Bryan asks 'what did you do', 'show the "
+                "audit trail', or 'how did you handle that'."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "limit": {"type": "integer", "description": "How many recent (default 10)."}
+                },
+                "required": [],
+            },
+            category="system",
+        )
+
+    def execute(self, **params: Any) -> ToolResult:
+        try:
+            limit = int(params.get("limit") or 10)
+        except (TypeError, ValueError):
+            limit = 10
+        try:
+            from openjarvis.orchestrator.request_audit import recent_requests, render_plain
+
+            text = render_plain(recent_requests(max(1, min(limit, 50))))
+            return ToolResult(tool_name="audit_trail", content=text, success=True)
+        except Exception as exc:
+            return ToolResult(tool_name="audit_trail",
+                              content=f"Audit read failed: {exc}", success=False)
+
+
 @ToolRegistry.register("morning_briefing")
 class MorningBriefingTool(BaseTool):
     """Generate Bryan's full morning briefing on demand (real data)."""
@@ -581,4 +622,5 @@ __all__ = [
     "MorningBriefingTool",
     "NotionSearchTool",
     "NotionReadTool",
+    "AuditTrailTool",
 ]

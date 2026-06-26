@@ -447,6 +447,7 @@ def serve(
                         "morning_briefing",
                         "notion_search",
                         "notion_read",
+                        "audit_trail",
                     }
                     configured = config.agent.tools
                     if configured:

@@ -126,6 +126,26 @@ def test_plan_rejects_invalid_steps(monkeypatch):
     assert plan["steps"] == []  # both invalid steps dropped
 
 
+def test_audit_record_written_and_rendered(monkeypatch):
+    _ensure_current_time_registered()
+    from openjarvis.orchestrator import request_audit
+
+    orch = LeanOrchestrator(model="mock")
+    monkeypatch.setattr(
+        orch, "_llm",
+        lambda s, u, **k: (
+            '{"estimate_seconds":3,"rationale":"t","steps":[{"manager":"personal_life","tool":"current_time","args":{}}]}'
+            if "COS/GM" in s else "answer"
+        ),
+    )
+    orch._status = lambda *_: None
+    res = orch.run_standard("what time is it")
+    assert res.request_id.startswith("orch-")
+    # plain-English render of the just-written record
+    text = request_audit.render_plain(request_audit.recent_requests(1))
+    assert "current_time" in text and "→" in text
+
+
 def test_run_tool_unknown_is_graceful():
     ok, content = LeanOrchestrator._run_tool("does_not_exist", {})
     assert ok is False and "not available" in content

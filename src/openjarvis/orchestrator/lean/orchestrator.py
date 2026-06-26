@@ -54,6 +54,8 @@ class OrchestratorResult:
     error: str = ""
     escalated: bool = False
     notes: List[str] = field(default_factory=list)
+    tokens: Dict[str, int] = field(default_factory=dict)
+    request_id: str = ""
 
 
 _PLAN_SYSTEM = (
@@ -77,6 +79,7 @@ class LeanOrchestrator:
         self.model = model
         self._status = status_cb or (lambda _m: None)
         self.user_profile = user_profile
+        self._tokens = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
 
     # ------------------------------------------------------------------ LLM
     def _llm(self, system: str, user: str, *, max_tokens: int = 800,
@@ -90,6 +93,9 @@ class LeanOrchestrator:
         ]
         res = generate_cloud(self.model, msgs, temperature=temperature,
                              max_tokens=max_tokens)
+        u = res.get("usage", {}) or {}
+        for k in self._tokens:
+            self._tokens[k] += int(u.get(k, 0) or 0)
         return res.get("content", "") or ""
 
     # --------------------------------------------------------------- workers
@@ -256,6 +262,7 @@ class LeanOrchestrator:
     def _run(self, request: str, tier: str, parallel: bool) -> OrchestratorResult:
         start = time.time()
         notes: List[str] = []
+        self._tokens = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         self._status("On it, boss — working out the best way to handle this…")
 
         # Plan failure → escalate to a direct COS/GM answer (never silent).
@@ -337,14 +344,48 @@ class LeanOrchestrator:
             notes=notes,
         )
 
+    def _finish(self, request: str, res: OrchestratorResult) -> OrchestratorResult:
+        """Attach tokens + write the complete audit record (Stage 7)."""
+        res.tokens = dict(self._tokens)
+        try:
+            import uuid as _uuid
+
+            from openjarvis.orchestrator.request_audit import record_request
+
+            rid = f"orch-{_uuid.uuid4().hex[:12]}"
+            res.request_id = rid
+            outcome = ("error" if res.error else
+                       "escalated" if res.escalated else "completed")
+            record_request(
+                request_id=rid, tier=res.tier, reason=res.rationale or "orchestrated",
+                score=0.0, model=self.model, query_preview=request,
+                elapsed_ms=res.elapsed_ms, outcome=outcome,
+                extra={
+                    "managers": res.managers_used,
+                    "workers": [
+                        {"manager": w.manager, "tool": w.tool, "ok": w.success,
+                         "approved": w.approved, "reason": w.review_reason,
+                         "retried": w.retried, "ms": w.elapsed_ms}
+                        for w in res.workers
+                    ],
+                    "estimate_s": res.estimate_seconds,
+                    "tokens": res.tokens,
+                    "escalated": res.escalated,
+                    "notes": res.notes,
+                },
+            )
+        except Exception:
+            logger.debug("orchestration audit write failed", exc_info=True)
+        return res
+
     def run_standard(self, request: str) -> OrchestratorResult:
         """STANDARD tier: plan -> sequential workers -> synthesize."""
-        return self._run(request, "standard", parallel=False)
+        return self._finish(request, self._run(request, "standard", parallel=False))
 
     def run_complex(self, request: str) -> OrchestratorResult:
         """COMPLEX tier: plan -> PARALLEL workers -> synthesize, with upfront
         estimate and per-worker progress (never leaves Bryan in silence)."""
-        return self._run(request, "complex", parallel=True)
+        return self._finish(request, self._run(request, "complex", parallel=True))
 
 
 __all__ = ["LeanOrchestrator", "OrchestratorResult", "WorkerRun"]

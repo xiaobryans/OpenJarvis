@@ -81,4 +81,35 @@ def recent_requests(limit: int = 20) -> List[Dict[str, Any]]:
         return []
 
 
-__all__ = ["record_request", "recent_requests"]
+def render_plain(records: List[Dict[str, Any]]) -> str:
+    """Render audit records as plain English for Bryan."""
+    if not records:
+        return "No requests recorded yet."
+    lines = []
+    for r in records:
+        when = (r.get("ts", "") or "")[:19].replace("T", " ")
+        tier = r.get("tier", "?")
+        outcome = r.get("outcome", "?")
+        q = r.get("query_preview", "")
+        head = f"• {when} — [{tier}] \"{q}\" → {outcome}"
+        if r.get("elapsed_ms"):
+            head += f" in {r['elapsed_ms']/1000:.1f}s"
+        lines.append(head)
+        mgrs = r.get("managers")
+        if mgrs:
+            lines.append(f"    managers: {', '.join(mgrs)}")
+        workers = r.get("workers")
+        if workers:
+            for w in workers:
+                verdict = "approved" if w.get("approved") else f"rejected ({w.get('reason')})"
+                rt = " [retried]" if w.get("retried") else ""
+                lines.append(f"    - {w.get('tool')} → {verdict}{rt} ({w.get('ms','?')}ms)")
+        if r.get("escalated"):
+            lines.append("    (escalated — handled directly)")
+        tk = r.get("tokens") or {}
+        if tk.get("total_tokens"):
+            lines.append(f"    tokens: {tk.get('total_tokens')}")
+    return "\n".join(lines)
+
+
+__all__ = ["record_request", "recent_requests", "render_plain"]
