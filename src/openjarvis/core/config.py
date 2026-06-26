@@ -1438,7 +1438,10 @@ class SystemPromptConfig:
     prefix: str = ""
     soul_max_chars: int = 4000
     memory_max_chars: int = 2500
-    user_max_chars: int = 1500
+    # Sized to hold the full user profile (USER.md) so it loads completely on the
+    # backend persona path (SystemPromptBuilder), matching the live-chat path
+    # which reads it uncapped. Bryan's profile must load in full, no truncation.
+    user_max_chars: int = 8000
     skill_desc_max_chars: int = 60
     truncation_strategy: str = "head_tail"
 
