@@ -1,5 +1,5 @@
 /**
- * Plan 4-6 — Jarvis Capabilities / Roadmap / Status Panel
+ * Plan 4-6 — VANTA Capabilities / Roadmap / Status Panel
  *
  * Route: /capabilities
  * Shows:
@@ -586,7 +586,7 @@ export function JarvisCapabilitiesPage() {
         <header className="mb-6">
           <div className="flex items-center justify-between">
             <h1 className="text-lg font-semibold" style={{ color: C.text }}>
-              Jarvis Capabilities &amp; Status
+              VANTA Capabilities &amp; Status
             </h1>
             <button
               onClick={load}

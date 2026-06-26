@@ -2,7 +2,7 @@
  * Plan 4-6 — Routines & Cadence Center
  *
  * Route: /routines
- * Shows recurring scheduled tasks managed by Jarvis.
+ * Shows recurring scheduled tasks managed by VANTA.
  * Data from:
  *   - GET /v1/routines
  *   - GET /v1/routines/summary
@@ -449,7 +449,7 @@ export function RoutinesCenterPage() {
             </button>
           </div>
           <p className="text-sm mt-1.5" style={{ color: C.textSec }}>
-            Recurring scheduled tasks managed by Jarvis.
+            Recurring scheduled tasks managed by VANTA.
           </p>
         </header>
 

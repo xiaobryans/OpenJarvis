@@ -48,7 +48,7 @@ export function LogsPage() {
 
   const handleExport = () => {
     const header =
-      '# OpenJarvis Log Export\n' +
+      '# VANTA Log Export\n' +
       `# Exported: ${new Date().toISOString()}\n` +
       '# Note: Known secret patterns have been redacted before export.\n\n';
     const body = logEntries

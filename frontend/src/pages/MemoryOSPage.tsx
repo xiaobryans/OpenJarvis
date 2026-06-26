@@ -2,7 +2,7 @@
  * Plan 4-6 — Memory OS
  *
  * Route: /memory-os
- * Shows Jarvis memory namespaces, search capabilities, and context state.
+ * Shows VANTA memory namespaces, search capabilities, and context state.
  * Data from:
  *   - GET /v1/memory/dashboard
  *   - GET /v1/memory/namespaces
@@ -326,7 +326,7 @@ export function MemoryOSPage() {
             </button>
           </div>
           <p className="text-sm mt-1.5" style={{ color: C.textSec }}>
-            Jarvis memory namespaces, search, and context.
+            VANTA memory namespaces, search, and context.
           </p>
         </header>
 
@@ -427,7 +427,7 @@ export function MemoryOSPage() {
                   No namespaces found
                 </div>
                 <div className="text-xs" style={{ color: C.textTert }}>
-                  Memory will populate as Jarvis stores context during
+                  Memory will populate as VANTA stores context during
                   conversations.
                 </div>
               </div>

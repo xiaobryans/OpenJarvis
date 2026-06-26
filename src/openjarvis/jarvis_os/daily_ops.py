@@ -229,7 +229,7 @@ def generate_morning_briefing() -> str:
     lines += ["## Messages", _section("slack", lambda: _tool("slack_recent")), ""]
     lines += ["## Date & weather", _section("weather", lambda: _tool("current_weather", location="Singapore")), ""]
     lines += ["## Top priorities", _section("priorities", _priorities), ""]
-    lines += ["_— Jarvis. Get after it, boss._"]
+    lines += ["_— VANTA. Get after it, boss._"]
 
     text = "\n".join(lines)
 

@@ -207,7 +207,7 @@ export function VoiceOverlay() {
     <div
       className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-2"
       role="region"
-      aria-label="Jarvis voice"
+      aria-label="VANTA voice"
     >
       {/* Expanded conversation panel */}
       {expanded && (
@@ -297,9 +297,7 @@ export function VoiceOverlay() {
             {/* Jarvis response */}
             {response && (
               <div className="space-y-0.5">
-                <div className="text-[10px] uppercase tracking-wide" style={{ color: 'var(--color-text-tertiary)' }}>
-                  Jarvis
-                </div>
+                <div className="text-[10px] uppercase tracking-wide" style={{ color: 'var(--color-text-tertiary)' }}>VANTA</div>
                 <div
                   className="text-sm px-2 py-1.5 rounded-lg"
                   style={{ background: 'var(--color-bg-tertiary)', color: 'var(--color-text)' }}
@@ -469,7 +467,7 @@ export function VoiceOverlay() {
             color: voiceEnabled ? '#fff' : 'var(--color-text-secondary)',
           }}
           title={voiceEnabled ? 'Turn off voice' : 'Turn on voice'}
-          aria-label={voiceEnabled ? 'Turn off Jarvis voice' : 'Turn on Jarvis voice'}
+          aria-label={voiceEnabled ? 'Turn off VANTA voice' : 'Turn on VANTA voice'}
         >
           {voiceEnabled ? <Mic size={20} /> : <MicOff size={20} />}
         </button>

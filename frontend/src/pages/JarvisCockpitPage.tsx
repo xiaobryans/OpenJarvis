@@ -6,7 +6,7 @@
  *   Mobile:  Top status bar + work surface + bottom tab bar
  *
  * Modes (not separate pages — same one-page cockpit):
- *   mission   — Jarvis core + chat + org spine + pending alerts
+ *   mission   — VANTA core + chat + org spine + pending alerts
  *   workbench — coding / testing / workflow tools
  *   approvals — approval mode takeover (amber state)
  *   audit     — authority audit log + governance
@@ -15,7 +15,7 @@
  *   voice     — voice status (US13 PARKED — honest state)
  *
  * Design invariants:
- *   - Bryan interacts ONLY with Jarvis PA.
+ *   - Bryan interacts ONLY with VANTA.
  *   - Workers/managers/COS/GM/reviewer are internal org layers, never direct chat participants.
  *   - Real state drives everything. If unavailable, show honest unavailable state.
  *   - No fake live activity. No fake worker motion.
@@ -131,8 +131,8 @@ interface ModuleEntry {
 }
 
 const ALL_MODULES: ModuleEntry[] = [
-  { id: 'mission',    icon: '🎯', label: 'Mission Control',          mode: 'mission',   availability: 'live',          description: 'Jarvis core, chat, canonical chain status' },
-  { id: 'chat',       icon: '💬', label: 'Chat / Command',           mode: 'mission',   availability: 'live',          description: 'Bryan ↔ Jarvis PA — the only user-facing interface' },
+  { id: 'mission',    icon: '🎯', label: 'Mission Control',          mode: 'mission',   availability: 'live',          description: 'VANTA core, chat, canonical chain status' },
+  { id: 'chat',       icon: '💬', label: 'Chat / Command',           mode: 'mission',   availability: 'live',          description: 'Bryan ↔ VANTA — the only user-facing interface' },
   { id: 'workbench',  icon: '🔧', label: 'Workbench',               mode: 'workbench', availability: 'live',          description: 'Local coding, testing, diff, git workflow' },
   { id: 'cloud-wb',   icon: '☁️',  label: 'Cloud Workbench',         mode: 'workbench', availability: 'pending_plan_2', description: 'Cloud-hosted coding agents — Pending Plan 2' },
   { id: 'authority',  icon: '🛑', label: 'Authority',               mode: 'approvals', availability: 'live',          description: 'Hard gates, emergency stop, audit authority' },
@@ -897,7 +897,7 @@ function MissionRightPanel({ apiOk, model, connectorLive, connectorTotal, pendin
         <div style={{ fontSize: 8, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'rgba(34,211,238,0.35)', marginBottom: 6 }}>Canonical Chain</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
           {[
-            { icon: '🔷', label: 'Jarvis PA', sub: 'user-facing', color: '#22d3ee' },
+            { icon: '🔷', label: 'VANTA', sub: 'user-facing', color: '#22d3ee' },
             { icon: '↕', label: '', sub: '', color: 'rgba(60,100,140,0.3)', connector: true },
             { icon: '🎛', label: 'COS / GM', sub: 'coordinator', color: '#a78bfa' },
             { icon: '↕', label: '', sub: '', color: 'rgba(60,100,140,0.3)', connector: true },
@@ -1030,7 +1030,7 @@ function ChatDrawer({ input, sending, lastReply, apiOk, onInputChange, onKeyDown
           value={input}
           onChange={e => onInputChange(e.target.value)}
           onKeyDown={onKeyDown}
-          placeholder={apiOk ? 'Ask Jarvis anything… (Enter to send)' : 'Backend unreachable'}
+          placeholder={apiOk ? 'Ask VANTA anything… (Enter to send)' : 'Backend unreachable'}
           disabled={sending || !apiOk}
           style={{
             flex: 1, resize: 'none', background: 'transparent', outline: 'none',
@@ -1304,14 +1304,14 @@ function ApprovalSurface({ approvalItems, pendingApprovals, fetchState, apiTarge
               : 'NO PENDING APPROVALS'}
           </div>
           <div style={{ fontSize: 10, color: pendingApprovals > 0 ? 'rgba(245,158,11,0.55)' : 'rgba(61,220,151,0.55)', marginTop: 2 }}>
-            Bryan approves or denies through Jarvis PA only. No action taken without explicit approval.
+            Bryan approves or denies through VANTA only. No action taken without explicit approval.
           </div>
         </div>
       </div>
 
       {/* Approval chain reminder */}
       <div style={{ fontSize: 9, color: 'rgba(100,140,180,0.45)', marginBottom: 16, padding: '6px 10px', background: 'rgba(8,14,28,0.5)', borderRadius: 6, fontFamily: 'var(--font-hud, monospace)' }}>
-        Worker/Manager → Domain Manager validates → Reviewer checks risk → COS/GM escalates → Jarvis PA asks Bryan → Bryan approves/denies → COS/GM routes back
+        Worker/Manager → Domain Manager validates → Reviewer checks risk → COS/GM escalates → VANTA asks Bryan → Bryan approves/denies → COS/GM routes back
       </div>
 
       {/* Pending approvals list */}
@@ -2006,7 +2006,7 @@ export function JarvisCockpitPage() {
       ]);
     } catch { /* proceed without memory */ }
 
-    // Build full Jarvis PA context: system prompt + history + memory + current turn
+    // Build full VANTA context: system prompt + history + memory + current turn
     const jarvisMessages = buildJarvisMessages(msg, priorTurns, memCtx);
 
     let accumulatedReply = '';
@@ -2247,7 +2247,7 @@ export function JarvisCockpitPage() {
       case 'agents':
         return (
           <Overlay title="Agent Roster" icon="🤖" onClose={() => setExpandedPanel(null)}>
-            <SectionHeading>Jarvis Manager Domains ({agents.length})</SectionHeading>
+            <SectionHeading>VANTA Manager Domains ({agents.length})</SectionHeading>
             {agents.length === 0
               ? <BackendError endpoint="/v1/capabilities/status" target={apiTarget} httpStatus={fetchState.capabilities?.httpStatus} detail={fetchState.capabilities?.detail} lastOk={plan9LastRefresh} />
               : agents.map(a => <Row key={a.id} label={a.name} value={a.domain} status="ok" />)
@@ -2360,7 +2360,7 @@ export function JarvisCockpitPage() {
         );
       case 'org-chain':
         return (
-          <Overlay title="Jarvis PA — Org Chain & Loop Architecture" icon="🏗" onClose={() => setExpandedPanel(null)}>
+          <Overlay title="VANTA — Org Chain & Loop Architecture" icon="🏗" onClose={() => setExpandedPanel(null)}>
             <OrgChainPanel data={orgHierarchy} fetchState={orgChainFetch} apiTarget={apiTarget} />
           </Overlay>
         );

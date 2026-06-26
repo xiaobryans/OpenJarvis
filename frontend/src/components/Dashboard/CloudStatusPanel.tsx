@@ -73,7 +73,7 @@ export function CloudStatusPanel() {
               </span>
               {isOnline && (
                 <span className="text-xs font-medium" style={{ color: 'var(--color-text-tertiary)' }}>
-                  Jarvis Cloud Node
+                  VANTA Cloud Node
                 </span>
               )}
             </div>
@@ -95,7 +95,7 @@ export function CloudStatusPanel() {
             <QuickInfoCard
               icon={<Activity size={14} />}
               label="Runtime"
-              value={bundle.runtime ?? 'OpenJarvis'}
+              value={bundle.runtime ?? 'VANTA'}
               status="pass"
             />
             <QuickInfoCard
@@ -134,7 +134,7 @@ export function CloudStatusPanel() {
             </div>
             <div className="grid grid-cols-2 gap-4 text-xs">
               <DetailRow label="Hostname" value={bundle.hostname ?? 'openclaw-mobile'} />
-              <DetailRow label="Runtime" value={bundle.runtime ?? 'OpenJarvis'} />
+              <DetailRow label="Runtime" value={bundle.runtime ?? 'VANTA'} />
               <DetailRow label="Tailnet IP" value={bundle.tailscale_ip ?? '100.118.81.37'} />
               <DetailRow label="Storage Source" value={bundle.storage ?? 'aws-s3'} />
               <DetailRow label="Action Gate" value={bundle.action_gate ?? 'token-required'} />

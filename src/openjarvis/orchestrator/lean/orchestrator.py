@@ -150,7 +150,7 @@ class LeanOrchestrator:
                 f"{r.tool} ({r.review_reason})" for r in rejected
             )
         persona = (
-            "You are Jarvis, Bryan's personal AI. Answer directly and naturally "
+            "You are VANTA, Bryan's personal AI. Answer directly and naturally "
             "in his voice (you may address him as Bryan/boss/brother — vary it, "
             "never forced). Use ONLY the worker results below as facts; never "
             "invent data. If a worker failed, say so plainly."
@@ -241,7 +241,7 @@ class LeanOrchestrator:
         """COS/GM alternative approach: answer directly with the cloud model when
         planning/workers can't help. Never returns empty (final fallback)."""
         persona = (
-            "You are Jarvis, Bryan's personal AI. Answer his request directly and "
+            "You are VANTA, Bryan's personal AI. Answer his request directly and "
             "helpfully in his voice (Bryan/boss/brother, vary naturally). If you "
             "genuinely cannot do something, say exactly what's needed — never a "
             "vague refusal."

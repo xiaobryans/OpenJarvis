@@ -1,5 +1,5 @@
 /**
- * Plan 4-6 — Jarvis OS API client.
+ * Plan 4-6 — VANTA OS API client.
  *
  * Typed wrappers for:
  *   /v1/rules/*           — Rules Engine

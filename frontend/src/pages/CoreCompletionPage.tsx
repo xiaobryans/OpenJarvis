@@ -41,7 +41,7 @@ export default function CoreCompletionPage() {
     <div className="p-6 space-y-6" style={{ color: 'var(--color-text)' }}>
       <div className="flex items-center gap-3">
         <Trophy size={24} style={{ color: 'var(--color-accent)' }} />
-        <h1 className="text-2xl font-bold">Jarvis Core OS Completion Gate</h1>
+        <h1 className="text-2xl font-bold">VANTA Core OS Completion Gate</h1>
       </div>
 
       {/* No fake completion badge */}

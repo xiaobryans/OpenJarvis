@@ -62,7 +62,7 @@ export function AutonomousOrgPage() {
         <div className="flex items-start gap-2">
           <AlertTriangle size={16} style={{ color: 'var(--color-warning, #f9e2af)', flexShrink: 0, marginTop: 2 }} />
           <p className="text-sm" style={{ color: 'var(--color-text)' }}>
-            One Jarvis PA identity. Internal team only. Autonomous execution always requires approval.
+            One VANTA identity. Internal team only. Autonomous execution always requires approval.
           </p>
         </div>
       </div>
@@ -73,7 +73,7 @@ export function AutonomousOrgPage() {
           { label: 'Active Roles', value: status?.active_roles ?? 3 },
           { label: 'Total Roles', value: status?.internal_team?.length ?? 6 },
           { label: 'Autonomous Exec', value: 'Never' },
-          { label: 'PA Voice', value: status?.single_pa_voice || 'Jarvis' },
+          { label: 'PA Voice', value: status?.single_pa_voice || 'VANTA' },
         ].map(s => (
           <div key={s.label} className="p-3 rounded-lg" style={{ background: 'var(--color-bg-secondary)', border: '1px solid var(--color-border)' }}>
             <div className="text-xs mb-1" style={{ color: 'var(--color-text-tertiary)' }}>{s.label}</div>

@@ -1,24 +1,24 @@
 /**
- * Jarvis PA identity, system prompt, and chat context builder.
+ * VANTA identity, system prompt, and chat context builder.
  *
  * Shared by normal chat (JarvisCockpitPage) and Cmd+K chat (InputArea) so
- * Jarvis PA identity, conversation history, and memory context are always
+ * VANTA identity, conversation history, and memory context are always
  * consistent across all chat surfaces.
  */
 import { searchMemory } from './api';
 import type { ChatMessage } from '../types';
 
 // ---------------------------------------------------------------------------
-// Jarvis PA base system prompt
+// VANTA base system prompt
 // ---------------------------------------------------------------------------
 
-export const JARVIS_PA_BASE_PROMPT = `You are Jarvis PA — Bryan Aw's personal AI assistant and the single user-facing front door for the OpenJarvis system.
+export const JARVIS_PA_BASE_PROMPT = `You are VANTA — Bryan Aw's personal AI assistant and the single user-facing front door for the VANTA system.
 
 IDENTITY:
-- Your name is Jarvis. Bryan may call you Jarvis, J, or Jarvis PA.
+- Your name is VANTA. Bryan may call you VANTA, V, or boss's assistant.
 - You are NOT ChatGPT, GPT-4o, Claude, Gemini, or any third-party AI product. Never identify as such.
 - Never reveal the underlying model, provider, or API routing. These are internal implementation details.
-- Always speak as Jarvis PA — the front door. You are Bryan's assistant, not any backend worker, vendor model, or commercial AI.
+- Always speak as VANTA — the front door. You are Bryan's assistant, not any backend worker, vendor model, or commercial AI.
 
 CAPABILITIES AND ROUTING:
 - You route internally: direct answer, memory retrieval, conversation history, project context, connector, worker team, approval escalation.
@@ -75,7 +75,7 @@ export async function fetchRelevantMemory(
 // ---------------------------------------------------------------------------
 
 /**
- * Build the Jarvis PA system prompt, optionally enriched with retrieved memory.
+ * Build the VANTA system prompt, optionally enriched with retrieved memory.
  */
 export function buildJarvisSystemPrompt(memoryItems: MemoryItem[] = []): string {
   if (memoryItems.length === 0) return JARVIS_PA_BASE_PROMPT;
@@ -89,11 +89,11 @@ export function buildJarvisSystemPrompt(memoryItems: MemoryItem[] = []): string 
 }
 
 // ---------------------------------------------------------------------------
-// Full Jarvis PA messages builder
+// Full VANTA messages builder
 // ---------------------------------------------------------------------------
 
 /**
- * Build the complete messages array for a Jarvis PA chat request.
+ * Build the complete messages array for a VANTA chat request.
  *
  * @param userMessage  Current user turn text.
  * @param priorTurns   Prior conversation turns (user + assistant) EXCLUDING the

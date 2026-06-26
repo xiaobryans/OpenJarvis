@@ -4,7 +4,7 @@
  * Three layers:
  *   1. State-reactive radial gradient — phase drives hue (more vivid than before)
  *   2. Neural/circuit grid field at low opacity (gives depth and spatial reference)
- *   3. Edge vignette — pulls focus to center where Jarvis core lives
+ *   3. Edge vignette — pulls focus to center where VANTA core lives
  *
  * Pure CSS — no assets. Phase-reactive but never fakes state.
  */

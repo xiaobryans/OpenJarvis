@@ -1,15 +1,15 @@
 /**
- * OrgChainPanel — Jarvis PA Organisation Chain Visualization
+ * OrgChainPanel — VANTA Organisation Chain Visualization
  *
  * Consumes GET /v1/plan9/org-hierarchy and renders:
  *   1. Canonical execution chain: Bryan → PA → COS/GM → Managers → Workers → Reviewer → PA → Bryan
  *   2. Approval chain: Worker/Manager → Manager validates → Reviewer checks risk
- *      → COS/GM escalates → Jarvis PA asks Bryan → Bryan approves/denies → COS/GM routes back
+ *      → COS/GM escalates → VANTA asks Bryan → Bryan approves/denies → COS/GM routes back
  *   3. Node table by layer
  *   4. Loop-state legend (intake → done/blocked/failed/approval-needed)
  *
  * Design invariants (enforced visually):
- *   - Bryan only interacts through Jarvis PA.
+ *   - Bryan only interacts through VANTA.
  *   - Workers/managers/COS/GM never appear as direct user-facing chat participants.
  *   - Reviewer is independent — self-verify blocked.
  *   - No fake live activity. Real data from backend or honest unavailable state.
@@ -59,7 +59,7 @@ export interface OrgChainFetchState {
 // ---------------------------------------------------------------------------
 
 const LAYER_META: Record<string, { color: string; icon: string; label: string }> = {
-  jarvis_pa:  { color: '#22d3ee', icon: '🔷', label: 'Jarvis PA' },
+  jarvis_pa:  { color: '#22d3ee', icon: '🔷', label: 'VANTA' },
   cos_gm:     { color: '#a78bfa', icon: '🎛', label: 'COS / GM' },
   manager:    { color: '#34d399', icon: '📋', label: 'Manager' },
   worker:     { color: '#60a5fa', icon: '⚙️', label: 'Worker' },
@@ -184,18 +184,18 @@ function ChainRow({ steps }: { steps: Array<{ label: string; layer: string; note
 // ---------------------------------------------------------------------------
 
 const LOOP_STATES: Array<{ state: string; color: string; desc: string }> = [
-  { state: 'intake',           color: '#60a5fa', desc: 'Bryan request received by Jarvis PA' },
+  { state: 'intake',           color: '#60a5fa', desc: 'Bryan request received by VANTA' },
   { state: 'decomposition',    color: '#a78bfa', desc: 'COS/GM plans activation: managers, workers' },
   { state: 'assignment',       color: '#34d399', desc: 'Domain managers assigned per task type' },
   { state: 'worker_execution', color: '#60a5fa', desc: 'Workers execute (dry-run safe by default)' },
   { state: 'manager_review',   color: '#34d399', desc: 'Domain manager reviews worker outputs' },
   { state: 'verifier_check',   color: '#fb923c', desc: 'Independent reviewer/tester gate (when required)' },
   { state: 'cos_gm_integrate', color: '#a78bfa', desc: 'COS/GM integrates all results' },
-  { state: 'pa_summary',       color: '#22d3ee', desc: 'Jarvis PA summarises and reports to Bryan' },
+  { state: 'pa_summary',       color: '#22d3ee', desc: 'VANTA summarises and reports to Bryan' },
   { state: 'done',             color: '#3ddc97', desc: 'Complete — no further action needed' },
   { state: 'blocked',          color: '#f59e0b', desc: 'Stopped — blocker reported, Bryan informed' },
-  { state: 'failed',           color: '#ef4444', desc: 'Failed — fix list surfaced via Jarvis PA' },
-  { state: 'approval_needed',  color: '#fbbf24', desc: 'Bryan must approve/deny through Jarvis PA' },
+  { state: 'failed',           color: '#ef4444', desc: 'Failed — fix list surfaced via VANTA' },
+  { state: 'approval_needed',  color: '#fbbf24', desc: 'Bryan must approve/deny through VANTA' },
 ];
 
 function LoopStateLegend() {
@@ -311,10 +311,10 @@ export function OrgChainPanel({ data, fetchState, apiTarget }: OrgChainPanelProp
         <div style={{ marginTop: 12, fontSize: 10, color: 'rgba(120,160,200,0.5)', lineHeight: 1.7 }}>
           <div>Canonical chain (static fallback):</div>
           <div style={{ fontFamily: 'monospace', color: 'rgba(160,200,240,0.5)', fontSize: 9 }}>
-            Bryan → Jarvis PA → COS/GM → Domain Managers → Worker Teams
+            Bryan → VANTA → COS/GM → Domain Managers → Worker Teams
           </div>
           <div style={{ fontFamily: 'monospace', color: 'rgba(160,200,240,0.5)', fontSize: 9 }}>
-            → Reviewer/Tester/Verifier (independent) → COS/GM → Jarvis PA → Bryan
+            → Reviewer/Tester/Verifier (independent) → COS/GM → VANTA → Bryan
           </div>
         </div>
       </div>
@@ -323,13 +323,13 @@ export function OrgChainPanel({ data, fetchState, apiTarget }: OrgChainPanelProp
 
   const canonicalSteps = [
     { label: 'Bryan', layer: 'jarvis_pa', note: 'owner' },
-    { label: 'Jarvis PA', layer: 'jarvis_pa', note: 'only user-facing' },
+    { label: 'VANTA', layer: 'jarvis_pa', note: 'only user-facing' },
     { label: 'COS / GM', layer: 'cos_gm', note: 'coordinator' },
     { label: 'Domain Managers', layer: 'manager', note: 'domain owners' },
     { label: 'Worker Teams', layer: 'worker', note: 'execution cells' },
     { label: 'Reviewer', layer: 'reviewer', note: 'independent gate' },
     { label: 'COS / GM', layer: 'cos_gm', note: 'integrate' },
-    { label: 'Jarvis PA', layer: 'jarvis_pa', note: 'summary/approval' },
+    { label: 'VANTA', layer: 'jarvis_pa', note: 'summary/approval' },
     { label: 'Bryan', layer: 'jarvis_pa', note: 'response' },
   ];
 
@@ -338,7 +338,7 @@ export function OrgChainPanel({ data, fetchState, apiTarget }: OrgChainPanelProp
     { label: 'Domain Manager', layer: 'manager', note: 'validates need' },
     { label: 'Reviewer', layer: 'reviewer', note: 'checks risk' },
     { label: 'COS / GM', layer: 'cos_gm', note: 'escalates' },
-    { label: 'Jarvis PA', layer: 'jarvis_pa', note: 'asks Bryan' },
+    { label: 'VANTA', layer: 'jarvis_pa', note: 'asks Bryan' },
     { label: 'Bryan', layer: 'jarvis_pa', note: 'approves/denies' },
     { label: 'COS / GM', layer: 'cos_gm', note: 'routes back down' },
   ];
@@ -354,7 +354,7 @@ export function OrgChainPanel({ data, fetchState, apiTarget }: OrgChainPanelProp
         fontSize: 10, color: 'rgba(140,210,240,0.75)', lineHeight: 1.6,
       }}>
         <span style={{ color: '#22d3ee', fontWeight: 600 }}>Design invariant: </span>
-        Bryan only interacts through <span style={{ color: '#22d3ee' }}>Jarvis PA</span>.
+        Bryan only interacts through <span style={{ color: '#22d3ee' }}>VANTA</span>.
         Workers, managers, reviewer, and COS/GM are not direct Bryan chat participants.
         <span style={{ marginLeft: 8, color: data.reviewer_self_verify_blocked ? '#3ddc97' : '#ef4444' }}>
           {data.reviewer_self_verify_blocked ? '✓' : '✗'} reviewer self-verify blocked

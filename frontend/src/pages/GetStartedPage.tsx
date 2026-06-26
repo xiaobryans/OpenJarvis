@@ -1,5 +1,5 @@
 /**
- * GetStartedPage — Jarvis OS Onboarding + Capability Tour.
+ * GetStartedPage — VANTA OS Onboarding + Capability Tour.
  *
  * Covers:
  *   • What Jarvis is
@@ -278,11 +278,11 @@ function OnboardingContent({ healthy }: { healthy: boolean | null }) {
           <Target size={28} />
         </div>
         <h1 className="text-2xl font-bold mb-2 tracking-tight" style={{ color: 'var(--color-text)', fontFamily: 'var(--font-display)' }}>
-          Jarvis OS
+          VANTA OS
         </h1>
         <p className="text-sm mb-4 max-w-lg mx-auto leading-relaxed" style={{ color: 'var(--color-text-secondary)' }}>
           A futuristic personal AI operating platform — not just a chatbot.
-          Jarvis manages missions, coordinates agents, remembers everything, and acts on your behalf
+          VANTA manages missions, coordinates agents, remembers everything, and acts on your behalf
           with explicit approval for sensitive operations.
         </p>
         <div className="flex items-center justify-center gap-2 flex-wrap">
@@ -294,7 +294,7 @@ function OnboardingContent({ healthy }: { healthy: boolean | null }) {
                 className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium cursor-pointer"
                 style={{ background: 'var(--color-accent)', color: 'var(--color-on-accent)' }}
               >
-                <MessageSquare size={15} /> Open Jarvis <ArrowRight size={14} />
+                <MessageSquare size={15} /> Open VANTA <ArrowRight size={14} />
               </button>
             </>
           ) : healthy === false ? (
@@ -333,7 +333,7 @@ function OnboardingContent({ healthy }: { healthy: boolean | null }) {
             icon={Smartphone}
             title="AWS Secure Runtime"
             description="Always-on backend on AWS ECS Fargate — MacBook-off capable."
-            examples={['Jarvis runs even when MacBook is off', 'HTTPS via API Gateway TLS', 'Mobile-accessible from anywhere', 'Cross-device continuity via Gist + S3']}
+            examples={['VANTA runs even when MacBook is off', 'HTTPS via API Gateway TLS', 'Mobile-accessible from anywhere', 'Cross-device continuity via Gist + S3']}
             live
           />
           <CapabilityCard
@@ -379,11 +379,11 @@ function OnboardingContent({ healthy }: { healthy: boolean | null }) {
       {/* How approvals work */}
       <Section icon={Shield} title="How Approvals Work">
         <p className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
-          Jarvis never takes a sensitive action without your explicit approval. Here's the flow:
+          VANTA never takes a sensitive action without your explicit approval. Here's the flow:
         </p>
         <div className="flex flex-col gap-2">
           {[
-            { step: '1', label: 'Jarvis proposes an action', detail: 'Description, risk level (low → critical), and which agent will execute it.' },
+            { step: '1', label: 'VANTA proposes an action', detail: 'Description, risk level (low → critical), and which agent will execute it.' },
             { step: '2', label: 'Approval required', detail: 'High/critical actions pause until you approve. Low-risk actions may proceed automatically.' },
             { step: '3', label: 'Approve or Deny', detail: 'Via Mission Control on desktop or mobile. Approve lets it proceed. Deny cancels it permanently.' },
             { step: '4', label: 'Audit trail', detail: 'Every approval and denial is logged in the execution log. No action can bypass this gate.' },
@@ -404,7 +404,7 @@ function OnboardingContent({ healthy }: { healthy: boolean | null }) {
           ))}
         </div>
         <p className="text-[10px] italic" style={{ color: 'var(--color-text-tertiary)' }}>
-          Plan 8 (Trusted Delegation) will expand what actions Jarvis can take autonomously —
+          Plan 8 (Trusted Delegation) will expand what actions VANTA can take autonomously —
           but only after Bryan reviews and explicitly enables it. Not started yet.
         </p>
       </Section>
@@ -412,7 +412,7 @@ function OnboardingContent({ healthy }: { healthy: boolean | null }) {
       {/* Mobile / desktop continuity */}
       <Section icon={Smartphone} title="Mobile & Desktop Continuity">
         <p className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
-          Jarvis runs on AWS ECS Fargate. When your MacBook is off, Jarvis keeps running.
+          VANTA runs on AWS ECS Fargate. When your MacBook is off, VANTA keeps running.
           You can reach it from your phone via the mobile PWA.
         </p>
         <div className="flex flex-col gap-2">
@@ -420,7 +420,7 @@ function OnboardingContent({ healthy }: { healthy: boolean | null }) {
             { label: 'Backend runtime', note: 'AWS ECS Fargate — always-on, MacBook-off capable (HTTPS via API Gateway).' },
             { label: 'State sync', note: 'Cross-device continuity via GitHub Gist + S3 memory sync.' },
             { label: 'Mobile PWA', note: 'Full-capability mobile view — same actions as desktop, compact layout.' },
-            { label: 'Approval on mobile', note: 'Approve / deny Jarvis actions from your phone while away from desktop.' },
+            { label: 'Approval on mobile', note: 'Approve / deny VANTA actions from your phone while away from desktop.' },
           ].map(({ label, note }) => (
             <div key={label} className="flex items-start gap-2 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
               <CheckCircle2 size={12} style={{ color: 'var(--color-status-live)', flexShrink: 0, marginTop: 2 }} />
@@ -448,7 +448,7 @@ function OnboardingContent({ healthy }: { healthy: boolean | null }) {
             'Voice / US13: parked and unsafe. Not shown as available.',
             'Apple Signing: enrollment pending. Auto-updater will not work until enrolled.',
             'Gmail / Calendar / Slack / Telegram: blocked until credentials are set up.',
-            'Plan 8 (Trusted Delegation): not started. Jarvis does not have expanded autonomous authority.',
+            'Plan 8 (Trusted Delegation): not started. VANTA does not have expanded autonomous authority.',
             'Final hostile/lazy-user cutover: not started. Not ready for adversarial use.',
             'Sensitive data actions (billing, deletions, production deploys): hard-gated, require explicit approval.',
           ].map((item, i) => (
@@ -464,7 +464,7 @@ function OnboardingContent({ healthy }: { healthy: boolean | null }) {
       <Section icon={RefreshCw} title="What's Next — Roadmap">
         <div className="flex flex-col gap-2">
           {[
-            { label: 'Plan 8 — Trusted Delegation', status: 'not_started' as const, note: 'Expands what Jarvis can do autonomously. Requires Bryan review before starting.' },
+            { label: 'Plan 8 — Trusted Delegation', status: 'not_started' as const, note: 'Expands what VANTA can do autonomously. Requires Bryan review before starting.' },
             { label: 'Voice Safety Sprint (US13)', status: 'parked' as const, note: 'Dedicated sprint to safely implement voice. Cannot start until current parked status is resolved.' },
             { label: 'Apple Signing', status: 'pending' as const, note: 'Waiting for Apple Developer enrollment. Unblocks auto-updater.' },
             { label: 'Gmail / Calendar OAuth', status: 'blocked' as const, note: 'Set up Google Cloud OAuth credentials to activate.' },

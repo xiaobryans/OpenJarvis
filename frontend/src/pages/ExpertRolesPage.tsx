@@ -6,7 +6,7 @@
  * and lets the user dry-run role selection for a typed request.
  *
  * Important: Expert roles are internal routing aids only.
- * Single Jarvis PA voice is preserved externally — roles never speak directly.
+ * Single VANTA voice is preserved externally — roles never speak directly.
  *
  * All data from real /v1/expert-roles/* routes.
  */
@@ -101,7 +101,7 @@ function RoutingStatusPanel({ status }: { status: RoutingStatus | null }) {
       </div>
       <div className="px-4 py-3 grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2 text-xs">
         <div className="flex items-center gap-2">
-          <span style={{ color: C.textTert }}>Jarvis PA Identity:</span>
+          <span style={{ color: C.textTert }}>VANTA Identity:</span>
           <span
             className="inline-flex items-center gap-1 text-[10px] font-mono px-1.5 py-0.5 rounded"
             style={{ background: 'rgba(166,227,161,0.10)', color: C.success }}
@@ -315,7 +315,7 @@ function DryRunPanel({ roles }: { roles: ExpertRole[] }) {
         <Zap size={14} style={{ color: C.accent }} />
         <span className="text-sm font-medium" style={{ color: C.text }}>Dry-run role selection</span>
         <span className="text-xs ml-auto" style={{ color: C.textTert }}>
-          Internal routing only — single Jarvis PA voice preserved externally
+          Internal routing only — single VANTA voice preserved externally
         </span>
       </div>
       <div className="px-4 py-3">
@@ -344,7 +344,7 @@ function DryRunPanel({ roles }: { roles: ExpertRole[] }) {
           <div className="mt-3">
             <div className="text-xs mb-2" style={{ color: C.textTert }}>
               {result!.count === 0
-                ? 'No roles matched — Jarvis PA handles this without expert routing'
+                ? 'No roles matched — VANTA handles this without expert routing'
                 : `${result!.count} role${result!.count !== 1 ? 's' : ''} selected (internal routing aid only)`}
             </div>
             {result!.count > 0 && (
@@ -451,7 +451,7 @@ export function ExpertRolesPage() {
             </button>
           </div>
           <p className="text-sm mt-1" style={{ color: C.textSec }}>
-            Internal routing registry — single Jarvis PA voice always preserved externally.
+            Internal routing registry — single VANTA voice always preserved externally.
             Roles inform response depth and framing; they never speak as separate personas.
             All data from{' '}
             <code style={{ fontFamily: 'monospace', fontSize: 11, color: C.textTert }}>/v1/expert-roles/*</code>.

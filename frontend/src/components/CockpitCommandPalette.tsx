@@ -29,7 +29,7 @@ export interface PaletteCommand {
 
 const ALL_COMMANDS: PaletteCommand[] = [
   // Primary modes
-  { id: 'go-mission',    icon: '🎯', label: 'Mission Control',          group: 'Modes', mode: 'mission',    detail: 'Jarvis core + chat + canonical chain' },
+  { id: 'go-mission',    icon: '🎯', label: 'Mission Control',          group: 'Modes', mode: 'mission',    detail: 'VANTA core + chat + canonical chain' },
   { id: 'go-workbench',  icon: '🔧', label: 'Workbench',                group: 'Modes', mode: 'workbench',  detail: 'Coding / testing / workflow tools' },
   { id: 'go-approvals',  icon: '🛑', label: 'Approvals',                 group: 'Modes', mode: 'approvals',  detail: 'Pending actions requiring Bryan approval' },
   { id: 'go-audit',      icon: '📜', label: 'Audit / Logs',              group: 'Modes', mode: 'audit',      detail: 'Authority audit trail & event log' },
@@ -53,7 +53,7 @@ const ALL_COMMANDS: PaletteCommand[] = [
   { id: 'mod-skills',    icon: '🎓', label: 'Skills',                    group: 'System', mode: 'system',   detail: 'Pending Plan 4' },
   { id: 'mod-settings',  icon: '⚙️',  label: 'Settings',                  group: 'System', mode: 'system',   detail: 'Server URL, model, theme' },
   // Mission actions
-  { id: 'open-chat',     icon: '💬', label: 'Open Chat / Command',       group: 'Actions', mode: 'mission',  detail: 'Send a message to Jarvis PA' },
+  { id: 'open-chat',     icon: '💬', label: 'Open Chat / Command',       group: 'Actions', mode: 'mission',  detail: 'Send a message to VANTA' },
   { id: 'open-approval', icon: '✅', label: 'Review Pending Approvals',  group: 'Actions', mode: 'approvals', detail: 'View and approve/deny queued actions' },
 ];
 

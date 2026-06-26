@@ -808,7 +808,7 @@ export function WorkbenchPage() {
     setLocalNotifyPermission(permission);
 
     if (permission === 'granted') {
-      notifyLocally('OpenJarvis Workbench alerts enabled', 'You will receive local Workbench status alerts on this device.');
+      notifyLocally('VANTA Workbench alerts enabled', 'You will receive local Workbench status alerts on this device.');
     }
   }, [notifyLocally]);
 
@@ -937,7 +937,7 @@ export function WorkbenchPage() {
       <div className="flex items-center gap-3 px-4 py-3 border-b shrink-0" style={{ borderColor: 'var(--color-border)' }}>
         <Code2 size={18} style={{ color: 'var(--color-accent)' }} />
         <span className="font-semibold text-sm" style={{ color: 'var(--color-text-primary)' }}>
-          Jarvis Coding Workbench
+          VANTA Coding Workbench
         </span>
         <span className="text-xs px-2 py-0.5 rounded font-mono" style={{ background: 'var(--color-bg-secondary)', color: 'var(--color-text-secondary)' }}>
           US14A — Cursor/Windsurf Replacement
@@ -1011,7 +1011,7 @@ export function WorkbenchPage() {
               style={{ background: 'var(--color-bg-secondary)', border: '1px solid var(--color-border)', color: 'var(--color-text-primary)' }}
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
-              placeholder="Describe the coding task for Jarvis Manager…"
+              placeholder="Describe the coding task for VANTA Manager…"
             />
           </div>
 
@@ -1146,7 +1146,7 @@ export function WorkbenchPage() {
                   <div className="flex flex-col items-center justify-center h-48 gap-3" style={{ color: 'var(--color-text-secondary)' }}>
                     <Code2 size={32} className="opacity-30" />
                     <p className="text-sm">Enter a task prompt and click <strong>Plan Only</strong> or <strong>Execute</strong></p>
-                    <p className="text-xs opacity-60">Jarvis Manager will decompose the task into subtasks and route each to the best worker tier</p>
+                    <p className="text-xs opacity-60">VANTA Manager will decompose the task into subtasks and route each to the best worker tier</p>
                   </div>
                 )}
                 {plan && (
@@ -1154,7 +1154,7 @@ export function WorkbenchPage() {
                     <PlanningDetailsPanel plan={plan} />
                     <div className="text-xs font-medium mb-2 flex items-center gap-2" style={{ color: 'var(--color-text-secondary)' }}>
                       <Cpu size={12} />
-                      {plan.subtasks.length} subtasks &bull; routed by Jarvis Manager
+                      {plan.subtasks.length} subtasks &bull; routed by VANTA Manager
                     </div>
                     {plan.subtasks.map((st) => (
                       <SubtaskRow

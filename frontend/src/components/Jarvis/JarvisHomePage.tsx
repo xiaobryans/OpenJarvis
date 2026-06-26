@@ -1,5 +1,5 @@
 /**
- * JarvisHomePage — voice-first Jarvis OS home view.
+ * JarvisHomePage — voice-first VANTA OS home view.
  *
  * Clean Plan 2 rebuild on top of pre-Plan-2 canonical voice path.
  *

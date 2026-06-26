@@ -140,7 +140,7 @@ export interface VoiceSessionActions {
 export const VOICE_STATE_LABEL: Record<VoiceState, string> = {
   idle: 'Voice off',
   listening: 'Listening…',
-  wake_listening: 'Listening for "Hey Jarvis"…',
+  wake_listening: 'Listening for "Hey VANTA"…',
   wake_detected: 'Wake word detected',
   acknowledging: 'Acknowledged',
   active_conversation: 'Conversation active',

@@ -1,7 +1,7 @@
 /**
  * LivingOrb — central state-aware breathing orb.
  *
- * Tier 1 of the voice-first Jarvis OS. State drives color, pulse rate, and
+ * Tier 1 of the voice-first VANTA OS. State drives color, pulse rate, and
  * inner shimmer. Pure CSS — no Three.js to keep the packaged bundle tight
  * and avoid the dead-3D-orb failure mode from Plan 2.
  *

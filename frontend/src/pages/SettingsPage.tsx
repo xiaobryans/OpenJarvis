@@ -289,7 +289,7 @@ export function SettingsPage() {
         <div className="flex flex-col gap-4">
           {/* Appearance */}
           <Section title="Appearance">
-            <SettingRow label="Theme" description="Choose how OpenJarvis looks">
+            <SettingRow label="Theme" description="Choose how VANTA looks">
               <div className="flex gap-1 p-0.5 rounded-lg" style={{ background: 'var(--color-bg-secondary)' }}>
                 {themeOptions.map((opt) => {
                   const isActive = settings.theme === opt.value;
@@ -617,12 +617,12 @@ export function SettingsPage() {
             </SettingRow>
 
             {/* Cmd+K — text/transcript/chat fallback ONLY (no model picker) */}
-            <SettingRow label="Text & transcript fallback" description="Cmd+K — opens the chat/transcript fallback for typing to Jarvis and viewing history. Does not open a model or settings picker.">
+            <SettingRow label="Text & transcript fallback" description="Cmd+K — opens the chat/transcript fallback for typing to VANTA and viewing history. Does not open a model or settings picker.">
               <span className="font-mono text-xs px-2 py-1 rounded" style={{ background: 'var(--color-bg-tertiary)', color: 'var(--color-text-secondary)' }}>
                 ⌘K
               </span>
             </SettingRow>
-            <SettingRow label="Model routing" description="Automatic / internal — Jarvis selects the model for each task. Model management is available in the sidebar for debugging only (no hotkey).">
+            <SettingRow label="Model routing" description="Automatic / internal — VANTA selects the model for each task. Model management is available in the sidebar for debugging only (no hotkey).">
               <span className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--color-success, #22c55e)' }}>
                 <Check size={11} /> Automatic
               </span>
@@ -649,7 +649,7 @@ export function SettingsPage() {
             </SettingRow>
 
             {/* Path 3: True wake-word */}
-            <SettingRow label="Wake-word (voice wake)" description="'Hey Jarvis' — run: jarvis voice start">
+            <SettingRow label="Wake-word (voice wake)" description="'Hey VANTA' — run: jarvis voice start">
               <div className="flex items-center gap-1.5 text-xs">
                 <span
                   className="w-2 h-2 rounded-full shrink-0"
@@ -879,7 +879,7 @@ export function SettingsPage() {
           <Section title="About">
             <div className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
               <p className="mb-2">
-                <span className="font-semibold" style={{ color: 'var(--color-text)' }}>OpenJarvis</span> — Programming abstractions for on-device AI.
+                <span className="font-semibold" style={{ color: 'var(--color-text)' }}>VANTA</span> — Programming abstractions for on-device AI.
               </p>
               <p className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
                 Part of Intelligence Per Watt, a research initiative at Stanford SAIL.

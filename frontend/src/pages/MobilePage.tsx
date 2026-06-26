@@ -1131,7 +1131,7 @@ export function MobilePage() {
             <Card title="Chat — Real LLM (gpt-4o-mini via AWS)">
               <div style={{ display: 'flex', gap: '6px', marginBottom: '8px' }}>
                 <input
-                  placeholder="Message Jarvis..."
+                  placeholder="Message VANTA..."
                   value={chatInput}
                   onChange={(e) => setChatInput(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter') handleChat(); }}

@@ -1115,7 +1115,7 @@ export function MissionControlPage() {
                 <CheckCircle2 size={20} className="mx-auto mb-2" style={{ color: 'var(--color-success, #22c55e)' }} />
                 <p className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>No pending approvals</p>
                 <p className="text-[10px] mt-1" style={{ color: 'var(--color-text-tertiary)' }}>
-                  Jarvis will request your approval before sensitive actions.
+                  VANTA will request your approval before sensitive actions.
                 </p>
               </div>
             ) : (
@@ -1368,7 +1368,7 @@ export function MissionControlPage() {
           </Panel>
 
           {/* US15 Capabilities */}
-          <Panel title="Jarvis Capabilities">
+          <Panel title="VANTA Capabilities">
             {capabilitiesLoading ? (
               <div className="flex justify-center py-4">
                 <Loader2 size={16} className="animate-spin" style={{ color: 'var(--color-text-tertiary)' }} />

@@ -115,7 +115,7 @@ export function HistoryViewer() {
           color: 'var(--color-text-tertiary)',
         }}
       >
-        Read-only history &middot; talk to Jarvis PA in the main cockpit &middot;{' '}
+        Read-only history &middot; talk to VANTA in the main cockpit &middot;{' '}
         <kbd className="font-mono">Esc</kbd> to close
       </div>
     </div>
