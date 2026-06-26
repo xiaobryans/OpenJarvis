@@ -2,8 +2,8 @@
 
 Ties together the verified pieces:
   - mic capture  : sounddevice (base dep)
-  - wake word    : Deepgram STT on rolling mic chunks, watching for "hey vanta"
-  - command STT  : Deepgram (transcribe the utterance after the wake word)
+  - wake word    : OpenAI Whisper on rolling mic chunks, watching for "hey vanta"
+  - command STT  : OpenAI Whisper (transcribe the utterance after the wake word)
   - brain        : the lean COS/GM orchestrator (real tools + GPT-4o)
   - TTS          : ElevenLabs -> mp3 -> macOS `afplay` (no extra deps)
 
@@ -20,7 +20,7 @@ Behaviour:
 
 NOTE: this requires real audio hardware (mic + speaker), so it cannot be
 verified in a headless environment — it is built and ready to run on the Mac.
-Needs ELEVENLABS_API_KEY + DEEPGRAM_API_KEY (both configured).
+Needs ELEVENLABS_API_KEY + OPENAI_API_KEY (both configured).
 """
 
 from __future__ import annotations
@@ -37,10 +37,16 @@ from typing import Callable, Optional
 logger = logging.getLogger("openjarvis.voice_loop")
 
 WAKE_WORD = os.environ.get("JARVIS_WAKE_WORD", "Hey VANTA")
-# Deepgram transcribes "Hey VANTA" as "Hey, Vanta." — we normalize (strip
-# punctuation, lowercase) before matching, so these are punctuation-free forms.
-_WAKE_TOKENS = ("hey vanta", "hey venta", "hey banta", "hey santa", "hey manta",
-                "hi vanta", "a vanta", "hey vance", "hey vahnta", "vanta")
+# Whisper transcribes "Hey VANTA" accurately (usually "Hey Vanta" / "Hey, VANTA")
+# but "VANTA" is an uncommon proper noun, so allow a tight set of close phonetic
+# variants. We normalize (strip punctuation, lowercase) then match ANY of these.
+# NOTE: kept deliberately narrow — common English words (e.g. "event") are
+# excluded so normal speech never false-triggers the wake word.
+_WAKE_TOKENS = (
+    "vanta", "venta", "vahnta", "banta", "vanda", "fanta", "manta",
+    "hey vanta", "hey venta", "hey banta", "hey vanda", "hey fanta",
+    "hi vanta", "hey vance", "hey vantas",
+)
 _INTERRUPT = ("stop", "hold on", "wait", "cancel")
 _CHANNELS = 1
 _DEFAULT_RATE = 48000  # MacBook built-in mic native rate
@@ -53,6 +59,31 @@ def _normalize(text: str) -> str:
     'Hey, Vanta.' -> 'hey vanta'."""
     import re
     return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9\s]", " ", (text or "").lower())).strip()
+
+
+def whisper_transcribe(wav_bytes: bytes) -> str:
+    """Transcribe WAV audio via OpenAI Whisper (more accurate for Singapore
+    English/accents than Deepgram). Returns the transcript text (or "")."""
+    import os
+    import httpx
+    key = os.environ.get("OPENAI_API_KEY", "")
+    if not key:
+        return ""
+    try:
+        with httpx.Client(timeout=30) as c:
+            r = c.post(
+                "https://api.openai.com/v1/audio/transcriptions",
+                headers={"Authorization": f"Bearer {key}"},
+                files={"file": ("audio.wav", wav_bytes, "audio/wav")},
+                # 'prompt' biases Whisper toward the wake word spelling so
+                # "VANTA" isn't misheard as "Event"/"Banta".
+                data={"model": "whisper-1", "language": "en",
+                      "prompt": "Hey VANTA. VANTA is the assistant's name."},
+            )
+            r.raise_for_status()
+            return (r.json().get("text", "") or "").strip()
+    except Exception:
+        return ""
 
 
 def _in_silent_hours() -> bool:
@@ -87,9 +118,7 @@ class VoiceLoop:
     def _ensure(self) -> None:
         from openjarvis.core.env_loader import ensure_local_env_loaded
         ensure_local_env_loaded()
-        if self._stt is None:
-            from openjarvis.speech.deepgram import DeepgramSpeechBackend
-            self._stt = DeepgramSpeechBackend()
+        # STT is OpenAI Whisper (see whisper_transcribe) — no Deepgram client.
         if self._tts is None:
             from openjarvis.speech.elevenlabs_tts import ElevenLabsTTSBackend
             self._tts = ElevenLabsTTSBackend()
@@ -136,9 +165,9 @@ class VoiceLoop:
     def _transcribe(self, pcm: bytes, language: str = "en") -> str:
         try:
             wav = _pcm_to_wav_bytes(pcm, self._rate)
-            # Pin English (detect_language is slower + unreliable on short audio).
-            tr = self._stt.transcribe(wav, format="wav", language=language)
-            return (getattr(tr, "text", "") or "").strip()
+            # OpenAI Whisper — markedly more accurate than Deepgram for Bryan's
+            # Singapore-English accent (Deepgram heard "VANTA" as "Event").
+            return whisper_transcribe(wav)
         except Exception as exc:
             logger.error("STT failed: %s", exc, exc_info=True)
             return ""
