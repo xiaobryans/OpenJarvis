@@ -37,12 +37,22 @@ from typing import Callable, Optional
 logger = logging.getLogger("openjarvis.voice_loop")
 
 WAKE_WORD = os.environ.get("JARVIS_WAKE_WORD", "Hey VANTA")
-_WAKE_TOKENS = ("hey vanta", "hey venta", "hey banta", "hi vanta")  # STT variants
+# Deepgram transcribes "Hey VANTA" as "Hey, Vanta." — we normalize (strip
+# punctuation, lowercase) before matching, so these are punctuation-free forms.
+_WAKE_TOKENS = ("hey vanta", "hey venta", "hey banta", "hey santa", "hey manta",
+                "hi vanta", "a vanta", "hey vance", "hey vahnta", "vanta")
 _INTERRUPT = ("stop", "hold on", "wait", "cancel")
-_SAMPLE_RATE = 16000
 _CHANNELS = 1
+_DEFAULT_RATE = 48000  # MacBook built-in mic native rate
 
 StatusCb = Callable[[str], None]
+
+
+def _normalize(text: str) -> str:
+    """Lowercase + strip punctuation + collapse whitespace for robust matching.
+    'Hey, Vanta.' -> 'hey vanta'."""
+    import re
+    return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9\s]", " ", (text or "").lower())).strip()
 
 
 def _in_silent_hours() -> bool:
@@ -54,12 +64,12 @@ def _in_silent_hours() -> bool:
     return 0 <= now.hour < 7
 
 
-def _pcm_to_wav_bytes(pcm: bytes, rate: int = _SAMPLE_RATE) -> bytes:
+def _pcm_to_wav_bytes(pcm: bytes, rate: int = _DEFAULT_RATE) -> bytes:
     buf = io.BytesIO()
     with wave.open(buf, "wb") as w:
         w.setnchannels(_CHANNELS)
         w.setsampwidth(2)  # int16
-        w.setframerate(rate)
+        w.setframerate(rate)  # MUST match the actual capture rate
         w.writeframes(pcm)
     return buf.getvalue()
 
@@ -71,6 +81,7 @@ class VoiceLoop:
         self._tts = None
         self._orch = None
         self._playing: Optional[subprocess.Popen] = None
+        self._rate = _DEFAULT_RATE  # set to the device's native rate at runtime
 
     # ---- lazy deps (so import never fails without hardware) ----
     def _ensure(self) -> None:
@@ -85,11 +96,21 @@ class VoiceLoop:
         if self._orch is None:
             from openjarvis.orchestrator.lean import LeanOrchestrator
             self._orch = LeanOrchestrator(model="gpt-4o")
+        # Use the input device's NATIVE sample rate (e.g. 48000 on the MacBook
+        # mic). Recording at a mismatched rate produces garbled audio that
+        # Deepgram can't transcribe — this was why the wake word never fired.
+        try:
+            import sounddevice as sd
+            dev = sd.query_devices(kind="input")
+            self._rate = int(dev.get("default_samplerate") or _DEFAULT_RATE)
+        except Exception:
+            self._rate = _DEFAULT_RATE
+        logger.info("mic capture rate: %d Hz", self._rate)
 
     # ---- audio I/O ----
     def _record(self, seconds: float) -> bytes:
         import sounddevice as sd
-        frames = sd.rec(int(seconds * _SAMPLE_RATE), samplerate=_SAMPLE_RATE,
+        frames = sd.rec(int(seconds * self._rate), samplerate=self._rate,
                         channels=_CHANNELS, dtype="int16")
         sd.wait()
         return frames.tobytes()
@@ -100,8 +121,8 @@ class VoiceLoop:
         import numpy as np
         import sounddevice as sd
         chunks, silent_run = [], 0
-        block = int(0.25 * _SAMPLE_RATE)
-        with sd.InputStream(samplerate=_SAMPLE_RATE, channels=_CHANNELS,
+        block = int(0.25 * self._rate)
+        with sd.InputStream(samplerate=self._rate, channels=_CHANNELS,
                             dtype="int16") as stream:
             for _ in range(int(max_seconds / 0.25)):
                 data, _ = stream.read(block)
@@ -114,7 +135,7 @@ class VoiceLoop:
 
     def _transcribe(self, pcm: bytes) -> str:
         try:
-            wav = _pcm_to_wav_bytes(pcm)
+            wav = _pcm_to_wav_bytes(pcm, self._rate)
             tr = self._stt.transcribe(wav, format="wav")
             return (getattr(tr, "text", "") or "").strip()
         except Exception as exc:
@@ -146,15 +167,18 @@ class VoiceLoop:
         logger.info("VANTA voice loop running — say '%s'", WAKE_WORD)
         while True:
             try:
-                # 1. Rolling 3s window; detect wake word.
-                heard = self._transcribe(self._record(3.0)).lower()
+                # 1. Rolling 3s window; detect wake word (punctuation-normalized).
+                raw = self._transcribe(self._record(3.0))
+                heard = _normalize(raw)
                 if not heard:
                     continue
                 if any(w in heard for w in _INTERRUPT):
                     self._stop_playback()
                     continue
                 if not any(t in heard for t in _WAKE_TOKENS):
+                    logger.debug("no wake in: %r", heard)
                     continue
+                self._status(f"🔵 heard wake word ({heard[:40]})")
                 # 2. Awake — capture the command.
                 self._status("awake")
                 # Anything said after the wake token in the same window counts.
