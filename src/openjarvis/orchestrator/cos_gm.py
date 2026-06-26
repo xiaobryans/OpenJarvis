@@ -1,5 +1,11 @@
 """COS/GM Orchestrator — Chief of Staff / General Manager layer.
 
+PARKED (2026-06-26): this orchestrator is real and tested but NOT on the live
+chat path. It is reachable only via /v1/orchestrator/* (dry-run), the
+classify-only /v1/frontdoor/submit, doctor checks, and tests. Wiring it into
+live chat is the planned "Option A" sprint. See docs/ORCHESTRATOR.md for the
+full target architecture, tiered routing spec, and step-by-step wiring guide.
+
 Sits between the Jarvis front door and the domain managers/workers.
 Receives a UniversalTaskRequest, classifies intent/risk/complexity,
 calls the DynamicActivationPlanner, dispatches selected workers through
