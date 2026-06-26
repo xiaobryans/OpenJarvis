@@ -1,0 +1,23 @@
+# Keep the Docker build small + fast — only ship what the webhook needs.
+.git
+.venv
+node_modules
+frontend
+tests
+docs
+evidence
+scripts
+*.db
+*.log
+__pycache__
+**/__pycache__
+*.pyc
+.env
+.env.local
+.python-version
+dist
+build
+*.dmg
+*.app
+rust
+configs
