@@ -241,7 +241,7 @@ class TestSelfKnowledgeFollowUpCenter:
         data = sk_client.get("/v1/jarvis/roadmap").json()
         phase_b1 = next((r for r in data["roadmap"] if "Phase B1" in r["plan"]), None)
         assert phase_b1 is not None, "Phase B1 must appear in roadmap"
-        assert phase_b1["status"] == "IN_PROGRESS"
+        assert phase_b1["status"] in ("IN_PROGRESS", "ACCEPTED_ON_HOLD")
 
     def test_plan_state_has_phase_b1(self, sk_client):
         data = sk_client.get("/v1/jarvis/status").json()

@@ -651,7 +651,10 @@ class TestModelSentinelNormalization:
     def test_model_default_resolves_and_returns_200(self):
         """model:'default' must be normalized server-side and return HTTP 200."""
         engine = _make_engine(content="cloud reply")
-        app = create_app(engine, "gpt-4o")
+        # Use a non-cloud model so the mock engine is used instead of generate_cloud().
+        # "gpt-4o" is detected as a cloud model and routes to the real OpenRouter
+        # client, bypassing the mock. "test-model" is not a cloud model.
+        app = create_app(engine, "test-model")
         client = TestClient(app)
         resp = client.post(
             "/v1/chat/completions",
@@ -714,7 +717,8 @@ class TestModelSentinelNormalization:
     def test_cloud_jarvis_test_ok_is_normal_chat_not_pipeline(self):
         """Exact iPhone cloud test phrase must return normal chat response."""
         engine = _make_engine(content="normal assistant reply")
-        app = create_app(engine, "gpt-4o")
+        # Use a non-cloud model so the mock engine is used instead of generate_cloud().
+        app = create_app(engine, "test-model")
         client = TestClient(app)
         resp = client.post(
             "/v1/chat/completions",

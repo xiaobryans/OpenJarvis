@@ -46,7 +46,8 @@ class TestMemoryRoutes:
     def test_stats(self):
         client = TestClient(_make_app())
         resp = client.get("/v1/memory/stats")
-        assert resp.status_code in (200, 500)
+        # 503 returned when openjarvis_rust extension is not compiled in this venv
+        assert resp.status_code in (200, 500, 503)
 
 
 class TestMemoryRustMissing:
