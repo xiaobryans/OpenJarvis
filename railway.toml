@@ -1,0 +1,21 @@
+# Railway deploy config for the VANTA WhatsApp webhook (lean service).
+# Fixes the railpack build-driver failure: gives Railway an explicit install +
+# start command (the repo is a uv/pyproject project with a create_app() factory,
+# which railpack could not auto-detect).
+
+[build]
+builder = "nixpacks"
+# Install only the server extra (fastapi/uvicorn/python-multipart) + the base
+# package — NOT the full ML/desktop deps. PortAudio/sounddevice are avoided by
+# the lean railway_app entrypoint (it doesn't import the voice pipeline).
+buildCommand = "pip install --upgrade pip && pip install '.[server,scheduler]'"
+
+[deploy]
+startCommand = "uvicorn openjarvis.server.railway_app:app --host 0.0.0.0 --port $PORT"
+healthcheckPath = "/health"
+healthcheckTimeout = 100
+restartPolicyType = "on_failure"
+
+[nixpacks]
+# Pin Python (project requires >=3.10,<3.14).
+pythonVersion = "3.12"
