@@ -316,7 +316,7 @@ class SlackRecentTool(BaseTool):
             team = auth.get("team", "")
             convs = self._api(
                 "conversations.list", token,
-                {"types": "public_channel", "limit": 10, "exclude_archived": "true"},
+                {"types": "public_channel", "limit": 100, "exclude_archived": "true"},
             )
             if not convs.get("ok"):
                 # Connectivity proven, but read scope missing — report honestly.
@@ -330,7 +330,19 @@ class SlackRecentTool(BaseTool):
                     success=False,
                     metadata={"team": team, "scope_error": convs.get("error")},
                 )
-            chans = convs.get("channels", [])[:5]
+            # Only read channels the bot is actually a member of (Slack requires
+            # membership for conversations.history on public channels).
+            chans = [c for c in convs.get("channels", []) if c.get("is_member")][:10]
+            if not chans:
+                return ToolResult(
+                    tool_name="slack_recent",
+                    content=(
+                        f"Slack connected (team: {team}), but VANTA isn't in any "
+                        "channel yet. Invite it: /invite @vanta in a channel."
+                    ),
+                    success=True,
+                    metadata={"team": team, "member_channels": 0},
+                )
             lines = []
             for ch in chans:
                 cid, cname = ch.get("id"), ch.get("name", "?")
