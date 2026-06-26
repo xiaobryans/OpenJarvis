@@ -350,6 +350,12 @@ def create_app(
         app.include_router(briefing_router)
     except Exception as _exc:  # optional; never block startup
         logger.debug("Briefing route not mounted: %s", _exc)
+    try:
+        from openjarvis.server.whatsapp_routes import router as whatsapp_router
+
+        app.include_router(whatsapp_router)
+    except Exception as _exc:  # optional; never block startup
+        logger.debug("WhatsApp route not mounted: %s", _exc)
     app.include_router(create_connectors_router())
     app.include_router(create_digest_router())
     app.include_router(upload_router)
