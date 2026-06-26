@@ -425,7 +425,22 @@ def serve(
                     from openjarvis.core.registry import ToolRegistry
                     from openjarvis.tools._stubs import BaseTool
 
-                    _DEFAULT_TOOLS = {"think", "calculator", "web_search"}
+                    # Default capability set for a general personal assistant.
+                    # Includes real-time awareness (current_time) and low-risk
+                    # READ/compute/fetch tools. Mutating tools (file_write,
+                    # file_delete, shell_exec, code_interpreter) are
+                    # intentionally NOT default — they require explicit
+                    # opt-in via config.agent.tools and run behind the
+                    # ToolExecutor's confirmation/RBAC gates.
+                    _DEFAULT_TOOLS = {
+                        "think",
+                        "calculator",
+                        "web_search",
+                        "current_time",
+                        "file_read",
+                        "file_search",
+                        "http_request",
+                    }
                     configured = config.agent.tools
                     if configured:
                         if isinstance(configured, list):
@@ -529,7 +544,21 @@ def serve(
                         from openjarvis.core.registry import ToolRegistry
                         from openjarvis.tools._stubs import BaseTool
 
-                        _DEFAULT_TOOLS = {"think", "calculator", "web_search"}
+                        # Default capability set (general personal assistant).
+                        # Real-time awareness + low-risk READ/compute/fetch
+                        # tools. Mutating tools (file_write, file_delete,
+                        # shell_exec, code_interpreter) are intentionally NOT
+                        # default — explicit opt-in via config.agent.tools,
+                        # behind the ToolExecutor confirmation/RBAC gates.
+                        _DEFAULT_TOOLS = {
+                            "think",
+                            "calculator",
+                            "web_search",
+                            "current_time",
+                            "file_read",
+                            "file_search",
+                            "http_request",
+                        }
                         configured = config.agent.tools
                         if configured:
                             if isinstance(configured, list):

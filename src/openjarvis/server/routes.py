@@ -27,6 +27,72 @@ from openjarvis.server.models import (
 router = APIRouter()
 
 
+def _inject_datetime_context(req) -> None:
+    """Prepend an authoritative current-date/time system note to every turn.
+
+    LLMs have no inherent access to the current moment, so without this the
+    model guesses or deflects ("I can't access the current time"). We read the
+    host system clock (offline, never fails) and inject it as a system message
+    *after* any existing leading system messages, so it grounds the model on
+    every path — streaming and non-streaming — without overriding the caller's
+    persona/system prompt. The dedicated ``current_time`` tool still provides
+    on-demand precision (other timezones, scheduling); this note guarantees the
+    model is never wrong about "now" even if it skips the tool.
+    """
+    try:
+        from openjarvis.server.models import ChatMessage
+        from openjarvis.tools.datetime_tool import current_datetime_snapshot
+
+        snap = current_datetime_snapshot()
+        offset = snap.get("utc_offset", "")
+        note = (
+            "Current date and time, from the system clock (authoritative): "
+            f"{snap['weekday']}, {snap['date']}, {snap['time_12h']} "
+            f"{snap['timezone']}"
+            f"{f' (UTC{offset})' if offset else ''}. "
+            "Treat this as the real current moment. Never say you cannot access "
+            "the current time or date — you have it here."
+        )
+        msgs = list(req.messages or [])
+        idx = 0
+        while idx < len(msgs) and getattr(msgs[idx], "role", "") == "system":
+            idx += 1
+        msgs.insert(idx, ChatMessage(role="system", content=note))
+        req.messages = msgs
+    except Exception:
+        logging.getLogger("openjarvis.server").debug(
+            "Datetime context injection failed",
+            exc_info=True,
+        )
+
+
+def _save_chat_memory(memory_backend, content: str, *, role: str = "user", model: str = "") -> None:
+    """Persist one conversation turn to the active memory backend.
+
+    Best-effort and never raises — memory is a side benefit, not a hard
+    dependency of answering. Previously *nothing* said in normal chat was ever
+    saved (the chat path only ever *read* memory), so Jarvis could never
+    remember anything you told it. This writes the turn so it becomes
+    retrievable on later turns and after a restart.
+    """
+    if memory_backend is None:
+        return
+    text = (content or "").strip()
+    if not text:
+        return
+    try:
+        memory_backend.store(
+            text,
+            source="chat",
+            metadata={"role": role, "model": model},
+        )
+    except Exception:
+        logging.getLogger("openjarvis.server").debug(
+            "Memory save-back failed",
+            exc_info=True,
+        )
+
+
 def _to_messages(chat_messages) -> list[Message]:
     """Convert Pydantic ChatMessage objects to core Message objects."""
     messages = []
@@ -90,6 +156,12 @@ async def chat_completions(request_body: ChatCompletionRequest, request: Request
                 ),
             )
             request_body.messages = [_cloud_sys] + list(request_body.messages)
+
+    # Ground every turn in the real current date/time (system clock). Applied
+    # to all paths (streaming + non-streaming) before dispatch so the model is
+    # never wrong about "now" and never deflects on time/date questions.
+    if request_body.messages:
+        _inject_datetime_context(request_body)
 
     # Front-door utility shortcut: time/date queries answered from system
     # clock without LLM round-trip. LLMs cannot access the current time, so
@@ -335,6 +407,19 @@ async def chat_completions(request_body: ChatCompletionRequest, request: Request
                 exc_info=True,
             )
 
+    # Conversation save-back: persist the user's message so normal chat
+    # actually accrues memory. Runs AFTER retrieval/injection so this turn is
+    # not surfaced back to itself. Covers every dispatch path (streaming and
+    # non-streaming). The assistant's reply is additionally saved on the live
+    # agent-stream path (see _handle_stream_agent).
+    if memory_backend is not None and request_body.messages:
+        _user_text_to_save = ""
+        for _m in reversed(request_body.messages):
+            if _m.role == "user" and _m.content:
+                _user_text_to_save = _m.content
+                break
+        _save_chat_memory(memory_backend, _user_text_to_save, role="user", model=model)
+
     # Run complexity analysis on the last user message
     complexity_info = None
     query_text_for_complexity = ""
@@ -382,6 +467,24 @@ async def chat_completions(request_body: ChatCompletionRequest, request: Request
         if request_body.tools:
             return await _handle_stream_tools(
                 engine, model, request_body, complexity_info
+            )
+        # Live chat: route through the agent so the streaming UI gets the real
+        # tool loop (current_time, calculator, web_search, file_read, ...).
+        # Previously this streamed straight from the engine, bypassing the
+        # agent and ALL tools — so the assistant could never actually *do*
+        # anything on the path the desktop/mobile UI uses. The agent runs its
+        # tool loop, then we stream its final answer. On any agent error we
+        # fall back to the plain engine stream so chat never regresses.
+        if agent is not None:
+            return await _handle_stream_agent(
+                agent,
+                model,
+                request_body,
+                complexity_info,
+                engine=engine,
+                trace_store=getattr(request.app.state, "trace_store", None),
+                bus=getattr(request.app.state, "bus", None),
+                memory_backend=memory_backend,
             )
         return await _handle_stream(
             engine,
@@ -651,6 +754,161 @@ def _handle_agent(
         ],
         usage=usage,
         complexity=complexity_info,
+    )
+
+
+def _chunk_text_for_stream(text: str):
+    """Split a buffered answer into small content deltas for SSE streaming.
+
+    The agent produces its full answer before we stream (it has to run the
+    tool loop first), so we re-chunk it word-by-word to preserve the
+    incremental "typing" feel the UI expects. Whitespace is kept with the
+    preceding token so reassembly is lossless.
+    """
+    if not text:
+        return
+    import re as _re
+
+    for piece in _re.findall(r"\S+\s*", text):
+        yield piece
+
+
+async def _handle_stream_agent(
+    agent,
+    model: str,
+    req: ChatCompletionRequest,
+    complexity_info=None,
+    *,
+    engine=None,
+    trace_store=None,
+    bus=None,
+    memory_backend=None,
+):
+    """Run the agent's tool loop, then stream its final answer as SSE.
+
+    This is the live-chat path: the desktop/mobile UI streams without passing
+    client tools, and we want those turns to use Jarvis's real tools. We run
+    ``agent.run()`` (the multi-turn tool loop) off the event loop, then emit
+    its answer as OpenAI-compatible streaming chunks.
+
+    Resilience: any failure in the agent run — or an empty answer — falls back
+    to the plain engine stream (:func:`_handle_stream`), so this can never make
+    chat worse than the pre-existing behaviour.
+    """
+    import asyncio
+    import json as _json
+    import time
+
+    from openjarvis.agents._stubs import AgentContext
+    from openjarvis.server.cloud_router import is_cloud_model
+
+    chunk_id = f"chatcmpl-{uuid.uuid4().hex[:12]}"
+    use_cloud = is_cloud_model(model)
+    started_at = time.time()
+
+    # Build agent context from prior turns; last message is the input.
+    ctx = AgentContext()
+    if len(req.messages) > 1:
+        for m in _to_messages(req.messages[:-1]):
+            ctx.conversation.add(m)
+    input_text = req.messages[-1].content if req.messages else ""
+
+    query_text = ""
+    for _m in reversed(req.messages):
+        if _m.role == "user" and _m.content:
+            query_text = _m.content
+            break
+
+    def _run_agent():
+        original_model = agent._model
+        if model:
+            agent._model = model
+        try:
+            if trace_store is not None:
+                from openjarvis.traces.collector import TraceCollector
+
+                collector = TraceCollector(agent, store=trace_store, bus=bus)
+                return collector.run(input_text, context=ctx)
+            return agent.run(input_text, context=ctx)
+        finally:
+            agent._model = original_model
+
+    # Run the (blocking) agent loop without stalling the event loop. On any
+    # failure, fall back to the direct engine stream.
+    try:
+        result = await asyncio.to_thread(_run_agent)
+    except Exception as exc:
+        logging.getLogger("openjarvis.server").error(
+            "Agent stream run failed; falling back to direct engine stream: %s",
+            exc,
+            exc_info=True,
+        )
+        if engine is not None:
+            return await _handle_stream(
+                engine, model, req, complexity_info, trace_store=trace_store
+            )
+        raise HTTPException(
+            status_code=500, detail=f"Agent run failed: {exc}"
+        ) from exc
+
+    content = (getattr(result, "content", "") or "").strip()
+    tools_used = len(getattr(result, "tool_results", []) or [])
+
+    # Save the assistant's answer so recall includes what Jarvis said, not just
+    # what the user asked (best-effort; the user turn was already saved at the
+    # top level).
+    if memory_backend is not None and content:
+        _save_chat_memory(memory_backend, content, role="assistant", model=model)
+
+    # Empty agent answer → fall back to a plain stream rather than emitting an
+    # empty response (mirrors the non-streaming empty-content guard).
+    if not content and engine is not None:
+        logging.getLogger("openjarvis.server").info(
+            "Agent produced empty content; falling back to direct engine stream."
+        )
+        return await _handle_stream(
+            engine, model, req, complexity_info, trace_store=trace_store
+        )
+
+    async def generate():
+        first_chunk = ChatCompletionChunk(
+            id=chunk_id,
+            model=model,
+            choices=[StreamChoice(delta=DeltaMessage(role="assistant"))],
+        )
+        yield f"data: {first_chunk.model_dump_json()}\n\n"
+
+        for piece in _chunk_text_for_stream(content):
+            chunk = ChatCompletionChunk(
+                id=chunk_id,
+                model=model,
+                choices=[StreamChoice(delta=DeltaMessage(content=piece))],
+            )
+            yield f"data: {chunk.model_dump_json()}\n\n"
+
+        # Best-effort trace for the completed agent turn.
+        if trace_store is None:
+            pass  # TraceCollector already recorded it when trace_store was set
+
+        finish_data = ChatCompletionChunk(
+            id=chunk_id,
+            model=model,
+            choices=[StreamChoice(delta=DeltaMessage(), finish_reason="stop")],
+        )
+        finish_dict = _json.loads(finish_data.model_dump_json())
+        finish_dict.setdefault("telemetry", {})
+        finish_dict["telemetry"]["engine"] = "cloud" if use_cloud else "ollama"
+        finish_dict["telemetry"]["agent"] = getattr(agent, "agent_id", "agent")
+        finish_dict["telemetry"]["tools_used"] = tools_used
+        if complexity_info is not None:
+            finish_dict["complexity"] = complexity_info.model_dump()
+        yield f"data: {_json.dumps(finish_dict)}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
     )
 
 
