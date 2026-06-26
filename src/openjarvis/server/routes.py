@@ -544,13 +544,25 @@ async def chat_completions(request_body: ChatCompletionRequest, request: Request
             return await _handle_stream_tools(
                 engine, model, request_body, complexity_info
             )
-        # Live chat: route through the agent so the streaming UI gets the real
-        # tool loop (current_time, calculator, web_search, file_read, ...).
-        # Previously this streamed straight from the engine, bypassing the
-        # agent and ALL tools — so the assistant could never actually *do*
-        # anything on the path the desktop/mobile UI uses. The agent runs its
-        # tool loop, then we stream its final answer. On any agent error we
-        # fall back to the plain engine stream so chat never regresses.
+        # Option A: FAST/STANDARD/COMPLEX tiers route through the lean COS/GM
+        # hierarchy (managers -> workers -> testers -> synthesis) with live
+        # status, so answers come from REAL tools + a capable model rather than
+        # a bare local agent that can hallucinate. Only INSTANT (time, name,
+        # greetings) uses the fast direct agent path below. The orchestrator
+        # self-recovers (never raises) so live chat can't regress.
+        if _req_tier in ("fast", "standard", "complex"):
+            try:
+                return await _handle_stream_orchestrated(
+                    request_body, _req_tier, memory_backend=memory_backend,
+                )
+            except Exception:
+                logging.getLogger("openjarvis.server").error(
+                    "orchestrated path failed; falling back to agent", exc_info=True
+                )
+
+        # Live chat (INSTANT/FAST): route through the agent so the streaming UI
+        # gets the real tool loop (current_time, calculator, web_search, ...).
+        # On any agent error we fall back to the plain engine stream.
         if agent is not None:
             return await _handle_stream_agent(
                 agent,
@@ -988,6 +1000,110 @@ async def _handle_stream_agent(
     return StreamingResponse(
         generate(),
         media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
+    )
+
+
+async def _handle_stream_orchestrated(
+    req: ChatCompletionRequest,
+    tier: str,
+    *,
+    memory_backend=None,
+):
+    """STANDARD/COMPLEX tier: stream the lean hierarchy with LIVE status.
+
+    Runs LeanOrchestrator (COS/GM -> managers -> workers -> synthesis) on a
+    worker thread; status events are streamed to Bryan in real time via a
+    thread-safe queue, then the final synthesized answer. The orchestrator never
+    raises (Stage 6 recovery), so this path always returns a real answer.
+    """
+    import asyncio
+    import json as _json
+    import queue as _queue
+    from pathlib import Path
+
+    from openjarvis.orchestrator.lean import LeanOrchestrator
+
+    chunk_id = f"chatcmpl-{uuid.uuid4().hex[:12]}"
+    input_text = req.messages[-1].content if req.messages else ""
+    user_profile = ""
+    try:
+        up = Path("~/.openjarvis/USER.md").expanduser()
+        if up.exists():
+            user_profile = up.read_text("utf-8")
+    except Exception:
+        user_profile = ""
+
+    def _content_chunk(text: str) -> str:
+        c = ChatCompletionChunk(
+            id=chunk_id, model="gpt-4o",
+            choices=[StreamChoice(delta=DeltaMessage(content=text))],
+        )
+        return f"data: {c.model_dump_json()}\n\n"
+
+    async def generate():
+        # Role chunk first.
+        yield f"data: {ChatCompletionChunk(id=chunk_id, model='gpt-4o', choices=[StreamChoice(delta=DeltaMessage(role='assistant'))]).model_dump_json()}\n\n"
+
+        q: _queue.Queue = _queue.Queue()
+        holder: dict[str, Any] = {}
+
+        def status_cb(msg: str) -> None:
+            q.put(("status", msg))
+
+        def run() -> None:
+            try:
+                orch = LeanOrchestrator(model="gpt-4o", status_cb=status_cb,
+                                        user_profile=user_profile)
+                holder["res"] = (orch.run_complex(input_text) if tier == "complex"
+                                 else orch.run_standard(input_text))
+            except Exception as exc:  # orchestrator shouldn't raise, but be safe
+                logging.getLogger("openjarvis.server").error(
+                    "orchestrated run failed: %s", exc, exc_info=True)
+                holder["error"] = str(exc)
+            finally:
+                q.put(("done", None))
+
+        loop = asyncio.get_event_loop()
+        fut = loop.run_in_executor(None, run)
+        # Stream live status as italic content lines until done.
+        while True:
+            kind, payload = await loop.run_in_executor(None, q.get)
+            if kind == "status":
+                yield _content_chunk(f"_{payload}_\n")
+            else:
+                break
+        await fut
+
+        res = holder.get("res")
+        answer = res.answer if res else (
+            "I hit a snag handling that, boss — try again in a moment.")
+        yield _content_chunk("\n")
+        for piece in _chunk_text_for_stream(answer):
+            yield _content_chunk(piece)
+
+        # Save the assistant answer to memory (best-effort).
+        if memory_backend is not None and answer:
+            _save_chat_memory(memory_backend, answer, role="assistant", model="gpt-4o")
+
+        finish = ChatCompletionChunk(
+            id=chunk_id, model="gpt-4o",
+            choices=[StreamChoice(delta=DeltaMessage(), finish_reason="stop")],
+        )
+        fd = _json.loads(finish.model_dump_json())
+        fd.setdefault("telemetry", {})
+        fd["telemetry"]["engine"] = "cloud"
+        fd["telemetry"]["tier"] = tier
+        if res:
+            fd["telemetry"]["managers"] = res.managers_used
+            fd["telemetry"]["tokens"] = res.tokens.get("total_tokens", 0)
+            fd["telemetry"]["request_id"] = res.request_id
+            fd["telemetry"]["escalated"] = res.escalated
+        yield f"data: {_json.dumps(fd)}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(
+        generate(), media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
     )
 
