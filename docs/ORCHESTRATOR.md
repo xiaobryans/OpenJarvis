@@ -110,7 +110,46 @@ A classifier (cheap, local-first — reuse the `complexity` scorer already in
 
 ## 5. Managers & Workers audit (do as part of Option A)
 
-There are ~17 managers today. Before wiring, audit the full set:
+### Read-only audit done 2026-06-26 (execution deferred to Option A)
+
+**17 managers currently registered** (`orchestrator/manager_registry.py`):
+coding, architecture, testing_validation, code_review, debugging, research,
+memory_knowledge, documentation, product_ux, operations_automation,
+governance_safety, release_packaging, data, cost_routing, nus_learning,
+connector_auth, runtime_ops.
+
+**Finding — the set is dev/build-centric, not universal.** ~9 of 17 are software
+-delivery managers (coding, architecture, testing_validation, code_review,
+debugging, documentation, release_packaging, runtime_ops, operations_automation).
+For a *universal life OS* this over-indexes on coding and **misses Bryan's actual
+life domains**.
+
+**Recommended consolidations (overlap):**
+- Merge `architecture_manager` + `debugging_manager` + `code_review_manager`
+  into `coding_manager` (sub-roles), or keep but note they're one domain.
+- Merge `release_packaging_manager` + `runtime_ops_manager` +
+  `operations_automation_manager` → one `devops_manager`.
+
+**Recommended additions (missing universal domains):**
+- `communications_manager` (email/Slack/Telegram/messaging)
+- `finance_manager` (Stripe/revenue/budgets/transactions)
+- `calendar_scheduling_manager` (calendar, reminders, important dates)
+- `personal_life_manager` (health, relationships, errands — Bryan's life)
+- `knowledge_research_manager` already partly covered by research +
+  memory_knowledge; keep.
+
+**Workers:** prefer many small-scope workers per manager (e.g. under
+communications: `email_reader`, `email_summarizer`, `slack_reader`,
+`telegram_sender` — not one "comms worker"). Audit/define during wiring.
+
+**Why deferred, not done tonight:** managers/workers are imported by
+doctor/orchestrator-routes/evals on the PARKED stack; restructuring them before
+the hierarchy is wired risks breaking those surfaces with no live benefit (the
+chat path doesn't use them yet). Execute this audit as the first step of Option A
+so each change is validated end-to-end against a live hierarchy.
+
+### Original checklist
+Before wiring, audit the full set:
 - Read every manager and worker definition (registries:
   `orchestrator/manager_registry.py`, worker registry, `agents/roster.py`).
 - **Remove** redundant/overlapping ones — record which and why.
