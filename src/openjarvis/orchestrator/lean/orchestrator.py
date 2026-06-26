@@ -37,6 +37,9 @@ class WorkerRun:
     success: bool
     content: str
     elapsed_ms: int
+    approved: bool = True        # Quality Manager verdict
+    review_reason: str = "ok"
+    retried: bool = False
 
 
 @dataclass
@@ -128,10 +131,16 @@ class LeanOrchestrator:
 
     # ------------------------------------------------------------- synthesis
     def _synthesize(self, request: str, runs: List[WorkerRun]) -> str:
+        # Only QUALITY-APPROVED worker output is used as fact (Stage 5 gate).
+        approved = [r for r in runs if r.approved]
+        rejected = [r for r in runs if not r.approved]
         evidence = "\n\n".join(
-            f"[{r.manager} / {r.tool}] {'OK' if r.success else 'FAILED'}:\n{r.content}"
-            for r in runs
-        ) or "(no worker output)"
+            f"[{r.manager} / {r.tool}]:\n{r.content}" for r in approved
+        ) or "(no approved worker output)"
+        if rejected:
+            evidence += "\n\nUnavailable (could not complete): " + ", ".join(
+                f"{r.tool} ({r.review_reason})" for r in rejected
+            )
         persona = (
             "You are Jarvis, Bryan's personal AI. Answer directly and naturally "
             "in his voice (you may address him as Bryan/boss/brother — vary it, "
@@ -147,13 +156,41 @@ class LeanOrchestrator:
             max_tokens=900, temperature=0.5,
         )
 
+    # ----------------------------------------------- quality gate (testers)
+    @staticmethod
+    def _review(success: bool, content: str) -> tuple[bool, str]:
+        """Quality Manager: approve/reject a worker's output with a reason."""
+        if not success:
+            return False, f"worker failed: {(content or '')[:80]}"
+        c = (content or "").strip()
+        if not c:
+            return False, "empty output"
+        low = c.lower()
+        if c.startswith("(") and ("not available" in low or "error" in low):
+            return False, "tool error/unavailable"
+        if "not configured" in low:
+            return False, "service not configured"
+        if "needs an extra scope" in low or "missing_scope" in low:
+            return False, "missing permission/scope"
+        return True, "ok"
+
     # -------------------------------------------------------- step execution
     def _execute_one(self, step: Dict[str, Any]) -> WorkerRun:
+        """Run a worker, then send it through the Quality gate; on rejection,
+        redo ONCE and re-review. Only the final verdict is returned."""
         mgr, tool, args = step["manager"], step["tool"], step["args"]
         t0 = time.time()
         ok, content = self._run_tool(tool, args)
+        approved, reason = self._review(ok, content)
+        retried = False
+        if not approved:
+            # Rejection → back to the worker to redo (once).
+            retried = True
+            ok, content = self._run_tool(tool, args)
+            approved, reason = self._review(ok, content)
         return WorkerRun(mgr, tool, args, ok, content,
-                         int((time.time() - t0) * 1000))
+                         int((time.time() - t0) * 1000),
+                         approved=approved, review_reason=reason, retried=retried)
 
     def _execute_sequential(self, steps: List[Dict[str, Any]]) -> List[WorkerRun]:
         runs: List[WorkerRun] = []
@@ -162,7 +199,13 @@ class LeanOrchestrator:
                 f"[{i}/{len(steps)}] {MANAGERS[step['manager']].name}: "
                 f"running {step['tool']}…"
             )
-            runs.append(self._execute_one(step))
+            run = self._execute_one(step)
+            if not run.approved:
+                self._status(
+                    f"   ⚠ Quality gate rejected {run.tool} ({run.review_reason})"
+                    + (" — retried" if run.retried else "")
+                )
+            runs.append(run)
         return runs
 
     def _execute_parallel(self, steps: List[Dict[str, Any]]) -> List[WorkerRun]:

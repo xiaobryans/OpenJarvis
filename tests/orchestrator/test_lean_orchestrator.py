@@ -91,3 +91,31 @@ def test_plan_rejects_invalid_steps(monkeypatch):
 def test_run_tool_unknown_is_graceful():
     ok, content = LeanOrchestrator._run_tool("does_not_exist", {})
     assert ok is False and "not available" in content
+
+
+def test_quality_gate_review_logic():
+    r = LeanOrchestrator._review
+    assert r(True, "real useful content")[0] is True
+    assert r(False, "boom")[0] is False
+    assert r(True, "")[0] is False
+    assert r(True, "(worker 'x' not available)")[0] is False
+    assert r(True, "Notion is not configured. Add NOTION_API_KEY")[0] is False
+
+
+def test_rejected_worker_retried_and_not_approved(monkeypatch):
+    _ensure_current_time_registered()
+    orch = LeanOrchestrator(model="mock")
+    monkeypatch.setattr(
+        orch, "_llm",
+        lambda s, u, **k: (
+            '{"steps":[{"manager":"personal_life","tool":"current_time","args":{}}]}'
+            if "COS/GM" in s else "answer"
+        ),
+    )
+    # Force the worker to always fail -> gate rejects -> retried once.
+    monkeypatch.setattr(orch, "_run_tool",
+                        staticmethod(lambda tool, args: (False, "boom")))
+    orch._status = lambda *_: None
+    res = orch.run_standard("x")
+    w = res.workers[0]
+    assert w.approved is False and w.retried is True
