@@ -4,6 +4,7 @@ import { Layout } from './components/Layout';
 import { ChatPage } from './pages/ChatPage';
 import { JarvisHomePage } from './components/Jarvis/JarvisHomePage';
 import { JarvisCockpitPage } from './pages/JarvisCockpitPage';
+import { VantaCockpitPage } from './pages/VantaCockpitPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { GetStartedPage } from './pages/GetStartedPage';
@@ -251,7 +252,8 @@ export default function App() {
       <Routes>
         <Route path="mobile" element={<MobilePage />} />
         <Route element={<Layout />}>
-          <Route index element={<JarvisCockpitPage />} />
+          <Route index element={<VantaCockpitPage />} />
+          <Route path="cockpit-legacy" element={<JarvisCockpitPage />} />
           <Route path="classic" element={<JarvisHomePage />} />
           <Route path="chat" element={<ChatPage />} />
           <Route path="dashboard" element={<DashboardPage />} />
