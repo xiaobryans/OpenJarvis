@@ -15,6 +15,7 @@ import { VantaTopBar } from './vanta/VantaTopBar';
 import { VantaBottomBar } from './vanta/VantaBottomBar';
 import { VantaOrb } from './vanta/VantaOrb';
 import { LeftColumn, RightColumn } from './vanta/VantaPanels';
+import { VantaHistoryModal, type HistItem } from './vanta/VantaHistoryModal';
 
 const I = { voice: 5_000, system: 30_000, memory: 60_000, comms: 120_000, calendar: 300_000, weather: 1_800_000 } as const;
 
@@ -92,12 +93,40 @@ export function VantaCockpitPage(): React.ReactElement {
   const voiceText = voiceOn ? '● LISTENING' : '○ VOICE OFF';
   const voiceColor = voiceOn ? 'var(--gr)' : 'var(--dim)';
 
+  // unified history: Cmd+K modal + cockpit session's typed turns
+  const [historyOpen, setHistoryOpen] = React.useState(false);
+  const [typed, setTyped] = React.useState<HistItem[]>([]);
+  React.useEffect(() => {
+    // Capture phase + stopImmediatePropagation so the cockpit's unified history
+    // modal opens on Cmd+K instead of the app-wide text-fallback viewer. The
+    // global Cmd+K still works on every other page (this listener is scoped to
+    // the cockpit's lifetime).
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        setHistoryOpen((o) => !o);
+      } else if (e.key === 'Escape') {
+        setHistoryOpen(false);
+      }
+    };
+    window.addEventListener('keydown', onKey, { capture: true });
+    return () => window.removeEventListener('keydown', onKey, { capture: true });
+  }, []);
+
   const [input, setInput] = React.useState('');
   const onSend = React.useCallback(async () => {
     const text = input.trim(); if (!text) return;
     setInput(''); setSending(true);
-    try { await apiFetch('/v1/chat/completions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messages: [{ role: 'user', content: text }], stream: false }) }); }
-    catch { /* surfaced via state */ }
+    setTyped((h) => [...h, { ts: Date.now() / 1000, speaker: 'you', text, mode: 'typed' }]);
+    try {
+      const r = await apiFetch('/v1/chat/completions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messages: [{ role: 'user', content: text }], stream: false }) });
+      if (r.ok) {
+        const j = await r.json();
+        const reply = (((j.choices || [])[0] || {}).message || {}).content;
+        if (reply) setTyped((h) => [...h, { ts: Date.now() / 1000, speaker: 'vanta', text: String(reply), mode: 'typed' }]);
+      }
+    } catch { /* surfaced via state */ }
     finally { window.setTimeout(() => setSending(false), 2500); }
   }, [input]);
 
@@ -115,6 +144,7 @@ export function VantaCockpitPage(): React.ReactElement {
         <RightColumn connectors={connectors} voice={voice} health={health} calendar={calendar} voiceMode={voiceMode} />
       </div>
       <VantaBottomBar input={input} onInput={setInput} onSend={onSend} onMic={onMic} micActive={micActive} apiOk={!!apiOk} connText={connText} model={model} voiceOn={voiceOn} />
+      <VantaHistoryModal open={historyOpen} onClose={() => setHistoryOpen(false)} typed={typed} />
     </div>
   );
 }

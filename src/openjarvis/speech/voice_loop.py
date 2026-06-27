@@ -36,6 +36,8 @@ import wave
 from datetime import datetime
 from typing import Callable, Optional
 
+from openjarvis.speech import voice_bus
+
 logger = logging.getLogger("openjarvis.voice_loop")
 
 WAKE_WORD = os.environ.get("JARVIS_WAKE_WORD", "Hey VANTA")
@@ -89,6 +91,38 @@ def whisper_transcribe(wav_bytes: bytes) -> str:
         return ""
 
 
+def deepgram_transcribe(wav_bytes: bytes) -> str:
+    """Transcribe WAV via Deepgram nova-2 (REST). nova-2 + a ``VANTA`` keyword
+    boost reliably transcribes the wake word (verified) and is fast enough to
+    poll on short rolling chunks to approximate real-time streaming. Returns the
+    transcript text (or "")."""
+    import os
+    import httpx
+    key = os.environ.get("DEEPGRAM_API_KEY", "")
+    if not key:
+        return ""
+    try:
+        with httpx.Client(timeout=20) as c:
+            r = c.post(
+                "https://api.deepgram.com/v1/listen",
+                params={
+                    "model": "nova-2",
+                    "smart_format": "true",
+                    "language": "en",
+                    # keyterm boost so "VANTA" isn't misheard as "Event"/"Banta"
+                    "keywords": "VANTA:5",
+                },
+                headers={"Authorization": f"Token {key}", "Content-Type": "audio/wav"},
+                content=wav_bytes,
+            )
+            r.raise_for_status()
+            alts = (r.json().get("results", {}).get("channels", [{}])[0]
+                    .get("alternatives", []))
+            return (alts[0].get("transcript", "") if alts else "").strip()
+    except Exception:
+        return ""
+
+
 def _in_silent_hours() -> bool:
     try:
         from zoneinfo import ZoneInfo
@@ -117,6 +151,7 @@ class VoiceLoop:
         self._playing: Optional[subprocess.Popen] = None
         self._rate = _DEFAULT_RATE  # set to the device's native rate at runtime
         self._last_trigger = 0.0  # monotonic time of last wake trigger (cooldown)
+        self._session = ""  # per-run voice session id (set in run())
 
     # ---- lazy deps (so import never fails without hardware) ----
     def _ensure(self) -> None:
@@ -169,9 +204,10 @@ class VoiceLoop:
     def _transcribe(self, pcm: bytes, language: str = "en") -> str:
         try:
             wav = _pcm_to_wav_bytes(pcm, self._rate)
-            # OpenAI Whisper — markedly more accurate than Deepgram for Bryan's
-            # Singapore-English accent (Deepgram heard "VANTA" as "Event").
-            return whisper_transcribe(wav)
+            # Deepgram nova-2 (+ VANTA keyword boost) — fast enough to poll on
+            # short rolling chunks for near-real-time transcription, and it
+            # transcribes the wake word reliably (verified).
+            return deepgram_transcribe(wav)
         except Exception as exc:
             logger.error("STT failed: %s", exc, exc_info=True)
             return ""
@@ -234,6 +270,8 @@ class VoiceLoop:
         import sounddevice as sd
 
         self._ensure()
+        self._session = f"voice-{int(time.time())}"
+        voice_bus.set_voice_active(True)  # cockpit shows the transcript overlay
         try:
             dev = sd.query_devices(kind="input")
             print(f"🎙  input device: {dev.get('name')} @ {self._rate} Hz")
@@ -279,6 +317,9 @@ class VoiceLoop:
                     heard = _normalize(raw)
                     print(f"🎤 vol {bar} {rms:5d} | heard: {raw!r}")
 
+                    if raw:
+                        # Live transcript: show what VANTA is hearing in real time.
+                        voice_bus.push_transcript("bryan", raw, final=False)
                     if not heard:
                         continue
                     if any(w in heard for w in _INTERRUPT):
@@ -294,10 +335,11 @@ class VoiceLoop:
                     rolling = b""  # reset so we don't re-trigger on the same audio
                     # Command = text after the wake word, else capture ~4s more.
                     after = heard.split("vanta", 1)[1].strip() if "vanta" in heard else ""
+                    said = raw if after else ""  # full utterance for display/history
                     if not after:
                         print("🟢 listening for your command…")
                         # Discard ALL stale buffered audio captured before/around
-                        # the wake word — otherwise Whisper transcribes pre-trigger
+                        # the wake word — otherwise STT transcribes pre-trigger
                         # sound (e.g. hallucinating "thank you for watching").
                         while not q.empty():
                             try:
@@ -308,17 +350,25 @@ class VoiceLoop:
                         # actual command, then record fresh audio until silence.
                         time.sleep(0.5)
                         after = _normalize(self._transcribe(self._record_until_silence()))
+                        said = f"Hey VANTA {after}".strip() if after else ""
                     if not after:
                         # No command captured — return to listening, no speech.
                         print(f"👂 listening — say \"{WAKE_WORD}\"…")
                         continue
 
+                    # YOU: … — final transcript line + saved to unified history
+                    voice_bus.push_transcript("bryan", said or after, final=True)
+                    voice_bus.save_turn("bryan", said or after, session_id=self._session)
                     print(f"💬 command: {after!r}")
                     self._status("thinking")
                     # Brain via in-process LeanOrchestrator (see _ask_brain).
                     answer = self._ask_brain(after)
                     if answer:
                         print(f"🗣  VANTA: {answer[:200]}")
+                        # VANTA: … — show + save BEFORE speaking so the overlay
+                        # displays the reply while ElevenLabs plays it.
+                        voice_bus.push_transcript("vanta", answer, final=True)
+                        voice_bus.save_turn("vanta", answer, session_id=self._session)
                         self._speak(answer)          # speak the response ONCE
                     else:
                         # Brain error — stay silent, do NOT speak an error message.

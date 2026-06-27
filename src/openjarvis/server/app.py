@@ -357,6 +357,18 @@ def create_app(
     except Exception as _exc:  # optional; never block startup
         logger.debug("Cockpit data routes not mounted: %s", _exc)
     try:
+        from openjarvis.server.voice_ux_routes import router as voice_ux_router
+
+        app.include_router(voice_ux_router)
+        # Wire the unified memory backend so voice turns also land in memory.
+        try:
+            from openjarvis.speech import voice_bus
+            voice_bus.set_memory_backend(memory_backend)
+        except Exception:  # voice_bus optional
+            pass
+    except Exception as _exc:  # optional; never block startup
+        logger.debug("Voice UX routes not mounted: %s", _exc)
+    try:
         from openjarvis.server.whatsapp_routes import router as whatsapp_router
 
         app.include_router(whatsapp_router)

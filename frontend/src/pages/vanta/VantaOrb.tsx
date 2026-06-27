@@ -4,6 +4,7 @@
 // radius around the core, and the pipeline chain.
 
 import React from 'react';
+import { VantaTranscript } from './VantaTranscript';
 
 interface NodeDef { id: string; angle: number; r: number; label: string; sub: string; nb?: string; dot?: string }
 const NODES: NodeDef[] = [
@@ -91,6 +92,8 @@ export function VantaOrb({ stateLabel, stateColor, readout }: { stateLabel: stri
           <div className="nl">{n.sub}</div>
         </div>
       ))}
+
+      <VantaTranscript />
 
       <div id="pl">
         {PIPE.map(([name, sub, cls], i) => (
