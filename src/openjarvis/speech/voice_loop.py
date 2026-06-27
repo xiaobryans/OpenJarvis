@@ -53,7 +53,7 @@ _DEFAULT_RATE = 48000  # MacBook built-in mic native rate
 # Anti-false-trigger gates:
 #  - only transcribe audio louder than this RMS (skip Whisper on silence/fan noise)
 #  - never fire the wake word twice within this cooldown window
-_RMS_GATE = 1500
+_RMS_GATE = 400  # voice-detection loudness floor (low = sensitive to normal speech)
 _TRIGGER_COOLDOWN_S = 10.0
 
 # Dual wake — Trigger B: double clap / finger snap (two sharp percussive spikes).
@@ -390,14 +390,14 @@ class VoiceLoop:
             q.put(bytes(indata))
 
         rolling = b""
-        window = int(3.0 * self._rate * 2)  # last ~3s for wake detection
+        window = int(2.0 * self._rate * 2)  # last ~2s of context for wake detection
         # Continuous stream — the mic NEVER stops (no gap that drops the wake word).
         with sd.InputStream(samplerate=self._rate, channels=_CHANNELS,
                             dtype="int16", callback=_cb,
                             blocksize=int(0.1 * self._rate)):
             while True:
                 try:
-                    chunk = self._collect(q, 1.2)            # ~1.2s of fresh audio
+                    chunk = self._collect(q, 0.4)            # ~0.4s fresh audio (low latency)
                     rolling = (rolling + chunk)[-window:]    # rolling 3s buffer
                     arr = np.frombuffer(chunk, dtype="int16")
                     rms = int(np.sqrt(np.mean(arr.astype("float32") ** 2))) if arr.size else 0
