@@ -56,6 +56,13 @@ _DEFAULT_RATE = 48000  # MacBook built-in mic native rate
 _RMS_GATE = 1500
 _TRIGGER_COOLDOWN_S = 10.0
 
+# Dual wake — Trigger B: double clap / finger snap (two sharp percussive spikes).
+# Tunable here without digging into the loop:
+CLAP_RMS_THRESHOLD = 2500   # each spike must exceed this RMS (sharp/percussive)
+CLAP_MIN_GAP_S = 0.15       # min gap between the two spikes (too close = ignore)
+CLAP_MAX_GAP_S = 0.8        # max gap between the two spikes (too far = ignore)
+CLAP_COOLDOWN_S = 5.0       # quiet window after a clap trigger before re-listening
+
 StatusCb = Callable[[str], None]
 
 
@@ -152,6 +159,10 @@ class VoiceLoop:
         self._rate = _DEFAULT_RATE  # set to the device's native rate at runtime
         self._last_trigger = 0.0  # monotonic time of last wake trigger (cooldown)
         self._session = ""  # per-run voice session id (set in run())
+        # Trigger B (double clap) state
+        self._clap_spikes: list[float] = []   # recent spike onset times (audio-clock)
+        self._last_clap_trigger = 0.0         # monotonic time of last clap trigger
+        self._audio_clock = 0.0               # seconds of audio processed (spike timing)
 
     # ---- lazy deps (so import never fails without hardware) ----
     def _ensure(self) -> None:
@@ -262,6 +273,97 @@ class VoiceLoop:
                           "that the right input device is selected.")
         return out
 
+    # ---- Trigger B: double clap / snap detection ----
+    def _detect_double_clap(self, arr) -> bool:
+        """Detect a double clap/snap: two sharp RMS spikes (each above
+        CLAP_RMS_THRESHOLD) separated by CLAP_MIN_GAP_S..CLAP_MAX_GAP_S, honoring
+        a cooldown. Single loud sounds, and spikes too close or too far apart,
+        are ignored. Spike timing uses an audio-sample clock (self._audio_clock)
+        so gaps reflect real audio timing, not processing latency."""
+        import numpy as np
+        if arr is None or arr.size == 0:
+            return False
+        now = time.monotonic()
+        if (now - self._last_clap_trigger) < CLAP_COOLDOWN_S:
+            return False
+        win = max(1, int(0.03 * self._rate))   # ~30ms analysis windows
+        base_t = self._audio_clock              # audio-time at this chunk's start
+        in_spike = False
+        for i in range(0, arr.size - win, win):
+            seg = arr[i:i + win].astype("float32")
+            srms = float(np.sqrt(np.mean(seg * seg))) if seg.size else 0.0
+            if srms > CLAP_RMS_THRESHOLD and not in_spike:
+                # rising edge = one spike onset (a clap spans a few windows, but
+                # only the onset counts, so a single clap is one spike not many).
+                self._clap_spikes.append(base_t + i / self._rate)
+                in_spike = True
+            elif srms <= CLAP_RMS_THRESHOLD * 0.5:
+                in_spike = False
+        # prune spikes older than the gap window (relative to the newest spike)
+        # so a stale onset can't pair with a much-later one.
+        if self._clap_spikes:
+            newest = self._clap_spikes[-1]
+            self._clap_spikes = [t for t in self._clap_spikes
+                                 if t >= newest - (CLAP_MAX_GAP_S + 0.05)]
+        if len(self._clap_spikes) >= 2:
+            gap = self._clap_spikes[-1] - self._clap_spikes[-2]
+            if CLAP_MIN_GAP_S <= gap <= CLAP_MAX_GAP_S:
+                self._last_clap_trigger = now
+                self._clap_spikes = []
+                return True
+        return False
+
+    # ---- shared wake sequence (both triggers) ----
+    def _handle_wake(self, q, inline_after: str = "") -> None:
+        """Run the wake sequence for either trigger: speak a short contextual
+        welcome (wake_responses), then capture and answer the command. The voice
+        DETECTION is unchanged; this is only the post-wake response/handling."""
+        from openjarvis.speech.wake_responses import get_wake_response
+        # arm both cooldowns immediately so neither trigger double-fires
+        self._last_trigger = time.monotonic()
+        self._last_clap_trigger = time.monotonic()
+        self._clap_spikes = []
+
+        # PART 2 — contextual welcome before listening for the command.
+        welcome = get_wake_response()
+        print(f"🤝 welcome: {welcome!r}")
+        voice_bus.push_transcript("vanta", welcome, final=True)
+        self._speak(welcome)
+
+        after = (inline_after or "").strip()
+        said = f"Hey VANTA {after}".strip() if after else ""
+        if not after:
+            print("🟢 listening for your command…")
+            while not q.empty():       # drop stale pre-trigger audio
+                try:
+                    q.get_nowait()
+                except Exception:
+                    break
+            time.sleep(0.5)
+            after = _normalize(self._transcribe(self._record_until_silence()))
+            said = after
+        if not after:
+            print(f"👂 listening — say \"{WAKE_WORD}\"…")
+            return
+
+        voice_bus.push_transcript("bryan", said or after, final=True)
+        voice_bus.save_turn("bryan", said or after, session_id=self._session)
+        print(f"💬 command: {after!r}")
+        self._status("thinking")
+        answer = self._ask_brain(after)
+        if answer:
+            print(f"🗣  VANTA: {answer[:200]}")
+            voice_bus.push_transcript("vanta", answer, final=True)
+            voice_bus.save_turn("vanta", answer, session_id=self._session)
+            self._speak(answer)
+        else:
+            print("⚠ brain unavailable — staying silent, listening")
+        while not q.empty():           # drain audio captured while speaking
+            q.get_nowait()
+        self._last_trigger = time.monotonic()
+        self._last_clap_trigger = time.monotonic()
+        print(f"\n👂 listening — say \"{WAKE_WORD}\"…")
+
     # ---- main loop (continuous, gapless) ----
     def run(self) -> None:
         import queue
@@ -301,14 +403,27 @@ class VoiceLoop:
                     rms = int(np.sqrt(np.mean(arr.astype("float32") ** 2))) if arr.size else 0
                     bar = "▁▂▃▄▅▆▇█"[min(7, rms // 250)]
 
+                    # TRIGGER B — double clap/snap. Runs every chunk, independent
+                    # of the voice gates. Advance the audio clock (used for spike
+                    # timing) right after detection.
+                    clap = self._detect_double_clap(arr)
+                    if arr.size:
+                        self._audio_clock += arr.size / self._rate
+                    if clap:
+                        print("👏 DOUBLE-CLAP detected — waking")
+                        self._status("awake")
+                        rolling = b""
+                        self._handle_wake(q, inline_after="")
+                        continue
+
                     # GATE 1 — loudness: below the RMS floor it is silence/fan
-                    # noise. Skip Whisper entirely (do not transcribe at all).
+                    # noise. Skip STT entirely (do not transcribe at all).
                     if rms <= _RMS_GATE:
                         print(f"🎤 vol {bar} {rms:5d} | (quiet — skipped)")
                         continue
 
-                    # GATE 2 — cooldown: never fire again within 10s of the last
-                    # trigger (stops repeat/echo re-triggering).
+                    # GATE 2 — voice cooldown: never fire the voice wake within
+                    # 10s of the last trigger (stops repeat/echo re-triggering).
                     if (time.monotonic() - self._last_trigger) < _TRIGGER_COOLDOWN_S:
                         print(f"🎤 vol {bar} {rms:5d} | (cooldown)")
                         continue
@@ -331,53 +446,12 @@ class VoiceLoop:
                         continue
 
                     print(f"🔵 WAKE WORD DETECTED in: {raw!r}")
-                    self._last_trigger = time.monotonic()  # arm cooldown
                     rolling = b""  # reset so we don't re-trigger on the same audio
-                    # Command = text after the wake word, else capture ~4s more.
-                    after = heard.split("vanta", 1)[1].strip() if "vanta" in heard else ""
-                    said = raw if after else ""  # full utterance for display/history
-                    if not after:
-                        print("🟢 listening for your command…")
-                        # Discard ALL stale buffered audio captured before/around
-                        # the wake word — otherwise STT transcribes pre-trigger
-                        # sound (e.g. hallucinating "thank you for watching").
-                        while not q.empty():
-                            try:
-                                q.get_nowait()
-                            except Exception:
-                                break
-                        # Give Bryan a beat to finish "Hey VANTA" and start the
-                        # actual command, then record fresh audio until silence.
-                        time.sleep(0.5)
-                        after = _normalize(self._transcribe(self._record_until_silence()))
-                        said = f"Hey VANTA {after}".strip() if after else ""
-                    if not after:
-                        # No command captured — return to listening, no speech.
-                        print(f"👂 listening — say \"{WAKE_WORD}\"…")
-                        continue
-
-                    # YOU: … — final transcript line + saved to unified history
-                    voice_bus.push_transcript("bryan", said or after, final=True)
-                    voice_bus.save_turn("bryan", said or after, session_id=self._session)
-                    print(f"💬 command: {after!r}")
-                    self._status("thinking")
-                    # Brain via in-process LeanOrchestrator (see _ask_brain).
-                    answer = self._ask_brain(after)
-                    if answer:
-                        print(f"🗣  VANTA: {answer[:200]}")
-                        # VANTA: … — show + save BEFORE speaking so the overlay
-                        # displays the reply while ElevenLabs plays it.
-                        voice_bus.push_transcript("vanta", answer, final=True)
-                        voice_bus.save_turn("vanta", answer, session_id=self._session)
-                        self._speak(answer)          # speak the response ONCE
-                    else:
-                        # Brain error — stay silent, do NOT speak an error message.
-                        print("⚠ brain unavailable — staying silent, listening")
-                    # Drain anything captured while speaking, then resume listening.
-                    while not q.empty():
-                        q.get_nowait()
-                    self._last_trigger = time.monotonic()  # re-arm after response
-                    print(f"\n👂 listening — say \"{WAKE_WORD}\"…")
+                    self._status("awake")
+                    # inline command = text after the wake word in the same
+                    # utterance (kept for the voice path); else _handle_wake records.
+                    inline = heard.split("vanta", 1)[1].strip() if "vanta" in heard else ""
+                    self._handle_wake(q, inline_after=inline)
                 except KeyboardInterrupt:
                     print("\n🛑 voice loop stopped")
                     break
