@@ -303,9 +303,12 @@ fn find_project_root() -> Option<std::path::PathBuf> {
         }
     }
 
-    // 3. Fallback: well-known direct paths
+    // 3. Fallback: well-known direct paths. VANTA is the current repo location
+    //    (the project was renamed from OpenJarvis -> VANTA), so it MUST be
+    //    checked first — otherwise the app boots a stale ~/OpenJarvis checkout.
     let home = home_dir();
     let direct = [
+        format!("{home}/VANTA"),
         format!("{home}/OpenJarvis"),
         format!("{home}/projects/hazy/OpenJarvis"),
         format!("{home}/projects/OpenJarvis"),
@@ -911,13 +914,29 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
         s.detail = "Starting API server...".into();
     }
 
+    // Self-contained boot: prefer the prebuilt venv `jarvis` binary so the
+    // packaged GUI app (minimal PATH, no `uv` on it) starts the backend with NO
+    // terminal. When present we skip the uv install steps and run it directly;
+    // we only fall back to `uv run jarvis` on a fresh checkout with no venv.
+    let venv_jarvis: Option<std::path::PathBuf> = find_project_root().and_then(|r| {
+        let unix = r.join(".venv/bin/jarvis");
+        let win = r.join(".venv/Scripts/jarvis.exe");
+        if unix.exists() {
+            Some(unix)
+        } else if win.exists() {
+            Some(win)
+        } else {
+            None
+        }
+    });
+
     let uv_bin = resolve_bin("uv");
 
     // Verify uv is actually installed. Concrete per-OS instructions —
     // the generic "install it from astral.sh" was the #1 source of
     // confusion on the Discord support thread; users couldn't tell whether
     // to use winget, scoop, pip, or the official installer.
-    if !std::path::Path::new(&uv_bin).exists() && uv_bin == "uv" {
+    if venv_jarvis.is_none() && !std::path::Path::new(&uv_bin).exists() && uv_bin == "uv" {
         let mut s = status.lock().await;
         #[cfg(target_os = "windows")]
         let msg = "Could not find 'uv' (Python package manager). \
@@ -1215,6 +1234,7 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
     // to the user BEFORE the long server-start wait. The status detail
     // message also indicates this can take a couple of minutes on first
     // boot so users don't restart the app thinking it's stuck.
+    if venv_jarvis.is_none() {
     {
         let mut s = status.lock().await;
         s.detail = "Installing dependencies (uv sync — may take 1-2 min on first boot)...".into();
@@ -1269,20 +1289,30 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
     prepare_subprocess_for_appimage(&mut maturin_cmd);
     // Best-effort: pure-Python SQLite memory remains if rustc/maturin unavailable.
     let _ = maturin_cmd.output().await;
+    } // end: skip uv sync/maturin when the prebuilt venv binary is present
 
     {
         let mut s = status.lock().await;
         s.detail = format!("Starting API server from {}...", root.display());
     }
 
-    let mut cmd = tokio::process::Command::new(&uv_bin);
-    let mut serve_argv: Vec<String> = vec![
-        "run".into(),
-        "jarvis".into(),
-        "serve".into(),
-        "--port".into(),
-        JARVIS_PORT.to_string(),
-    ];
+    // Run the venv binary directly when present (no `uv` needed), else fall
+    // back to `uv run jarvis serve` for a fresh checkout.
+    let serve_program: std::path::PathBuf = match &venv_jarvis {
+        Some(j) => j.clone(),
+        None => std::path::PathBuf::from(&uv_bin),
+    };
+    let mut cmd = tokio::process::Command::new(&serve_program);
+    let mut serve_argv: Vec<String> = match &venv_jarvis {
+        Some(_) => vec!["serve".into(), "--port".into(), JARVIS_PORT.to_string()],
+        None => vec![
+            "run".into(),
+            "jarvis".into(),
+            "serve".into(),
+            "--port".into(),
+            JARVIS_PORT.to_string(),
+        ],
+    };
     serve_argv.extend(plan.serve_args.iter().cloned());
     // If the Ollama pull fell back to a different tag than planned, serve the
     // tag that is actually present. boot_plan always emits `--model` followed

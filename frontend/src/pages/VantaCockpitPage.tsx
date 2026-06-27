@@ -18,6 +18,8 @@ import { VantaOrb } from './vanta/VantaOrb';
 import { LeftColumn, RightColumn } from './vanta/VantaPanels';
 import { VantaChatPanel } from './vanta/VantaChatArea';
 import { VantaHistoryModal, type HistItem } from './vanta/VantaHistoryModal';
+import { VantaBootOverlay } from './vanta/VantaBootOverlay';
+import { VantaPermissions, permissionsSeen } from './vanta/VantaPermissions';
 
 // Poll intervals (ms) — match the task spec.
 const I = {
@@ -155,6 +157,11 @@ export function VantaCockpitPage(): React.ReactElement {
     window.setTimeout(() => setMicActive(false), 3000);
   }, []);
 
+  // Boot overlay ("VANTA INITIALISING…" / "RECONNECTING…") + first-launch perms.
+  const [everHealthy, setEverHealthy] = React.useState(false);
+  React.useEffect(() => { if (serverUp) setEverHealthy(true); }, [serverUp]);
+  const [showPerms, setShowPerms] = React.useState(() => !permissionsSeen());
+
   return (
     <div id="vanta-root" className={rootClass}>
       <VantaHudStyles />
@@ -176,6 +183,8 @@ export function VantaCockpitPage(): React.ReactElement {
       {/* Slide-up chat panel — sits just above the command bar, never over the orb. */}
       <VantaChatPanel messages={typed} open={chatOpen} />
       <VantaHistoryModal open={historyOpen} onClose={() => setHistoryOpen(false)} typed={typed} />
+      <VantaBootOverlay healthy={serverUp} everHealthy={everHealthy} />
+      <VantaPermissions open={showPerms} onClose={() => setShowPerms(false)} />
     </div>
   );
 }
