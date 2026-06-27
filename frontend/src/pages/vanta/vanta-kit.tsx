@@ -11,10 +11,11 @@ export const VANTA = {
   amber: '#ffb700',
   purple: '#9945ff',
   red: '#ff4444',
-  text: '#cfe3f2',
-  textDim: 'rgba(207,227,242,0.5)',
+  white: '#ffffff',
+  text: '#e6f2ff',
+  textDim: '#4a6080',
   mono: "'JetBrains Mono', 'SF Mono', 'Consolas', monospace",
-  panelBorder: 'rgba(0,212,255,0.15)',
+  panelBorder: 'rgba(0,212,255,0.28)',
   panelBg: 'rgba(10,20,40,0.45)',
 } as const;
 
@@ -44,7 +45,7 @@ export function Dot({ color, pulse }: { color: string; pulse?: boolean }): React
     <span
       style={{
         display: 'inline-block', width: 7, height: 7, borderRadius: '50%',
-        background: color, boxShadow: `0 0 6px ${color}`, flexShrink: 0,
+        background: color, boxShadow: `0 0 8px ${color}, 0 0 3px ${color}`, flexShrink: 0,
         animation: pulse ? 'vantaPulse 1.8s ease-in-out infinite' : undefined,
       }}
     />
@@ -52,10 +53,10 @@ export function Dot({ color, pulse }: { color: string; pulse?: boolean }): React
 }
 
 // Compact one-line data row: label left, value right.
-export function DataRow({ label, value, color = VANTA.text, dim }: { label: string; value: React.ReactNode; color?: string; dim?: boolean }): React.ReactElement {
+export function DataRow({ label, value, color = VANTA.text, labelColor = VANTA.textDim }: { label: string; value: React.ReactNode; color?: string; labelColor?: string }): React.ReactElement {
   return (
-    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, fontFamily: VANTA.mono, fontSize: 11, lineHeight: 1.5 }}>
-      <span style={{ color: VANTA.textDim, whiteSpace: 'nowrap', opacity: dim ? 0.7 : 1 }}>{label}</span>
+    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, fontFamily: VANTA.mono, fontSize: 11, lineHeight: 1.55 }}>
+      <span style={{ color: labelColor, whiteSpace: 'nowrap' }}>{label}</span>
       <span style={{ color, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textAlign: 'right' }}>{value}</span>
     </div>
   );
@@ -77,8 +78,8 @@ export function GlassPanel({
       style={{
         background: 'rgba(10,20,40,0.45)',
         backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)',
-        border: '1px solid rgba(0,212,255,0.15)',
-        boxShadow: '0 0 20px rgba(0,212,255,0.05), inset 0 1px 0 rgba(255,255,255,0.05)',
+        border: '1px solid rgba(0,212,255,0.22)',
+        boxShadow: `0 0 12px rgba(0,212,255,0.15), 0 0 1px rgba(0,212,255,0.4), inset 0 1px 0 rgba(255,255,255,0.06)`,
         borderRadius: 8,
         display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0,
       }}

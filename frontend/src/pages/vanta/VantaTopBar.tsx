@@ -69,15 +69,15 @@ export function VantaTopBar({
     >
       {/* Brand */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-        <div style={{ fontFamily: VANTA.mono, fontWeight: 800, fontSize: 20, letterSpacing: '0.34em', color: VANTA.cyan, textShadow: `0 0 16px ${VANTA.cyan}88` }}>VANTA</div>
-        <div style={{ fontFamily: VANTA.mono, fontSize: 8, color: VANTA.textDim, letterSpacing: '0.2em', lineHeight: 1.3 }}>
+        <div style={{ fontFamily: VANTA.mono, fontWeight: 800, fontSize: 25, letterSpacing: '0.36em', color: VANTA.cyan, textShadow: '0 0 20px #00d4ff, 0 0 40px rgba(0,212,255,0.5)' }}>VANTA</div>
+        <div style={{ fontFamily: VANTA.mono, fontSize: 8, color: VANTA.cyan, opacity: 0.65, letterSpacing: '0.22em', lineHeight: 1.3 }}>
           NEURAL<br />COMMAND
         </div>
       </div>
 
       {/* Clock + date */}
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
-        <Metric value={time} color={VANTA.text} size={22} />
+        <span style={{ fontFamily: VANTA.mono, fontSize: 25, fontWeight: 700, color: VANTA.white, textShadow: '0 0 14px rgba(255,255,255,0.35)' }}>{time}</span>
         <div style={{ fontFamily: VANTA.mono, fontSize: 9, color: VANTA.textDim, letterSpacing: '0.14em' }}>{date} · SGT</div>
       </div>
 
@@ -93,7 +93,7 @@ export function VantaTopBar({
           <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontFamily: VANTA.mono, fontSize: 9, color: sysColor }}>
             <Dot color={sysColor} pulse /> {sysOk ? 'SYSTEM OK' : 'SYSTEM…'}
           </div>
-          <div style={{ fontFamily: VANTA.mono, fontSize: 10, color: v.color, fontWeight: 700, letterSpacing: '0.08em' }}>{v.text}</div>
+          <div style={{ fontFamily: VANTA.mono, fontSize: 10, color: v.color, fontWeight: 700, letterSpacing: '0.08em', textShadow: voiceMode === 'off' ? 'none' : `0 0 10px ${v.color}` }}>{v.text}</div>
         </div>
       </div>
     </div>

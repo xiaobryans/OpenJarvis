@@ -35,6 +35,7 @@ export function VantaBottomBar({
   // Map system state to a pipeline highlight position (illustrative live chain).
   const activeIdx = systemState === 'processing' ? 3 : systemState === 'speaking' ? 6 : systemState === 'error' ? -1 : -1;
   const micActive = voiceMode === 'listening' || voiceMode === 'active';
+  const [focused, setFocused] = React.useState(false);
 
   return (
     <div
@@ -51,9 +52,9 @@ export function VantaBottomBar({
     >
       {/* Pipeline chain with a continuously travelling data dot */}
       <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 4, fontFamily: VANTA.mono, fontSize: 9 }}>
-        {/* travelling dot */}
-        <div style={{ position: 'absolute', top: -3, left: 0, right: 70, height: 2, pointerEvents: 'none' }}>
-          <span style={{ position: 'absolute', top: 0, width: 5, height: 5, borderRadius: '50%', background: VANTA.cyan, boxShadow: `0 0 8px ${VANTA.cyan}`, animation: 'vantaFlow 3.4s linear infinite' }} />
+        {/* travelling dot with a fading trail */}
+        <div style={{ position: 'absolute', top: -3, left: 0, right: 70, height: 3, pointerEvents: 'none' }}>
+          <span style={{ position: 'absolute', top: 0, width: 30, height: 3, marginLeft: -30, borderRadius: 2, background: 'linear-gradient(90deg, transparent, rgba(0,212,255,0.6), #00d4ff)', boxShadow: '0 0 10px #00d4ff', animation: 'vantaFlow 3.2s linear infinite' }} />
         </div>
         {PIPELINE.map((stage, i) => (
           <React.Fragment key={stage}>
@@ -71,18 +72,22 @@ export function VantaBottomBar({
         <input
           value={input}
           onChange={(e) => onInput(e.target.value)}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
           onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onSend(); } }}
           placeholder="Command VANTA…  (Enter to send · hold 🎤 to talk)"
           style={{
             flex: 1,
             background: 'rgba(4,8,18,0.8)',
-            border: `1px solid ${VANTA.panelBorder}`,
+            border: `1px solid ${focused ? '#00d4ff' : VANTA.panelBorder}`,
             borderRadius: 8,
             color: VANTA.text,
             fontFamily: VANTA.mono,
             fontSize: 13,
-            padding: '10px 14px',
+            padding: '9px 14px',
             outline: 'none',
+            boxShadow: focused ? '0 0 14px rgba(0,212,255,0.35), inset 0 0 8px rgba(0,212,255,0.08)' : 'none',
+            transition: 'box-shadow 0.2s, border-color 0.2s',
           }}
         />
         <button

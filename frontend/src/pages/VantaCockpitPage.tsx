@@ -113,7 +113,7 @@ export function VantaCockpitPage(): React.ReactElement {
           <MemoryPanel state={memory} />
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: 0, minHeight: 0, overflow: 'hidden' }}>
           <VantaOrb systemState={systemState} />
         </div>
 

@@ -1,5 +1,5 @@
-// VantaPanels — compact, dense glassmorphism panels fed by live polled data.
-// Maximum information, minimum space. No giant empty boxes.
+// VantaPanels — packed, vibrant glassmorphism panels fed by live polled data.
+// Maximum information density; stay useful even when a source is offline.
 
 import React from 'react';
 import {
@@ -14,9 +14,11 @@ function senderName(from: string): string {
 }
 function timeLabel(iso: string | null): string {
   if (!iso) return '';
-  try {
-    return new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Singapore', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(iso));
-  } catch { return ''; }
+  try { return new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Singapore', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(iso)); } catch { return ''; }
+}
+function syncLabel(ms: number | null): string {
+  if (!ms) return '—';
+  try { return new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Singapore', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(new Date(ms)); } catch { return '—'; }
 }
 function freshDot(s: LiveState<unknown>): React.ReactElement {
   return <Dot color={s.loading ? VANTA.textDim : s.ok ? VANTA.green : VANTA.red} pulse={s.loading} />;
@@ -24,39 +26,44 @@ function freshDot(s: LiveState<unknown>): React.ReactElement {
 function Lead({ value, unit, color, state }: { value: string | number; unit: string; color: string; state: LiveState<unknown> }): React.ReactElement {
   return (
     <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
-      <Metric value={value} color={color} size={26} />
+      <Metric value={value} color={color} size={28} />
       <span style={{ fontFamily: VANTA.mono, fontSize: 9, color: VANTA.textDim, textTransform: 'uppercase', letterSpacing: '0.1em' }}>{unit}</span>
       <span style={{ marginLeft: 'auto' }}>{freshDot(state)}</span>
     </div>
   );
 }
-function MailRow({ from, subject, date, unread }: { from: string; subject: string; date: string; unread: boolean }): React.ReactElement {
+function Divider({ color = 'rgba(0,212,255,0.12)' }: { color?: string }): React.ReactElement {
+  return <div style={{ height: 1, background: color, margin: '3px 0' }} />;
+}
+function SectionLabel({ text }: { text: string }): React.ReactElement {
+  return <div style={{ fontFamily: VANTA.mono, fontSize: 8, color: VANTA.textDim, letterSpacing: '0.18em' }}>{text}</div>;
+}
+function ChannelRow({ name, status, color }: { name: string; status: string; color: string }): React.ReactElement {
   return (
-    <div style={{ borderLeft: `2px solid ${unread ? VANTA.cyan : 'rgba(0,212,255,0.12)'}`, paddingLeft: 6 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 6 }}>
-        <span style={{ fontFamily: VANTA.mono, fontSize: 10, color: unread ? VANTA.text : VANTA.textDim, fontWeight: unread ? 700 : 400 }}>{senderName(from)}</span>
-        <span style={{ fontFamily: VANTA.mono, fontSize: 9, color: VANTA.textDim }}>{timeLabel(date)}</span>
-      </div>
-      <div style={{ fontSize: 10, color: VANTA.textDim, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{subject}</div>
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontFamily: VANTA.mono, fontSize: 11, lineHeight: 1.6 }}>
+      <span style={{ display: 'flex', alignItems: 'center', gap: 6, color: VANTA.text }}><Dot color={color} /> {name}</span>
+      <span style={{ color, fontWeight: 600 }}>{status}</span>
     </div>
   );
 }
-function NotConnected({ what, color }: { what: string; color: string }): React.ReactElement {
-  return <div style={{ fontFamily: VANTA.mono, fontSize: 10, color, opacity: 0.8, cursor: 'pointer' }}>↳ Connect {what}</div>;
+function MailRow({ from, subject, date, unread }: { from: string; subject: string; date: string; unread: boolean }): React.ReactElement {
+  return (
+    <div style={{ borderLeft: `2px solid ${unread ? VANTA.cyan : 'rgba(0,212,255,0.15)'}`, paddingLeft: 6 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 6 }}>
+        <span style={{ fontFamily: VANTA.mono, fontSize: 10, color: unread ? VANTA.white : VANTA.textDim, fontWeight: unread ? 700 : 400 }}>{senderName(from)}</span>
+        <span style={{ fontFamily: VANTA.mono, fontSize: 9, color: VANTA.textDim }}>{timeLabel(date)}</span>
+      </div>
+      <div style={{ fontSize: 10, color: unread ? VANTA.text : VANTA.textDim, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{subject}</div>
+    </div>
+  );
 }
-// 7-day week-ahead strip (today highlighted) — fills the calendar panel footer.
 function WeekStrip(): React.ReactElement {
   const today = new Date().getDay();
   const days = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
   return (
-    <div style={{ display: 'flex', gap: 4, justifyContent: 'space-between' }}>
+    <div style={{ display: 'flex', gap: 4 }}>
       {days.map((d, i) => (
-        <div key={i} style={{
-          flex: 1, textAlign: 'center', fontFamily: VANTA.mono, fontSize: 9, padding: '3px 0', borderRadius: 4,
-          color: i === today ? '#001018' : VANTA.textDim,
-          background: i === today ? VANTA.green : 'rgba(0,255,136,0.05)',
-          fontWeight: i === today ? 700 : 400,
-        }}>{d}</div>
+        <div key={i} style={{ flex: 1, textAlign: 'center', fontFamily: VANTA.mono, fontSize: 9, padding: '3px 0', borderRadius: 4, color: i === today ? '#04121a' : VANTA.textDim, background: i === today ? VANTA.green : 'rgba(0,255,136,0.06)', boxShadow: i === today ? `0 0 10px ${VANTA.green}` : 'none', fontWeight: i === today ? 700 : 400 }}>{d}</div>
       ))}
     </div>
   );
@@ -69,22 +76,20 @@ export function CommsPanel({ state }: { state: LiveState<CommsData> }): React.Re
   const msgs = d?.messages ?? [];
   const flagged = msgs.filter((m) => m.unread).length;
   return (
-    <GlassPanel title="Communications" accent={VANTA.cyan} more={
-      <div style={{ paddingTop: 4 }}>{msgs.slice(3, 8).map((m, i) => <MailRow key={i} {...m} />)}</div>
-    }>
-      <Lead value={connected ? (d?.unread_count ?? 0) : '—'} unit="unread" color={VANTA.cyan} state={state} />
+    <GlassPanel title="Communications" accent={VANTA.cyan} more={<div style={{ paddingTop: 4 }}>{msgs.slice(3, 9).map((m, i) => <MailRow key={i} {...m} />)}</div>}>
+      <Lead value={connected ? (d?.unread_count ?? 0) : 0} unit="unread" color={VANTA.cyan} state={state} />
       <DataRow label="Inbox" value={connected ? 'live' : 'offline'} color={connected ? VANTA.green : VANTA.textDim} />
-      <DataRow label="Flagged / unseen" value={connected ? flagged : '—'} color={VANTA.amber} />
-      <div style={{ height: 1, background: 'rgba(0,212,255,0.08)', margin: '3px 0' }} />
-      {!connected && <NotConnected what="Gmail" color={VANTA.cyan} />}
+      <DataRow label="Flagged" value={connected ? flagged : 0} color={VANTA.amber} />
+      <DataRow label="Last sync" value={syncLabel(state.lastUpdated)} color={VANTA.textDim} />
+      <Divider />
+      <SectionLabel text="CHANNELS" />
+      <ChannelRow name="Gmail" status={connected ? 'live' : 'idle'} color={connected ? VANTA.green : VANTA.textDim} />
+      <ChannelRow name="Slack" status="ready" color={VANTA.cyan} />
+      <ChannelRow name="Telegram" status="ready" color={VANTA.cyan} />
+      <Divider />
+      {!connected && <div style={{ fontFamily: VANTA.mono, fontSize: 10, color: VANTA.cyan, opacity: 0.8 }}>↳ Connect Gmail for live inbox</div>}
       {connected && msgs.length === 0 && <div style={{ fontFamily: VANTA.mono, fontSize: 10, color: VANTA.textDim, fontStyle: 'italic' }}>Inbox clear</div>}
       {msgs.slice(0, 3).map((m, i) => <MailRow key={i} {...m} />)}
-      <div style={{ marginTop: 'auto', paddingTop: 6, borderTop: '1px solid rgba(0,212,255,0.08)' }}>
-        <div style={{ fontFamily: VANTA.mono, fontSize: 8, color: VANTA.textDim, letterSpacing: '0.16em', marginBottom: 4 }}>CHANNELS</div>
-        <DataRow label="Gmail" value={connected ? 'live' : 'idle'} color={connected ? VANTA.green : VANTA.textDim} />
-        <DataRow label="Slack" value="ready" color={VANTA.cyan} />
-        <DataRow label="Telegram" value="ready" color={VANTA.cyan} />
-      </div>
     </GlassPanel>
   );
 }
@@ -101,7 +106,8 @@ export function MemoryPanel({ state }: { state: LiveState<MemoryData> }): React.
       <DataRow label="Cloud sync" value={synced === undefined ? '…' : synced ? 'live' : 'pending'} color={synced ? VANTA.green : VANTA.amber} />
       <DataRow label="Follow-ups" value="PA-tracked" color={VANTA.cyan} />
       <DataRow label="Delegation" value="active" color={VANTA.green} />
-      <DataRow label="Namespaces" value={typeof d?.namespaces === 'number' ? (d.namespaces as number) : 'unified'} color={VANTA.text} />
+      <DataRow label="Namespaces" value="unified" color={VANTA.green} />
+      <DataRow label="Last sync" value={syncLabel(state.lastUpdated)} color={VANTA.textDim} />
     </GlassPanel>
   );
 }
@@ -112,51 +118,44 @@ export function CalendarPanel({ state }: { state: LiveState<CalendarData> }): Re
   const connected = d?.connected ?? false;
   const events = d?.events ?? [];
   return (
-    <GlassPanel title="Calendar — Today" accent={VANTA.green} more={
-      <div style={{ paddingTop: 4 }}>{events.slice(4, 10).map((ev) => (
-        <DataRow key={ev.id} label={ev.all_day ? 'all-day' : timeLabel(ev.start)} value={ev.summary} color={VANTA.text} />
-      ))}</div>
-    }>
-      <Lead value={connected ? events.length : '—'} unit="events" color={VANTA.green} state={state} />
-      <DataRow label="Date" value={d?.date ?? '—'} color={VANTA.text} />
-      <div style={{ height: 1, background: 'rgba(0,255,136,0.08)', margin: '3px 0' }} />
-      {!connected && <NotConnected what="Calendar" color={VANTA.green} />}
+    <GlassPanel title="Calendar — Today" accent={VANTA.green} more={<div style={{ paddingTop: 4 }}>{events.slice(3, 9).map((ev) => <DataRow key={ev.id} label={ev.all_day ? 'all-day' : timeLabel(ev.start)} value={ev.summary} color={VANTA.text} />)}</div>}>
+      <Lead value={connected ? events.length : 0} unit="events" color={VANTA.green} state={state} />
+      <DataRow label="Date" value={d?.date ?? new Date().toISOString().slice(0, 10)} color={VANTA.white} />
+      <WeekStrip />
+      <Divider color="rgba(0,255,136,0.14)" />
+      {!connected && <div style={{ fontFamily: VANTA.mono, fontSize: 10, color: VANTA.green, opacity: 0.8 }}>↳ Connect Calendar for events</div>}
       {connected && events.length === 0 && <div style={{ fontFamily: VANTA.mono, fontSize: 10, color: VANTA.textDim, fontStyle: 'italic' }}>No events today</div>}
-      {events.slice(0, 4).map((ev) => (
+      {connected && events.length > 0 && <SectionLabel text="NEXT UP" />}
+      {events.slice(0, 3).map((ev) => (
         <div key={ev.id} style={{ display: 'flex', gap: 8, alignItems: 'baseline' }}>
-          <span style={{ fontFamily: VANTA.mono, fontSize: 10, color: VANTA.green, minWidth: 40 }}>{ev.all_day ? 'all-day' : timeLabel(ev.start)}</span>
+          <span style={{ fontFamily: VANTA.mono, fontSize: 10, color: VANTA.green, minWidth: 42 }}>{ev.all_day ? 'all-day' : timeLabel(ev.start)}</span>
           <span style={{ fontSize: 11, color: VANTA.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{ev.summary}</span>
         </div>
       ))}
-      <div style={{ marginTop: 'auto', paddingTop: 6, borderTop: '1px solid rgba(0,255,136,0.12)' }}>
-        {d?.next_upcoming && (
-          <div style={{ fontFamily: VANTA.mono, fontSize: 9, color: VANTA.textDim, marginBottom: 5 }}>
-            NEXT → <span style={{ color: VANTA.green }}>{d.next_upcoming.summary}</span>
-          </div>
-        )}
-        <WeekStrip />
+      <div style={{ marginTop: 'auto' }}>
+        <Divider color="rgba(0,255,136,0.14)" />
+        <DataRow label="Last sync" value={syncLabel(state.lastUpdated)} color={VANTA.textDim} />
       </div>
     </GlassPanel>
   );
 }
 
-// ─── Finance (OMNIX placeholder, but filled meaningfully) ────────────────────
+// ─── Finance (OMNIX placeholder, amber labels / white values) ────────────────
 export function FinancePanel(): React.ReactElement {
   return (
     <GlassPanel title="Finance" accent={VANTA.amber}>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
-        <Metric value="—" color={VANTA.amber} size={22} />
-        <span style={{ fontFamily: VANTA.mono, fontSize: 9, color: VANTA.textDim, textTransform: 'uppercase' }}>MRR</span>
+        <Metric value="—" color={VANTA.white} size={24} />
+        <span style={{ fontFamily: VANTA.mono, fontSize: 9, color: VANTA.amber, textTransform: 'uppercase' }}>MRR</span>
         <span style={{ marginLeft: 'auto', fontFamily: VANTA.mono, fontSize: 8, color: VANTA.amber, letterSpacing: '0.14em' }}>OMNIX</span>
       </div>
-      <DataRow label="Revenue (MTD)" value="—" color={VANTA.textDim} />
-      <DataRow label="Stripe" value="not linked" color={VANTA.textDim} />
-      <DataRow label="Runway" value="—" color={VANTA.textDim} />
-      <DataRow label="Burn / mo" value="—" color={VANTA.textDim} />
-      <div style={{ height: 1, background: 'rgba(255,183,0,0.1)', margin: '3px 0' }} />
-      <div style={{ fontFamily: VANTA.mono, fontSize: 9, color: VANTA.textDim, lineHeight: 1.5 }}>
-        Stripe connects here<br />when OMNIX launches.
-      </div>
+      <DataRow label="Revenue (MTD)" value="—" color={VANTA.white} labelColor={VANTA.amber} />
+      <DataRow label="Stripe" value="not linked" color={VANTA.white} labelColor={VANTA.amber} />
+      <DataRow label="Runway" value="—" color={VANTA.white} labelColor={VANTA.amber} />
+      <DataRow label="Burn / mo" value="—" color={VANTA.white} labelColor={VANTA.amber} />
+      <DataRow label="Open invoices" value="—" color={VANTA.white} labelColor={VANTA.amber} />
+      <Divider color="rgba(255,183,0,0.16)" />
+      <DataRow label="Last updated" value="pending launch" color={VANTA.textDim} />
     </GlassPanel>
   );
 }
@@ -167,7 +166,7 @@ export function BriefingBanner({ state, onDismiss }: { state: LiveState<Briefing
   if (!d?.exists || !d.markdown) return null;
   const firstLine = d.markdown.split('\n').find((l) => l.trim()) ?? 'Morning briefing ready';
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 14px', margin: '0 10px', background: 'rgba(255,183,0,0.08)', border: '1px solid rgba(255,183,0,0.3)', borderRadius: 8, flexShrink: 0 }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 14px', margin: '0 10px', background: 'rgba(255,183,0,0.08)', border: '1px solid rgba(255,183,0,0.35)', borderRadius: 8, boxShadow: '0 0 12px rgba(255,183,0,0.12)', flexShrink: 0 }}>
       <span style={{ fontSize: 13 }}>☀️</span>
       <span style={{ fontFamily: VANTA.mono, fontSize: 10, color: VANTA.amber, letterSpacing: '0.14em' }}>BRIEFING</span>
       <span style={{ fontFamily: VANTA.mono, fontSize: 11, color: VANTA.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1 }}>{firstLine.replace(/^#+\s*/, '')}</span>

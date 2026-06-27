@@ -1,69 +1,48 @@
-// VantaOrb — Canvas particle-nebula: a glowing 3-D energy sphere, not a flat
-// circle. ~2000 particles on a center-dense Fibonacci sphere, depth-shaded,
-// each breathing on its own phase, compounded with additive blending. Orbital
-// worker/manager nodes ring the outside. Reacts to system state.
+// VantaOrb — dark energy sphere with cyan plasma streams flowing across its
+// surface (aurora / liquid-lightning), a soft diffuse halo, and sparks. The
+// core is dark — the energy lives ON the surface. Streams wrap the sphere at
+// different angles and depths; the sphere rotates slowly. Reacts to state.
 
 import React from 'react';
 import { VANTA, type SystemState } from './vanta-kit';
 
-const N = 2000; // particle count
-const GOLDEN = Math.PI * (3 - Math.sqrt(5));
-const SIZE = 460; // logical canvas px
-const CORE_R = 118; // nebula visual radius
+const SIZE = 500; // logical canvas px
+const R = 200; // sphere radius (diameter 400)
+const VIEW_TILT = 0.42; // tip the sphere toward the viewer
+const SAMPLES = 230; // points per stream (dense enough to read as fluid ribbons)
 const WORKERS = 35;
 const MANAGERS = 17;
 
-interface Particle {
-  x: number; y: number; z: number; // unit-ish position (center-biased)
-  rf: number; // 0 = core, 1 = edge
-  phase: number; // independent pulse phase
-}
+// Each plasma stream: a band wrapping the sphere with an undulating latitude,
+// oriented by a fixed tilt so the streams cross at different angles.
+interface Stream { tilt: [number, number, number]; phase: number; amp: number; k: number; dir: number }
+const STREAMS: Stream[] = [
+  { tilt: [0.25, 0.0, 0.15], phase: 0.0, amp: 0.34, k: 2, dir: 1 },
+  { tilt: [1.15, 0.5, -0.1], phase: 2.1, amp: 0.27, k: 3, dir: -1 },
+  { tilt: [0.55, 1.25, 0.35], phase: 4.0, amp: 0.31, k: 2, dir: 1 },
+  { tilt: [1.55, 0.8, 0.7], phase: 1.2, amp: 0.22, k: 4, dir: -1 },
+];
 
-interface StateCfg {
-  rot: number; // rotation speed
-  expand: number; // radial expansion (processing pushes outward)
-  bright: number; // global brightness multiplier
-  ripple: boolean;
-  edge: [number, number, number]; // outer particle colour
-  core: [number, number, number]; // hot core colour
-}
+function rotX(p: number[], a: number): number[] { const c = Math.cos(a), s = Math.sin(a); return [p[0], p[1] * c - p[2] * s, p[1] * s + p[2] * c]; }
+function rotY(p: number[], a: number): number[] { const c = Math.cos(a), s = Math.sin(a); return [p[0] * c + p[2] * s, p[1], -p[0] * s + p[2] * c]; }
+function rotZ(p: number[], a: number): number[] { const c = Math.cos(a), s = Math.sin(a); return [p[0] * c - p[1] * s, p[0] * s + p[1] * c, p[2]]; }
 
-function cfgFor(s: SystemState): StateCfg {
+interface Cfg { primary: [number, number, number]; rot: number; flow: number; bright: number; ripple: boolean }
+function cfgFor(s: SystemState): Cfg {
   switch (s) {
-    case 'processing':
-      return { rot: 0.011, expand: 0.16, bright: 1.35, ripple: false, edge: [0, 212, 255], core: [255, 255, 255] };
-    case 'speaking':
-      return { rot: 0.006, expand: 0.06, bright: 1.2, ripple: true, edge: [0, 255, 150], core: [220, 255, 240] };
-    case 'error':
-      return { rot: 0.007, expand: 0.05, bright: 1.1, ripple: false, edge: [255, 90, 40], core: [255, 220, 150] };
-    default:
-      return { rot: 0.0032, expand: 0, bright: 1.0, ripple: false, edge: [30, 130, 230], core: [235, 248, 255] };
+    case 'processing': return { primary: [0, 212, 255], rot: 0.010, flow: 1.8, bright: 1.35, ripple: false };
+    case 'speaking': return { primary: [0, 255, 150], rot: 0.006, flow: 1.2, bright: 1.25, ripple: true };
+    case 'error': return { primary: [255, 120, 40], rot: 0.007, flow: 1.0, bright: 1.15, ripple: false };
+    default: return { primary: [0, 212, 255], rot: 0.0034, flow: 1.0, bright: 1.0, ripple: false };
   }
-}
-
-function buildParticles(): Particle[] {
-  const ps: Particle[] = [];
-  for (let i = 0; i < N; i++) {
-    const y = 1 - (i / (N - 1)) * 2; // -1..1
-    const rad = Math.sqrt(Math.max(0, 1 - y * y));
-    const theta = i * GOLDEN;
-    const dx = Math.cos(theta) * rad;
-    const dz = Math.sin(theta) * rad;
-    // center-dense radius: pow(u, 1.6) clusters particles toward the core.
-    const rf = Math.pow(Math.random(), 1.6);
-    ps.push({ x: dx * rf, y: y * rf, z: dz * rf, rf, phase: Math.random() * Math.PI * 2 });
-  }
-  return ps;
 }
 
 export function VantaOrb({ systemState }: { systemState: SystemState }): React.ReactElement {
   const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
-  const particles = React.useRef<Particle[]>([]);
   const stateRef = React.useRef<SystemState>(systemState);
   stateRef.current = systemState;
 
   React.useEffect(() => {
-    if (particles.current.length === 0) particles.current = buildParticles();
     const canvas = canvasRef.current;
     if (!canvas) return;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -72,79 +51,82 @@ export function VantaOrb({ systemState }: { systemState: SystemState }): React.R
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     ctx.scale(dpr, dpr);
-
-    const cx = SIZE / 2;
-    const cy = SIZE / 2;
-    let raf = 0;
-    let t0 = 0;
-    let angle = 0;
+    const cx = SIZE / 2, cy = SIZE / 2;
+    let raf = 0, t0 = 0, angle = 0;
 
     const draw = (t: number): void => {
       if (!t0) t0 = t;
+      const tm = t - t0;
       const cfg = cfgFor(stateRef.current);
+      const [pr, pg, pb] = cfg.primary;
       angle += cfg.rot;
-      const cosA = Math.cos(angle);
-      const sinA = Math.sin(angle);
-
       ctx.clearRect(0, 0, SIZE, SIZE);
 
-      // faint radial halo behind the nebula
-      const halo = ctx.createRadialGradient(cx, cy, 0, cx, cy, CORE_R * 1.7);
-      halo.addColorStop(0, `rgba(${cfg.edge[0]},${cfg.edge[1]},${cfg.edge[2]},0.10)`);
+      // ── soft diffuse halo around the whole sphere ──
+      ctx.globalCompositeOperation = 'lighter';
+      const halo = ctx.createRadialGradient(cx, cy, R * 0.55, cx, cy, R * 1.5);
+      halo.addColorStop(0, `rgba(${pr},${pg},${pb},0.16)`);
+      halo.addColorStop(0.5, `rgba(${pr},${pg},${pb},0.06)`);
       halo.addColorStop(1, 'rgba(0,0,0,0)');
       ctx.fillStyle = halo;
       ctx.fillRect(0, 0, SIZE, SIZE);
 
+      // ── dark sphere core (energy lives on the surface) ──
+      ctx.globalCompositeOperation = 'source-over';
+      const core = ctx.createRadialGradient(cx - R * 0.25, cy - R * 0.3, R * 0.1, cx, cy, R);
+      core.addColorStop(0, '#0a1622');
+      core.addColorStop(0.7, '#050d16');
+      core.addColorStop(1, '#02060c');
+      ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.fillStyle = core; ctx.fill();
+
+      // ── plasma streams (dense additive blobs = glowing fluid) ──
       ctx.globalCompositeOperation = 'lighter';
-
-      // ripple wave (speaking): a normalized radius sweeping outward
-      const wave = cfg.ripple ? ((t - t0) % 1400) / 1400 : -1;
-
-      const expand = 1 + cfg.expand * (0.6 + 0.4 * Math.sin((t - t0) * 0.004));
-      const ps = particles.current;
-      for (let i = 0; i < ps.length; i++) {
-        const p = ps[i];
-        // rotate around Y axis
-        const rx = p.x * cosA - p.z * sinA;
-        const rz = p.x * sinA + p.z * cosA;
-        const depth = (rz + 1) / 2; // 0 far .. 1 near
-        const persp = 0.82 + depth * 0.18;
-        const sx = cx + rx * CORE_R * expand * persp;
-        const sy = cy + p.y * CORE_R * expand * persp;
-
-        const pulse = 0.55 + 0.45 * Math.sin(t * 0.002 + p.phase);
-        let bright = (0.12 + depth * 0.55) * pulse * cfg.bright;
-        let size = (0.5 + depth * 1.9) * (0.7 + 0.3 * pulse);
-
-        if (wave >= 0) {
-          const d = Math.abs(p.rf - wave);
-          if (d < 0.12) {
-            const boost = 1 - d / 0.12;
-            bright += boost * 0.6;
-            size += boost * 1.4;
+      for (let si = 0; si < STREAMS.length; si++) {
+        const st = STREAMS[si];
+        for (let i = 0; i < SAMPLES; i++) {
+          const u = (i / SAMPLES) * Math.PI * 2;
+          const lat = st.amp * Math.sin(st.k * u + st.phase + tm * 0.0006 * st.dir * cfg.flow);
+          let p: number[] = [Math.cos(lat) * Math.cos(u), Math.sin(lat), Math.cos(lat) * Math.sin(u)];
+          p = rotZ(rotY(rotX(p, st.tilt[0]), st.tilt[1]), st.tilt[2]);
+          p = rotX(rotY(p, angle), VIEW_TILT);
+          const depth = p[2]; // -1 back .. 1 front
+          const sx = cx + p[0] * R;
+          const sy = cy - p[1] * R;
+          // travelling flow brightness along the path
+          const flow = Math.pow(0.5 + 0.5 * Math.sin(u * 3 - tm * 0.0032 * st.dir * cfg.flow + st.phase), 1.6);
+          const df = depth > 0 ? 0.4 + 0.6 * depth : 0.08 * (1 + depth); // front bright, back faint
+          const a = Math.min(0.95, (0.22 + 0.8 * flow) * df * cfg.bright);
+          if (a < 0.015) continue;
+          const size = (2.0 + 3.6 * df) * (0.65 + 0.6 * flow);
+          // hotter (whiter) where brightest
+          const hot = Math.min(1, flow * df * 1.3);
+          const r = pr + (255 - pr) * hot, g = pg + (255 - pg) * hot, b = pb + (255 - pb) * hot;
+          ctx.beginPath(); ctx.arc(sx, sy, size, 0, Math.PI * 2);
+          ctx.fillStyle = `rgba(${r | 0},${g | 0},${b | 0},${a})`;
+          ctx.fill();
+          // sparks: occasional bright pinpoint riding the stream
+          if ((i + Math.floor(tm * 0.05 * (si + 1))) % 17 === 0 && depth > 0.1) {
+            ctx.beginPath(); ctx.arc(sx, sy, size * 0.5 + 0.6, 0, Math.PI * 2);
+            ctx.fillStyle = `rgba(255,255,255,${Math.min(0.9, a + 0.3)})`;
+            ctx.fill();
           }
         }
-
-        // colour: hot white core -> state edge colour
-        const m = p.rf;
-        const r = cfg.core[0] + (cfg.edge[0] - cfg.core[0]) * m;
-        const g = cfg.core[1] + (cfg.edge[1] - cfg.core[1]) * m;
-        const b = cfg.core[2] + (cfg.edge[2] - cfg.core[2]) * m;
-        ctx.fillStyle = `rgba(${r | 0},${g | 0},${b | 0},${Math.min(bright, 0.95)})`;
-        ctx.beginPath();
-        ctx.arc(sx, sy, size, 0, Math.PI * 2);
-        ctx.fill();
       }
 
-      // white-hot core bloom
-      const bloom = ctx.createRadialGradient(cx, cy, 0, cx, cy, CORE_R * 0.5);
-      bloom.addColorStop(0, `rgba(${cfg.core[0]},${cfg.core[1]},${cfg.core[2]},${0.5 * cfg.bright})`);
-      bloom.addColorStop(0.5, `rgba(${cfg.edge[0]},${cfg.edge[1]},${cfg.edge[2]},0.12)`);
-      bloom.addColorStop(1, 'rgba(0,0,0,0)');
-      ctx.fillStyle = bloom;
-      ctx.beginPath();
-      ctx.arc(cx, cy, CORE_R * 0.5, 0, Math.PI * 2);
-      ctx.fill();
+      // ── speaking ripple ──
+      if (cfg.ripple) {
+        const wr = R * (0.6 + 0.7 * ((tm % 1500) / 1500));
+        ctx.beginPath(); ctx.arc(cx, cy, wr, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(${pr},${pg},${pb},${0.4 * (1 - (tm % 1500) / 1500)})`;
+        ctx.lineWidth = 2; ctx.stroke();
+      }
+
+      // ── rim light on the sphere edge ──
+      const rim = ctx.createRadialGradient(cx, cy, R * 0.86, cx, cy, R * 1.02);
+      rim.addColorStop(0, 'rgba(0,0,0,0)');
+      rim.addColorStop(0.85, `rgba(${pr},${pg},${pb},0.0)`);
+      rim.addColorStop(1, `rgba(${pr},${pg},${pb},0.5)`);
+      ctx.beginPath(); ctx.arc(cx, cy, R * 1.02, 0, Math.PI * 2); ctx.fillStyle = rim; ctx.fill();
 
       ctx.globalCompositeOperation = 'source-over';
       raf = requestAnimationFrame(draw);
@@ -154,43 +136,34 @@ export function VantaOrb({ systemState }: { systemState: SystemState }): React.R
   }, []);
 
   const cfg = cfgFor(systemState);
-  const glow = `rgb(${cfg.edge[0]},${cfg.edge[1]},${cfg.edge[2]})`;
-  const ready =
-    systemState === 'error' ? 'ATTENTION' :
-    systemState === 'processing' ? 'PROCESSING' :
-    systemState === 'speaking' ? 'SPEAKING' : 'READY';
+  const glow = `rgb(${cfg.primary[0]},${cfg.primary[1]},${cfg.primary[2]})`;
+  const ready = systemState === 'error' ? 'ATTENTION' : systemState === 'processing' ? 'PROCESSING' : systemState === 'speaking' ? 'SPEAKING' : 'READY';
 
   return (
-    <div style={{ position: 'relative', width: SIZE, height: SIZE, maxWidth: '100%', maxHeight: '100%' }}>
-      <canvas ref={canvasRef} style={{ position: 'absolute', inset: 0, width: SIZE, height: SIZE }} />
+    <div style={{ position: 'relative', width: '100%', height: '100%', maxWidth: SIZE, maxHeight: SIZE, aspectRatio: '1 / 1', margin: 'auto' }}>
+      <canvas ref={canvasRef} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }} />
 
-      {/* Orbital node rings (orbit outside the nebula) */}
-      <svg viewBox={`0 0 ${SIZE} ${SIZE}`} width={SIZE} height={SIZE} style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
-        <g style={{ transformOrigin: `${SIZE / 2}px ${SIZE / 2}px`, animation: 'vantaSpin 44s linear infinite' }}>
-          <circle cx={SIZE / 2} cy={SIZE / 2} r={188} fill="none" stroke={glow} strokeOpacity={0.12} />
-          {Array.from({ length: WORKERS }).map((_, i) => {
-            const a = (i / WORKERS) * 2 * Math.PI;
-            return <circle key={i} cx={SIZE / 2 + 188 * Math.cos(a)} cy={SIZE / 2 + 188 * Math.sin(a)} r={1.9} fill={glow} opacity={0.8} />;
-          })}
+      {/* Orbital node rings outside the sphere */}
+      <svg viewBox={`0 0 ${SIZE} ${SIZE}`} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
+        <g style={{ transformOrigin: `${SIZE / 2}px ${SIZE / 2}px`, animation: 'vantaSpin 48s linear infinite' }}>
+          <circle cx={SIZE / 2} cy={SIZE / 2} r={238} fill="none" stroke={glow} strokeOpacity={0.14} />
+          {Array.from({ length: WORKERS }).map((_, i) => { const a = (i / WORKERS) * 2 * Math.PI; return <circle key={i} cx={SIZE / 2 + 238 * Math.cos(a)} cy={SIZE / 2 + 238 * Math.sin(a)} r={2} fill={glow} opacity={0.85} />; })}
         </g>
-        <g style={{ transformOrigin: `${SIZE / 2}px ${SIZE / 2}px`, animation: 'vantaSpinRev 30s linear infinite' }}>
-          <circle cx={SIZE / 2} cy={SIZE / 2} r={156} fill="none" stroke={glow} strokeOpacity={0.1} />
-          {Array.from({ length: MANAGERS }).map((_, i) => {
-            const a = (i / MANAGERS) * 2 * Math.PI;
-            return <circle key={i} cx={SIZE / 2 + 156 * Math.cos(a)} cy={SIZE / 2 + 156 * Math.sin(a)} r={2.4} fill={VANTA.cyan} opacity={0.9} />;
-          })}
+        <g style={{ transformOrigin: `${SIZE / 2}px ${SIZE / 2}px`, animation: 'vantaSpinRev 34s linear infinite' }}>
+          <circle cx={SIZE / 2} cy={SIZE / 2} r={222} fill="none" stroke={glow} strokeOpacity={0.1} />
+          {Array.from({ length: MANAGERS }).map((_, i) => { const a = (i / MANAGERS) * 2 * Math.PI; return <circle key={i} cx={SIZE / 2 + 222 * Math.cos(a)} cy={SIZE / 2 + 222 * Math.sin(a)} r={2.6} fill={VANTA.cyan} opacity={0.9} />; })}
         </g>
       </svg>
 
       {/* Legend */}
-      <div style={{ position: 'absolute', top: 8, left: 8, fontFamily: VANTA.mono, fontSize: 8, color: VANTA.textDim, lineHeight: 1.7 }}>
+      <div style={{ position: 'absolute', top: 10, left: 10, fontFamily: VANTA.mono, fontSize: 8, color: VANTA.textDim, lineHeight: 1.7 }}>
         <div><span style={{ color: glow }}>●</span> W×{WORKERS} workers</div>
         <div><span style={{ color: VANTA.cyan }}>●</span> M×{MANAGERS} managers</div>
         <div><span style={{ color: '#fff' }}>◆</span> COS / GM core</div>
       </div>
 
       {/* READY label */}
-      <div style={{ position: 'absolute', bottom: 18, left: '50%', transform: 'translateX(-50%)', fontFamily: VANTA.mono, fontSize: 12, letterSpacing: '0.34em', color: glow, textShadow: `0 0 14px ${glow}`, fontWeight: 700 }}>
+      <div style={{ position: 'absolute', bottom: 6, left: '50%', transform: 'translateX(-50%)', fontFamily: VANTA.mono, fontSize: 13, letterSpacing: '0.36em', color: glow, textShadow: `0 0 16px ${glow}`, fontWeight: 700 }}>
         {ready}
       </div>
     </div>
