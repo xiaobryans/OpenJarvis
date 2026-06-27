@@ -51,7 +51,7 @@ _DEFAULT_RATE = 48000  # MacBook built-in mic native rate
 # Anti-false-trigger gates:
 #  - only transcribe audio louder than this RMS (skip Whisper on silence/fan noise)
 #  - never fire the wake word twice within this cooldown window
-_RMS_GATE = 1200
+_RMS_GATE = 1500
 _TRIGGER_COOLDOWN_S = 10.0
 
 StatusCb = Callable[[str], None]
@@ -296,7 +296,18 @@ class VoiceLoop:
                     after = heard.split("vanta", 1)[1].strip() if "vanta" in heard else ""
                     if not after:
                         print("🟢 listening for your command…")
-                        after = _normalize(self._transcribe(self._collect(q, 4.0)))
+                        # Discard ALL stale buffered audio captured before/around
+                        # the wake word — otherwise Whisper transcribes pre-trigger
+                        # sound (e.g. hallucinating "thank you for watching").
+                        while not q.empty():
+                            try:
+                                q.get_nowait()
+                            except Exception:
+                                break
+                        # Give Bryan a beat to finish "Hey VANTA" and start the
+                        # actual command, then record fresh audio until silence.
+                        time.sleep(0.5)
+                        after = _normalize(self._transcribe(self._record_until_silence()))
                     if not after:
                         # No command captured — return to listening, no speech.
                         print(f"👂 listening — say \"{WAKE_WORD}\"…")
@@ -304,13 +315,13 @@ class VoiceLoop:
 
                     print(f"💬 command: {after!r}")
                     self._status("thinking")
-                    # Brain over HTTP — same endpoint as the chat UI.
+                    # Brain via in-process LeanOrchestrator (see _ask_brain).
                     answer = self._ask_brain(after)
                     if answer:
                         print(f"🗣  VANTA: {answer[:200]}")
                         self._speak(answer)          # speak the response ONCE
                     else:
-                        # HTTP error — stay silent, do NOT speak an error message.
+                        # Brain error — stay silent, do NOT speak an error message.
                         print("⚠ brain unavailable — staying silent, listening")
                     # Drain anything captured while speaking, then resume listening.
                     while not q.empty():
