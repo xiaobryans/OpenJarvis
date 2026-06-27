@@ -460,9 +460,7 @@ class VoiceLoop:
             logger.error("voice_loop.run needs sounddevice: %s", exc)
             return
         self._stt = make_deepgram()
-        self._set_state("listening")
-        voice_bus.set_voice_active(True)
-        logger.info("VANTA voice loop online (listening for wake).")
+        logger.info("VANTA voice loop starting (opening mic)…")
         block = int(SAMPLE_RATE * FRAME_MS / 1000)
         in_conversation = False
         utter = bytearray()
@@ -470,6 +468,12 @@ class VoiceLoop:
         last_activity = time.time()
         try:
             with sd.RawInputStream(samplerate=SAMPLE_RATE, blocksize=block, dtype="int16", channels=1) as stream:
+                # Mic is open -> genuinely listening. Report active ONLY now (not
+                # before), so a mic-permission failure leaves the UI honestly OFF
+                # instead of a fake "listening".
+                self._set_state("listening")
+                voice_bus.set_voice_active(True)
+                logger.info('voice loop active — say "Hey VANTA"')
                 while not self._stop.is_set():
                     data, _ = stream.read(block)
                     frame = bytes(data)
@@ -521,7 +525,8 @@ class VoiceLoop:
                             self.speak("Standing by.", summary=False)
                             in_conversation = False; self._set_state("listening")
         except Exception as exc:
-            logger.warning("audio loop error: %s", exc)
+            logger.warning("voice mic stream error (mic permission?): %s", exc)
+            voice_bus.set_voice_active(False)  # mic unavailable -> honestly OFF
             self._set_state("standby")
 
     def stop(self) -> None:
