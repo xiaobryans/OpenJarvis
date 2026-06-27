@@ -286,9 +286,15 @@ _LEMONADE_DEFAULT_MODEL = "Qwen3.6-35B-A3B-GGUF"
 def recommend_model(hw: HardwareInfo, engine: str) -> str:
     """Suggest a default model for the selected engine and hardware.
 
-    For Lemonade, prefer the validated Qwen3.6 35B A3B GGUF default.
-    For other local engines, use the generic Qwen3.5 tier mapping.
+    VANTA is cloud-first: if an OpenAI key is present, always recommend gpt-4o
+    regardless of the local RAM tier (the _MODEL_TIERS table below is only used
+    when there is no API key). For Lemonade, prefer the validated Qwen3.6 35B
+    default. For other local engines, use the generic Qwen3.5 tier mapping.
     """
+    import os
+    if os.environ.get("OPENAI_API_KEY"):
+        return "gpt-4o"
+
     from openjarvis.intelligence.model_catalog import BUILTIN_MODELS
 
     available_gb = _available_memory_gb(hw)

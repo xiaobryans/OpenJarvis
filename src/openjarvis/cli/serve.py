@@ -291,15 +291,35 @@ def serve(
     selection_model = (
         model_name or config.server.model or config.intelligence.default_model or None
     )
-    resolved = get_engine(config, engine_key, model=selection_model)
-    if resolved is None:
-        console.print(
-            "[red bold]No inference engine available.[/red bold]\n\n"
-            "Make sure an engine is running."
-        )
-        sys.exit(1)
 
-    engine_name, engine = resolved
+    # VANTA is cloud-first: when an OpenAI key (or an explicit force flag) is
+    # present, always use the cloud engine with gpt-4o and skip ALL local engine
+    # discovery / MultiEngine wrapping. Never fall back to a local model.
+    import os as _os_fc
+    _force_cloud = (
+        (_os_fc.environ.get("VANTA_FORCE_CLOUD", "").strip().lower() in ("1", "true", "yes", "on"))
+        or (_os_fc.environ.get("OPENJARVIS_ENGINE", "").strip().lower() == "cloud")
+        or bool(_os_fc.environ.get("OPENAI_API_KEY"))
+    )
+
+    if _force_cloud:
+        try:
+            from openjarvis.engine.cloud import CloudEngine
+
+            engine_name, engine = "cloud", CloudEngine()
+            console.print("  Cloud:  [cyan]forced[/cyan] (VANTA cloud-first → gpt-4o)")
+        except Exception as exc:
+            console.print(f"[red bold]Cloud engine unavailable: {exc}[/red bold]")
+            sys.exit(1)
+    else:
+        resolved = get_engine(config, engine_key, model=selection_model)
+        if resolved is None:
+            console.print(
+                "[red bold]No inference engine available.[/red bold]\n\n"
+                "Make sure an engine is running."
+            )
+            sys.exit(1)
+        engine_name, engine = resolved
 
     # Apply security guardrails
     from openjarvis.security import setup_security
@@ -356,38 +376,45 @@ def serve(
     except Exception as exc:
         logger.debug("Engine instrumentation failed: %s", exc)
 
-    # Discover models
-    all_engines = discover_engines(config)
-    all_models = discover_models(all_engines)
-    for ek, model_ids in all_models.items():
-        merge_discovered_models(ek, model_ids)
+    # Discover models — SKIPPED entirely in cloud-first mode (no local engines).
+    if _force_cloud:
+        all_models = {"cloud": ["gpt-4o"]}
+    else:
+        all_engines = discover_engines(config)
+        all_models = discover_models(all_engines)
+        for ek, model_ids in all_models.items():
+            merge_discovered_models(ek, model_ids)
 
-    multi_entries = [(engine_name, engine)]
-    for discovered_name, discovered_engine in all_engines:
-        if discovered_name != engine_name:
-            multi_entries.append((discovered_name, discovered_engine))
-    if cloud_engine is not None:
-        multi_entries.append(("cloud", cloud_engine))
+        multi_entries = [(engine_name, engine)]
+        for discovered_name, discovered_engine in all_engines:
+            if discovered_name != engine_name:
+                multi_entries.append((discovered_name, discovered_engine))
+        if cloud_engine is not None:
+            multi_entries.append(("cloud", cloud_engine))
 
-    if len(multi_entries) > 1:
-        from openjarvis.engine.multi import MultiEngine
+        if len(multi_entries) > 1:
+            from openjarvis.engine.multi import MultiEngine
 
-        engine = MultiEngine(multi_entries)
-        engine_name = "multi"
-        all_models[engine_name] = engine.list_models()
-        merge_discovered_models(engine_name, all_models[engine_name])
+            engine = MultiEngine(multi_entries)
+            engine_name = "multi"
+            all_models[engine_name] = engine.list_models()
+            merge_discovered_models(engine_name, all_models[engine_name])
 
-    # Resolve model
-    configured_model = (
-        model_name or config.server.model or config.intelligence.default_model
-    )
-    model_name = _resolve_server_model(
-        model_name,
-        config=config,
-        engine_name=engine_name,
-        engine=engine,
-        all_models=all_models,
-    )
+    # Resolve model — pinned to gpt-4o in cloud-first mode.
+    if _force_cloud:
+        configured_model = "gpt-4o"
+        model_name = "gpt-4o"
+    else:
+        configured_model = (
+            model_name or config.server.model or config.intelligence.default_model
+        )
+        model_name = _resolve_server_model(
+            model_name,
+            config=config,
+            engine_name=engine_name,
+            engine=engine,
+            all_models=all_models,
+        )
     if configured_model and model_name and model_name != configured_model:
         console.print(
             "[yellow]Configured model "
