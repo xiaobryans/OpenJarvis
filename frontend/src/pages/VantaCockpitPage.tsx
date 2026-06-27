@@ -96,7 +96,9 @@ export function VantaCockpitPage(): React.ReactElement {
     const history = typed.slice(-40).map((t) => ({ role: t.speaker === 'you' ? 'user' : 'assistant', content: t.text }));
     const messages = [...history, { role: 'user', content: text }];
     try {
-      const r = await apiFetch('/v1/chat/completions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messages, stream: false }) });
+      // `model` is REQUIRED by the backend's chat schema — omitting it returns
+      // 422 (not 401), which is why the cockpit previously showed no reply.
+      const r = await apiFetch('/v1/chat/completions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: 'gpt-4o', messages, stream: false }) });
       if (r.ok) {
         const j = await r.json();
         const reply = (((j.choices || [])[0] || {}).message || {}).content;

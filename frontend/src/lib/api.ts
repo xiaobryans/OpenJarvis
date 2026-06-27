@@ -85,7 +85,24 @@ export const getApiKey = (): string => {
   if (import.meta.env.VITE_OPENJARVIS_API_KEY) {
     return import.meta.env.VITE_OPENJARVIS_API_KEY as string;
   }
+  // Local-first default: the VANTA server runs locally with the dev key "test".
+  // Send it on localhost so the cockpit authenticates out of the box if the
+  // server is ever started WITH a key. Harmless when the server is keyless (the
+  // token is simply ignored), overridden by any source above, and scoped to
+  // localhost so a remote/cloud build never ships this token.
+  if (isLocalBase()) return 'test';
   return '';
+};
+
+/** True when API calls target the local machine (same-origin localhost or an
+ *  explicit 127.0.0.1/localhost/::1 base). Used to scope the dev-key default. */
+const isLocalBase = (): boolean => {
+  const base = getBase();
+  if (base) {
+    return /^https?:\/\/(localhost|127\.0\.0\.1|\[?::1\]?)(:|\/|$)/i.test(base);
+  }
+  if (typeof window === 'undefined') return false;
+  return /^(localhost|127\.0\.0\.1|::1)$/i.test(window.location.hostname);
 };
 
 // Build request headers with the Bearer Authorization token when a local key
