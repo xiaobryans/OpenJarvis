@@ -16,6 +16,7 @@ import { VantaTopBar } from './vanta/VantaTopBar';
 import { VantaBottomBar } from './vanta/VantaBottomBar';
 import { VantaOrb } from './vanta/VantaOrb';
 import { LeftColumn, RightColumn } from './vanta/VantaPanels';
+import { VantaChatPanel } from './vanta/VantaChatArea';
 import { VantaHistoryModal, type HistItem } from './vanta/VantaHistoryModal';
 
 // Poll intervals (ms) — match the task spec.
@@ -89,14 +90,37 @@ export function VantaCockpitPage(): React.ReactElement {
     : { label: '○ VOICE OFF', color: 'rgba(0,212,255,0.4)' };
   const voiceObj = { label: vp.label, color: vp.color, on: voiceActiveUi };
 
-  // Cmd+K unified history (capture phase so the cockpit's modal wins over the global viewer).
+  // Cmd+K unified history + slide-up chat panel state.
   const [historyOpen, setHistoryOpen] = React.useState(false);
   const [typed, setTyped] = React.useState<HistItem[]>([]);
+  const [chatOpen, setChatOpen] = React.useState(false);
+  const [seenCount, setSeenCount] = React.useState(0);
+  const historyOpenRef = React.useRef(false);
+  historyOpenRef.current = historyOpen;
+  const prevCountRef = React.useRef(0);
+  const hideTimerRef = React.useRef<number | null>(null);
+
+  // Auto-show the chat panel on a new message; auto-hide 30s after the last one.
+  React.useEffect(() => {
+    if (typed.length > prevCountRef.current) {
+      prevCountRef.current = typed.length;
+      setChatOpen(true);
+      if (hideTimerRef.current) window.clearTimeout(hideTimerRef.current);
+      hideTimerRef.current = window.setTimeout(() => setChatOpen(false), 30000);
+    }
+  }, [typed.length]);
+  // Mark messages seen while the panel is open; unread drives the input dot.
+  React.useEffect(() => { if (chatOpen) setSeenCount(typed.length); }, [chatOpen, typed.length]);
+  const unread = !chatOpen && typed.length > seenCount;
+
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault(); e.stopImmediatePropagation(); setHistoryOpen((o) => !o);
-      } else if (e.key === 'Escape') { setHistoryOpen(false); }
+      } else if (e.key === 'Escape') {
+        if (historyOpenRef.current) setHistoryOpen(false);
+        else setChatOpen((o) => !o);  // Esc toggles the chat panel
+      }
     };
     window.addEventListener('keydown', onKey, { capture: true });
     return () => window.removeEventListener('keydown', onKey, { capture: true });
@@ -141,14 +165,16 @@ export function VantaCockpitPage(): React.ReactElement {
         />
         <div style={{ flex: 1, display: 'flex', overflow: 'hidden', minHeight: 0 }}>
           <LeftColumn comms={comms} memory={memory} connectors={connectors} />
-          <VantaOrb stateLabel={vis.label} stateColor={vis.color} readout={vis.readout} orbLabel={vis.orb} messages={typed} />
+          <VantaOrb stateLabel={vis.label} stateColor={vis.color} readout={vis.readout} orbLabel={vis.orb} />
           <RightColumn connectors={connectors} voice={voice} health={health} calendar={calendar} voiceMode={voiceMode} />
         </div>
         <VantaBottomBar
           input={input} onInput={setInput} onSend={onSend} onMic={onMic} micActive={micActive}
-          apiOk={apiOk} model={model} voiceOn={voiceOn}
+          apiOk={apiOk} model={model} voiceOn={voiceOn} unread={unread}
         />
       </div>
+      {/* Slide-up chat panel — sits just above the command bar, never over the orb. */}
+      <VantaChatPanel messages={typed} open={chatOpen} />
       <VantaHistoryModal open={historyOpen} onClose={() => setHistoryOpen(false)} typed={typed} />
     </div>
   );

@@ -6,8 +6,6 @@
 
 import React from 'react';
 import { VantaTranscript } from './VantaTranscript';
-import { VantaChatArea } from './VantaChatArea';
-import type { HistItem } from './VantaHistoryModal';
 
 const PIPELINE: { label: string; tone: 'green' | 'cyan' | 'dim' | 'faint' }[] = [
   { label: 'CLASSIFY', tone: 'green' },
@@ -31,8 +29,8 @@ const BARS = Array.from({ length: 30 }, (_, i) => {
   return { h: base, delay: (i % 10) * 0.09, color: i % 2 === 0 ? '#00d4ff' : '#7c3aed' };
 });
 
-export function VantaOrb({ stateLabel, stateColor, readout, orbLabel, messages = [] }: {
-  stateLabel: string; stateColor: string; readout: string; orbLabel: string; messages?: HistItem[];
+export function VantaOrb({ stateLabel, stateColor, readout, orbLabel }: {
+  stateLabel: string; stateColor: string; readout: string; orbLabel: string;
 }): React.ReactElement {
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', position: 'relative', overflow: 'hidden' }}>
@@ -74,9 +72,6 @@ export function VantaOrb({ stateLabel, stateColor, readout, orbLabel, messages =
 
       {/* Orb label */}
       <div style={{ marginTop: 16, fontFamily: "'Exo 2',sans-serif", fontSize: 8, letterSpacing: '8px', color: 'rgba(0,212,255,0.5)', textTransform: 'uppercase' }}>{orbLabel}</div>
-
-      {/* Typed chat conversation (FIX 2) */}
-      <VantaChatArea messages={messages} />
 
       {/* Live transcript overlay */}
       <VantaTranscript />

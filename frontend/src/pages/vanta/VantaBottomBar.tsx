@@ -4,16 +4,24 @@
 
 import React from 'react';
 
-export function VantaBottomBar({ input, onInput, onSend, onMic, micActive, apiOk, model, voiceOn }: {
+export function VantaBottomBar({ input, onInput, onSend, onMic, micActive, apiOk, model, voiceOn, unread = false }: {
   input: string; onInput: (v: string) => void; onSend: () => void; onMic: () => void; micActive: boolean;
-  apiOk: boolean; model: string; voiceOn: boolean;
+  apiOk: boolean; model: string; voiceOn: boolean; unread?: boolean;
 }): React.ReactElement {
   return (
     <div style={{
       height: 52, flexShrink: 0, display: 'flex', alignItems: 'center', padding: '0 12px', gap: 10,
       borderTop: '1px solid rgba(0,212,255,0.1)', background: 'rgba(2,10,24,0.94)',
     }}>
-      <span style={{ color: '#00d4ff', fontSize: 10, letterSpacing: '2px', whiteSpace: 'nowrap', animation: 'vStatusPulse 2.5s ease-in-out infinite' }}>⬡ VANTA:</span>
+      <span style={{ position: 'relative', color: '#00d4ff', fontSize: 10, letterSpacing: '2px', whiteSpace: 'nowrap', animation: 'vStatusPulse 2.5s ease-in-out infinite' }}>
+        ⬡ VANTA:
+        {unread && (
+          <span title="New messages — press Esc to view" style={{
+            position: 'absolute', top: -4, right: -8, width: 6, height: 6, borderRadius: '50%',
+            background: '#00ff88', boxShadow: '0 0 6px #00ff88', animation: 'vStatusPulse 1.4s ease-in-out infinite',
+          }} />
+        )}
+      </span>
       <input
         type="text" autoComplete="off" placeholder="Command VANTA..." value={input}
         onChange={(e) => onInput(e.target.value)}
