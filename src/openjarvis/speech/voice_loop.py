@@ -1,17 +1,14 @@
-"""VANTA voice loop — clean rebuild (Task 1).
+"""VANTA voice loop — complete rebuild.
 
-Pipeline:  mic -> dual wake (voice "vanta" + double-clap) -> greeting ->
-conversation mode (VAD -> Deepgram nova-2 STT -> classify -> LeanOrchestrator
-brain -> ElevenLabs "Ivy" TTS) with live word-by-word transcript, barge-in /
-soft / hard interrupts, hold-pause, voice controls and conversation-end
-detection.
+Voice is a THIN layer over the existing text pipeline: Deepgram hears Bryan ->
+transcribes -> the loop POSTs to the SAME ``/v1/chat/completions`` endpoint the
+UI uses -> Ivy speaks a short summary and the full reply is pushed to the
+transcript for the cockpit. No separate orchestrator, no parallel brain.
 
-Design note: every decision rule (wake match, clap detection, VAD state,
-complexity classification, interrupt/control/end-phrase parsing) is a PURE
-function or small class with no audio or network I/O, so the whole control
-surface is unit-testable headlessly (`tests/speech/test_voice_rebuild.py`).
-The audio/runtime layer (sounddevice, Deepgram, ElevenLabs, afplay) is lazily
-imported so this module imports cleanly without those packages or a mic.
+Every decision rule (wake gate, VAD, clap, classification, interrupts, controls,
+end phrases) is a pure function/class with no audio or network I/O, so the whole
+control surface is unit-testable headlessly. The audio/network layer (sounddevice,
+Deepgram, ElevenLabs, the HTTP brain, afplay) is lazily imported.
 """
 
 from __future__ import annotations
@@ -26,39 +23,51 @@ import tempfile
 import threading
 import time
 from dataclasses import dataclass, field
-from typing import Callable, List, Optional, Tuple
+from typing import Callable, List, Optional
 
 from openjarvis.speech import voice_bus
 from openjarvis.speech.wake_responses import get_wake_response
 
 logger = logging.getLogger("openjarvis.voice_loop")
 
-# ── Tunable constants (top of file, per spec) ────────────────────────────────
-RMS_GATE = 1500         # process audio / start recording above this RMS
-                        # (raised 600->1500 to stop ghost-triggering on silence)
+# ── Tunable constants ────────────────────────────────────────────────────────
+RMS_GATE = 600          # VAD: start recording above this RMS (in-conversation)
 SILENCE_STOP = 1.5      # seconds of silence that ends an utterance
-END_SILENCE = 10.0      # seconds of silence after a reply ends the conversation
+END_SILENCE = 10.0      # silence after a reply that ends the conversation
 HOLD_REMINDER = 300.0   # 5 min: one "still here" reminder while on hold
 
-# Wake-confirmation gating (anti ghost-trigger):
-WAKE_MIN_WORDS = 3      # final transcript must have >=3 words before we wake-match
-WAKE_COOLDOWN = 15.0    # seconds a wake trigger is suppressed after firing
+WAKE_RMS = 1500         # in-app: only consider chunks louder than this for wake
+WAKE_MIN_WORDS = 3      # final transcript must have >=3 words to wake-match
+WAKE_COOLDOWN = 10.0    # seconds a wake is suppressed after firing (in-app)
 
-CLAP_THRESHOLD = 3000   # RMS spike that counts as a clap/snap
-CLAP_MIN_GAP = 0.15     # min seconds between the two claps
-CLAP_MAX_GAP = 0.8      # max seconds between the two claps
-CLAP_COOLDOWN = 5.0     # seconds to ignore claps after a trigger
+CLAP_THRESHOLD = 2500   # in-app double clap/snap spike RMS
+CLAP_MIN_GAP = 0.15
+CLAP_MAX_GAP = 0.8
+CLAP_COOLDOWN = 5.0
 
-SAMPLE_RATE = 16000     # mono 16-bit PCM
-FRAME_MS = 30           # audio frame size
+SLOW_REPLY_S = 60.0     # "still on it, bear with me" after this long
+SAMPLE_RATE = 16000
+FRAME_MS = 30
 
 WAKE_RE = re.compile(r"\bvanta\b", re.IGNORECASE)
 
-# ── Phrase sets ──────────────────────────────────────────────────────────────
-END_PHRASES = (
-    "that's all", "thats all", "bye", "goodbye", "done", "stop listening",
-    "thank you", "thanks",
+# HTTP brain — the same endpoint the UI calls.
+BRAIN_URL = os.environ.get("VANTA_BRAIN_URL", "http://127.0.0.1:8000/v1/chat/completions")
+BRAIN_TOKEN = os.environ.get("OPENJARVIS_API_KEY") or "test"
+
+# Ivy's voice persona (prepended as the system message to the shared endpoint).
+IVY_SYSTEM = (
+    "You are Ivy, VANTA's voice for Bryan. You are flirty, playful and charming, "
+    "never robotic. For urgent or serious matters you stay grounded and focused, "
+    "then ease back to playful. Keep spoken replies to 2-3 sentences of plain, "
+    "natural English with personality — no jargon, never a wall of text. You "
+    "understand English and Singlish (lah, leh, lor, sia, can or not, steady, "
+    "shiok, walao, confirm plus chop) and reply naturally. Only translate "
+    "Chinese or Malay when Bryan explicitly asks."
 )
+
+# ── Phrase sets ──────────────────────────────────────────────────────────────
+END_PHRASES = ("that's all", "thats all", "bye", "goodbye", "done", "stop listening", "thank you", "thanks")
 HARD_STOP = ("stop",)
 SOFT_INTERRUPT = ("hold on", "wait", "actually", "before you continue")
 HOLD_PHRASES = ("hold on", "one sec", "give me a moment", "give me a sec", "brb")
@@ -67,7 +76,6 @@ VOICE_CONTROLS = {
     "louder": "volume_up", "quieter": "volume_down",
     "repeat that": "repeat", "faster": "speed_up", "slower": "speed_down",
 }
-# Words/phrases that signal a request needs tools or multiple steps -> complex.
 COMPLEX_HINTS = (
     "email", "e-mail", "slack", "message", "send", "draft", "reply",
     "calendar", "schedule", "meeting", "event", "remind",
@@ -75,13 +83,12 @@ COMPLEX_HINTS = (
     "quote", "invoice", "client", "job", "book", "summarise", "summarize",
     "open ", "close ", "screenshot", "screen", "read this", "what's on my screen",
     "report", "analyse", "analyze", "compare", "plan", "organise", "organize",
-    "and then", "after that", "then ", "notion", "whatsapp",
+    "and then", "after that", "notion", "whatsapp",
 )
 
 
 # ── Pure decision logic (unit-tested) ────────────────────────────────────────
 def rms_from_pcm16(frame: bytes) -> float:
-    """Root-mean-square amplitude of a little-endian 16-bit PCM frame."""
     n = len(frame) // 2
     if n == 0:
         return 0.0
@@ -90,21 +97,12 @@ def rms_from_pcm16(frame: bytes) -> float:
 
 
 def contains_wake_word(text: str) -> bool:
-    """True only on a standalone 'vanta' token ('fanta'/'vantage'/'event' -> no)."""
     return bool(WAKE_RE.search(text or ""))
 
 
 def wake_should_fire(text: str, now: float, last_wake_ts: Optional[float]) -> bool:
-    """Anti-ghost-trigger wake gate.
-
-    A wake only fires when ALL hold:
-      * the final transcript has at least ``WAKE_MIN_WORDS`` words (single-word
-        or empty transcriptions from silence/noise are ignored),
-      * it contains a standalone ``\\bvanta\\b`` token, and
-      * at least ``WAKE_COOLDOWN`` seconds have passed since the last wake.
-    """
-    words = (text or "").split()
-    if len(words) < WAKE_MIN_WORDS:
+    """In-app wake gate: >=3 words + standalone 'vanta' + cooldown clear."""
+    if len((text or "").split()) < WAKE_MIN_WORDS:
         return False
     if not contains_wake_word(text):
         return False
@@ -114,18 +112,12 @@ def wake_should_fire(text: str, now: float, last_wake_ts: Optional[float]) -> bo
 
 
 def classify_complexity(text: str) -> str:
-    """'complex' if the request needs tools or multiple steps, else 'simple'.
-
-    Simple = casual chat, quick facts, time/weather one-liners.
-    Complex = anything with a tool verb (email/calendar/research/send/...) or a
-    multi-step structure ("and then", "after that").
-    """
+    """'complex' if it needs tools/multi-step, else 'simple'."""
     t = (text or "").lower().strip()
     if not t:
         return "simple"
     if any(h in t for h in COMPLEX_HINTS):
         return "complex"
-    # Multi-clause imperative ("do X and Y") tends to be multi-step.
     if t.count(" and ") >= 2:
         return "complex"
     return "simple"
@@ -139,7 +131,7 @@ def is_end_phrase(text: str) -> bool:
 
 
 def detect_interrupt(text: str) -> Optional[str]:
-    """Classify a barge-in utterance: 'hard' | 'hold' | 'soft' | None."""
+    """'hard' | 'hold' | 'soft' | None."""
     t = (text or "").lower().strip()
     if not t:
         return None
@@ -158,7 +150,6 @@ def is_resume(text: str) -> bool:
 
 
 def voice_control(text: str) -> Optional[str]:
-    """Map a control phrase to an action id, else None."""
     t = (text or "").lower().strip().rstrip(".!?")
     for phrase, action in VOICE_CONTROLS.items():
         if t == phrase or phrase in t:
@@ -167,12 +158,7 @@ def voice_control(text: str) -> Optional[str]:
 
 
 class ClapDetector:
-    """Detects a valid double clap/snap from a stream of (rms, timestamp).
-
-    Two spikes above ``threshold`` separated by ``min_gap``..``max_gap`` seconds
-    fire a trigger; a single spike, or spikes too close/too far apart, do not.
-    A cooldown suppresses retriggers.
-    """
+    """Detects a valid double clap/snap from a stream of (rms, timestamp)."""
 
     def __init__(self, threshold: float = CLAP_THRESHOLD, min_gap: float = CLAP_MIN_GAP,
                  max_gap: float = CLAP_MAX_GAP, cooldown: float = CLAP_COOLDOWN) -> None:
@@ -182,16 +168,15 @@ class ClapDetector:
         self.cooldown = cooldown
         self._last_spike: Optional[float] = None
         self._last_trigger: float = -1e9
-        self._armed = True  # require RMS to drop below threshold between spikes
+        self._armed = True
 
     def feed(self, rms: float, now: float) -> bool:
-        """Return True exactly when a valid double clap completes."""
         if rms < self.threshold:
             self._armed = True
             return False
         if not self._armed:
             return False
-        self._armed = False  # consume this spike; need a dip before the next
+        self._armed = False
         if now - self._last_trigger < self.cooldown:
             self._last_spike = now
             return False
@@ -209,11 +194,7 @@ class ClapDetector:
 
 @dataclass
 class VadState:
-    """Voice-activity detector: start on RMS>gate, stop after silence_stop sec.
-
-    Feed frames (rms, timestamp); transitions to recording on the first loud
-    frame and back to idle after ``silence_stop`` seconds of sub-gate audio.
-    """
+    """Start on RMS>gate, stop after silence_stop sec of sub-gate audio."""
     gate: float = RMS_GATE
     silence_stop: float = SILENCE_STOP
     recording: bool = False
@@ -221,7 +202,6 @@ class VadState:
     started_at: float = 0.0
 
     def feed(self, rms: float, now: float) -> str:
-        """Return 'start', 'stop', 'recording', or 'idle' for this frame."""
         loud = rms >= self.gate
         if not self.recording:
             if loud:
@@ -239,7 +219,6 @@ class VadState:
         return "recording"
 
 
-# ── Conversation context (last N turns) ──────────────────────────────────────
 @dataclass
 class Conversation:
     max_turns: int = 20
@@ -256,23 +235,16 @@ class Conversation:
 
 
 def summarise_for_speech(text: str, max_sentences: int = 3) -> str:
-    """Ivy speaks a SHORT summary only — first 2-3 sentences, plain English."""
+    """Ivy speaks a SHORT summary — first 2-3 sentences only."""
     text = (text or "").strip()
     if not text:
         return ""
     parts = re.split(r"(?<=[.!?])\s+", text)
-    spoken = " ".join(parts[:max_sentences]).strip()
-    return spoken or text[:280]
+    return " ".join(parts[:max_sentences]).strip() or text[:280]
 
 
-# ── ElevenLabs Ivy TTS (exact spec settings; elevenlabs_tts.py left untouched) ─
+# ── TTS (ElevenLabs Ivy, exact spec settings; elevenlabs_tts.py untouched) ───
 def synthesize_ivy(text: str, *, speed: float = 1.0) -> Optional[bytes]:
-    """Return MP3 bytes for *text* using ElevenLabs Ivy with the spec settings.
-
-    Implemented directly (not via ElevenLabsTTSBackend) so the exact
-    voice_settings (stability 0.4 / similarity 0.8 / style 0.6 / speaker boost)
-    are sent without modifying the shared backend module.
-    """
     api_key = os.environ.get("ELEVENLABS_API_KEY", "")
     if not api_key or not text.strip():
         return None
@@ -283,18 +255,11 @@ def synthesize_ivy(text: str, *, speed: float = 1.0) -> Optional[bytes]:
         with httpx.Client(timeout=60) as c:
             r = c.post(
                 f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}",
-                headers={"xi-api-key": api_key, "accept": "audio/mpeg",
-                         "content-type": "application/json"},
+                headers={"xi-api-key": api_key, "accept": "audio/mpeg", "content-type": "application/json"},
                 json={
-                    "text": text,
-                    "model_id": model,
-                    "voice_settings": {
-                        "stability": 0.4,
-                        "similarity_boost": 0.8,
-                        "style": 0.6,
-                        "use_speaker_boost": True,
-                        "speed": speed,
-                    },
+                    "text": text, "model_id": model,
+                    "voice_settings": {"stability": 0.4, "similarity_boost": 0.8,
+                                       "style": 0.6, "use_speaker_boost": True, "speed": speed},
                 },
             )
             r.raise_for_status()
@@ -304,14 +269,8 @@ def synthesize_ivy(text: str, *, speed: float = 1.0) -> Optional[bytes]:
         return None
 
 
-# ── Deepgram client init (nova-2, en-SG) ─────────────────────────────────────
+# ── STT (Deepgram nova-2, en-SG) ─────────────────────────────────────────────
 def make_deepgram():
-    """Construct the Deepgram speech backend, or None if unavailable.
-
-    Configured for nova-2 / en-SG / smart_format with keyword boost and noise
-    cancellation at call time. Returns None when the SDK or key is missing so
-    the loop can degrade gracefully.
-    """
     try:
         from openjarvis.speech.deepgram import DeepgramSpeechBackend
         backend = DeepgramSpeechBackend()
@@ -322,16 +281,37 @@ def make_deepgram():
 
 
 def deepgram_options() -> dict:
-    """The Deepgram request options for the VANTA mic stream (per spec)."""
+    """Deepgram request options for the VANTA mic stream (per spec)."""
     return {
         "model": "nova-2",
         "language": "en-SG",
         "smart_format": True,
+        "punctuate": True,
         "interim_results": True,
         "keywords": ["VANTA:10", "hey:5"],
-        # Deepgram noise reduction.
         "filler_words": False,
     }
+
+
+# ── Brain — HTTP call to the SAME endpoint the UI uses ───────────────────────
+def call_brain(messages: List[dict], model: str, *, url: str = BRAIN_URL,
+               token: str = BRAIN_TOKEN, timeout: float = 120.0) -> str:
+    """POST to /v1/chat/completions and return the reply text, or '' on error.
+
+    Voice is a thin layer over the text pipeline — this is the only brain.
+    Errors are logged silently and never spoken.
+    """
+    try:
+        import httpx
+        with httpx.Client(timeout=timeout) as c:
+            r = c.post(url, headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+                       json={"model": model, "messages": messages, "stream": False})
+            r.raise_for_status()
+            j = r.json()
+            return (((j.get("choices") or [{}])[0].get("message") or {}).get("content") or "").strip()
+    except Exception as exc:  # pragma: no cover - network
+        logger.warning("brain call failed (silent to user): %s", exc)
+        return ""
 
 
 # ── Runtime loop ─────────────────────────────────────────────────────────────
@@ -339,10 +319,6 @@ StatusCb = Callable[[str], None]
 
 
 class VoiceLoop:
-    """The always-on conversation loop. Audio/network bits are guarded so the
-    object constructs cleanly in any environment; ``run()`` needs real hardware.
-    """
-
     def __init__(self, status_cb: Optional[StatusCb] = None) -> None:
         self._status = status_cb or (lambda _m: None)
         self.conversation = Conversation()
@@ -358,36 +334,25 @@ class VoiceLoop:
         self._stop = threading.Event()
         self._playing: Optional[subprocess.Popen] = None
 
-    # -- state helpers --
     def _set_state(self, state: str) -> None:
         voice_bus.set_voice_state(state)
         self._status(state)
 
-    # -- brain --
+    # -- brain (thin HTTP layer over the text pipeline) --
     def think(self, text: str) -> str:
-        """Route to LeanOrchestrator: simple -> gpt-4o-mini, complex -> gpt-4o."""
         tier = classify_complexity(text)
         model = self.simple_model if tier == "simple" else self.complex_model
-        history = self.conversation.context()
-        prompt = text
-        if history:
-            ctx = "\n".join(f"{t['role']}: {t['content']}" for t in history)
-            prompt = f"Conversation so far:\n{ctx}\n\nNow Bryan says: {text}"
-        try:
-            from openjarvis.orchestrator.lean.orchestrator import LeanOrchestrator
-            orch = LeanOrchestrator(model=model)
-            res = orch.run_complex(prompt) if tier == "complex" else orch.run_standard(prompt)
-            return getattr(res, "answer", "") or ""
-        except Exception as exc:  # pragma: no cover - network/LLM
-            logger.warning("brain error: %s", exc)
-            return "I hit a problem processing that."
+        self._set_state("thinking")
+        messages = [{"role": "system", "content": IVY_SYSTEM}, *self.conversation.context(),
+                    {"role": "user", "content": text}]
+        return call_brain(messages, model)
 
-    # -- speak with live transcript + barge-in --
-    def speak(self, text: str, *, summary: bool = True) -> None:
-        spoken = summarise_for_speech(text) if summary else text
+    # -- speak: live word-by-word transcript + TTS --
+    def speak(self, full_text: str, *, summary: bool = True) -> None:
+        spoken = summarise_for_speech(full_text) if summary else full_text
         self._last_reply = spoken
         self._set_state("speaking")
-        # Live word-by-word transcript (green / VANTA).
+        # Push full reply to the transcript (word by word) for the cockpit.
         words = spoken.split()
         for i, w in enumerate(words):
             voice_bus.push_transcript("vanta", w, final=(i == len(words) - 1))
@@ -427,14 +392,32 @@ class VoiceLoop:
         elif action == "repeat" and self._last_reply:
             self.speak(self._last_reply, summary=False)
 
+    # -- one turn: text in -> brain -> Ivy speaks (used by runtime + tests) --
+    def handle_user_text(self, text: str) -> str:
+        """Process one user utterance through the brain and speak the reply.
+
+        Returns the full reply text (also pushed to the transcript). Records the
+        turn in conversation history (last 20) and unified voice history.
+        """
+        text = (text or "").strip()
+        if not text:
+            return ""
+        self.conversation.add("user", text)
+        voice_bus.save_turn("bryan", text, mode="voice")
+        if classify_complexity(text) == "complex":
+            self.speak("On it, give me a moment.", summary=False)
+        reply = self.think(text)
+        if not reply:
+            self._set_state("listening")
+            return ""  # silent on error — never speak error messages
+        self.conversation.add("assistant", reply)
+        self.speak(reply, summary=True)
+        self._set_state("listening")
+        return reply
+
     # -- wake --
     def process_final_transcript(self, text: str) -> bool:
-        """Apply the anti-ghost-trigger wake gate to a Deepgram FINAL transcript.
-
-        Returns True (and fires the wake) only when the transcript passes
-        :func:`wake_should_fire` (>=3 words, standalone 'vanta', cooldown clear).
-        Called by the runtime capture thread for every final transcript.
-        """
+        """Apply the wake gate to a Deepgram FINAL transcript; fire on pass."""
         if wake_should_fire(text, time.time(), self._last_wake_ts):
             self._handle_wake()
             return True
@@ -448,34 +431,98 @@ class VoiceLoop:
         self.conversation.reset()
         voice_bus.set_voice_active(True)
         self.speak(greeting, summary=False)
-        self._converse()
-
-    def _converse(self) -> None:  # pragma: no cover - audio runtime
-        """Conversation mode: no wake word needed between turns."""
         self._set_state("listening")
-        # Full audio capture + Deepgram streaming live in run(); this method is
-        # the per-turn driver invoked by the runtime audio thread.
 
-    def run(self) -> None:  # pragma: no cover - needs mic/speaker
-        """Blocking always-on loop. Requires real audio hardware + Deepgram."""
+    def _transcribe(self, audio: bytes) -> str:  # pragma: no cover - needs Deepgram
+        """Transcribe captured int16 PCM via Deepgram (nova-2, en-SG)."""
+        if not audio or self._stt is None:
+            return ""
         try:
-            import sounddevice as sd  # noqa: F401
-            import numpy as np  # noqa: F401
+            import io
+            import wave
+            buf = io.BytesIO()
+            with wave.open(buf, "wb") as w:
+                w.setnchannels(1)
+                w.setsampwidth(2)
+                w.setframerate(SAMPLE_RATE)
+                w.writeframes(audio)
+            res = self._stt.transcribe(buf.getvalue(), format="wav", language="en-SG")
+            return (getattr(res, "text", "") or "").strip()
         except Exception as exc:
-            logger.error("voice_loop.run needs sounddevice + numpy: %s", exc)
+            logger.debug("transcribe failed: %s", exc)
+            return ""
+
+    def run(self) -> None:  # pragma: no cover - needs mic/speaker + Deepgram
+        """Always-on capture loop: wake (clap/voice) -> greeting -> conversation."""
+        try:
+            import sounddevice as sd
+        except Exception as exc:
+            logger.error("voice_loop.run needs sounddevice: %s", exc)
             return
         self._stt = make_deepgram()
-        # While the loop is up it is actively listening for the wake word, so it
-        # reports active + "listening" (not "standby"/off) — the cockpit shows
-        # "LISTENING" instead of "VOICE OFF" whenever the loop is running.
         self._set_state("listening")
         voice_bus.set_voice_active(True)
         logger.info("VANTA voice loop online (listening for wake).")
-        # The real-time capture/streaming implementation runs here on the Mac;
-        # it feeds frames into self.vad / self.clap and dispatches _handle_wake.
-        # Kept minimal in code so the testable decision layer above is the spec.
-        while not self._stop.is_set():
-            time.sleep(0.2)
+        block = int(SAMPLE_RATE * FRAME_MS / 1000)
+        in_conversation = False
+        utter = bytearray()
+        vad = VadState()
+        last_activity = time.time()
+        try:
+            with sd.RawInputStream(samplerate=SAMPLE_RATE, blocksize=block, dtype="int16", channels=1) as stream:
+                while not self._stop.is_set():
+                    data, _ = stream.read(block)
+                    frame = bytes(data)
+                    rms = rms_from_pcm16(frame)
+                    now = time.time()
+
+                    if not in_conversation:
+                        # Double-clap wake.
+                        if self.clap.feed(rms, now):
+                            self._handle_wake()
+                            in_conversation = True
+                            utter.clear(); vad = VadState(); last_activity = now
+                            continue
+                        # Voice wake: capture an utterance (RMS>WAKE gate), transcribe, gate.
+                        ev = vad.feed(rms, now)
+                        if ev in ("start", "recording"):
+                            utter += frame
+                        elif ev == "stop":
+                            text = self._transcribe(bytes(utter)); utter.clear()
+                            if self.process_final_transcript(text):
+                                in_conversation = True; vad = VadState(); last_activity = now
+                        continue
+
+                    # ── conversation mode (no wake word needed) ──
+                    ev = vad.feed(rms, now)
+                    if ev == "start":
+                        self._set_state("recording"); utter += frame
+                    elif ev == "recording":
+                        utter += frame
+                    elif ev == "stop":
+                        text = self._transcribe(bytes(utter)); utter.clear()
+                        last_activity = now
+                        if text:
+                            voice_bus.push_transcript("bryan", text, final=True)
+                            if is_end_phrase(text):
+                                self.speak("Standing by.", summary=False)
+                                in_conversation = False; self._set_state("listening")
+                                continue
+                            ctrl = voice_control(text)
+                            if ctrl:
+                                self.apply_control(ctrl)
+                            else:
+                                self.handle_user_text(text)
+                            last_activity = time.time()
+                        self._set_state("listening")
+                    elif ev == "idle":
+                        # End the conversation after END_SILENCE of quiet.
+                        if now - last_activity >= END_SILENCE:
+                            self.speak("Standing by.", summary=False)
+                            in_conversation = False; self._set_state("listening")
+        except Exception as exc:
+            logger.warning("audio loop error: %s", exc)
+            self._set_state("standby")
 
     def stop(self) -> None:
         self._stop.set()

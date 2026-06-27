@@ -1,18 +1,14 @@
 """VANTA wake responses — contextual greetings + short acknowledgements.
 
-Rebuilt for the voice pipeline (Task 1). Pure data + logic, no I/O, so it is
-fully unit-testable without a microphone or network.
+Complete voice rebuild. Pure data + logic, no I/O, fully unit-testable.
 
-Public API:
-    get_wake_response(now=None, last_wake_ts=None, *, force_full=None) -> str
-
-Behaviour (per spec):
-  * First wake of the day, or after 2+ hours of inactivity → full contextual
-    greeting chosen from the time-slot pool (10 variations x 6 SGT slots).
+  * First wake of the day, or after 2+ hours idle -> full contextual greeting
+    from the time-slot pool (6 SGT slots x 10 variations).
   * Subsequent wakes in the same session -> a short acknowledgement.
-  * Day awareness: Monday adds a "New week." prefix; Friday after 17:00 adds
-    "End of the week."; weekends keep a relaxed tone (handled by the slots).
-  * Special dates (on the day only, SGT): Jul 22 anniversary, Sep 16 birthday.
+  * Never repeats the same line twice in a row (last line tracked).
+  * Day awareness: Monday "New week."; Friday after 17:00 "End of the week.";
+    weekends keep the relaxed slot tone.
+  * Special dates (on the day, SGT): Jul 22 anniversary, Sep 16 birthday.
 """
 
 from __future__ import annotations
@@ -21,22 +17,19 @@ import random
 from datetime import datetime, timedelta
 from typing import List, Optional
 
-try:  # zoneinfo is stdlib on 3.9+
+try:
     from zoneinfo import ZoneInfo
     _SGT = ZoneInfo("Asia/Singapore")
 except Exception:  # pragma: no cover
     _SGT = None  # type: ignore[assignment]
 
-# Gap of inactivity after which a wake counts as "fresh" -> full greeting.
 FULL_GREETING_GAP = timedelta(hours=2)
 
-# ── Short acknowledgements (subsequent wakes in a session) ───────────────────
 SHORT_ACKS: List[str] = [
     "Yeah?", "Go ahead.", "Here.", "What's up?", "Talk to me.",
     "Ready.", "What do you need?", "I'm here.", "Go on.", "Mm?",
 ]
 
-# ── Full greetings — 6 SGT time slots, 10 variations each ─────────────────────
 EARLY_MORNING: List[str] = [  # 05:00–09:00
     "Morning boss. What are we starting with?",
     "Early start. I'm ready when you are.",
@@ -110,18 +103,18 @@ LATE_NIGHT: List[str] = [  # 01:00–05:00
     "Late night mode. Go ahead brother.",
 ]
 
+# Tracks the last base line so we never repeat the same one twice in a row.
+_last = {"text": ""}
+
 
 def _now_sgt(now: Optional[datetime]) -> datetime:
-    """Return *now* in SGT; default to current time."""
     if now is not None:
         return now
-    if _SGT is not None:
-        return datetime.now(_SGT)
-    return datetime.now()  # pragma: no cover
+    return datetime.now(_SGT) if _SGT is not None else datetime.now()  # pragma: no cover
 
 
 def slot_for_hour(hour: int) -> List[str]:
-    """Return the greeting pool for an hour-of-day (0–23), SGT."""
+    """Greeting pool for an hour-of-day (0–23), SGT."""
     if 5 <= hour < 9:
         return EARLY_MORNING
     if 9 <= hour < 12:
@@ -135,8 +128,15 @@ def slot_for_hour(hour: int) -> List[str]:
     return LATE_NIGHT  # 01:00–05:00
 
 
+def _pick_no_repeat(pool: List[str], rng: random.Random) -> str:
+    """Pick a line from *pool* that differs from the previously returned line."""
+    choices = [c for c in pool if c != _last["text"]] or list(pool)
+    line = rng.choice(choices)
+    _last["text"] = line
+    return line
+
+
 def _day_prefix(dt: datetime) -> str:
-    """Day-awareness prefix: Monday / Friday-evening flavour."""
     wd = dt.weekday()  # Mon=0 … Sun=6
     if wd == 0:
         return "New week. "
@@ -146,7 +146,6 @@ def _day_prefix(dt: datetime) -> str:
 
 
 def _special_suffix(dt: datetime) -> str:
-    """Special-date heads-up appended on the day only (SGT)."""
     if dt.month == 7 and dt.day == 22:
         return " Heads up — anniversary today."
     if dt.month == 9 and dt.day == 16:
@@ -163,7 +162,6 @@ def is_full_greeting(last_wake_ts: Optional[float], now: Optional[datetime] = No
         last = datetime.fromtimestamp(last_wake_ts, tz=dt.tzinfo)
     except Exception:
         return True
-    # Different calendar day, or a 2h+ gap, both qualify as a fresh wake.
     if last.date() != dt.date():
         return True
     return (dt - last) >= FULL_GREETING_GAP
@@ -176,17 +174,13 @@ def get_wake_response(
     force_full: Optional[bool] = None,
     rng: Optional[random.Random] = None,
 ) -> str:
-    """Return the spoken wake response for the current SGT context.
-
-    force_full overrides the first-of-day / 2h-gap heuristic when set.
-    rng allows deterministic selection in tests.
-    """
+    """Return the spoken wake response for the current SGT context (no repeats)."""
     dt = _now_sgt(now)
-    pick = (rng or random).choice
+    r = rng or random
     full = force_full if force_full is not None else is_full_greeting(last_wake_ts, dt)
     if not full:
-        return pick(SHORT_ACKS)
-    base = pick(slot_for_hour(dt.hour))
+        return _pick_no_repeat(SHORT_ACKS, r)
+    base = _pick_no_repeat(slot_for_hour(dt.hour), r)
     return f"{_day_prefix(dt)}{base}{_special_suffix(dt)}"
 
 
