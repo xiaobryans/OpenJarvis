@@ -41,16 +41,20 @@ export function VantaBottomBar({
       style={{
         display: 'flex',
         flexDirection: 'column',
-        gap: 8,
-        padding: '8px 16px 10px',
+        gap: 5,
+        padding: '5px 16px 7px',
         background: 'rgba(8,13,26,0.7)',
         backdropFilter: 'blur(14px)',
-        borderTop: `1px solid ${VANTA.panelBorder}`,
+        borderTop: '1px solid rgba(0,212,255,0.15)',
         flexShrink: 0,
       }}
     >
-      {/* Pipeline chain */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontFamily: VANTA.mono, fontSize: 9 }}>
+      {/* Pipeline chain with a continuously travelling data dot */}
+      <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 4, fontFamily: VANTA.mono, fontSize: 9 }}>
+        {/* travelling dot */}
+        <div style={{ position: 'absolute', top: -3, left: 0, right: 70, height: 2, pointerEvents: 'none' }}>
+          <span style={{ position: 'absolute', top: 0, width: 5, height: 5, borderRadius: '50%', background: VANTA.cyan, boxShadow: `0 0 8px ${VANTA.cyan}`, animation: 'vantaFlow 3.4s linear infinite' }} />
+        </div>
         {PIPELINE.map((stage, i) => (
           <React.Fragment key={stage}>
             <span style={{ color: stageColor(i, activeIdx), letterSpacing: '0.08em', textShadow: i === activeIdx ? `0 0 8px ${VANTA.cyan}` : 'none' }}>{stage}</span>

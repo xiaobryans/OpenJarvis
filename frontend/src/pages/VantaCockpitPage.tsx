@@ -84,9 +84,19 @@ export function VantaCockpitPage(): React.ReactElement {
   return (
     <div style={{ position: 'relative', height: '100%', width: '100%', background: VANTA.bg, color: VANTA.text, display: 'flex', flexDirection: 'column', overflow: 'hidden', fontFamily: VANTA.mono }}>
       <VantaKeyframes />
-      {/* idle ambient grid */}
-      <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', opacity: 0.5,
-        background: 'radial-gradient(1200px 600px at 50% -10%, rgba(0,212,255,0.06), transparent 70%), repeating-linear-gradient(0deg, transparent, transparent 47px, rgba(0,212,255,0.025) 48px), repeating-linear-gradient(90deg, transparent, transparent 47px, rgba(0,212,255,0.025) 48px)' }} />
+      {/* ── living background layers ── */}
+      {/* perspective floor grid */}
+      <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 0,
+        background: 'repeating-linear-gradient(0deg, transparent, transparent 43px, rgba(0,212,255,0.04) 44px), repeating-linear-gradient(90deg, transparent, transparent 43px, rgba(0,212,255,0.04) 44px)' }} />
+      <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: '42%', pointerEvents: 'none', zIndex: 0,
+        background: 'repeating-linear-gradient(0deg, transparent, transparent 22px, rgba(0,212,255,0.05) 23px)',
+        transform: 'perspective(420px) rotateX(62deg)', transformOrigin: 'bottom', opacity: 0.5, maskImage: 'linear-gradient(to top, black, transparent)', WebkitMaskImage: 'linear-gradient(to top, black, transparent)' }} />
+      {/* radial glow behind orb */}
+      <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 0,
+        background: 'radial-gradient(560px 560px at 50% 52%, rgba(0,212,255,0.05), transparent 70%)' }} />
+      {/* periodic scan-line sweep */}
+      <div style={{ position: 'absolute', left: 0, right: 0, top: 0, height: '24vh', pointerEvents: 'none', zIndex: 0,
+        background: 'linear-gradient(to bottom, transparent, rgba(0,212,255,0.06) 50%, transparent)', animation: 'vantaScan 9s ease-in-out infinite' }} />
 
       <VantaTopBar systemState={systemState} voiceMode={voiceMode} weather={weather.data} health={health.data} />
 

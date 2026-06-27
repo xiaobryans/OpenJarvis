@@ -60,7 +60,7 @@ export function VantaTopBar({
         alignItems: 'center',
         justifyContent: 'space-between',
         padding: '0 16px',
-        height: 52,
+        height: 48,
         background: 'rgba(8,13,26,0.7)',
         backdropFilter: 'blur(14px)',
         borderBottom: `1px solid ${VANTA.panelBorder}`,
@@ -91,7 +91,7 @@ export function VantaTopBar({
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 3 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontFamily: VANTA.mono, fontSize: 9, color: sysColor }}>
-            <Dot color={sysColor} pulse={systemState !== 'idle'} /> {sysOk ? 'SYSTEM OK' : 'SYSTEM…'}
+            <Dot color={sysColor} pulse /> {sysOk ? 'SYSTEM OK' : 'SYSTEM…'}
           </div>
           <div style={{ fontFamily: VANTA.mono, fontSize: 10, color: v.color, fontWeight: 700, letterSpacing: '0.08em' }}>{v.text}</div>
         </div>
