@@ -12,12 +12,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Copy project metadata + source, then install with the server extra only
-# (fastapi/uvicorn/python-multipart) — not the ML/desktop extras.
+# Copy project metadata + source, then install ONLY the lean `webhook` extra.
+# The `server` extra pulls auto-browser-client (heavy, fails to build on slim) —
+# that was the documented Railway build failure. The webhook needs only
+# fastapi/uvicorn/pydantic/python-multipart/httpx/python-dotenv/croniter.
 COPY pyproject.toml README* ./
 COPY src/ ./src/
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir ".[server,scheduler]"
+    pip install --no-cache-dir ".[webhook]"
 
 ENV PYTHONUNBUFFERED=1
 EXPOSE 8000

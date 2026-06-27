@@ -169,8 +169,46 @@ def compose_morning_digest(
     return " ".join(parts)
 
 
+# ── Section 4.1 — morning briefing with Sprint 4 proactive data folded in ─────
+def compose_full_briefing(base: str = "", now: Optional[datetime] = None) -> str:
+    """Extend the base digest with Sprint 4 data: urgent emails, anomalies, top
+    overnight research, overdue tasks, relationship check-ins, and (on Sunday)
+    the weekly summary. Each source is independently guarded."""
+    parts: List[str] = [base] if base else []
+    epoch = now.timestamp() if now is not None else None
+    try:
+        from openjarvis.proactive.stores import (
+            AnomalyStore, EmailTriageStore, RelationshipStore,
+            ResearchStore, TaskStore, WeeklySummaryStore,
+        )
+        em = EmailTriageStore().actionable(now=epoch)
+        if em:
+            parts.append(f"{len(em)} email{'s' if len(em) != 1 else ''} need attention — top: {em[0]['subject']}.")
+        an = AnomalyStore().recent(5, now=epoch)
+        if an:
+            parts.append(f"{len(an)} anomaly flag{'s' if len(an) != 1 else ''}: {an[0]['description']}.")
+        rf = ResearchStore().overnight(3)
+        if rf:
+            parts.append(f"Overnight I found {len(rf)} thing{'s' if len(rf) != 1 else ''} worth knowing. "
+                         f"{rf[0]['summary'][:80]}. Full list on screen.")
+        od = TaskStore().overdue(now=epoch)
+        if od:
+            parts.append(f"{len(od)} overdue task{'s' if len(od) != 1 else ''}: {od[0]['text']}.")
+        cu = RelationshipStore().checkups(now=epoch)
+        if cu:
+            parts.append(cu[0]["line"])
+        if now_sgt(now).weekday() == 6:  # Sunday -> weekly summary
+            wk = WeeklySummaryStore().latest()
+            if wk:
+                parts.append("Week in review: " + wk["text"])
+    except Exception:  # pragma: no cover - defensive; a bad source never breaks the briefing
+        pass
+    return " ".join(p for p in parts if p)
+
+
 __all__ = [
     "is_first_wake_today", "BuildMonitor", "LateNightTracker",
     "special_date_reminders", "energy_profile", "now_sgt",
-    "compose_morning_digest", "SPECIAL_DATES", "LATE_NIGHT_STREAK",
+    "compose_morning_digest", "compose_full_briefing",
+    "SPECIAL_DATES", "LATE_NIGHT_STREAK",
 ]

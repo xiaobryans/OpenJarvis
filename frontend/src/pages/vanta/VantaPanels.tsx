@@ -37,10 +37,10 @@ function evTime(iso: string | null): string {
 // ─── Mission Control (static VANTA sprint roadmap) ───────────────────────────
 interface Mission { name: string; pct: number; status: string; color: string }
 const MISSIONS: Mission[] = [
-  { name: 'S1 · Voice Pipeline', pct: 85, status: 'active', color: '#00FF88' },
-  { name: 'S2 · Daily Impact', pct: 0, status: 'pending', color: '#00d4ff' },
-  { name: 'S3 · Business Ops', pct: 0, status: 'pending', color: '#00d4ff' },
-  { name: 'S4 · Stage 4 Intel', pct: 0, status: 'pending', color: '#00d4ff' },
+  { name: 'S1 · Voice Pipeline', pct: 95, status: 'active', color: '#00FF88' },
+  { name: 'S2 · Daily Impact', pct: 80, status: 'active', color: '#00FF88' },
+  { name: 'S3 · Business Ops', pct: 80, status: 'active', color: '#00FF88' },
+  { name: 'S4 · Stage 4 Intel', pct: 60, status: 'in progress', color: '#00d4ff' },
   { name: 'S5 · iOS & Mobile', pct: 0, status: 'pending', color: '#00d4ff' },
 ];
 

@@ -366,6 +366,12 @@ def create_app(
             app.include_router(improvement_router)
         except Exception as _imp_exc:  # noqa: BLE001
             logger.debug("Improvement-log route not mounted: %s", _imp_exc)
+        try:
+            from openjarvis.server.sprint4_routes import router as sprint4_router
+
+            app.include_router(sprint4_router)
+        except Exception as _s4_exc:  # noqa: BLE001
+            logger.debug("Sprint 4 routes not mounted: %s", _s4_exc)
         # Wire the unified memory backend so voice turns also land in memory.
         try:
             from openjarvis.speech import voice_bus
