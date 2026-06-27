@@ -355,6 +355,7 @@ class VoiceLoop:
         self._paused = False           # hold/pause mode (FIX 4)
         self._pause_started = 0.0
         self._pause_reminded = False
+        self._session_start = 0.0      # pattern tracking (4H)
 
     def _set_state(self, state: str) -> None:
         voice_bus.set_voice_state(state)
@@ -500,6 +501,14 @@ class VoiceLoop:
             return ""
         self.conversation.add("user", text)
         voice_bus.save_turn("bryan", text, mode="voice")
+        # Continuous proactive task capture (4F) — runs on EVERY turn, not on ask.
+        try:
+            from openjarvis.proactive.stores import TaskStore
+            got = TaskStore().capture_from_text(text)
+            if got:
+                print(f"[TASKS] auto-captured {len(got)} implied task(s)", flush=True)
+        except Exception:
+            pass
         tier = classify_complexity(text)
         model = self.simple_model if tier == "simple" else self.complex_model
         print(f"[CLASSIFY] {tier} -> {model}: {text!r}", flush=True)
@@ -526,6 +535,7 @@ class VoiceLoop:
     def _handle_wake(self) -> None:
         """Shared entry point for BOTH wake triggers (voice + double clap)."""
         print("[VANTA voice] WAKE DETECTED — greeting + entering conversation", flush=True)
+        self._session_start = time.time()   # pattern tracking (4H)
         self._set_state("wake_detected")
         greeting = get_wake_response(last_wake_ts=self._last_wake_ts)
         self._last_wake_ts = time.time()
@@ -533,6 +543,19 @@ class VoiceLoop:
         voice_bus.set_voice_active(True)
         self.speak(greeting, summary=False)
         self._set_state("listening")
+
+    def _record_session(self) -> None:
+        """Log this voice session's hour + length for behaviour patterns (4H)."""
+        if not self._session_start:
+            return
+        try:
+            from openjarvis.proactive.stores import PatternStore
+            dur = max(0.0, time.time() - self._session_start)
+            PatternStore().record_session(hour=time.localtime().tm_hour, duration_s=dur)
+            print(f"[PATTERN] session logged ({int(dur)}s)", flush=True)
+        except Exception:
+            pass
+        self._session_start = 0.0
 
     def _transcribe(self, audio: bytes) -> str:  # pragma: no cover - needs Deepgram
         """Transcribe captured int16 PCM via Deepgram v3.7.0 (nova-2, en, linear16)."""
@@ -683,6 +706,7 @@ class VoiceLoop:
                                 voice_bus.push_transcript("bryan", text, final=True)
                                 result = self._handle_turn(text)
                                 if result == "end":
+                                    self._record_session()
                                     in_conversation = False; vad = VadState()
                                     self._set_state("listening")
                                     continue
@@ -692,6 +716,7 @@ class VoiceLoop:
                             if now - last_activity >= END_SILENCE:
                                 print("[STATE] 10s silence -> Standing by", flush=True)
                                 self.speak("Standing by.", summary=False)
+                                self._record_session()
                                 in_conversation = False; vad = VadState()
                                 self._set_state("listening")
             except Exception as exc:

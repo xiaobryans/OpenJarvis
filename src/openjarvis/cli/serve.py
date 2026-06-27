@@ -986,6 +986,16 @@ def serve(
     except Exception as _tray_exc:  # never let tray wiring block serve
         console.print(f"  Menu bar:  [yellow]unavailable ({_tray_exc})[/yellow]")
 
+    # Sprint 4 proactive scheduler (email triage / overnight research / morning
+    # briefing / weekly summary on an SGT schedule). VANTA_SCHEDULER=off to skip.
+    try:
+        from openjarvis.proactive.scheduler import start_proactive_scheduler
+
+        if start_proactive_scheduler():
+            console.print("  Proactive: [cyan]scheduler active (triage 30m / 2am research / 8am briefing)[/cyan]")
+    except Exception as _sched_exc:  # never let scheduler wiring block serve
+        console.print(f"  Proactive: [yellow]unavailable ({_sched_exc})[/yellow]")
+
     import uvicorn
 
     uvicorn.run(app, host=bind_host, port=bind_port, log_level="info")

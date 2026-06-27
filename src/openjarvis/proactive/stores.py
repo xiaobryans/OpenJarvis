@@ -134,6 +134,10 @@ class ResearchStore:
         with _conn(self.db_path) as c:
             return [dict(r) for r in c.execute("SELECT * FROM queue WHERE processed=0 ORDER BY created_at").fetchall()]
 
+    def mark_processed(self, qid: str) -> None:
+        with _conn(self.db_path) as c:
+            c.execute("UPDATE queue SET processed=1 WHERE id=?", (qid,))
+
     def add_finding(self, topic: str, summary: str, *, tag: str = "AI", now: Optional[float] = None) -> Dict[str, Any]:
         fid = _id("rf")
         with _conn(self.db_path) as c:
@@ -221,11 +225,13 @@ class EmailTriageStore:
             c.execute("CREATE TABLE IF NOT EXISTS triage(id TEXT PRIMARY KEY, subject TEXT, "
                       "sender TEXT, category TEXT, created_at REAL)")
 
-    def record(self, subject: str, sender: str = "", snippet: str = "", now: Optional[float] = None) -> Dict[str, Any]:
+    def record(self, subject: str, sender: str = "", snippet: str = "",
+               msg_id: str = "", now: Optional[float] = None) -> Dict[str, Any]:
         cat = classify_email(subject, sender, snippet)
-        eid = _id("eml")
+        # Dedup on the Gmail message id when provided (re-runs every 30 min).
+        eid = f"eml-{msg_id}" if msg_id else _id("eml")
         with _conn(self.db_path) as c:
-            c.execute("INSERT INTO triage(id,subject,sender,category,created_at) VALUES(?,?,?,?,?)",
+            c.execute("INSERT OR IGNORE INTO triage(id,subject,sender,category,created_at) VALUES(?,?,?,?,?)",
                       (eid, subject.strip(), sender.strip(), cat, now or time.time()))
         return {"id": eid, "subject": subject.strip(), "category": cat}
 
