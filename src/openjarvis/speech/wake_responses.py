@@ -1,34 +1,56 @@
-"""Contextual wake-welcome responses for VANTA.
+"""VANTA wake responses — contextual greetings + short acknowledgements.
 
-When VANTA wakes (voice wake word or double-clap), it speaks a short, contextual
-greeting before listening for the command. ``get_wake_response()`` picks a line
-based on the current Singapore time + date, avoids repeating the previous line,
-and occasionally appends a day-of-week or special-date note.
+Rebuilt for the voice pipeline (Task 1). Pure data + logic, no I/O, so it is
+fully unit-testable without a microphone or network.
 
-Kept deliberately short — under ~10 words for most. No speeches.
+Public API:
+    get_wake_response(now=None, last_wake_ts=None, *, force_full=None) -> str
+
+Behaviour (per spec):
+  * First wake of the day, or after 2+ hours of inactivity → full contextual
+    greeting chosen from the time-slot pool (10 variations x 6 SGT slots).
+  * Subsequent wakes in the same session -> a short acknowledgement.
+  * Day awareness: Monday adds a "New week." prefix; Friday after 17:00 adds
+    "End of the week."; weekends keep a relaxed tone (handled by the slots).
+  * Special dates (on the day only, SGT): Jul 22 anniversary, Sep 16 birthday.
 """
 
 from __future__ import annotations
 
 import random
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List, Optional
 
-# ── 6 time slots × 10 variations (Singapore local time) ──────────────────────
-EARLY_MORNING: List[str] = [  # 5am–9am
-    "Morning, boss. What are we starting with?",
+try:  # zoneinfo is stdlib on 3.9+
+    from zoneinfo import ZoneInfo
+    _SGT = ZoneInfo("Asia/Singapore")
+except Exception:  # pragma: no cover
+    _SGT = None  # type: ignore[assignment]
+
+# Gap of inactivity after which a wake counts as "fresh" -> full greeting.
+FULL_GREETING_GAP = timedelta(hours=2)
+
+# ── Short acknowledgements (subsequent wakes in a session) ───────────────────
+SHORT_ACKS: List[str] = [
+    "Yeah?", "Go ahead.", "Here.", "What's up?", "Talk to me.",
+    "Ready.", "What do you need?", "I'm here.", "Go on.", "Mm?",
+]
+
+# ── Full greetings — 6 SGT time slots, 10 variations each ─────────────────────
+EARLY_MORNING: List[str] = [  # 05:00–09:00
+    "Morning boss. What are we starting with?",
     "Early start. I'm ready when you are.",
     "Good morning. What's first?",
     "Morning. Let's get moving.",
     "Up early. What do you need?",
-    "Morning, brother. What's the plan?",
+    "Morning brother. What's the plan?",
     "Good morning. VANTA online.",
     "Early bird. What are we hitting first?",
     "Morning. Ready and standing by.",
     "Rise and grind. What do you need from me?",
 ]
-MORNING: List[str] = [  # 9am–12pm
-    "What do you need, boss?",
+MORNING: List[str] = [  # 09:00–12:00
+    "What do you need boss?",
     "Morning's moving. What's on?",
     "VANTA online. Go ahead.",
     "Ready. What are we working on?",
@@ -39,66 +61,67 @@ MORNING: List[str] = [  # 9am–12pm
     "Standing by. What's next?",
     "Ready when you are. Go ahead.",
 ]
-AFTERNOON: List[str] = [  # 12pm–5pm
+AFTERNOON: List[str] = [  # 12:00–17:00
     "Afternoon. What do you need?",
     "Here. What's up?",
     "VANTA online. Talk to me.",
     "What do you need from me?",
     "Ready. What are we doing?",
-    "Afternoon, boss. What's the move?",
+    "Afternoon boss. What's the move?",
     "Online. Go ahead.",
     "Here. What do you need sorted?",
     "Standing by. What's next?",
-    "What do you need, brother?",
+    "What do you need brother?",
 ]
-EVENING: List[str] = [  # 5pm–9pm
+EVENING: List[str] = [  # 17:00–21:00
     "Evening. How can I help?",
-    "Evening, boss. What do you need?",
+    "Evening boss. What do you need?",
     "Here. What's on your mind?",
     "VANTA online. Go ahead.",
     "Evening. Talk to me.",
     "What do you need tonight?",
-    "Evening, brother. What's up?",
+    "Evening brother. What's up?",
     "Online. What do you need?",
     "Here. What are we sorting?",
     "Evening. Ready when you are.",
 ]
-NIGHT: List[str] = [  # 9pm–1am
+NIGHT: List[str] = [  # 21:00–01:00
     "Still going. What do you need?",
     "Here. What's on?",
     "Night shift. What do you need?",
     "VANTA online. Talk to me.",
     "Late night. What's the move?",
-    "Here, boss. What do you need?",
+    "Here boss. What do you need?",
     "Online. What are we working on?",
     "Night mode. Go ahead.",
     "Still here. What do you need?",
-    "What do you need, brother?",
+    "What do you need brother?",
 ]
-LATE_NIGHT: List[str] = [  # 1am–5am — grind hours
+LATE_NIGHT: List[str] = [  # 01:00–05:00
     "Still grinding. What do you need?",
     "Late night build session. I'm here.",
     "You're up late. What do you need?",
     "VANTA online. The night crew.",
-    "Still at it, boss. What's next?",
+    "Still at it boss. What's next?",
     "Late night. Talk to me.",
     "The grind doesn't stop. What do you need?",
     "Here with you. What's the move?",
     "Still running. What do you need?",
-    "Late night mode. Go ahead, brother.",
+    "Late night mode. Go ahead brother.",
 ]
 
-# Special dates (month, day) → note added only ON the day itself.
-_SPECIAL = {
-    (7, 22): "Heads up — anniversary coming up.",
-    (9, 16): "Partner's birthday coming up.",
-}
 
-# Track the last base line so we never repeat the same one twice in a row.
-_last = {"text": ""}
+def _now_sgt(now: Optional[datetime]) -> datetime:
+    """Return *now* in SGT; default to current time."""
+    if now is not None:
+        return now
+    if _SGT is not None:
+        return datetime.now(_SGT)
+    return datetime.now()  # pragma: no cover
 
 
-def _slot_for_hour(hour: int) -> List[str]:
+def slot_for_hour(hour: int) -> List[str]:
+    """Return the greeting pool for an hour-of-day (0–23), SGT."""
     if 5 <= hour < 9:
         return EARLY_MORNING
     if 9 <= hour < 12:
@@ -109,41 +132,66 @@ def _slot_for_hour(hour: int) -> List[str]:
         return EVENING
     if hour >= 21 or hour < 1:
         return NIGHT
-    return LATE_NIGHT  # 1am–5am
+    return LATE_NIGHT  # 01:00–05:00
 
 
-def _now_sgt(now: Optional[datetime]) -> datetime:
-    if now is not None:
-        return now
-    try:
-        from zoneinfo import ZoneInfo
-        return datetime.now(ZoneInfo("Asia/Singapore"))
-    except Exception:
-        return datetime.now()
+def _day_prefix(dt: datetime) -> str:
+    """Day-awareness prefix: Monday / Friday-evening flavour."""
+    wd = dt.weekday()  # Mon=0 … Sun=6
+    if wd == 0:
+        return "New week. "
+    if wd == 4 and dt.hour >= 17:
+        return "End of the week. "
+    return ""
 
 
-def get_wake_response(now: Optional[datetime] = None) -> str:
-    """Return a short contextual wake greeting for the current SGT time/date."""
+def _special_suffix(dt: datetime) -> str:
+    """Special-date heads-up appended on the day only (SGT)."""
+    if dt.month == 7 and dt.day == 22:
+        return " Heads up — anniversary today."
+    if dt.month == 9 and dt.day == 16:
+        return " Partner's birthday today."
+    return ""
+
+
+def is_full_greeting(last_wake_ts: Optional[float], now: Optional[datetime] = None) -> bool:
+    """True when this wake deserves the full greeting (first today / 2h+ gap)."""
+    if last_wake_ts is None:
+        return True
     dt = _now_sgt(now)
-    hour, weekday = dt.hour, dt.weekday()  # Monday == 0
+    try:
+        last = datetime.fromtimestamp(last_wake_ts, tz=dt.tzinfo)
+    except Exception:
+        return True
+    # Different calendar day, or a 2h+ gap, both qualify as a fresh wake.
+    if last.date() != dt.date():
+        return True
+    return (dt - last) >= FULL_GREETING_GAP
 
-    slot = _slot_for_hour(hour)
-    choices = [c for c in slot if c != _last["text"]] or list(slot)
-    base = random.choice(choices)
-    _last["text"] = base
 
-    parts = [base]
+def get_wake_response(
+    now: Optional[datetime] = None,
+    last_wake_ts: Optional[float] = None,
+    *,
+    force_full: Optional[bool] = None,
+    rng: Optional[random.Random] = None,
+) -> str:
+    """Return the spoken wake response for the current SGT context.
 
-    # Special date — only on the actual day (advance reminders are handled
-    # separately by proactive intelligence).
-    special = _SPECIAL.get((dt.month, dt.day))
-    if special:
-        parts.append(special)
-    else:
-        # Light day-of-week flavour, only sometimes (not every wake needs it).
-        if weekday == 0 and random.random() < 0.5:
-            parts.append("New week.")
-        elif weekday == 4 and hour >= 17 and random.random() < 0.6:
-            parts.append("End of the week.")
+    force_full overrides the first-of-day / 2h-gap heuristic when set.
+    rng allows deterministic selection in tests.
+    """
+    dt = _now_sgt(now)
+    pick = (rng or random).choice
+    full = force_full if force_full is not None else is_full_greeting(last_wake_ts, dt)
+    if not full:
+        return pick(SHORT_ACKS)
+    base = pick(slot_for_hour(dt.hour))
+    return f"{_day_prefix(dt)}{base}{_special_suffix(dt)}"
 
-    return " ".join(parts)
+
+__all__ = [
+    "get_wake_response", "is_full_greeting", "slot_for_hour",
+    "SHORT_ACKS", "EARLY_MORNING", "MORNING", "AFTERNOON", "EVENING",
+    "NIGHT", "LATE_NIGHT", "FULL_GREETING_GAP",
+]

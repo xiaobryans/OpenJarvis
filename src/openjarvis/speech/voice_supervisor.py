@@ -1,20 +1,17 @@
-"""Supervised always-on voice loop for VANTA.
+"""Supervised always-on voice loop for VANTA (clean rebuild, Task 1).
 
 Runs :class:`~openjarvis.speech.voice_loop.VoiceLoop` in a background daemon
-thread so ``vanta serve`` is always listening for the wake word ("Hey VANTA")
-without the API server ever being blocked or taken down by a voice failure.
+thread so ``vanta serve`` is always listening without the API server ever being
+blocked or taken down by a voice failure.
 
-Design guarantees (see Task C of the VANTA sprint):
-  - **Non-blocking**: the supervisor runs in a daemon thread; the server starts
-    and serves requests regardless of voice state.
-  - **Auto-restart**: if the loop crashes (mic glitch, transient device error)
-    it is restarted with exponential backoff (capped), so a momentary fault
-    does not permanently silence voice.
-  - **Mic-permission tolerant**: if the mic can't be opened (permission not
-    granted, device busy) the failure is logged as a warning and retried — the
-    server keeps running normally.
-  - **Opt-out**: set ``VANTA_NO_VOICE=1`` (or ``OPENJARVIS_NO_VOICE=1``), or pass
-    ``vanta serve --no-voice``, to skip starting the loop entirely.
+Guarantees:
+  * **Health-gated start** — instead of a fixed delay, the supervisor polls
+    ``/health`` and starts the voice loop the moment it returns 200 (no fixed
+    delay; starts when ready).
+  * **Auto-restart** — if the loop crashes it restarts with capped backoff.
+  * **Opt-out** — ``VANTA_VOICE=off`` (kill switch) or the legacy
+    ``VANTA_NO_VOICE`` / ``OPENJARVIS_NO_VOICE`` flags skip it entirely.
+  * **Non-blocking** — never raises into server startup.
 """
 
 from __future__ import annotations
@@ -27,73 +24,75 @@ from typing import Callable, Optional
 
 logger = logging.getLogger(__name__)
 
-# Cap the restart backoff so a permanently-unavailable mic doesn't busy-loop,
-# while a transient fault still recovers quickly.
 _MAX_RESTART_BACKOFF_S = 30.0
+_HEALTH_POLL_INTERVAL_S = 1.0
+_HEALTH_POLL_TIMEOUT_S = 120.0  # give up arming after this; supervisor exits
 
 _thread: Optional[threading.Thread] = None
 _stop = threading.Event()
 
 StatusLog = Callable[[str], None]
-
 _TRUE = {"1", "true", "yes", "on"}
-
-# Delay before the loop activates so it does not transcribe during server boot.
-_STARTUP_DELAY_S = 15.0
 
 
 def voice_disabled() -> bool:
-    """True if the always-on voice loop is opted out via env var.
-
-    Disabled by ``VANTA_VOICE=off`` (Bryan's runtime kill-switch), or by the
-    legacy ``VANTA_NO_VOICE`` / ``OPENJARVIS_NO_VOICE`` truthy flags.
-    """
+    """True if the always-on voice loop is opted out via env var."""
     if (os.environ.get("VANTA_VOICE") or "").strip().lower() == "off":
         return True
-    val = (
-        os.environ.get("VANTA_NO_VOICE")
-        or os.environ.get("OPENJARVIS_NO_VOICE")
-        or ""
-    ).strip().lower()
+    val = (os.environ.get("VANTA_NO_VOICE") or os.environ.get("OPENJARVIS_NO_VOICE") or "").strip().lower()
     return val in _TRUE
 
 
 def is_running() -> bool:
-    """True if the supervisor thread is alive."""
     return _thread is not None and _thread.is_alive()
 
 
+def _health_url() -> str:
+    port = (os.environ.get("JARVIS_PORT") or os.environ.get("OPENJARVIS_PORT") or "8000").strip()
+    return f"http://127.0.0.1:{port}/health"
+
+
+def _wait_for_health() -> bool:
+    """Poll /health until it returns 200, or stop/timeout. True when ready."""
+    url = _health_url()
+    deadline = time.time() + _HEALTH_POLL_TIMEOUT_S
+    while not _stop.is_set() and time.time() < deadline:
+        try:
+            import httpx
+            r = httpx.get(url, timeout=2.0)
+            if r.status_code == 200:
+                return True
+        except Exception:
+            pass
+        if _stop.wait(_HEALTH_POLL_INTERVAL_S):
+            return False
+    return False
+
+
 def _supervise(status_log: StatusLog) -> None:
-    """Run the voice loop forever, restarting on crash with backoff."""
-    # Startup delay — let the server finish booting before the mic goes live,
-    # so boot-time noise/audio never false-triggers the wake word. Interruptible
-    # via the stop event.
-    status_log(f"voice loop arming in {int(_STARTUP_DELAY_S)}s…")
-    if _stop.wait(_STARTUP_DELAY_S):
+    """Wait for the server to be healthy, then run the loop, restarting on crash."""
+    status_log("voice supervisor: waiting for /health 200…")
+    if not _wait_for_health():
+        status_log("voice supervisor: server not healthy in time — voice not started")
         return
     backoff = 1.0
     while not _stop.is_set():
         try:
             from openjarvis.speech.voice_loop import VoiceLoop
-        except Exception as exc:  # missing optional speech deps — give up cleanly
+        except Exception as exc:  # missing optional speech deps
             status_log(f"voice loop unavailable (missing deps): {exc}")
             return
         try:
             status_log('voice loop active — say "Hey VANTA"')
-            VoiceLoop().run()  # blocks until it returns or raises
+            VoiceLoop().run()  # blocks
             if _stop.is_set():
                 return
-            # run() returned on its own (uncommon) — treat as a restart.
             status_log("voice loop exited; restarting")
             backoff = 1.0
-        except Exception as exc:  # mic permission/device error — keep server up
+        except Exception as exc:
             if _stop.is_set():
                 return
-            status_log(
-                f"voice loop error ({exc!r}); retrying in {backoff:.0f}s "
-                "(server unaffected)"
-            )
-        # Wait before the next attempt, but wake immediately on stop.
+            status_log(f"voice loop error ({exc!r}); retrying in {backoff:.0f}s (server unaffected)")
         if _stop.wait(backoff):
             return
         backoff = min(_MAX_RESTART_BACKOFF_S, backoff * 2.0)
@@ -102,25 +101,22 @@ def _supervise(status_log: StatusLog) -> None:
 def start_voice_supervisor(status_log: Optional[StatusLog] = None) -> bool:
     """Start the always-on voice loop in a background daemon thread.
 
-    Returns ``True`` if a supervisor thread was started, ``False`` if voice is
-    disabled or already running. **Never raises** — a voice failure must never
-    prevent the API server from starting.
+    Returns True if a thread was started, False if disabled/already running.
+    Never raises — a voice failure must never prevent the API server starting.
     """
     global _thread
     log: StatusLog = status_log or (lambda m: logger.info("voice: %s", m))
     try:
         if voice_disabled():
-            log("voice loop disabled via VANTA_NO_VOICE — not starting")
+            log("voice loop disabled via VANTA_VOICE=off — not starting")
             return False
         if is_running():
             return False
         _stop.clear()
-        _thread = threading.Thread(
-            target=_supervise, args=(log,), name="vanta-voice", daemon=True
-        )
+        _thread = threading.Thread(target=_supervise, args=(log,), name="vanta-voice", daemon=True)
         _thread.start()
         return True
-    except Exception as exc:  # belt-and-suspenders: never break serve startup
+    except Exception as exc:
         log(f"could not start voice supervisor: {exc!r}")
         return False
 
