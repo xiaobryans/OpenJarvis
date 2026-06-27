@@ -19,20 +19,17 @@ import { VantaHistoryModal, type HistItem } from './vanta/VantaHistoryModal';
 
 const I = { voice: 5_000, system: 30_000, memory: 60_000, comms: 120_000, calendar: 300_000, weather: 1_800_000 } as const;
 
-const STATES = [
-  { cls: '', lbl: 'READY', lc: '#00FF88', rd: '> SYSTEM NOMINAL · ALL GATES CLEAR' },
-  { cls: 'sp', lbl: 'PROCESSING', lc: '#00D4FF', rd: '> ROUTING QUERY → COS/GM · DISPATCHING' },
-  { cls: 'sa', lbl: 'ANALYZING', lc: '#FF9500', rd: '> ANALYZING INPUTS · CONFIDENCE NOMINAL' },
-] as const;
+// Fix 2 — orb/indicator visuals per voice-pipeline state.
+const VOICE_VIS: Record<string, { cls: string; lbl: string; lc: string; rd: string }> = {
+  standby: { cls: 'vstandby', lbl: '○ STANDBY', lc: '#4a6080', rd: '> VOICE STANDBY' },
+  listening: { cls: '', lbl: '● LISTENING', lc: '#00D4FF', rd: '> LISTENING FOR "HEY VANTA"' },
+  wake_detected: { cls: 'vwake', lbl: '● WAKE DETECTED', lc: '#ffffff', rd: '> WAKE DETECTED' },
+  recording: { cls: 'vrec', lbl: '● RECORDING', lc: '#00FF88', rd: '> RECORDING…' },
+  thinking: { cls: 'sa', lbl: '● THINKING', lc: '#FF9500', rd: '> THINKING…' },
+  speaking: { cls: 'vspeak', lbl: '● SPEAKING', lc: '#00FF88', rd: '> SPEAKING' },
+};
+interface VoiceUx { active: boolean; state: string }
 
-function deriveVoiceMode(v: VoiceStatusData | null, ok: boolean): VoiceMode {
-  if (!ok || !v) return 'off';
-  const ready = String(v.voice_readiness ?? '').toUpperCase();
-  const s = String(v.state ?? '').toLowerCase();
-  if (ready === 'RUNTIME_STARTED' || ready === 'READY' || s === 'speaking' || s === 'thinking' || v.active) return 'active';
-  if (v.listening || s === 'listening' || s === 'awake') return 'listening';
-  return 'parked';
-}
 function parseTemp(text: string | undefined): string {
   const m = (text ?? '').match(/([+-]?\d+°C)/);
   return m ? m[1] : '';
@@ -46,16 +43,18 @@ export function VantaCockpitPage(): React.ReactElement {
   const calendar = useLivePanel<CalendarData>('/v1/calendar/today', I.calendar);
   const memory = useLivePanel<MemoryData>('/v1/memory/status', I.memory);
   const connectors = useLivePanel<ConnectorsData>('/v1/connectors/status', I.system);
+  const voiceUx = useLivePanel<VoiceUx>('/v1/voice/state', 2000);  // Fix 2 — orb state, 2s
 
   // clock
   const [time, setTime] = React.useState(() => new Date().toTimeString().slice(0, 8));
   React.useEffect(() => { const t = window.setInterval(() => setTime(new Date().toTimeString().slice(0, 8)), 1000); return () => window.clearInterval(t); }, []);
 
-  // state cycle (real send overrides)
-  const [si, setSi] = React.useState(0);
+  // Fix 2 — orb/indicator driven by real voice state (typed send overrides to thinking).
   const [sending, setSending] = React.useState(false);
-  React.useEffect(() => { const t = window.setInterval(() => setSi((s) => (s + 1) % STATES.length), 9000); return () => window.clearInterval(t); }, []);
-  const st = sending ? STATES[1] : STATES[si];
+  const voiceActive = voiceUx.ok && !!voiceUx.data?.active;
+  const rawState = voiceActive ? String(voiceUx.data?.state ?? 'standby') : 'standby';
+  const effState = sending ? 'thinking' : rawState;
+  const st = VOICE_VIS[effState] ?? VOICE_VIS.standby;
 
   // ambient hum + click cue (armed on first click)
   React.useEffect(() => {
@@ -79,9 +78,9 @@ export function VantaCockpitPage(): React.ReactElement {
     return () => window.removeEventListener('click', onClick);
   }, []);
 
-  // derived
-  const voiceMode = deriveVoiceMode(voice.data, voice.ok);
-  const voiceOn = voiceMode === 'listening' || voiceMode === 'active';
+  // derived (voice indicators now driven by the fine-grained voice state)
+  const voiceOn = voiceActive && rawState !== 'standby';
+  const voiceMode: VoiceMode = !voiceActive ? 'off' : (rawState === 'listening' ? 'listening' : (rawState === 'standby' ? 'parked' : 'active'));
   const apiOk = health.data?.status === 'ok';
   const model = String(health.data?.model ?? '—');
   const conns = connectors.data?.connectors ?? [];
@@ -90,8 +89,8 @@ export function VantaCockpitPage(): React.ReactElement {
   const connText = totalC > 0 ? `${liveC}/${totalC}` : '—';
   const temp = parseTemp(weather.data?.text);
   const weatherText = weather.ok && temp ? `${temp} · SGT` : 'SGT';
-  const voiceText = voiceOn ? '● LISTENING' : '○ VOICE OFF';
-  const voiceColor = voiceOn ? 'var(--gr)' : 'var(--dim)';
+  const voiceText = st.lbl;            // state-driven (LISTENING / RECORDING / SPEAKING / STANDBY…)
+  const voiceColor = st.lc;
 
   // unified history: Cmd+K modal + cockpit session's typed turns
   const [historyOpen, setHistoryOpen] = React.useState(false);
@@ -119,8 +118,11 @@ export function VantaCockpitPage(): React.ReactElement {
     const text = input.trim(); if (!text) return;
     setInput(''); setSending(true);
     setTyped((h) => [...h, { ts: Date.now() / 1000, speaker: 'you', text, mode: 'typed' }]);
+    // Fix 4 — pass conversation history (last 20 turns) so VANTA has context.
+    const history = typed.slice(-40).map((t) => ({ role: t.speaker === 'you' ? 'user' : 'assistant', content: t.text }));
+    const messages = [...history, { role: 'user', content: text }];
     try {
-      const r = await apiFetch('/v1/chat/completions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messages: [{ role: 'user', content: text }], stream: false }) });
+      const r = await apiFetch('/v1/chat/completions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messages, stream: false }) });
       if (r.ok) {
         const j = await r.json();
         const reply = (((j.choices || [])[0] || {}).message || {}).content;
@@ -128,7 +130,7 @@ export function VantaCockpitPage(): React.ReactElement {
       }
     } catch { /* surfaced via state */ }
     finally { window.setTimeout(() => setSending(false), 2500); }
-  }, [input]);
+  }, [input, typed]);
 
   const [micActive, setMicActive] = React.useState(false);
   const onMic = React.useCallback(() => { setMicActive(true); window.setTimeout(() => setMicActive(false), 3000); }, []);

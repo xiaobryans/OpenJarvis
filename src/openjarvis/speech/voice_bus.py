@@ -27,6 +27,21 @@ _ACTIVE = {"on": False}
 _MEM: Dict[str, Any] = {"backend": None}
 _HISTORY_PATH = Path.home() / ".openjarvis" / "voice_history.jsonl"
 
+# Fine-grained voice state for the cockpit orb/indicator. One of:
+#   standby | listening | wake_detected | recording | thinking | speaking
+_VALID_STATES = {"standby", "listening", "wake_detected", "recording", "thinking", "speaking"}
+_STATE = {"value": "standby"}
+
+
+def set_voice_state(state: str) -> None:
+    """Push the current voice-pipeline state (ignored if unknown)."""
+    if state in _VALID_STATES:
+        _STATE["value"] = state
+
+
+def get_voice_state() -> str:
+    return _STATE["value"]
+
 
 # ── voice-active flag (UI hides the transcript overlay when off) ──────────────
 def set_voice_active(on: bool) -> None:

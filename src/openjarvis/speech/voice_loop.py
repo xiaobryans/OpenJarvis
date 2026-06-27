@@ -63,6 +63,17 @@ CLAP_MIN_GAP_S = 0.15       # min gap between the two spikes (too close = ignore
 CLAP_MAX_GAP_S = 0.8        # max gap between the two spikes (too far = ignore)
 CLAP_COOLDOWN_S = 5.0       # quiet window after a clap trigger before re-listening
 
+# Conversation mode (Fix 3): silence-based VAD + multi-turn without re-waking.
+CONV_VAD_RMS = 400          # speech-start floor for the VAD
+CONV_SILENCE_S = 1.5        # continuous silence AFTER speech ends a turn
+CONV_END_SILENCE_S = 10.0   # silence with no speech at all ends the conversation
+CONV_MAX_TURNS = 20         # keep at most this many turns of context (Fix 4)
+# Saying any of these (in a short utterance) ends conversation mode.
+_END_PHRASES = (
+    "thank you", "thanks", "that's all", "thats all", "goodbye", "bye",
+    "stop listening", "stop", "okay done", "ok done", "exit", "done",
+)
+
 StatusCb = Callable[[str], None]
 
 
@@ -254,6 +265,67 @@ class VoiceLoop:
             logger.info("voice brain error (silent): %s", exc)
             return None
 
+    def _ask_brain_with_history(self, command: str, history: list) -> Optional[str]:
+        """Like _ask_brain but with conversation context (Fix 4). run_standard
+        only takes a string, so prior turns are prepended as context."""
+        prior = [m for m in history[:-1]] if history else []  # exclude current user msg
+        if prior:
+            prior = prior[-(CONV_MAX_TURNS * 2):]
+            lines = [("User: " if m.get("role") == "user" else "VANTA: ") + str(m.get("content", ""))
+                     for m in prior]
+            prompt = ("Conversation so far (same session):\n" + "\n".join(lines)
+                      + f"\n\nUser: {command}\nReply as VANTA, using the context above.")
+        else:
+            prompt = command
+        return self._ask_brain(prompt)
+
+    def _is_end_phrase(self, heard: str) -> bool:
+        """True if a SHORT utterance is a conversation-end phrase (so we don't
+        end on an incidental 'thanks' mid-sentence)."""
+        h = (heard or "").strip()
+        if not h or len(h.split()) > 6:
+            return False
+        return any(p in h for p in _END_PHRASES)
+
+    def _vad_record(self, q) -> Optional[bytes]:
+        """Silence-based VAD recording (Fix 3). Starts capturing when RMS exceeds
+        CONV_VAD_RMS; stops after CONV_SILENCE_S of continuous silence following
+        speech. No maximum length. Returns the PCM, or None if CONV_END_SILENCE_S
+        passes with no speech at all (the signal to end conversation mode)."""
+        import numpy as np
+        import queue as _q
+        block_s = 0.1  # mic callback delivers ~0.1s blocks
+        silence_needed = max(1, int(CONV_SILENCE_S / block_s))      # ~15 blocks
+        end_needed = max(1, int(CONV_END_SILENCE_S / block_s))      # ~100 blocks
+        collected: list[bytes] = []
+        heard_speech = False
+        silence_run = 0
+        idle = 0
+        while True:
+            try:
+                data = q.get(timeout=2.0)
+            except _q.Empty:
+                idle += int(2.0 / block_s)
+                if not heard_speech and idle >= end_needed:
+                    return None
+                continue
+            arr = np.frombuffer(data, dtype="int16")
+            rms = int(np.sqrt(np.mean(arr.astype("float32") ** 2))) if arr.size else 0
+            if rms > CONV_VAD_RMS:
+                heard_speech = True
+                silence_run = 0
+                collected.append(data)
+            elif heard_speech:
+                silence_run += 1
+                collected.append(data)
+                if silence_run >= silence_needed:   # end of this turn
+                    break
+            else:
+                idle += 1
+                if idle >= end_needed:              # 10s with no speech -> end
+                    return None
+        return b"".join(collected)
+
     def _collect(self, q, seconds: float) -> bytes:
         """Drain `seconds` of audio from the callback queue. Warns (instead of
         hanging) if the mic delivers nothing — e.g. permissions/device issue."""
@@ -315,54 +387,91 @@ class VoiceLoop:
 
     # ---- shared wake sequence (both triggers) ----
     def _handle_wake(self, q, inline_after: str = "") -> None:
-        """Run the wake sequence for either trigger: speak a short contextual
-        welcome (wake_responses), then capture and answer the command. The voice
-        DETECTION is unchanged; this is only the post-wake response/handling."""
+        """Wake → contextual greeting → CONVERSATION MODE: VAD-record each turn,
+        answer with running context, and immediately listen for the next turn —
+        no wake word needed between turns. Ends on an end-phrase, 10s of silence,
+        or when the brain/VAD signals stop; then returns to wake standby.
+
+        Fix 2 (state), Fix 3 (VAD conversation), Fix 4 (context), Fix 5 (recall)."""
         from openjarvis.speech.wake_responses import get_wake_response
-        # arm both cooldowns immediately so neither trigger double-fires
+        from openjarvis.speech.wake_recall import is_recall_query, recall_answer
         self._last_trigger = time.monotonic()
         self._last_clap_trigger = time.monotonic()
         self._clap_spikes = []
 
-        # PART 2 — contextual welcome before listening for the command.
+        history: list = []  # running conversation context for this session
+
+        # wake flash → contextual greeting (spoken before listening)
+        voice_bus.set_voice_state("wake_detected")
         welcome = get_wake_response()
         print(f"🤝 welcome: {welcome!r}")
         voice_bus.push_transcript("vanta", welcome, final=True)
+        voice_bus.set_voice_state("speaking")
         self._speak(welcome)
 
-        after = (inline_after or "").strip()
-        said = f"Hey VANTA {after}".strip() if after else ""
-        if not after:
-            print("🟢 listening for your command…")
-            while not q.empty():       # drop stale pre-trigger audio
-                try:
-                    q.get_nowait()
-                except Exception:
+        first = True
+        while True:
+            # ── capture this turn's command ──
+            if first and (inline_after or "").strip():
+                after = inline_after.strip()
+                first = False
+            else:
+                first = False
+                voice_bus.set_voice_state("recording")
+                while not q.empty():       # drop stale audio before recording
+                    try:
+                        q.get_nowait()
+                    except Exception:
+                        break
+                pcm = self._vad_record(q)
+                if pcm is None:            # 10s silence → end conversation
                     break
-            time.sleep(0.5)
-            after = _normalize(self._transcribe(self._record_until_silence()))
-            said = after
-        if not after:
-            print(f"👂 listening — say \"{WAKE_WORD}\"…")
-            return
+                after = _normalize(self._transcribe(pcm))
+            if not after:
+                continue                    # heard nothing → listen again
 
-        voice_bus.push_transcript("bryan", said or after, final=True)
-        voice_bus.save_turn("bryan", said or after, session_id=self._session)
-        print(f"💬 command: {after!r}")
-        self._status("thinking")
-        answer = self._ask_brain(after)
-        if answer:
-            print(f"🗣  VANTA: {answer[:200]}")
-            voice_bus.push_transcript("vanta", answer, final=True)
-            voice_bus.save_turn("vanta", answer, session_id=self._session)
-            self._speak(answer)
-        else:
-            print("⚠ brain unavailable — staying silent, listening")
-        while not q.empty():           # drain audio captured while speaking
-            q.get_nowait()
+            voice_bus.push_transcript("bryan", after, final=True)
+            voice_bus.save_turn("bryan", after, session_id=self._session)
+            history.append({"role": "user", "content": after})
+            print(f"💬 turn: {after!r}")
+
+            # ── conversation end? ──
+            if self._is_end_phrase(after):
+                voice_bus.set_voice_state("speaking")
+                voice_bus.push_transcript("vanta", "Standing by.", final=True)
+                self._speak("Standing by.")
+                break
+
+            # ── answer (recall query → history store; else brain w/ context) ──
+            voice_bus.set_voice_state("thinking")
+            if is_recall_query(after):
+                answer = recall_answer(after)
+            else:
+                answer = self._ask_brain_with_history(after, history)
+
+            if answer:
+                history.append({"role": "assistant", "content": answer})
+                if len(history) > CONV_MAX_TURNS * 2:
+                    history = history[-CONV_MAX_TURNS * 2:]
+                print(f"🗣  VANTA: {answer[:200]}")
+                voice_bus.push_transcript("vanta", answer, final=True)
+                voice_bus.save_turn("vanta", answer, session_id=self._session)
+                voice_bus.set_voice_state("speaking")
+                self._speak(answer)
+            else:
+                print("⚠ brain unavailable — staying silent")
+            # loop: immediately listen for the next turn (conversation mode)
+
+        # conversation ended → back to wake standby
+        while not q.empty():
+            try:
+                q.get_nowait()
+            except Exception:
+                break
         self._last_trigger = time.monotonic()
         self._last_clap_trigger = time.monotonic()
-        print(f"\n👂 listening — say \"{WAKE_WORD}\"…")
+        voice_bus.set_voice_state("listening")
+        print(f"\n👂 standby — say \"{WAKE_WORD}\"…")
 
     # ---- main loop (continuous, gapless) ----
     def run(self) -> None:
@@ -374,6 +483,7 @@ class VoiceLoop:
         self._ensure()
         self._session = f"voice-{int(time.time())}"
         voice_bus.set_voice_active(True)  # cockpit shows the transcript overlay
+        voice_bus.set_voice_state("listening")  # mic open, waiting for wake
         try:
             dev = sd.query_devices(kind="input")
             print(f"🎙  input device: {dev.get('name')} @ {self._rate} Hz")

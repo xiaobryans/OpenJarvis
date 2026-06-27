@@ -18,11 +18,18 @@ router = APIRouter()
 
 @router.get("/v1/voice/transcript")
 async def voice_transcript(limit: int = 12) -> dict:
-    """Live transcript events for the cockpit overlay."""
+    """Live transcript events + current voice state for the cockpit overlay/orb."""
     return {
         "active": voice_bus.voice_active(),
+        "state": voice_bus.get_voice_state(),
         "events": voice_bus.get_transcript(limit),
     }
+
+
+@router.get("/v1/voice/state")
+async def voice_state() -> dict:
+    """Current voice-pipeline state for the orb/indicator (polled by the cockpit)."""
+    return {"active": voice_bus.voice_active(), "state": voice_bus.get_voice_state()}
 
 
 @router.get("/v1/history")

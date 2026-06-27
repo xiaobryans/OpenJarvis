@@ -108,6 +108,15 @@ export function VantaHudStyles(): React.ReactElement {
 @keyframes vhobf{0%,100%{box-shadow:0 0 60px rgba(0,220,255,1),0 0 120px rgba(0,200,255,.8),0 0 240px rgba(0,160,255,.5),inset 0 0 38px rgba(0,125,230,.55)}50%{box-shadow:0 0 80px rgba(80,235,255,1),0 0 160px rgba(40,215,255,.9),0 0 340px rgba(0,185,255,.6),inset 0 0 55px rgba(0,155,248,.72)}}
 #vanta-root.sa #orb{animation:vhoba 2s ease-in-out infinite}
 @keyframes vhoba{0%,100%{box-shadow:0 0 35px rgba(255,149,0,.85),0 0 70px rgba(255,100,0,.55),inset 0 0 28px rgba(155,55,0,.45)}50%{box-shadow:0 0 52px rgba(255,175,0,.98),0 0 105px rgba(255,125,0,.75),inset 0 0 42px rgba(185,72,0,.58)}}
+/* Voice states (Fix 2) */
+#vanta-root.vstandby #orb{filter:saturate(.55) brightness(.7);animation:vhstandby 5s ease-in-out infinite}
+@keyframes vhstandby{0%,100%{box-shadow:0 0 18px rgba(0,110,200,.4),inset 0 0 16px rgba(0,55,140,.3)}50%{box-shadow:0 0 30px rgba(0,140,220,.5),inset 0 0 22px rgba(0,70,160,.35)}}
+#vanta-root.vstandby #og{opacity:.4}
+#vanta-root.vwake #orb{animation:vhwake .5s ease-out forwards;filter:brightness(1.6)}
+@keyframes vhwake{0%{box-shadow:0 0 90px #fff,0 0 180px rgba(255,255,255,.9),inset 0 0 55px #fff}100%{box-shadow:0 0 45px rgba(0,210,255,.9),0 0 90px rgba(0,180,255,.6),inset 0 0 30px rgba(0,120,220,.5)}}
+#vanta-root.vrec #orb{animation:vhobf 1s ease-in-out infinite}
+#vanta-root.vspeak #orb{animation:vhob 1.1s ease-in-out infinite}
+#vanta-root.vspeak .pr{animation:vhpe 1.3s ease-out infinite}
 `}</style>
   );
 }
