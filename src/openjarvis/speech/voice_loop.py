@@ -35,6 +35,7 @@ logger = logging.getLogger("openjarvis.voice_loop")
 # ── Tunable constants ────────────────────────────────────────────────────────
 RMS_GATE = 600          # VAD: START recording above this RMS
 VAD_STOP_RMS = 400      # VAD: below this counts as silence (hysteresis stop gate)
+BARGE_RMS = 800         # barge-in: Bryan speaking over Ivy is detected above this
 SILENCE_STOP = 0.8      # seconds of sub-stop-gate silence that ends an utterance
 # NOTE: there is intentionally NO maximum recording time — Bryan is never cut off.
 END_SILENCE = 10.0      # silence after a reply that ends the conversation
@@ -153,6 +154,20 @@ def detect_interrupt(text: str) -> Optional[str]:
 def is_resume(text: str) -> bool:
     t = (text or "").lower().strip().rstrip(".!?")
     return any(t == p or t.endswith(" " + p) for p in RESUME_PHRASES)
+
+
+def classify_interrupt(text: str) -> str:
+    """Classify a barge-in (Task 2): 'hard' (stop -> drop original), 'soft'
+    (hold on/wait/actually/before you continue -> answer both), or 'new'
+    (a fresh request -> answer it; the brain still has 20-turn context)."""
+    t = (text or "").lower().strip()
+    if not t:
+        return "new"
+    if t.rstrip(".!?") in HARD_STOP or t.startswith("stop "):
+        return "hard"
+    if any(p in t for p in SOFT_INTERRUPT) or any(p in t for p in HOLD_PHRASES):
+        return "soft"
+    return "new"
 
 
 def voice_control(text: str) -> Optional[str]:
@@ -371,8 +386,10 @@ class VoiceLoop:
                     {"role": "user", "content": text}]
         return call_brain(messages, model)
 
-    # -- speak: live word-by-word transcript + TTS --
-    def speak(self, full_text: str, *, summary: bool = True) -> None:
+    # -- speak: live word-by-word transcript + TTS (with barge-in) --
+    def speak(self, full_text: str, *, summary: bool = True) -> str:
+        """Speak the reply. Returns the barge-in transcript if Bryan interrupted
+        mid-sentence (Task 2), else "" — callers act on it via classify_interrupt."""
         spoken = summarise_for_speech(full_text) if summary else full_text
         self._last_reply = spoken
         self._set_state("speaking")
@@ -380,65 +397,167 @@ class VoiceLoop:
         words = spoken.split()
         for i, w in enumerate(words):
             voice_bus.push_transcript("vanta", w, final=(i == len(words) - 1))
-        # FIX 3: stream the audio so Ivy starts talking on the first chunk
-        # (instead of waiting for the whole clip). Fall back to mp3+afplay.
-        if not self._stream_and_play_ivy(spoken, self._speed):
+        # FIX 3 + Task 2: stream the audio with concurrent barge-in so Bryan can
+        # interrupt mid-sentence. None => streaming unavailable -> mp3+afplay.
+        interrupt = self._stream_and_play_ivy(spoken, self._speed)
+        if interrupt is None:
             audio = synthesize_ivy(spoken, speed=self._speed)
             if audio:
                 self._play(audio)
+            interrupt = ""
         voice_bus.save_turn("vanta", spoken, mode="voice")
+        return interrupt
 
-    def _stream_and_play_ivy(self, text: str, speed: float) -> bool:  # pragma: no cover - audio/network
-        """Stream Ivy TTS as raw PCM and play chunks as they arrive (low latency).
-
-        Uses ElevenLabs' /stream endpoint with output_format=pcm_24000 and writes
-        chunks straight into a sounddevice output stream — playback begins on the
-        first chunk. Returns True if it streamed, False to fall back to mp3.
-        """
+    def _eleven_req(self, text: str, speed: float):
+        """Build the ElevenLabs streaming request (key, url, headers, body, sr)."""
         api_key = os.environ.get("ELEVENLABS_API_KEY", "")
-        if not api_key or not text.strip():
-            return False
         voice_id = os.environ.get("ELEVENLABS_VOICE_ID", "MClEFoImJXBTgLwdLI5n")
         model = os.environ.get("ELEVENLABS_MODEL", "eleven_turbo_v2_5")
         sr = 24000
+        url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}/stream?output_format=pcm_{sr}"
+        headers = {"xi-api-key": api_key, "accept": "audio/pcm", "content-type": "application/json"}
+        body = {"text": text, "model_id": model,
+                "voice_settings": {"stability": 0.4, "similarity_boost": 0.8,
+                                   "style": 0.6, "use_speaker_boost": True, "speed": speed}}
+        return api_key, url, headers, body, sr
+
+    def _stream_and_play_ivy(self, text: str, speed: float):  # -> Optional[str]
+        """Play Ivy TTS with barge-in (Task 2). Returns the interrupt transcript
+        (or "" if Ivy finished uninterrupted), or None if streaming is unavailable
+        so the caller falls back to mp3."""
+        api_key = self._eleven_req(text, speed)[0]
+        if not api_key or not text.strip():
+            return None
+        try:
+            return self._play_with_bargein(text, speed)
+        except Exception as exc:
+            print(f"[ERROR] barge-in playback failed ({exc}); sequential fallback", flush=True)
+            try:
+                return "" if self._stream_play_sequential(text, speed) else None
+            except Exception:
+                return None
+
+    def _play_with_bargein(self, text: str, speed: float) -> str:  # pragma: no cover - audio/network/threads
+        """Concurrent playback: a producer streams PCM into a queue; a playback
+        thread writes to the speaker, checking interrupt_event every 50ms; a
+        listener thread watches the mic during playback and, on a barge-in
+        (RMS > BARGE_RMS), stops playback and captures+transcribes Bryan.
+        Returns the interrupt transcript ("" if Ivy finished uninterrupted).
+        If a second mic stream can't open, barge-in is skipped (playback continues)."""
+        import queue as _queue
+        import sounddevice as sd
+        import httpx
+        _api, url, headers, body, sr = self._eleven_req(text, speed)
+        audio_q: "_queue.Queue" = _queue.Queue(maxsize=64)
+        result_q: "_queue.Queue" = _queue.Queue()
+        interrupt = threading.Event()
+        block = int(SAMPLE_RATE * FRAME_MS / 1000)
+
+        def producer():
+            try:
+                with httpx.Client(timeout=60) as c:
+                    with c.stream("POST", url, headers=headers, json=body) as r:
+                        r.raise_for_status()
+                        first = True
+                        for chunk in r.iter_bytes(4096):
+                            if interrupt.is_set() or self._stop.is_set() or not chunk:
+                                break
+                            if first:
+                                print("[ELEVENLABS] streaming started", flush=True); first = False
+                            scaled = self._scaled(chunk)
+                            while not interrupt.is_set() and not self._stop.is_set():
+                                try:
+                                    audio_q.put(scaled, timeout=0.1); break
+                                except _queue.Full:
+                                    continue
+            except Exception as exc:
+                print(f"[ERROR] TTS producer: {exc}", flush=True)
+            finally:
+                audio_q.put(None)  # sentinel: playback always terminates
+
+        def playback(out):
+            while not interrupt.is_set():
+                try:
+                    chunk = audio_q.get(timeout=0.05)
+                except _queue.Empty:
+                    continue
+                if chunk is None:
+                    break
+                try:
+                    out.write(chunk)
+                except Exception:
+                    break
+
+        def listener():
+            frames = bytearray(); recording = False; silent = 0
+            try:
+                with sd.RawInputStream(samplerate=SAMPLE_RATE, blocksize=block, dtype="int16", channels=1) as mic:
+                    while not interrupt.is_set():
+                        data, _ = mic.read(block)
+                        f = bytes(data); rms = rms_from_pcm16(f)
+                        if rms > BARGE_RMS and not recording:
+                            print(f"[BARGE-IN] detected (rms={int(rms)}) — stopping Ivy", flush=True)
+                            recording = True; silent = 0
+                        if recording:
+                            frames += f
+                            if rms < VAD_STOP_RMS:
+                                silent += 1
+                                if silent * (FRAME_MS / 1000.0) >= SILENCE_STOP:
+                                    interrupt.set()
+                                    result_q.put(self._transcribe(bytes(frames)))
+                                    return
+                            else:
+                                silent = 0
+            except Exception:
+                return  # second mic stream unavailable -> no barge-in this turn
+
+        out = sd.RawOutputStream(samplerate=sr, channels=1, dtype="int16")
+        out.start(); self._out_stream = out
+        threads = [threading.Thread(target=producer, daemon=True),
+                   threading.Thread(target=playback, args=(out,), daemon=True),
+                   threading.Thread(target=listener, daemon=True)]
+        for t in threads:
+            t.start()
+        threads[1].join()        # wait for playback (finishes on sentinel or interrupt)
+        interrupt.set()          # stop the listener if still running
+        threads[2].join(timeout=1.0)
+        try:
+            out.stop(); out.close()
+        except Exception:
+            pass
+        self._out_stream = None
+        print("[ELEVENLABS] playback done", flush=True)
+        try:
+            return (result_q.get_nowait() or "").strip()
+        except _queue.Empty:
+            return ""
+
+    def _stream_play_sequential(self, text: str, speed: float) -> bool:  # pragma: no cover - audio/network
+        """Sequential streaming fallback (no barge-in)."""
+        _api, url, headers, body, sr = self._eleven_req(text, speed)
         try:
             import httpx
             import sounddevice as sd
             out = sd.RawOutputStream(samplerate=sr, channels=1, dtype="int16")
-            out.start()
-            self._out_stream = out
+            out.start(); self._out_stream = out
             played = False
             try:
                 with httpx.Client(timeout=60) as c:
-                    with c.stream(
-                        "POST",
-                        f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}/stream?output_format=pcm_{sr}",
-                        headers={"xi-api-key": api_key, "accept": "audio/pcm", "content-type": "application/json"},
-                        json={
-                            "text": text, "model_id": model,
-                            "voice_settings": {"stability": 0.4, "similarity_boost": 0.8,
-                                               "style": 0.6, "use_speaker_boost": True, "speed": speed},
-                        },
-                    ) as r:
+                    with c.stream("POST", url, headers=headers, json=body) as r:
                         r.raise_for_status()
                         for chunk in r.iter_bytes(4096):
                             if self._stop.is_set() or not chunk:
                                 break
-                            if not played:
-                                print("[ELEVENLABS] streaming started", flush=True)
-                            out.write(self._scaled(chunk))
-                            played = True
+                            out.write(self._scaled(chunk)); played = True
             finally:
                 try:
                     out.stop(); out.close()
                 except Exception:
                     pass
                 self._out_stream = None
-            if played:
-                print("[ELEVENLABS] playback done", flush=True)
             return played
         except Exception as exc:
-            print(f"[ERROR] ElevenLabs streaming failed ({exc}); falling back to mp3", flush=True)
+            print(f"[ERROR] sequential streaming failed: {exc}", flush=True)
             self._out_stream = None
             return False
 
@@ -490,11 +609,17 @@ class VoiceLoop:
             self.speak(self._last_reply, summary=False)
 
     # -- one turn: text in -> brain -> Ivy speaks (used by runtime + tests) --
-    def handle_user_text(self, text: str) -> str:
+    def handle_user_text(self, text: str, _depth: int = 0) -> str:
         """Process one user utterance through the brain and speak the reply.
 
         Returns the full reply text (also pushed to the transcript). Records the
         turn in conversation history (last 20) and unified voice history.
+
+        Task 2 barge-in: speak() returns Bryan's interrupt transcript if he talked
+        over Ivy. We classify it — 'hard' (he said "stop") drops the rest and
+        waits; 'soft'/'new' answer the interrupt with full 20-turn context (so the
+        original request + reply are still available — nothing is lost). _depth
+        bounds the recursion so a flurry of interrupts can't run away.
         """
         text = (text or "").strip()
         if not text:
@@ -520,7 +645,18 @@ class VoiceLoop:
             self._set_state("listening")
             return ""  # silent on error — never speak error messages
         self.conversation.add("assistant", reply)
-        self.speak(reply, summary=True)
+        interrupt = self.speak(reply, summary=True)
+        if interrupt and _depth < 3:
+            kind = classify_interrupt(interrupt)
+            print(f"[BARGE-IN] {kind}: {interrupt!r}", flush=True)
+            voice_bus.push_transcript("bryan", interrupt, final=True)
+            if kind == "hard":
+                # "stop" — drop the rest of the reply, return to listening.
+                self._stop_playback()
+            else:
+                # soft ("hold on", "actually...") or a fresh request — answer it.
+                # The 20-turn history still holds the original turn, so context is intact.
+                return self.handle_user_text(interrupt, _depth=_depth + 1)
         self._set_state("listening")
         return reply
 

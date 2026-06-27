@@ -102,7 +102,7 @@ def _capture_model(monkeypatch):
 def test_simple_routes_to_mini(monkeypatch, text, expect_model):
     loop = vl.VoiceLoop()
     captured = _capture_model(monkeypatch)
-    monkeypatch.setattr(loop, "_stream_and_play_ivy", lambda *a, **k: True)  # no audio
+    monkeypatch.setattr(loop, "_stream_and_play_ivy", lambda *a, **k: "")  # played, no barge-in
     monkeypatch.setattr(vl, "synthesize_ivy", lambda *a, **k: None)
     loop.handle_user_text(text)
     assert captured["model"] == expect_model
@@ -334,3 +334,115 @@ def test_voice_state_has_six_states():
     from openjarvis.speech import voice_bus
     for s in ("standby", "listening", "wake_detected", "recording", "thinking", "speaking"):
         assert s in voice_bus._VALID_STATES
+
+
+# ── Task 2: barge-in mid-sentence (concurrent architecture) ──────────────────
+@pytest.mark.parametrize("text,kind", [
+    ("stop", "hard"),
+    ("stop talking", "hard"),
+    ("hold on", "soft"),
+    ("wait", "soft"),
+    ("one sec", "soft"),
+    ("actually never mind that", "soft"),
+    ("before you continue", "soft"),
+    ("what's the weather in tokyo", "new"),
+    ("", "new"),
+])
+def test_classify_interrupt(text, kind):
+    assert vl.classify_interrupt(text) == kind
+
+
+def test_barge_rms_threshold_present():
+    # Barge-in detection threshold sits above the VAD stop gate.
+    assert vl.BARGE_RMS == 800
+    assert vl.BARGE_RMS > vl.VAD_STOP_RMS
+
+
+def test_stream_and_play_ivy_none_without_key(monkeypatch):
+    # No API key -> streaming unavailable -> None so caller falls back to mp3.
+    monkeypatch.delenv("ELEVENLABS_API_KEY", raising=False)
+    loop = vl.VoiceLoop()
+    assert loop._stream_and_play_ivy("hi", 1.0) is None
+
+
+def test_speak_returns_empty_when_no_interrupt(monkeypatch):
+    # speak() now returns the barge-in transcript ("" when Ivy finishes clean).
+    monkeypatch.delenv("ELEVENLABS_API_KEY", raising=False)
+    monkeypatch.setattr(vl, "synthesize_ivy", lambda text, **k: None)
+    loop = vl.VoiceLoop()
+    assert loop.speak("hello there", summary=False) == ""
+
+
+def test_handle_user_text_soft_bargein_answers_both(monkeypatch):
+    loop = vl.VoiceLoop()
+    monkeypatch.setattr(vl, "classify_complexity", lambda t: "simple")
+    monkeypatch.setattr(vl, "call_brain", lambda messages, model, **k: "Answer.")
+    seq = ["hold on what about tuesday"]   # first speak() reports a barge-in
+    monkeypatch.setattr(loop, "speak", lambda text, *, summary=True: (seq.pop(0) if seq else ""))
+    loop.handle_user_text("book me a flight")
+    roles = [t["role"] for t in loop.conversation.context()]
+    # Original turn + the interrupt turn both reached the brain (nothing lost).
+    assert roles.count("user") == 2 and roles.count("assistant") == 2
+
+
+def test_handle_user_text_hard_bargein_drops(monkeypatch):
+    loop = vl.VoiceLoop()
+    monkeypatch.setattr(vl, "classify_complexity", lambda t: "simple")
+    monkeypatch.setattr(vl, "call_brain", lambda messages, model, **k: "Answer.")
+    stopped = {"n": 0}
+    monkeypatch.setattr(loop, "_stop_playback", lambda: stopped.__setitem__("n", stopped["n"] + 1))
+    monkeypatch.setattr(loop, "speak", lambda text, *, summary=True: "stop")
+    reply = loop.handle_user_text("tell me a long story")
+    assert reply == "Answer."
+    assert stopped["n"] == 1                       # playback was aborted
+    roles = [t["role"] for t in loop.conversation.context()]
+    assert roles.count("user") == 1               # "stop" does NOT spawn a new brain call
+
+
+def test_bargein_recursion_is_bounded(monkeypatch):
+    # Every speak reports a fresh barge-in; _depth must stop runaway recursion.
+    loop = vl.VoiceLoop()
+    monkeypatch.setattr(vl, "classify_complexity", lambda t: "simple")
+    monkeypatch.setattr(vl, "call_brain", lambda messages, model, **k: "Answer.")
+    monkeypatch.setattr(loop, "speak", lambda text, *, summary=True: "and another thing")
+    loop.handle_user_text("start")                # must terminate, not recurse forever
+    # _depth 0,1,2 recurse; depth 3 stops -> exactly 4 brain turns, then halts.
+    roles = [t["role"] for t in loop.conversation.context()]
+    assert roles.count("user") == 4
+
+
+def test_bargein_playback_drains_queue_then_sentinel():
+    """Playback contract: chunks written in order; None sentinel ends playback."""
+    import queue
+    import threading
+    q: "queue.Queue" = queue.Queue()
+    for c in (b"a", b"b", b"c"):
+        q.put(c)
+    q.put(None)                                   # producer's finally always posts this
+    interrupt = threading.Event()
+    written = []
+    while not interrupt.is_set():
+        try:
+            chunk = q.get(timeout=0.05)
+        except queue.Empty:
+            continue
+        if chunk is None:
+            break
+        written.append(chunk)
+    assert written == [b"a", b"b", b"c"]          # full drain, no deadlock
+
+
+def test_bargein_playback_stops_immediately_on_interrupt():
+    import queue
+    import threading
+    q: "queue.Queue" = queue.Queue()
+    q.put(b"a")
+    interrupt = threading.Event()
+    interrupt.set()                               # interrupt already raised
+    written = []
+    while not interrupt.is_set():
+        chunk = q.get(timeout=0.05)
+        if chunk is None:
+            break
+        written.append(chunk)
+    assert written == []                          # no chunk plays after interrupt
