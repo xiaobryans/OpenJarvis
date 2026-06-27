@@ -351,6 +351,12 @@ def create_app(
     except Exception as _exc:  # optional; never block startup
         logger.debug("Briefing route not mounted: %s", _exc)
     try:
+        from openjarvis.server.cockpit_data_routes import router as cockpit_data_router
+
+        app.include_router(cockpit_data_router)
+    except Exception as _exc:  # optional; never block startup
+        logger.debug("Cockpit data routes not mounted: %s", _exc)
+    try:
         from openjarvis.server.whatsapp_routes import router as whatsapp_router
 
         app.include_router(whatsapp_router)
