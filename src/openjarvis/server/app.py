@@ -360,6 +360,12 @@ def create_app(
         from openjarvis.server.voice_ux_routes import router as voice_ux_router
 
         app.include_router(voice_ux_router)
+        try:
+            from openjarvis.server.improvement_routes import router as improvement_router
+
+            app.include_router(improvement_router)
+        except Exception as _imp_exc:  # noqa: BLE001
+            logger.debug("Improvement-log route not mounted: %s", _imp_exc)
         # Wire the unified memory backend so voice turns also land in memory.
         try:
             from openjarvis.speech import voice_bus

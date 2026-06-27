@@ -33,6 +33,16 @@ except ImportError:
     pass
 
 try:
+    import openjarvis.tools.computer_tools  # noqa: F401
+except ImportError:
+    pass
+
+try:
+    import openjarvis.tools.sprint3_tools  # noqa: F401
+except ImportError:
+    pass
+
+try:
     import openjarvis.tools.datetime_tool  # noqa: F401
 except ImportError:
     pass
