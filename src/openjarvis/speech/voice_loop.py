@@ -16,6 +16,8 @@ from __future__ import annotations
 import logging
 import math
 import os
+from dotenv import load_dotenv
+load_dotenv("/Users/user/VANTA/.env")
 import re
 import struct
 import subprocess
@@ -269,27 +271,37 @@ def synthesize_ivy(text: str, *, speed: float = 1.0) -> Optional[bytes]:
         return None
 
 
-# ── STT (Deepgram nova-2, en-SG) ─────────────────────────────────────────────
+# ── STT (Deepgram nova-2, deepgram-sdk==3.7.0) ───────────────────────────────
+# Confirmed-working v3.7.0 syntax (live-tested on Bryan's machine):
+#   DeepgramClient(api_key=key)
+#   dg.listen.rest.v("1").transcribe_file({"buffer": pcm}, PrerecordedOptions(...))
+# Do NOT use deepgram-sdk v6 (different, breaking API: listen.v1.media...).
 def make_deepgram():
+    """Construct a Deepgram v3.7.0 client (api_key=...), or None if unavailable."""
     try:
-        from openjarvis.speech.deepgram import DeepgramSpeechBackend
-        backend = DeepgramSpeechBackend()
-        return backend if backend.health() else None
+        from deepgram import DeepgramClient
+        key = os.getenv("DEEPGRAM_API_KEY")
+        if not key:
+            print("[VANTA voice] DEEPGRAM_API_KEY not set — STT disabled", flush=True)
+            return None
+        print("[VANTA voice] Deepgram client ready (nova-2, language=en)", flush=True)
+        return DeepgramClient(api_key=key)
     except Exception as exc:  # pragma: no cover
         logger.warning("Deepgram init failed: %s", exc)
+        print(f"[VANTA voice] Deepgram init failed: {exc}", flush=True)
         return None
 
 
 def deepgram_options() -> dict:
-    """Deepgram request options for the VANTA mic stream (per spec)."""
+    """Deepgram PrerecordedOptions fields for the VANTA mic (nova-2, en, raw PCM)."""
     return {
         "model": "nova-2",
-        "language": "en-SG",
+        "language": "en",          # en-SG is not supported by nova-2
+        "sample_rate": 16000,
+        "channels": 1,
+        "encoding": "linear16",
         "smart_format": True,
-        "punctuate": True,
-        "interim_results": True,
-        "keywords": ["VANTA:10", "hey:5"],
-        "filler_words": False,
+        "keywords": ["vanta:10", "hey:5"],
     }
 
 
@@ -404,9 +416,13 @@ class VoiceLoop:
             return ""
         self.conversation.add("user", text)
         voice_bus.save_turn("bryan", text, mode="voice")
-        if classify_complexity(text) == "complex":
+        tier = classify_complexity(text)
+        model = self.simple_model if tier == "simple" else self.complex_model
+        print(f"[VANTA voice] sending to brain ({tier} -> {model}): {text!r}", flush=True)
+        if tier == "complex":
             self.speak("On it, give me a moment.", summary=False)
         reply = self.think(text)
+        print(f"[VANTA voice] brain reply: {reply[:120]!r}", flush=True)
         if not reply:
             self._set_state("listening")
             return ""  # silent on error — never speak error messages
@@ -425,6 +441,7 @@ class VoiceLoop:
 
     def _handle_wake(self) -> None:
         """Shared entry point for BOTH wake triggers (voice + double clap)."""
+        print("[VANTA voice] WAKE DETECTED — greeting + entering conversation", flush=True)
         self._set_state("wake_detected")
         greeting = get_wake_response(last_wake_ts=self._last_wake_ts)
         self._last_wake_ts = time.time()
@@ -434,22 +451,28 @@ class VoiceLoop:
         self._set_state("listening")
 
     def _transcribe(self, audio: bytes) -> str:  # pragma: no cover - needs Deepgram
-        """Transcribe captured int16 PCM via Deepgram (nova-2, en-SG)."""
+        """Transcribe captured int16 PCM via Deepgram v3.7.0 (nova-2, en, linear16)."""
         if not audio or self._stt is None:
             return ""
         try:
-            import io
-            import wave
-            buf = io.BytesIO()
-            with wave.open(buf, "wb") as w:
-                w.setnchannels(1)
-                w.setsampwidth(2)
-                w.setframerate(SAMPLE_RATE)
-                w.writeframes(audio)
-            res = self._stt.transcribe(buf.getvalue(), format="wav", language="en-SG")
-            return (getattr(res, "text", "") or "").strip()
+            from deepgram import PrerecordedOptions
+            options = PrerecordedOptions(
+                model="nova-2",
+                language="en",            # en-SG is not supported by nova-2
+                sample_rate=SAMPLE_RATE,  # 16000
+                channels=1,
+                encoding="linear16",      # raw int16 PCM (no WAV wrapper needed)
+                smart_format=True,
+                keywords=["vanta:10", "hey:5"],
+            )
+            res = self._stt.listen.rest.v("1").transcribe_file({"buffer": audio}, options)
+            text = (res.results.channels[0].alternatives[0].transcript or "").strip()
+            if text:
+                print(f"[VANTA voice] transcript: {text!r}", flush=True)
+            return text
         except Exception as exc:
             logger.debug("transcribe failed: %s", exc)
+            print(f"[VANTA voice] transcribe failed: {exc}", flush=True)
             return ""
 
     def run(self) -> None:  # pragma: no cover - needs mic/speaker + Deepgram
@@ -474,15 +497,23 @@ class VoiceLoop:
                 self._set_state("listening")
                 voice_bus.set_voice_active(True)
                 logger.info('voice loop active — say "Hey VANTA"')
+                print("[VANTA voice] LISTENING — say 'Hey VANTA' or double-clap", flush=True)
+                _hb = 0
                 while not self._stop.is_set():
                     data, _ = stream.read(block)
                     frame = bytes(data)
                     rms = rms_from_pcm16(frame)
                     now = time.time()
+                    # Debug: RMS heartbeat (~2/sec) + every loud chunk, so Bryan
+                    # can watch the mic levels live in the terminal.
+                    _hb += 1
+                    if _hb % 16 == 0 or rms >= WAKE_RMS:
+                        print(f"[VANTA voice] rms={int(rms):5d}  mode={'conv' if in_conversation else 'wake'}", flush=True)
 
                     if not in_conversation:
                         # Double-clap wake.
                         if self.clap.feed(rms, now):
+                            print(f"[VANTA voice] WAKE — double-clap (rms={int(rms)})", flush=True)
                             self._handle_wake()
                             in_conversation = True
                             utter.clear(); vad = VadState(); last_activity = now

@@ -43,7 +43,7 @@ dependencies = [
     "websockets>=15.0.1",
     "sounddevice>=0.5.5",
     "pynput>=1.8.2",
-    "deepgram-sdk>=3.0",
+    "deepgram-sdk==3.7.0",
     "pillow>=12.1.1",
 ]
 
@@ -129,7 +129,7 @@ sandbox-wasm = ["wasmtime>=25"]
 sandbox-docker = ["docker>=7.0"]
 dashboard = ["textual>=0.80"]
 speech = ["faster-whisper>=1.0"]
-speech-deepgram = ["deepgram-sdk>=3.0"]
+speech-deepgram = ["deepgram-sdk==3.7.0"]
 eval-wandb = ["wandb>=0.17"]
 eval-sheets = ["gspread>=6.0", "google-auth>=2.0"]
 mining-pearl-cpu = [

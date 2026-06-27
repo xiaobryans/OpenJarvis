@@ -64,17 +64,21 @@ def test_monday_prefix_and_special_date():
 
 
 # 3 — Deepgram client init (constructs; health False without a key is fine)
-def test_deepgram_client_init():
-    from openjarvis.speech.deepgram import DeepgramSpeechBackend
-    backend = DeepgramSpeechBackend(api_key="test_key_123")
-    assert backend.backend_id == "deepgram"
+def test_deepgram_options_v3_7():
+    # deepgram-sdk==3.7.0 PrerecordedOptions fields (live-confirmed working).
     opts = vl.deepgram_options()
     assert opts["model"] == "nova-2"
-    assert opts["language"] == "en-SG"
+    assert opts["language"] == "en"            # en-SG not supported by nova-2
+    assert opts["sample_rate"] == 16000
+    assert opts["channels"] == 1
+    assert opts["encoding"] == "linear16"
     assert opts["smart_format"] is True
-    assert opts["interim_results"] is True
-    assert opts["punctuate"] is True
-    assert "VANTA:10" in opts["keywords"]
+    assert opts["keywords"] == ["vanta:10", "hey:5"]
+
+
+def test_make_deepgram_none_without_key(monkeypatch):
+    monkeypatch.delenv("DEEPGRAM_API_KEY", raising=False)
+    assert vl.make_deepgram() is None
 
 
 # 4 — ElevenLabs client init
