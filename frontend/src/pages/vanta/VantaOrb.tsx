@@ -1,170 +1,102 @@
-// VantaOrb — dark energy sphere with cyan plasma streams flowing across its
-// surface (aurora / liquid-lightning), a soft diffuse halo, and sparks. The
-// core is dark — the energy lives ON the surface. Streams wrap the sphere at
-// different angles and depths; the sphere rotates slowly. Reacts to state.
+// VantaOrb — HUD core matching the jarvis_hud reference: radial-gradient sphere
+// (white-hot center → cyan → deep blue edge), 3 expanding ring halos, a breathing
+// outer glow, rotating orbital ellipses with travelling dots, and node badges
+// (COS/GM, W×35, M×17, REV, PA) tethered to the core by dashed connectors.
 
 import React from 'react';
 import { VANTA, type SystemState } from './vanta-kit';
 
-const SIZE = 500; // logical canvas px
-const R = 200; // sphere radius (diameter 400)
-const VIEW_TILT = 0.42; // tip the sphere toward the viewer
-const SAMPLES = 230; // points per stream (dense enough to read as fluid ribbons)
-const WORKERS = 35;
-const MANAGERS = 17;
+const V = 440; // viewBox units
+const CX = V / 2;
 
-// Each plasma stream: a band wrapping the sphere with an undulating latitude,
-// oriented by a fixed tilt so the streams cross at different angles.
-interface Stream { tilt: [number, number, number]; phase: number; amp: number; k: number; dir: number }
-const STREAMS: Stream[] = [
-  { tilt: [0.25, 0.0, 0.15], phase: 0.0, amp: 0.34, k: 2, dir: 1 },
-  { tilt: [1.15, 0.5, -0.1], phase: 2.1, amp: 0.27, k: 3, dir: -1 },
-  { tilt: [0.55, 1.25, 0.35], phase: 4.0, amp: 0.31, k: 2, dir: 1 },
-  { tilt: [1.55, 0.8, 0.7], phase: 1.2, amp: 0.22, k: 4, dir: -1 },
-];
-
-function rotX(p: number[], a: number): number[] { const c = Math.cos(a), s = Math.sin(a); return [p[0], p[1] * c - p[2] * s, p[1] * s + p[2] * c]; }
-function rotY(p: number[], a: number): number[] { const c = Math.cos(a), s = Math.sin(a); return [p[0] * c + p[2] * s, p[1], -p[0] * s + p[2] * c]; }
-function rotZ(p: number[], a: number): number[] { const c = Math.cos(a), s = Math.sin(a); return [p[0] * c - p[1] * s, p[0] * s + p[1] * c, p[2]]; }
-
-interface Cfg { primary: [number, number, number]; rot: number; flow: number; bright: number; ripple: boolean }
+interface Cfg { label: string; core: string; ring: string; spin: string }
 function cfgFor(s: SystemState): Cfg {
   switch (s) {
-    case 'processing': return { primary: [0, 212, 255], rot: 0.010, flow: 1.8, bright: 1.35, ripple: false };
-    case 'speaking': return { primary: [0, 255, 150], rot: 0.006, flow: 1.2, bright: 1.25, ripple: true };
-    case 'error': return { primary: [255, 120, 40], rot: 0.007, flow: 1.0, bright: 1.15, ripple: false };
-    default: return { primary: [0, 212, 255], rot: 0.0034, flow: 1.0, bright: 1.0, ripple: false };
+    case 'processing': return { label: 'PROCESSING', core: '#00D4FF', ring: '#00D4FF', spin: '0.85' };
+    case 'speaking': return { label: 'SPEAKING', core: '#00F5D4', ring: '#00F5D4', spin: '0.95' };
+    case 'error': return { label: 'ANALYZING', core: '#FF9500', ring: '#FF9500', spin: '1.1' };
+    default: return { label: 'READY', core: '#00D4FF', ring: '#3aa8ff', spin: '1' };
   }
 }
 
+const NODES: { id: string; x: number; y: number }[] = [
+  { id: 'COS/GM', x: 220, y: 50 },
+  { id: 'W×35', x: 372, y: 134 },
+  { id: 'M×17', x: 360, y: 316 },
+  { id: 'REV', x: 96, y: 330 },
+  { id: 'PA', x: 74, y: 140 },
+];
+
+function centerStyle(sizePct: number): React.CSSProperties {
+  return { position: 'absolute', top: '50%', left: '50%', width: `${sizePct}%`, height: `${sizePct}%`, transform: 'translate(-50%,-50%)', borderRadius: '50%' };
+}
+
 export function VantaOrb({ systemState }: { systemState: SystemState }): React.ReactElement {
-  const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
-  const stateRef = React.useRef<SystemState>(systemState);
-  stateRef.current = systemState;
-
-  React.useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    canvas.width = SIZE * dpr;
-    canvas.height = SIZE * dpr;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    ctx.scale(dpr, dpr);
-    const cx = SIZE / 2, cy = SIZE / 2;
-    let raf = 0, t0 = 0, angle = 0;
-
-    const draw = (t: number): void => {
-      if (!t0) t0 = t;
-      const tm = t - t0;
-      const cfg = cfgFor(stateRef.current);
-      const [pr, pg, pb] = cfg.primary;
-      angle += cfg.rot;
-      ctx.clearRect(0, 0, SIZE, SIZE);
-
-      // ── soft diffuse halo around the whole sphere ──
-      ctx.globalCompositeOperation = 'lighter';
-      const halo = ctx.createRadialGradient(cx, cy, R * 0.55, cx, cy, R * 1.5);
-      halo.addColorStop(0, `rgba(${pr},${pg},${pb},0.16)`);
-      halo.addColorStop(0.5, `rgba(${pr},${pg},${pb},0.06)`);
-      halo.addColorStop(1, 'rgba(0,0,0,0)');
-      ctx.fillStyle = halo;
-      ctx.fillRect(0, 0, SIZE, SIZE);
-
-      // ── dark sphere core (energy lives on the surface) ──
-      ctx.globalCompositeOperation = 'source-over';
-      const core = ctx.createRadialGradient(cx - R * 0.25, cy - R * 0.3, R * 0.1, cx, cy, R);
-      core.addColorStop(0, '#0a1622');
-      core.addColorStop(0.7, '#050d16');
-      core.addColorStop(1, '#02060c');
-      ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.fillStyle = core; ctx.fill();
-
-      // ── plasma streams (dense additive blobs = glowing fluid) ──
-      ctx.globalCompositeOperation = 'lighter';
-      for (let si = 0; si < STREAMS.length; si++) {
-        const st = STREAMS[si];
-        for (let i = 0; i < SAMPLES; i++) {
-          const u = (i / SAMPLES) * Math.PI * 2;
-          const lat = st.amp * Math.sin(st.k * u + st.phase + tm * 0.0006 * st.dir * cfg.flow);
-          let p: number[] = [Math.cos(lat) * Math.cos(u), Math.sin(lat), Math.cos(lat) * Math.sin(u)];
-          p = rotZ(rotY(rotX(p, st.tilt[0]), st.tilt[1]), st.tilt[2]);
-          p = rotX(rotY(p, angle), VIEW_TILT);
-          const depth = p[2]; // -1 back .. 1 front
-          const sx = cx + p[0] * R;
-          const sy = cy - p[1] * R;
-          // travelling flow brightness along the path
-          const flow = Math.pow(0.5 + 0.5 * Math.sin(u * 3 - tm * 0.0032 * st.dir * cfg.flow + st.phase), 1.6);
-          const df = depth > 0 ? 0.4 + 0.6 * depth : 0.08 * (1 + depth); // front bright, back faint
-          const a = Math.min(0.95, (0.22 + 0.8 * flow) * df * cfg.bright);
-          if (a < 0.015) continue;
-          const size = (2.0 + 3.6 * df) * (0.65 + 0.6 * flow);
-          // hotter (whiter) where brightest
-          const hot = Math.min(1, flow * df * 1.3);
-          const r = pr + (255 - pr) * hot, g = pg + (255 - pg) * hot, b = pb + (255 - pb) * hot;
-          ctx.beginPath(); ctx.arc(sx, sy, size, 0, Math.PI * 2);
-          ctx.fillStyle = `rgba(${r | 0},${g | 0},${b | 0},${a})`;
-          ctx.fill();
-          // sparks: occasional bright pinpoint riding the stream
-          if ((i + Math.floor(tm * 0.05 * (si + 1))) % 17 === 0 && depth > 0.1) {
-            ctx.beginPath(); ctx.arc(sx, sy, size * 0.5 + 0.6, 0, Math.PI * 2);
-            ctx.fillStyle = `rgba(255,255,255,${Math.min(0.9, a + 0.3)})`;
-            ctx.fill();
-          }
-        }
-      }
-
-      // ── speaking ripple ──
-      if (cfg.ripple) {
-        const wr = R * (0.6 + 0.7 * ((tm % 1500) / 1500));
-        ctx.beginPath(); ctx.arc(cx, cy, wr, 0, Math.PI * 2);
-        ctx.strokeStyle = `rgba(${pr},${pg},${pb},${0.4 * (1 - (tm % 1500) / 1500)})`;
-        ctx.lineWidth = 2; ctx.stroke();
-      }
-
-      // ── rim light on the sphere edge ──
-      const rim = ctx.createRadialGradient(cx, cy, R * 0.86, cx, cy, R * 1.02);
-      rim.addColorStop(0, 'rgba(0,0,0,0)');
-      rim.addColorStop(0.85, `rgba(${pr},${pg},${pb},0.0)`);
-      rim.addColorStop(1, `rgba(${pr},${pg},${pb},0.5)`);
-      ctx.beginPath(); ctx.arc(cx, cy, R * 1.02, 0, Math.PI * 2); ctx.fillStyle = rim; ctx.fill();
-
-      ctx.globalCompositeOperation = 'source-over';
-      raf = requestAnimationFrame(draw);
-    };
-    raf = requestAnimationFrame(draw);
-    return () => cancelAnimationFrame(raf);
-  }, []);
-
   const cfg = cfgFor(systemState);
-  const glow = `rgb(${cfg.primary[0]},${cfg.primary[1]},${cfg.primary[2]})`;
-  const ready = systemState === 'error' ? 'ATTENTION' : systemState === 'processing' ? 'PROCESSING' : systemState === 'speaking' ? 'SPEAKING' : 'READY';
+  const sd = (base: number) => `${(base * Number(cfg.spin)).toFixed(1)}s`;
 
   return (
-    <div style={{ position: 'relative', width: '100%', height: '100%', maxWidth: SIZE, maxHeight: SIZE, aspectRatio: '1 / 1', margin: 'auto' }}>
-      <canvas ref={canvasRef} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }} />
-
-      {/* Orbital node rings outside the sphere */}
-      <svg viewBox={`0 0 ${SIZE} ${SIZE}`} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
-        <g style={{ transformOrigin: `${SIZE / 2}px ${SIZE / 2}px`, animation: 'vantaSpin 48s linear infinite' }}>
-          <circle cx={SIZE / 2} cy={SIZE / 2} r={238} fill="none" stroke={glow} strokeOpacity={0.14} />
-          {Array.from({ length: WORKERS }).map((_, i) => { const a = (i / WORKERS) * 2 * Math.PI; return <circle key={i} cx={SIZE / 2 + 238 * Math.cos(a)} cy={SIZE / 2 + 238 * Math.sin(a)} r={2} fill={glow} opacity={0.85} />; })}
+    <div style={{ position: 'relative', width: '100%', height: '100%', maxWidth: V, maxHeight: V, aspectRatio: '1 / 1', margin: 'auto' }}>
+      {/* SVG: orbital ellipses + travelling dots + connectors + node dots */}
+      <svg viewBox={`0 0 ${V} ${V}`} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}>
+        {/* dashed connectors from core to each node + midpoint dot */}
+        {NODES.map((n) => {
+          const mx = (CX + n.x) / 2, my = (CX + n.y) / 2;
+          return (
+            <g key={n.id}>
+              <line x1={CX} y1={CX} x2={n.x} y2={n.y} stroke={VANTA.c} strokeOpacity={0.22} strokeWidth={1} strokeDasharray="3 5" />
+              <circle cx={mx} cy={my} r={1.7} fill={VANTA.c} opacity={0.7} />
+            </g>
+          );
+        })}
+        {/* orbital ellipse 1 */}
+        <g style={{ transformOrigin: `${CX}px ${CX}px`, animation: `vSpin ${sd(24)} linear infinite` }}>
+          <ellipse cx={CX} cy={CX} rx={205} ry={78} fill="none" stroke={cfg.ring} strokeOpacity={0.16} />
+          <circle cx={CX + 205} cy={CX} r={3} fill={cfg.ring}><animate attributeName="opacity" values="0.4;1;0.4" dur="2s" repeatCount="indefinite" /></circle>
         </g>
-        <g style={{ transformOrigin: `${SIZE / 2}px ${SIZE / 2}px`, animation: 'vantaSpinRev 34s linear infinite' }}>
-          <circle cx={SIZE / 2} cy={SIZE / 2} r={222} fill="none" stroke={glow} strokeOpacity={0.1} />
-          {Array.from({ length: MANAGERS }).map((_, i) => { const a = (i / MANAGERS) * 2 * Math.PI; return <circle key={i} cx={SIZE / 2 + 222 * Math.cos(a)} cy={SIZE / 2 + 222 * Math.sin(a)} r={2.6} fill={VANTA.cyan} opacity={0.9} />; })}
+        {/* orbital ellipse 2 */}
+        <g style={{ transformOrigin: `${CX}px ${CX}px`, animation: `vSpinRev ${sd(32)} linear infinite` }}>
+          <ellipse cx={CX} cy={CX} rx={86} ry={200} fill="none" stroke={cfg.ring} strokeOpacity={0.13} />
+          <circle cx={CX} cy={CX - 200} r={2.6} fill={VANTA.tl} />
         </g>
+        {/* orbital ellipse 3 (tilted) */}
+        <g style={{ transformOrigin: `${CX}px ${CX}px`, animation: `vSpin ${sd(40)} linear infinite` }}>
+          <ellipse cx={CX} cy={CX} rx={200} ry={150} fill="none" stroke={cfg.ring} strokeOpacity={0.1} transform={`rotate(34 ${CX} ${CX})`} />
+        </g>
+        {/* node anchor dots */}
+        {NODES.map((n) => <circle key={n.id} cx={n.x} cy={n.y} r={2.4} fill={VANTA.c} />)}
       </svg>
 
-      {/* Legend */}
-      <div style={{ position: 'absolute', top: 10, left: 10, fontFamily: VANTA.mono, fontSize: 8, color: VANTA.textDim, lineHeight: 1.7 }}>
-        <div><span style={{ color: glow }}>●</span> W×{WORKERS} workers</div>
-        <div><span style={{ color: VANTA.cyan }}>●</span> M×{MANAGERS} managers</div>
-        <div><span style={{ color: '#fff' }}>◆</span> COS / GM core</div>
-      </div>
+      {/* breathing outer glow */}
+      <div style={{ ...centerStyle(58), background: `radial-gradient(circle, ${cfg.core}55, transparent 68%)`, filter: 'blur(8px)', animation: 'vBreathe 4.5s ease-in-out infinite' }} />
 
-      {/* READY label */}
-      <div style={{ position: 'absolute', bottom: 6, left: '50%', transform: 'translateX(-50%)', fontFamily: VANTA.mono, fontSize: 13, letterSpacing: '0.36em', color: glow, textShadow: `0 0 16px ${glow}`, fontWeight: 700 }}>
-        {ready}
+      {/* 3 expanding ring halos */}
+      {[0, 1.3, 2.6].map((delay, i) => (
+        <div key={i} style={{ ...centerStyle(34), border: `1px solid ${cfg.ring}`, animation: `vRing 4s ease-out ${delay}s infinite` }} />
+      ))}
+
+      {/* core sphere */}
+      <div style={{
+        ...centerStyle(34),
+        background: `radial-gradient(circle at 38% 32%, #ffffff 0%, ${cfg.core} 32%, #0a4a8a 64%, #041830 100%)`,
+        boxShadow: `0 0 40px ${cfg.core}, 0 0 90px ${cfg.core}66, inset 0 0 30px rgba(255,255,255,0.25)`,
+        animation: `vCorePulse ${systemState === 'processing' ? '1.1s' : '3s'} ease-in-out infinite`,
+      }} />
+
+      {/* node badge pills */}
+      {NODES.map((n) => (
+        <div key={n.id} style={{
+          position: 'absolute', left: `${(n.x / V) * 100}%`, top: `${(n.y / V) * 100}%`, transform: 'translate(-50%,-50%)',
+          fontFamily: VANTA.orb, fontSize: 8.5, fontWeight: 600, letterSpacing: '1.5px', color: VANTA.c,
+          padding: '2px 7px', borderRadius: 3, whiteSpace: 'nowrap',
+          background: 'rgba(2,12,28,0.75)', border: `1px solid ${VANTA.border}`,
+          boxShadow: `0 0 10px ${VANTA.c}33`,
+        }}>{n.id}</div>
+      ))}
+
+      {/* READY / state label */}
+      <div style={{ position: 'absolute', bottom: '2%', left: '50%', transform: 'translateX(-50%)', fontFamily: VANTA.orb, fontSize: 13, fontWeight: 700, letterSpacing: '6px', color: cfg.core, textShadow: `0 0 16px ${cfg.core}` }}>
+        {cfg.label}
       </div>
     </div>
   );

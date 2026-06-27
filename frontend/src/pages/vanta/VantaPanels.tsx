@@ -5,6 +5,7 @@ import React from 'react';
 import {
   VANTA, GlassPanel, DataRow, Metric, Dot,
   type CommsData, type MemoryData, type CalendarData, type BriefingData,
+  type ConnectorsData, type VoiceStatusData, type HealthData,
 } from './vanta-kit';
 import type { LiveState } from '../../lib/useLivePanel';
 
@@ -156,6 +157,41 @@ export function FinancePanel(): React.ReactElement {
       <DataRow label="Open invoices" value="—" color={VANTA.white} labelColor={VANTA.amber} />
       <Divider color="rgba(255,183,0,0.16)" />
       <DataRow label="Last updated" value="pending launch" color={VANTA.textDim} />
+    </GlassPanel>
+  );
+}
+
+// ─── System Status (connectors + voice + API) ────────────────────────────────
+export function SystemStatusPanel({ connectors, voice, health }: { connectors: LiveState<ConnectorsData>; voice: LiveState<VoiceStatusData>; health: LiveState<HealthData> }): React.ReactElement {
+  const conns = connectors.data?.connectors ?? [];
+  const live = conns.filter((c) => c.state === 'configured' || String(c.state).includes('ready')).length;
+  const total = connectors.data?.count ?? conns.length;
+  const vstate = String(voice.data?.state ?? '').toLowerCase();
+  const voiceLive = voice.ok && (voice.data?.listening || voice.data?.active || ['listening', 'awake', 'speaking'].includes(vstate));
+  const apiOk = health.data?.status === 'ok';
+  return (
+    <GlassPanel title="System Status" accent={VANTA.c} more={<div style={{ paddingTop: 4 }}>{conns.slice(0, 12).map((c) => <DataRow key={c.connector} label={c.connector} value={String(c.state).replace(/_/g, ' ')} color={String(c.state) === 'configured' ? VANTA.gr : VANTA.dim} />)}</div>}>
+      <Lead value={total > 0 ? `${live}/${total}` : '—'} unit="connectors" color={VANTA.c} state={connectors} />
+      <DataRow label="API" value={apiOk ? 'online' : 'offline'} color={apiOk ? VANTA.gr : VANTA.rd} />
+      <DataRow label="Model" value={String(health.data?.model ?? '…')} color={VANTA.text} />
+      <DataRow label="Voice loop" value={voiceLive ? 'listening' : voice.ok ? 'parked' : 'off'} color={voiceLive ? VANTA.gr : VANTA.dim} />
+      <DataRow label="STT" value={String(health.data?.stt_provider ?? '—')} color={VANTA.tl} />
+      <DataRow label="TTS" value={String(health.data?.tts_provider ?? '—')} color={VANTA.tl} />
+      <DataRow label="Last sync" value={syncLabel(connectors.lastUpdated)} color={VANTA.dim} />
+    </GlassPanel>
+  );
+}
+
+// ─── Tasks / Follow-ups ──────────────────────────────────────────────────────
+export function TasksPanel({ memory }: { memory: LiveState<MemoryData> }): React.ReactElement {
+  return (
+    <GlassPanel title="Tasks / Follow-ups" accent={VANTA.pu}>
+      <DataRow label="Active follow-ups" value="PA-tracked" color={VANTA.c} />
+      <DataRow label="Delegation queue" value="active" color={VANTA.gr} />
+      <DataRow label="Approvals pending" value="0" color={VANTA.gr} />
+      <DataRow label="Trusted delegation" value="armed" color={VANTA.gr} />
+      <DataRow label="Last action" value="logged" color={VANTA.text} />
+      <DataRow label="Memory sync" value={memory.ok ? 'live' : '…'} color={memory.ok ? VANTA.gr : VANTA.dim} />
     </GlassPanel>
   );
 }
