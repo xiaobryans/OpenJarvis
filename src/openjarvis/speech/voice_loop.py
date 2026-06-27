@@ -48,15 +48,11 @@ _INTERRUPT = ("stop", "hold on", "wait", "cancel")
 _CHANNELS = 1
 _DEFAULT_RATE = 48000  # MacBook built-in mic native rate
 
-# Anti-false-trigger gates (BUG 1):
+# Anti-false-trigger gates:
 #  - only transcribe audio louder than this RMS (skip Whisper on silence/fan noise)
 #  - never fire the wake word twice within this cooldown window
 _RMS_GATE = 1200
 _TRIGGER_COOLDOWN_S = 10.0
-
-# The voice loop talks to the SAME HTTP endpoint the chat UI uses
-# (POST /v1/chat/completions) — never the in-process orchestrator (BUG 2).
-_API_BASE = os.environ.get("VANTA_API_URL", "http://127.0.0.1:8000")
 
 StatusCb = Callable[[str], None]
 
@@ -117,6 +113,7 @@ class VoiceLoop:
         self._status = status_cb or (lambda s: logger.info("voice: %s", s))
         self._stt = None
         self._tts = None
+        self._orch = None
         self._playing: Optional[subprocess.Popen] = None
         self._rate = _DEFAULT_RATE  # set to the device's native rate at runtime
         self._last_trigger = 0.0  # monotonic time of last wake trigger (cooldown)
@@ -129,9 +126,9 @@ class VoiceLoop:
         if self._tts is None:
             from openjarvis.speech.elevenlabs_tts import ElevenLabsTTSBackend
             self._tts = ElevenLabsTTSBackend()
-        # The brain is reached over HTTP (see _ask_brain) — no in-process
-        # orchestrator import, so a backend-side agent/config problem can never
-        # crash or stall the voice loop.
+        if self._orch is None:
+            from openjarvis.orchestrator.lean import LeanOrchestrator
+            self._orch = LeanOrchestrator(model="gpt-4o")
         # Use the input device's NATIVE sample rate (e.g. 48000 on the MacBook
         # mic). Recording at a mismatched rate produces garbled audio that
         # Deepgram can't transcribe — this was why the wake word never fired.
@@ -198,38 +195,16 @@ class VoiceLoop:
             self._playing = None
 
     def _ask_brain(self, command: str) -> Optional[str]:
-        """Send the command to the running server's chat endpoint over HTTP —
-        the SAME path the chat UI uses (POST /v1/chat/completions). Returns the
-        assistant reply, or None on any error (caller stays silent and resumes
-        listening — it must NEVER speak an error message)."""
-        import httpx
-        key = os.environ.get("OPENJARVIS_API_KEY", "")
-        headers = {"Content-Type": "application/json"}
-        if key:
-            headers["Authorization"] = f"Bearer {key}"
+        """Run the command through the in-process LeanOrchestrator (the original
+        working path — direct Python, no HTTP). Returns the answer, or None on
+        any error so the caller stays silent and resumes listening (it must NEVER
+        speak an error message)."""
         try:
-            with httpx.Client(timeout=60) as c:
-                r = c.post(
-                    f"{_API_BASE}/v1/chat/completions",
-                    headers=headers,
-                    json={
-                        "model": "default",  # server resolves to its configured model
-                        "stream": False,
-                        "messages": [{"role": "user", "content": command}],
-                    },
-                )
-            if r.status_code != 200:
-                logger.info("voice brain HTTP %s (silent)", r.status_code)
-                return None
-            data = r.json()
-            choices = data.get("choices") or []
-            if not choices:
-                return None
-            content = ((choices[0] or {}).get("message") or {}).get("content") or ""
-            content = content.strip()
-            return content or None
-        except Exception as exc:  # network/timeout/parse — stay silent, keep listening
-            logger.info("voice brain call failed (silent): %s", exc)
+            res = self._orch.run_standard(command)
+            answer = (res.answer or "").strip()
+            return answer or None
+        except Exception as exc:  # keep listening; never speak internal errors
+            logger.info("voice brain error (silent): %s", exc)
             return None
 
     def _collect(self, q, seconds: float) -> bytes:
