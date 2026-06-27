@@ -1,15 +1,16 @@
-// VantaTranscript — live transcript overlay above the pipeline chain. Polls
-// /v1/voice/transcript every 500ms. Hidden entirely when voice is off; clears a
-// few seconds after the last word. YOU = cyan, VANTA = green.
+// VantaTranscript — live transcript overlay above the waveform. Polls
+// /v1/voice/transcript (the backend serves a JSON snapshot, not SSE) and shows
+// the most recent turns: YOU in cyan, VANTA in green. Fades out ~3s after the
+// last word of a turn. Faithful port of VANTA-export_dc.html's transcript layer.
 
 import React from 'react';
 import { apiFetch } from '../../lib/api';
 
 interface TEvent { ts: number; speaker: string; text: string; final: boolean }
 
-export function VantaTranscript(): React.ReactElement | null {
-  const [active, setActive] = React.useState(false);
+export function VantaTranscript(): React.ReactElement {
   const [events, setEvents] = React.useState<TEvent[]>([]);
+  const [active, setActive] = React.useState(false);
 
   React.useEffect(() => {
     let alive = true;
@@ -28,30 +29,26 @@ export function VantaTranscript(): React.ReactElement | null {
     return () => { alive = false; window.clearInterval(id); };
   }, []);
 
-  if (!active) return null;
-
-  // Show only the last 3 lines, and only while fresh (clears ~4s after the turn).
+  // Only show fresh lines; clears ~3s after the turn ends.
   const nowSec = Date.now() / 1000;
-  const fresh = events.filter((e) => nowSec - (e.ts || 0) < 4.5).slice(-3);
-  if (fresh.length === 0) return null;
+  const fresh = active ? events.filter((e) => nowSec - (e.ts || 0) < 3).slice(-3) : [];
+  const show = fresh.length > 0;
 
   return (
     <div style={{
-      position: 'absolute', bottom: 48, left: '50%', transform: 'translateX(-50%)',
-      width: 'min(92%, 460px)', maxHeight: 54, overflow: 'hidden', zIndex: 26,
-      background: 'rgba(0,0,0,0.3)', borderRadius: 4, padding: '5px 10px',
-      display: 'flex', flexDirection: 'column', gap: 1, pointerEvents: 'none',
+      position: 'absolute', bottom: 80, left: '10%', right: '10%', textAlign: 'center',
+      fontSize: 10, fontFamily: "'Space Mono',monospace", minHeight: 18,
+      opacity: show ? 1 : 0, transition: 'opacity 0.3s', pointerEvents: 'none', zIndex: 26,
     }}>
       {fresh.map((e, i) => {
-        const you = e.speaker === 'bryan';
+        const you = e.speaker === 'bryan' || e.speaker === 'you';
         return (
           <div key={`${e.ts}-${i}`} style={{
-            fontFamily: "'JetBrains Mono', monospace", fontSize: 10, lineHeight: 1.4,
-            color: you ? 'rgba(0,212,255,0.7)' : 'rgba(0,255,136,0.7)',
-            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+            color: you ? 'rgba(0,212,255,0.85)' : 'rgba(0,255,136,0.85)',
+            lineHeight: 1.5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
             opacity: e.final ? 1 : 0.7,
           }}>
-            <span style={{ opacity: 0.7 }}>{you ? 'YOU: ' : 'VANTA: '}</span>{e.text}
+            <span style={{ opacity: 0.65 }}>{you ? 'YOU: ' : 'VANTA: '}</span>{e.text}
           </div>
         );
       })}

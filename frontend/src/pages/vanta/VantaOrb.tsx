@@ -1,109 +1,97 @@
-// VantaOrb — the #cc centre cluster from the reference: state label + readout,
-// #osvg orbital rings with glowing travelling dots, #csvg dashed connectors,
-// #og glow + #orb sphere + 3 pulse rings, 5 node badges positioned by angle/
-// radius around the core, and the pipeline chain.
+// VantaOrb — center cluster: state label + readout, the glowing core orb with
+// three spinning orbital rings and three pulse rings, the live transcript
+// overlay, a 30-bar waveform, and the processing pipeline chain. Faithful port
+// of VANTA-export_dc.html. Orb/waveform visuals are driven by the voice-state
+// class on #vanta-root (see vanta-hud-styles).
 
 import React from 'react';
 import { VantaTranscript } from './VantaTranscript';
 
-interface NodeDef { id: string; angle: number; r: number; label: string; sub: string; nb?: string; dot?: string }
-const NODES: NodeDef[] = [
-  { id: 'nd0', angle: 270, r: 205, label: 'PA', sub: 'PERSONAL ASST' },
-  { id: 'nd1', angle: 22, r: 202, label: 'COS / GM', sub: 'CHIEF OF STAFF', nb: 'tl' },
-  { id: 'nd2', angle: 182, r: 198, label: 'REV', sub: 'REVENUE', nb: 'am', dot: 'am' },
-  { id: 'nd3', angle: 218, r: 188, label: 'Wx35', sub: 'WORKFLOWS', nb: 'gr' },
-  { id: 'nd4', angle: 147, r: 193, label: 'Mx17', sub: 'MEMORY', nb: 'pu' },
+const PIPELINE: { label: string; tone: 'green' | 'cyan' | 'dim' | 'faint' }[] = [
+  { label: 'CLASSIFY', tone: 'green' },
+  { label: 'ROUTE', tone: 'green' },
+  { label: 'MANAGER', tone: 'cyan' },
+  { label: 'WORKER', tone: 'dim' },
+  { label: 'QUALITY', tone: 'dim' },
+  { label: 'COS/GM', tone: 'dim' },
+  { label: 'RESPOND', tone: 'faint' },
 ];
-const PIPE: [string, string, string][] = [
-  ['CLASSIFY', 'INPUT', 'dn'], ['ROUTE', 'DISPATCH', 'dn'], ['MANAGER', 'ACTIVE', 'ac'],
-  ['WORKER', 'STANDBY', ''], ['QUALITY', 'GATE', ''], ['COS/GM', 'REVIEW', ''], ['RESPOND', 'OUTPUT', 'dm2'],
-];
+const TONE: Record<string, { color: string; border: string }> = {
+  green: { color: 'rgba(0,255,136,0.7)', border: 'rgba(0,255,136,0.3)' },
+  cyan: { color: 'rgba(0,212,255,0.7)', border: 'rgba(0,212,255,0.4)' },
+  dim: { color: 'rgba(0,212,255,0.4)', border: 'rgba(0,212,255,0.15)' },
+  faint: { color: 'rgba(0,212,255,0.25)', border: 'rgba(0,212,255,0.08)' },
+};
 
-export function VantaOrb({ stateLabel, stateColor, readout }: { stateLabel: string; stateColor: string; readout: string }): React.ReactElement {
-  const cc = React.useRef<HTMLDivElement | null>(null);
-  const csvg = React.useRef<SVGSVGElement | null>(null);
-  const nodeRefs = React.useRef<Record<string, HTMLDivElement | null>>({});
+// 30 waveform bars, cyan/purple alternating, deterministic heights + delays.
+const BARS = Array.from({ length: 30 }, (_, i) => {
+  const base = 6 + Math.round(18 * Math.abs(Math.sin(i * 0.7)));
+  return { h: base, delay: (i % 10) * 0.09, color: i % 2 === 0 ? '#00d4ff' : '#7c3aed' };
+});
 
-  React.useEffect(() => {
-    const pos = () => {
-      const el = cc.current, svg = csvg.current; if (!el || !svg) return;
-      const rect = el.getBoundingClientRect();
-      const cx = rect.width / 2, cy = rect.height / 2 - 24;
-      svg.setAttribute('width', String(rect.width)); svg.setAttribute('height', String(rect.height));
-      while (svg.firstChild) svg.removeChild(svg.firstChild);
-      const NS = 'http://www.w3.org/2000/svg';
-      NODES.forEach((n) => {
-        const rad = (n.angle * Math.PI) / 180;
-        const x = cx + n.r * Math.cos(rad), y = cy + n.r * Math.sin(rad);
-        const node = nodeRefs.current[n.id];
-        if (node) { node.style.left = `${x}px`; node.style.top = `${y}px`; }
-        const ln = document.createElementNS(NS, 'line');
-        ln.setAttribute('x1', String(cx)); ln.setAttribute('y1', String(cy));
-        ln.setAttribute('x2', String(x)); ln.setAttribute('y2', String(y));
-        ln.setAttribute('stroke', 'rgba(0,180,255,.18)'); ln.setAttribute('stroke-width', '1'); ln.setAttribute('stroke-dasharray', '4,7');
-        svg.appendChild(ln);
-        const mp = document.createElementNS(NS, 'circle');
-        mp.setAttribute('cx', String(cx + (x - cx) * 0.62)); mp.setAttribute('cy', String(cy + (y - cy) * 0.62));
-        mp.setAttribute('r', '2'); mp.setAttribute('fill', 'rgba(0,212,255,.55)');
-        svg.appendChild(mp);
-      });
-    };
-    pos();
-    window.addEventListener('resize', pos);
-    const ro = new ResizeObserver(pos); if (cc.current) ro.observe(cc.current);
-    return () => { window.removeEventListener('resize', pos); ro.disconnect(); };
-  }, []);
-
+export function VantaOrb({ stateLabel, stateColor, readout, orbLabel }: {
+  stateLabel: string; stateColor: string; readout: string; orbLabel: string;
+}): React.ReactElement {
   return (
-    <div id="cc" ref={cc}>
-      <div id="stlb" style={{ color: stateColor, textShadow: `0 0 18px ${stateColor}` }}>{stateLabel}</div>
-      <div id="rdout">{readout}</div>
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', position: 'relative', overflow: 'hidden' }}>
+      {/* State label + readout */}
+      <div style={{ position: 'absolute', top: 16, fontFamily: "'Exo 2',sans-serif", fontSize: 9, letterSpacing: '10px', color: stateColor, textShadow: `0 0 15px ${stateColor}`, zIndex: 30, textTransform: 'uppercase', transition: 'color .4s,text-shadow .4s' }}>{stateLabel}</div>
+      <div style={{ position: 'absolute', top: 36, fontSize: 7, letterSpacing: '2px', color: 'rgba(0,212,255,0.4)', zIndex: 30 }}>{readout}</div>
 
-      <svg id="osvg" viewBox="0 0 480 480" xmlns="http://www.w3.org/2000/svg">
-        <defs>
-          <filter id="gf"><feGaussianBlur stdDeviation="2.5" result="b" /><feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
-        </defs>
-        <g id="rg1">
-          <ellipse cx="240" cy="240" rx="195" ry="62" fill="none" stroke="rgba(0,212,255,.38)" strokeWidth="1.3" />
-          <circle cx="435" cy="240" r="5" fill="#00D4FF" filter="url(#gf)" opacity=".95" />
-          <circle cx="435" cy="240" r="2.5" fill="white" />
-        </g>
-        <g id="rg2">
-          <ellipse cx="240" cy="240" rx="178" ry="56" fill="none" stroke="rgba(0,212,255,.2)" strokeWidth="1" transform="rotate(55,240,240)" />
-          <circle cx="418" cy="240" r="3.5" fill="rgba(0,245,212,.85)" filter="url(#gf)" />
-        </g>
-        <g id="rg3">
-          <ellipse cx="240" cy="240" rx="162" ry="50" fill="none" stroke="rgba(100,200,255,.15)" strokeWidth=".8" transform="rotate(-38,240,240)" />
-          <circle cx="402" cy="240" r="3" fill="rgba(189,96,255,.8)" filter="url(#gf)" />
-        </g>
-      </svg>
-
-      <svg id="csvg" ref={csvg} xmlns="http://www.w3.org/2000/svg" />
-
-      <div id="ow">
-        <div id="og" />
-        <div id="orb"><div className="pr" /><div className="pr" /><div className="pr" /></div>
+      {/* ORB — ported verbatim from VANTA-export_dc.html */}
+      <div style={{ position: 'relative', width: 260, height: 260, flexShrink: 0 }}>
+        {/* Outer breathing glow halo */}
+        <div style={{ position: 'absolute', inset: -60, borderRadius: '50%', background: 'radial-gradient(circle,rgba(0,160,255,0.12) 0%,rgba(0,80,200,0.05) 45%,transparent 70%)', animation: 'statusPulse 4s ease-in-out infinite' }} />
+        {/* Orbital rings */}
+        <svg style={{ position: 'absolute', inset: -40, width: 'calc(100% + 80px)', height: 'calc(100% + 80px)' }} viewBox="0 0 340 340" xmlns="http://www.w3.org/2000/svg">
+          <g className="v-ring-fast" style={{ transformBox: 'fill-box', transformOrigin: 'center', animation: 'radarSpin 12s linear infinite' }}>
+            <ellipse cx="170" cy="170" rx="155" ry="50" fill="none" stroke="rgba(0,212,255,0.38)" strokeWidth="1.3" />
+            <circle cx="325" cy="170" r="5" fill="#00d4ff" opacity="0.95" />
+          </g>
+          <g className="v-ring-fast" style={{ transformBox: 'fill-box', transformOrigin: 'center', animation: 'radarSpin 20s linear infinite reverse' }}>
+            <ellipse cx="170" cy="170" rx="138" ry="44" fill="none" stroke="rgba(124,58,237,0.35)" strokeWidth="1" transform="rotate(55,170,170)" />
+            <circle cx="308" cy="170" r="3.5" fill="rgba(124,58,237,0.85)" />
+          </g>
+          <g className="v-ring-fast" style={{ transformBox: 'fill-box', transformOrigin: 'center', animation: 'radarSpin 34s linear infinite' }}>
+            <ellipse cx="170" cy="170" rx="122" ry="38" fill="none" stroke="rgba(0,212,255,0.18)" strokeWidth="0.8" transform="rotate(-38,170,170)" />
+            <circle cx="292" cy="170" r="3" fill="rgba(0,245,212,0.8)" />
+          </g>
+        </svg>
+        {/* Core orb: white-hot center → cyan → deep blue → near-black edge */}
+        <div id="orb-core" style={{
+          position: 'absolute', inset: 30, borderRadius: '50%',
+          background: 'radial-gradient(circle at 34% 28%,rgba(255,255,255,0.95) 0%,rgba(160,235,255,0.9) 6%,rgba(0,190,255,0.88) 22%,rgba(0,120,220,0.92) 48%,rgba(0,50,140,0.96) 72%,rgba(0,12,45,1) 100%)',
+          boxShadow: '0 0 35px rgba(0,190,255,0.8),0 0 70px rgba(0,160,255,0.55),0 0 140px rgba(0,120,220,0.3),inset 0 0 25px rgba(0,80,180,0.4)',
+          animation: 'statusPulse 3.5s ease-in-out infinite',
+        }} />
+        {/* Pulse rings */}
+        <div className="v-pulse-ring" style={{ position: 'absolute', inset: 20, borderRadius: '50%', border: '1px solid rgba(0,212,255,0.45)', animation: 'fadeUpIn 4s ease-out infinite' }} />
+        <div className="v-pulse-ring" style={{ position: 'absolute', inset: 10, borderRadius: '50%', border: '1px solid rgba(0,212,255,0.25)', animation: 'fadeUpIn 4s ease-out infinite 1.33s' }} />
+        <div className="v-pulse-ring" style={{ position: 'absolute', inset: 0, borderRadius: '50%', border: '1px solid rgba(0,212,255,0.12)', animation: 'fadeUpIn 4s ease-out infinite 2.66s' }} />
       </div>
 
-      {NODES.map((n) => (
-        <div className="nd" key={n.id} ref={(el) => { nodeRefs.current[n.id] = el; }}>
-          <div className={`ndot ${n.dot ?? ''}`} />
-          <div className={`nb ${n.nb ?? ''}`}>{n.label}</div>
-          <div className="nl">{n.sub}</div>
-        </div>
-      ))}
+      {/* Orb label */}
+      <div style={{ marginTop: 16, fontFamily: "'Exo 2',sans-serif", fontSize: 8, letterSpacing: '8px', color: 'rgba(0,212,255,0.5)', textTransform: 'uppercase' }}>{orbLabel}</div>
 
+      {/* Live transcript overlay */}
       <VantaTranscript />
 
-      <div id="pl">
-        {PIPE.map(([name, sub, cls], i) => (
-          <React.Fragment key={name}>
-            <div className="ps"><div className={`pb ${cls}`}>{name}</div><div className="psl">{sub}</div></div>
-            {i < PIPE.length - 1 && <span className="par">→</span>}
+      {/* Pipeline chain */}
+      <div style={{ position: 'absolute', bottom: 48, left: '50%', transform: 'translateX(-50%)', display: 'flex', alignItems: 'center', whiteSpace: 'nowrap', gap: 4 }}>
+        {PIPELINE.map((p, i) => (
+          <React.Fragment key={p.label}>
+            <span style={{ fontSize: 7, letterSpacing: '1px', color: TONE[p.tone].color, padding: '2px 6px', border: `1px solid ${TONE[p.tone].border}`, fontFamily: "'Space Mono',monospace" }}>{p.label}</span>
+            {i < PIPELINE.length - 1 && <span style={{ color: 'rgba(0,212,255,0.3)', fontSize: 10 }}>→</span>}
           </React.Fragment>
         ))}
       </div>
-      <div id="pllb">{stateLabel}</div>
+
+      {/* Waveform */}
+      <div style={{ position: 'absolute', bottom: 16, left: '50%', transform: 'translateX(-50%)', display: 'flex', alignItems: 'center', gap: 2, height: 26 }}>
+        {BARS.map((b, i) => (
+          <div key={i} className="v-wavebar" style={{ width: 2, height: b.h, background: b.color, boxShadow: `0 0 4px ${b.color}`, borderRadius: 1, animationDelay: `${b.delay}s` }} />
+        ))}
+      </div>
     </div>
   );
 }

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 import logging
 import os
 import secrets
@@ -11,6 +12,13 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 logger = logging.getLogger(__name__)
+
+# Headers that indicate the request was relayed through a proxy/load balancer.
+# Their *presence* only ever REVOKES the loopback bypass (fail-safe) — it never
+# grants access — so the spoofable nature of these headers cannot be abused to
+# get past auth. This prevents a same-host reverse proxy (which would connect
+# from loopback) in a cloud deployment from silently bypassing the API key.
+_FORWARDING_HEADERS: tuple[str, ...] = ("x-forwarded-for", "x-real-ip", "forwarded")
 
 
 def auth_failure_response(reason: str, detail: str) -> JSONResponse:
@@ -26,6 +34,11 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
     Webhook routes and health checks are exempt — they use
     per-channel signature verification instead.
+
+    Loopback callers are also exempt: VANTA runs as a local personal system, so
+    a direct request from 127.0.0.0/8 or ::1 (the desktop UI / Vite dev server on
+    the same machine) never needs an API key. See :meth:`_is_trusted_local` for
+    the fail-safe guarantees that keep remote and proxied callers gated.
     """
 
     def __init__(self, app, api_key: str = "") -> None:  # noqa: ANN001
@@ -40,11 +53,47 @@ class AuthMiddleware(BaseHTTPMiddleware):
             token = token[7:].strip()
         return token
 
+    @classmethod
+    def _is_trusted_local(cls, request: Request) -> bool:
+        """True only for a direct request from the loopback interface.
+
+        VANTA is a local personal system: the desktop UI and the Vite dev
+        server run on the same machine and reach the backend over loopback
+        (127.0.0.0/8, ::1). Those callers are trusted and exempt from the
+        Bearer requirement — exactly as ``/health`` already is — so localhost
+        never needs an API key.
+
+        Safety:
+          * The decision uses ONLY ``request.client.host`` — the real TCP peer
+            from the ASGI scope — never a client-supplied address header
+            (``X-Forwarded-For`` etc.), which are spoofable.
+          * If any forwarding header is present the request was relayed through
+            a proxy, so the bypass is revoked and auth is enforced. This keeps
+            remote (and same-host-proxied cloud) callers gated by the API key.
+        """
+        for header in _FORWARDING_HEADERS:
+            if request.headers.get(header):
+                return False
+        client = request.client
+        if client is None:
+            return False
+        host = (client.host or "").strip()
+        if host in ("localhost", ""):
+            return host == "localhost"
+        try:
+            return ipaddress.ip_address(host).is_loopback
+        except ValueError:
+            return False
+
     async def dispatch(self, request: Request, call_next):  # noqa: ANN001
         # Browsers send unauthenticated OPTIONS preflights for cross-origin /v1 calls.
         if request.method == "OPTIONS":
             return await call_next(request)
-        if self._api_key and self._requires_auth(request.url.path):
+        if (
+            self._api_key
+            and self._requires_auth(request.url.path)
+            and not self._is_trusted_local(request)
+        ):
             auth = request.headers.get("Authorization", "")
             if not auth:
                 return auth_failure_response(
