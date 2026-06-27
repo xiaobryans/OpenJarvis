@@ -185,3 +185,31 @@ def test_summarise_for_speech_limits_sentences():
     txt = "One. Two. Three. Four. Five."
     out = vl.summarise_for_speech(txt, max_sentences=3)
     assert out == "One. Two. Three."
+
+
+# FIX 1 — anti ghost-trigger wake gate
+def test_rms_gate_raised():
+    assert vl.RMS_GATE == 1500
+    assert vl.WAKE_MIN_WORDS == 3
+    assert vl.WAKE_COOLDOWN == 15.0
+
+
+def test_wake_should_fire_valid():
+    assert vl.wake_should_fire("hey vanta wake up", now=100.0, last_wake_ts=None) is True
+
+
+@pytest.mark.parametrize("text", ["vanta", "", "vanta!", "hey there"])
+def test_wake_should_fire_too_short_or_no_word(text):
+    # Single word / empty / no standalone 'vanta' in a 3+ word phrase.
+    assert vl.wake_should_fire(text, now=100.0, last_wake_ts=None) is False
+
+
+def test_wake_should_fire_no_wake_word_3plus_words():
+    assert vl.wake_should_fire("hello there friend", now=100.0, last_wake_ts=None) is False
+
+
+def test_wake_should_fire_cooldown():
+    # Fired 5s ago (< 15s cooldown) -> suppressed, even with a valid phrase.
+    assert vl.wake_should_fire("okay vanta listen", now=105.0, last_wake_ts=100.0) is False
+    # 16s later -> allowed again.
+    assert vl.wake_should_fire("okay vanta listen", now=116.0, last_wake_ts=100.0) is True

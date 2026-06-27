@@ -158,10 +158,15 @@ export function RightColumn({ connectors, voice, health, calendar, voiceMode }: 
         <div style={{ height: 1, background: 'rgba(0,180,255,0.1)', margin: '6px 0' }} />
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2, maxHeight: 120, overflowY: 'auto' }}>
           {conns.length === 0 && <span style={{ fontSize: 9, color: 'rgba(0,212,255,0.35)' }}>No connectors</span>}
-          {conns.slice(0, 8).map((c) => {
-            const on = c.state === 'configured' || String(c.state).includes('ready');
-            return <Row key={c.connector} k={c.connector.toUpperCase()} v={on ? 'connected' : String(c.state)} vColor={on ? '#00FF88' : 'rgba(255,149,0,0.8)'} />;
-          })}
+          {/* FIX 4: show connected connectors first so Gmail/Calendar/Slack/Weather
+              are visible instead of being buried below not_configured entries. */}
+          {[...conns]
+            .map((c) => ({ c, on: c.state === 'configured' || String(c.state).includes('ready') }))
+            .sort((a, b) => Number(b.on) - Number(a.on))
+            .slice(0, 10)
+            .map(({ c, on }) => (
+              <Row key={c.connector} k={c.connector.toUpperCase()} v={on ? 'connected' : String(c.state)} vColor={on ? '#00FF88' : 'rgba(255,149,0,0.8)'} />
+            ))}
         </div>
       </Panel>
 

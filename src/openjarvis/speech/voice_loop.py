@@ -34,10 +34,15 @@ from openjarvis.speech.wake_responses import get_wake_response
 logger = logging.getLogger("openjarvis.voice_loop")
 
 # ── Tunable constants (top of file, per spec) ────────────────────────────────
-RMS_GATE = 600          # process audio / start recording above this RMS
+RMS_GATE = 1500         # process audio / start recording above this RMS
+                        # (raised 600->1500 to stop ghost-triggering on silence)
 SILENCE_STOP = 1.5      # seconds of silence that ends an utterance
 END_SILENCE = 10.0      # seconds of silence after a reply ends the conversation
 HOLD_REMINDER = 300.0   # 5 min: one "still here" reminder while on hold
+
+# Wake-confirmation gating (anti ghost-trigger):
+WAKE_MIN_WORDS = 3      # final transcript must have >=3 words before we wake-match
+WAKE_COOLDOWN = 15.0    # seconds a wake trigger is suppressed after firing
 
 CLAP_THRESHOLD = 3000   # RMS spike that counts as a clap/snap
 CLAP_MIN_GAP = 0.15     # min seconds between the two claps
@@ -87,6 +92,25 @@ def rms_from_pcm16(frame: bytes) -> float:
 def contains_wake_word(text: str) -> bool:
     """True only on a standalone 'vanta' token ('fanta'/'vantage'/'event' -> no)."""
     return bool(WAKE_RE.search(text or ""))
+
+
+def wake_should_fire(text: str, now: float, last_wake_ts: Optional[float]) -> bool:
+    """Anti-ghost-trigger wake gate.
+
+    A wake only fires when ALL hold:
+      * the final transcript has at least ``WAKE_MIN_WORDS`` words (single-word
+        or empty transcriptions from silence/noise are ignored),
+      * it contains a standalone ``\\bvanta\\b`` token, and
+      * at least ``WAKE_COOLDOWN`` seconds have passed since the last wake.
+    """
+    words = (text or "").split()
+    if len(words) < WAKE_MIN_WORDS:
+        return False
+    if not contains_wake_word(text):
+        return False
+    if last_wake_ts is not None and (now - last_wake_ts) < WAKE_COOLDOWN:
+        return False
+    return True
 
 
 def classify_complexity(text: str) -> str:
@@ -404,6 +428,18 @@ class VoiceLoop:
             self.speak(self._last_reply, summary=False)
 
     # -- wake --
+    def process_final_transcript(self, text: str) -> bool:
+        """Apply the anti-ghost-trigger wake gate to a Deepgram FINAL transcript.
+
+        Returns True (and fires the wake) only when the transcript passes
+        :func:`wake_should_fire` (>=3 words, standalone 'vanta', cooldown clear).
+        Called by the runtime capture thread for every final transcript.
+        """
+        if wake_should_fire(text, time.time(), self._last_wake_ts):
+            self._handle_wake()
+            return True
+        return False
+
     def _handle_wake(self) -> None:
         """Shared entry point for BOTH wake triggers (voice + double clap)."""
         self._set_state("wake_detected")
@@ -429,9 +465,12 @@ class VoiceLoop:
             logger.error("voice_loop.run needs sounddevice + numpy: %s", exc)
             return
         self._stt = make_deepgram()
-        self._set_state("standby")
-        voice_bus.set_voice_active(False)
-        logger.info("VANTA voice loop online (standby).")
+        # While the loop is up it is actively listening for the wake word, so it
+        # reports active + "listening" (not "standby"/off) — the cockpit shows
+        # "LISTENING" instead of "VOICE OFF" whenever the loop is running.
+        self._set_state("listening")
+        voice_bus.set_voice_active(True)
+        logger.info("VANTA voice loop online (listening for wake).")
         # The real-time capture/streaming implementation runs here on the Mac;
         # it feeds frames into self.vad / self.clap and dispatches _handle_wake.
         # Kept minimal in code so the testable decision layer above is the spec.

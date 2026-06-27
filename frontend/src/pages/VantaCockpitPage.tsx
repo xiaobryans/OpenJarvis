@@ -70,9 +70,24 @@ export function VantaCockpitPage(): React.ReactElement {
   const serverUp = health.ok;
   const apiOk = serverUp && (health.data?.status === 'ok' || health.data?.status === undefined ? true : false);
   const model = String(health.data?.model ?? '—');
-  const voiceStateText = (sending ? 'THINKING' : rawState).toUpperCase().replace(/_/g, ' ');
   const voiceOn = voiceActive && rawState !== 'standby';
   const voiceMode: VoiceMode = !voiceActive ? 'off' : (rawState === 'listening' ? 'listening' : (rawState === 'standby' ? 'parked' : 'active'));
+
+  // Top-bar VOICE pill (FIX 3): state-driven label + colour. The loop reports
+  // active+listening while running, so we show "● LISTENING" (not "VOICE OFF").
+  const VOICE_PILL: Record<string, { label: string; color: string }> = {
+    listening: { label: '● LISTENING', color: '#00ff88' },
+    wake_detected: { label: '● WAKE', color: '#ffffff' },
+    recording: { label: '● RECORDING', color: '#00d4ff' },
+    thinking: { label: '● THINKING', color: '#ff9500' },
+    speaking: { label: '● SPEAKING', color: '#00ff88' },
+    standby: { label: '● LISTENING', color: '#00ff88' },
+  };
+  const voiceActiveUi = voiceActive || sending;
+  const vp = voiceActiveUi
+    ? (VOICE_PILL[effState] ?? { label: '● LISTENING', color: '#00ff88' })
+    : { label: '○ VOICE OFF', color: 'rgba(0,212,255,0.4)' };
+  const voiceObj = { label: vp.label, color: vp.color, on: voiceActiveUi };
 
   // Cmd+K unified history (capture phase so the cockpit's modal wins over the global viewer).
   const [historyOpen, setHistoryOpen] = React.useState(false);
@@ -122,12 +137,11 @@ export function VantaCockpitPage(): React.ReactElement {
       <VantaBackground />
       <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
         <VantaTopBar
-          time={fmtClock(now)} dateStr={fmtDate(now)} serverUp={serverUp}
-          voiceActive={voiceActive || sending} voiceStateText={voiceStateText}
+          time={fmtClock(now)} dateStr={fmtDate(now)} serverUp={serverUp} voice={voiceObj}
         />
         <div style={{ flex: 1, display: 'flex', overflow: 'hidden', minHeight: 0 }}>
           <LeftColumn comms={comms} memory={memory} connectors={connectors} />
-          <VantaOrb stateLabel={vis.label} stateColor={vis.color} readout={vis.readout} orbLabel={vis.orb} />
+          <VantaOrb stateLabel={vis.label} stateColor={vis.color} readout={vis.readout} orbLabel={vis.orb} messages={typed} />
           <RightColumn connectors={connectors} voice={voice} health={health} calendar={calendar} voiceMode={voiceMode} />
         </div>
         <VantaBottomBar
