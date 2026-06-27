@@ -974,6 +974,18 @@ def serve(
             f"  Voice:     [yellow]unavailable ({_voice_exc})[/yellow]"
         )
 
+    # macOS menu-bar icon + global hotkey (Cmd+Shift+V). Runs as a separate
+    # process (rumps needs the main thread). Replaces the removed always-on mic
+    # listener — no system-wide voice, so no ambient-noise triggering. Opt out
+    # with VANTA_TRAY=off.
+    try:
+        from openjarvis.macos.app_control import start_tray_agent
+
+        if start_tray_agent():
+            console.print("  Menu bar:  [cyan]VANTA icon + Cmd+Shift+V hotkey active[/cyan]")
+    except Exception as _tray_exc:  # never let tray wiring block serve
+        console.print(f"  Menu bar:  [yellow]unavailable ({_tray_exc})[/yellow]")
+
     import uvicorn
 
     uvicorn.run(app, host=bind_host, port=bind_port, log_level="info")
