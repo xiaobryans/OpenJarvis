@@ -28,8 +28,10 @@ from __future__ import annotations
 import io
 import logging
 import os
+import re
 import subprocess
 import tempfile
+import time
 import wave
 from datetime import datetime
 from typing import Callable, Optional
@@ -37,19 +39,24 @@ from typing import Callable, Optional
 logger = logging.getLogger("openjarvis.voice_loop")
 
 WAKE_WORD = os.environ.get("JARVIS_WAKE_WORD", "Hey VANTA")
-# Whisper transcribes "Hey VANTA" accurately (usually "Hey Vanta" / "Hey, VANTA")
-# but "VANTA" is an uncommon proper noun, so allow a tight set of close phonetic
-# variants. We normalize (strip punctuation, lowercase) then match ANY of these.
-# NOTE: kept deliberately narrow — common English words (e.g. "event") are
-# excluded so normal speech never false-triggers the wake word.
-_WAKE_TOKENS = (
-    "vanta", "venta", "vahnta", "banta", "vanda", "fanta", "manta",
-    "hey vanta", "hey venta", "hey banta", "hey vanda", "hey fanta",
-    "hi vanta", "hey vance", "hey vantas",
-)
+# EXACT wake match only: the normalized transcript must contain "vanta" as a
+# standalone word (so "hey vanta" matches; "fanta"/"manta"/"vantage" do NOT).
+# Loose phonetic variants were removed — they caused Whisper to false-trigger on
+# fan/ambient noise. \b word boundaries on the normalized (alnum+space) text.
+_WAKE_RE = re.compile(r"\bvanta\b")
 _INTERRUPT = ("stop", "hold on", "wait", "cancel")
 _CHANNELS = 1
 _DEFAULT_RATE = 48000  # MacBook built-in mic native rate
+
+# Anti-false-trigger gates (BUG 1):
+#  - only transcribe audio louder than this RMS (skip Whisper on silence/fan noise)
+#  - never fire the wake word twice within this cooldown window
+_RMS_GATE = 1200
+_TRIGGER_COOLDOWN_S = 10.0
+
+# The voice loop talks to the SAME HTTP endpoint the chat UI uses
+# (POST /v1/chat/completions) — never the in-process orchestrator (BUG 2).
+_API_BASE = os.environ.get("VANTA_API_URL", "http://127.0.0.1:8000")
 
 StatusCb = Callable[[str], None]
 
@@ -110,9 +117,9 @@ class VoiceLoop:
         self._status = status_cb or (lambda s: logger.info("voice: %s", s))
         self._stt = None
         self._tts = None
-        self._orch = None
         self._playing: Optional[subprocess.Popen] = None
         self._rate = _DEFAULT_RATE  # set to the device's native rate at runtime
+        self._last_trigger = 0.0  # monotonic time of last wake trigger (cooldown)
 
     # ---- lazy deps (so import never fails without hardware) ----
     def _ensure(self) -> None:
@@ -122,9 +129,9 @@ class VoiceLoop:
         if self._tts is None:
             from openjarvis.speech.elevenlabs_tts import ElevenLabsTTSBackend
             self._tts = ElevenLabsTTSBackend()
-        if self._orch is None:
-            from openjarvis.orchestrator.lean import LeanOrchestrator
-            self._orch = LeanOrchestrator(model="gpt-4o")
+        # The brain is reached over HTTP (see _ask_brain) — no in-process
+        # orchestrator import, so a backend-side agent/config problem can never
+        # crash or stall the voice loop.
         # Use the input device's NATIVE sample rate (e.g. 48000 on the MacBook
         # mic). Recording at a mismatched rate produces garbled audio that
         # Deepgram can't transcribe — this was why the wake word never fired.
@@ -190,6 +197,41 @@ class VoiceLoop:
             self._playing.terminate()
             self._playing = None
 
+    def _ask_brain(self, command: str) -> Optional[str]:
+        """Send the command to the running server's chat endpoint over HTTP —
+        the SAME path the chat UI uses (POST /v1/chat/completions). Returns the
+        assistant reply, or None on any error (caller stays silent and resumes
+        listening — it must NEVER speak an error message)."""
+        import httpx
+        key = os.environ.get("OPENJARVIS_API_KEY", "")
+        headers = {"Content-Type": "application/json"}
+        if key:
+            headers["Authorization"] = f"Bearer {key}"
+        try:
+            with httpx.Client(timeout=60) as c:
+                r = c.post(
+                    f"{_API_BASE}/v1/chat/completions",
+                    headers=headers,
+                    json={
+                        "model": "default",  # server resolves to its configured model
+                        "stream": False,
+                        "messages": [{"role": "user", "content": command}],
+                    },
+                )
+            if r.status_code != 200:
+                logger.info("voice brain HTTP %s (silent)", r.status_code)
+                return None
+            data = r.json()
+            choices = data.get("choices") or []
+            if not choices:
+                return None
+            content = ((choices[0] or {}).get("message") or {}).get("content") or ""
+            content = content.strip()
+            return content or None
+        except Exception as exc:  # network/timeout/parse — stay silent, keep listening
+            logger.info("voice brain call failed (silent): %s", exc)
+            return None
+
     def _collect(self, q, seconds: float) -> bytes:
         """Drain `seconds` of audio from the callback queue. Warns (instead of
         hanging) if the mic delivers nothing — e.g. permissions/device issue."""
@@ -244,9 +286,22 @@ class VoiceLoop:
                     rolling = (rolling + chunk)[-window:]    # rolling 3s buffer
                     arr = np.frombuffer(chunk, dtype="int16")
                     rms = int(np.sqrt(np.mean(arr.astype("float32") ** 2))) if arr.size else 0
+                    bar = "▁▂▃▄▅▆▇█"[min(7, rms // 250)]
+
+                    # GATE 1 — loudness: below the RMS floor it is silence/fan
+                    # noise. Skip Whisper entirely (do not transcribe at all).
+                    if rms <= _RMS_GATE:
+                        print(f"🎤 vol {bar} {rms:5d} | (quiet — skipped)")
+                        continue
+
+                    # GATE 2 — cooldown: never fire again within 10s of the last
+                    # trigger (stops repeat/echo re-triggering).
+                    if (time.monotonic() - self._last_trigger) < _TRIGGER_COOLDOWN_S:
+                        print(f"🎤 vol {bar} {rms:5d} | (cooldown)")
+                        continue
+
                     raw = self._transcribe(rolling)
                     heard = _normalize(raw)
-                    bar = "▁▂▃▄▅▆▇█"[min(7, rms // 250)]
                     print(f"🎤 vol {bar} {rms:5d} | heard: {raw!r}")
 
                     if not heard:
@@ -254,41 +309,45 @@ class VoiceLoop:
                     if any(w in heard for w in _INTERRUPT):
                         self._stop_playback()
                         continue
-                    if not any(t in heard for t in _WAKE_TOKENS):
+                    # GATE 3 — EXACT wake word: "vanta" must appear as a
+                    # standalone word (not a substring of another word).
+                    if not _WAKE_RE.search(heard):
                         continue
 
                     print(f"🔵 WAKE WORD DETECTED in: {raw!r}")
-                    rolling = b""  # reset so we don't re-trigger
-                    # Command = text after the wake token, else capture ~4s more.
-                    after = heard
-                    for t in _WAKE_TOKENS:
-                        if t in after:
-                            after = after.split(t, 1)[1].strip()
-                            break
+                    self._last_trigger = time.monotonic()  # arm cooldown
+                    rolling = b""  # reset so we don't re-trigger on the same audio
+                    # Command = text after the wake word, else capture ~4s more.
+                    after = heard.split("vanta", 1)[1].strip() if "vanta" in heard else ""
                     if not after:
                         print("🟢 listening for your command…")
                         after = _normalize(self._transcribe(self._collect(q, 4.0)))
                     if not after:
-                        self._speak("I'm listening, boss — go ahead.")
+                        # No command captured — return to listening, no speech.
+                        print(f"👂 listening — say \"{WAKE_WORD}\"…")
                         continue
+
                     print(f"💬 command: {after!r}")
                     self._status("thinking")
-                    from openjarvis.orchestrator.request_classifier import classify_request
-                    tier = classify_request(after).tier
-                    res = (self._orch.run_complex(after) if tier == "complex"
-                           else self._orch.run_standard(after))
-                    print(f"🗣  VANTA: {res.answer[:200]}")
-                    self._speak(res.answer or "I hit a snag handling that, boss.")
-                    # Drain anything captured while speaking, then resume.
+                    # Brain over HTTP — same endpoint as the chat UI.
+                    answer = self._ask_brain(after)
+                    if answer:
+                        print(f"🗣  VANTA: {answer[:200]}")
+                        self._speak(answer)          # speak the response ONCE
+                    else:
+                        # HTTP error — stay silent, do NOT speak an error message.
+                        print("⚠ brain unavailable — staying silent, listening")
+                    # Drain anything captured while speaking, then resume listening.
                     while not q.empty():
                         q.get_nowait()
+                    self._last_trigger = time.monotonic()  # re-arm after response
                     print(f"\n👂 listening — say \"{WAKE_WORD}\"…")
                 except KeyboardInterrupt:
                     print("\n🛑 voice loop stopped")
                     break
                 except Exception as exc:
-                    logger.error("voice loop error: %s", exc, exc_info=True)
-                    print(f"⚠ error: {exc}")
+                    # Keep listening; never speak internal errors.
+                    logger.info("voice loop error (silent): %s", exc)
 
 
 def main() -> int:

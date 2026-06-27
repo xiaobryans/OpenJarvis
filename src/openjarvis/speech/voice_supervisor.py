@@ -38,9 +38,18 @@ StatusLog = Callable[[str], None]
 
 _TRUE = {"1", "true", "yes", "on"}
 
+# Delay before the loop activates so it does not transcribe during server boot.
+_STARTUP_DELAY_S = 15.0
+
 
 def voice_disabled() -> bool:
-    """True if the always-on voice loop is opted out via env var."""
+    """True if the always-on voice loop is opted out via env var.
+
+    Disabled by ``VANTA_VOICE=off`` (Bryan's runtime kill-switch), or by the
+    legacy ``VANTA_NO_VOICE`` / ``OPENJARVIS_NO_VOICE`` truthy flags.
+    """
+    if (os.environ.get("VANTA_VOICE") or "").strip().lower() == "off":
+        return True
     val = (
         os.environ.get("VANTA_NO_VOICE")
         or os.environ.get("OPENJARVIS_NO_VOICE")
@@ -56,6 +65,12 @@ def is_running() -> bool:
 
 def _supervise(status_log: StatusLog) -> None:
     """Run the voice loop forever, restarting on crash with backoff."""
+    # Startup delay — let the server finish booting before the mic goes live,
+    # so boot-time noise/audio never false-triggers the wake word. Interruptible
+    # via the stop event.
+    status_log(f"voice loop arming in {int(_STARTUP_DELAY_S)}s…")
+    if _stop.wait(_STARTUP_DELAY_S):
+        return
     backoff = 1.0
     while not _stop.is_set():
         try:
