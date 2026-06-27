@@ -33,8 +33,10 @@ from openjarvis.speech.wake_responses import get_wake_response
 logger = logging.getLogger("openjarvis.voice_loop")
 
 # ── Tunable constants ────────────────────────────────────────────────────────
-RMS_GATE = 600          # VAD: start recording above this RMS (in-conversation)
-SILENCE_STOP = 0.8      # seconds of silence that ends an utterance (fast turn-around)
+RMS_GATE = 600          # VAD: START recording above this RMS
+VAD_STOP_RMS = 400      # VAD: below this counts as silence (hysteresis stop gate)
+SILENCE_STOP = 0.8      # seconds of sub-stop-gate silence that ends an utterance
+# NOTE: there is intentionally NO maximum recording time — Bryan is never cut off.
 END_SILENCE = 10.0      # silence after a reply that ends the conversation
 HOLD_REMINDER = 300.0   # 5 min: one "still here" reminder while on hold
 
@@ -71,8 +73,10 @@ IVY_SYSTEM = (
 # ── Phrase sets ──────────────────────────────────────────────────────────────
 END_PHRASES = ("that's all", "thats all", "bye", "goodbye", "done", "stop listening", "thank you", "thanks")
 HARD_STOP = ("stop",)
-SOFT_INTERRUPT = ("hold on", "wait", "actually", "before you continue")
-HOLD_PHRASES = ("hold on", "one sec", "give me a moment", "give me a sec", "brb")
+# Hold/pause (FIX 4): step away, resume later. Soft interrupt (FIX 5): add to the
+# current turn. "hold on"/"wait" are treated as hold (checked before soft).
+HOLD_PHRASES = ("hold on", "wait", "one sec", "give me a moment", "give me a sec", "brb")
+SOFT_INTERRUPT = ("actually", "before you continue")
 RESUME_PHRASES = ("okay", "ok", "i'm back", "im back", "continue", "vanta")
 VOICE_CONTROLS = {
     "louder": "volume_up", "quieter": "volume_down",
@@ -196,23 +200,25 @@ class ClapDetector:
 
 @dataclass
 class VadState:
-    """Start on RMS>gate, stop after silence_stop sec of sub-gate audio."""
-    gate: float = RMS_GATE
-    silence_stop: float = SILENCE_STOP
+    """Hysteresis VAD: START when RMS > start_gate; STOP only when RMS stays
+    below stop_gate for silence_stop seconds. NO maximum recording time — Bryan
+    is never cut off mid-sentence."""
+    start_gate: float = RMS_GATE       # 600
+    stop_gate: float = VAD_STOP_RMS    # 400
+    silence_stop: float = SILENCE_STOP  # 0.8
     recording: bool = False
     _last_voice: float = 0.0
     started_at: float = 0.0
 
     def feed(self, rms: float, now: float) -> str:
-        loud = rms >= self.gate
         if not self.recording:
-            if loud:
+            if rms > self.start_gate:
                 self.recording = True
                 self.started_at = now
                 self._last_voice = now
                 return "start"
             return "idle"
-        if loud:
+        if rms >= self.stop_gate:          # still talking -> reset the silence timer
             self._last_voice = now
             return "recording"
         if now - self._last_voice >= self.silence_stop:
@@ -293,10 +299,10 @@ def make_deepgram():
 
 
 def deepgram_options() -> dict:
-    """Deepgram PrerecordedOptions fields for the VANTA mic (nova-2, en, raw PCM)."""
+    """Deepgram PrerecordedOptions fields for the VANTA mic (nova-2, auto-lang, raw PCM)."""
     return {
         "model": "nova-2",
-        "language": "en",          # en-SG is not supported by nova-2
+        "detect_language": True,   # auto-detect — handles Singapore accent better than en
         "sample_rate": 16000,
         "channels": 1,
         "encoding": "linear16",
@@ -346,10 +352,14 @@ class VoiceLoop:
         self._stop = threading.Event()
         self._playing: Optional[subprocess.Popen] = None
         self._out_stream = None  # sounddevice RawOutputStream during streaming TTS
+        self._paused = False           # hold/pause mode (FIX 4)
+        self._pause_started = 0.0
+        self._pause_reminded = False
 
     def _set_state(self, state: str) -> None:
         voice_bus.set_voice_state(state)
         self._status(state)
+        print(f"[STATE] {state}", flush=True)
 
     # -- brain (thin HTTP layer over the text pipeline) --
     def think(self, text: str) -> str:
@@ -413,6 +423,8 @@ class VoiceLoop:
                         for chunk in r.iter_bytes(4096):
                             if self._stop.is_set() or not chunk:
                                 break
+                            if not played:
+                                print("[ELEVENLABS] streaming started", flush=True)
                             out.write(self._scaled(chunk))
                             played = True
             finally:
@@ -421,9 +433,11 @@ class VoiceLoop:
                 except Exception:
                     pass
                 self._out_stream = None
+            if played:
+                print("[ELEVENLABS] playback done", flush=True)
             return played
         except Exception as exc:
-            logger.warning("Ivy streaming TTS failed (%s); falling back to mp3", exc)
+            print(f"[ERROR] ElevenLabs streaming failed ({exc}); falling back to mp3", flush=True)
             self._out_stream = None
             return False
 
@@ -488,11 +502,11 @@ class VoiceLoop:
         voice_bus.save_turn("bryan", text, mode="voice")
         tier = classify_complexity(text)
         model = self.simple_model if tier == "simple" else self.complex_model
-        print(f"[VANTA voice] sending to brain ({tier} -> {model}): {text!r}", flush=True)
+        print(f"[CLASSIFY] {tier} -> {model}: {text!r}", flush=True)
         if tier == "complex":
             self.speak("On it, give me a moment.", summary=False)
         reply = self.think(text)
-        print(f"[VANTA voice] brain reply: {reply[:120]!r}", flush=True)
+        print(f"[BRAIN] reply: {reply[:120]!r}", flush=True)
         if not reply:
             self._set_state("listening")
             return ""  # silent on error — never speak error messages
@@ -528,7 +542,7 @@ class VoiceLoop:
             from deepgram import PrerecordedOptions
             options = PrerecordedOptions(
                 model="nova-2",
-                language="en",            # en-SG is not supported by nova-2
+                detect_language=True,     # auto-detect (handles Singapore accent better than en)
                 sample_rate=SAMPLE_RATE,  # 16000
                 channels=1,
                 encoding="linear16",      # raw int16 PCM (no WAV wrapper needed)
@@ -537,98 +551,155 @@ class VoiceLoop:
             )
             res = self._stt.listen.rest.v("1").transcribe_file({"buffer": audio}, options)
             text = (res.results.channels[0].alternatives[0].transcript or "").strip()
-            if text:
-                print(f"[VANTA voice] transcript: {text!r}", flush=True)
+            print(f"[DEEPGRAM] transcript: {text!r}", flush=True)
             return text
         except Exception as exc:
-            logger.debug("transcribe failed: %s", exc)
-            print(f"[VANTA voice] transcribe failed: {exc}", flush=True)
+            print(f"[ERROR] Deepgram transcribe failed: {exc}", flush=True)
             return ""
 
+    def _handle_turn(self, text: str) -> str:  # pragma: no cover - audio runtime
+        """Process one in-conversation utterance. Returns 'end' to leave
+        conversation mode, 'hold' to enter pause, else 'continue'. Every branch
+        is guarded so a single bad turn never crashes the loop (FIX 5/7)."""
+        try:
+            if is_end_phrase(text):
+                print("[STATE] end-phrase -> Standing by", flush=True)
+                self.speak("Standing by.", summary=False)
+                return "end"
+            kind = detect_interrupt(text)
+            if kind == "hard":               # "stop" -> drop, wait for next command
+                print("[STATE] hard-interrupt (stop) -> drop + listen", flush=True)
+                self._stop_playback()
+                return "continue"
+            if kind == "hold":               # pause indefinitely
+                print("[STATE] hold -> paused", flush=True)
+                self._stop_playback()
+                self._paused = True
+                self._pause_started = time.time()
+                self._pause_reminded = False
+                self.speak("Take your time.", summary=False)
+                return "hold"
+            ctrl = voice_control(text)
+            if ctrl:
+                print(f"[STATE] voice-control: {ctrl}", flush=True)
+                self.apply_control(ctrl)
+                return "continue"
+            # Soft interrupt ("actually…", "before you continue") and normal turns
+            # both go to the brain — the last-20-turns context means the original
+            # request AND the addition are answered together (nothing dropped).
+            self.handle_user_text(text)
+            return "continue"
+        except Exception as exc:
+            print(f"[ERROR] turn handling failed: {exc}", flush=True)
+            return "continue"
+
     def run(self) -> None:  # pragma: no cover - needs mic/speaker + Deepgram
-        """Always-on capture loop: wake (clap/voice) -> greeting -> conversation."""
+        """Bulletproof always-on state machine (FIX 7): WAKE -> WAKE_DETECTED ->
+        LISTENING -> RECORDING -> THINKING -> SPEAKING -> LISTENING, with a
+        hold/pause sub-state. ANY error prints [ERROR] and returns to WAKE; the
+        outer loop reopens the mic so the loop never crashes and exits."""
         try:
             import sounddevice as sd
         except Exception as exc:
-            logger.error("voice_loop.run needs sounddevice: %s", exc)
+            print(f"[ERROR] voice_loop needs sounddevice: {exc}", flush=True)
             return
         self._stt = make_deepgram()
-        logger.info("VANTA voice loop starting (opening mic)…")
+        print("[VANTA voice] voice loop starting (opening mic)…", flush=True)
         block = int(SAMPLE_RATE * FRAME_MS / 1000)
-        in_conversation = False
-        utter = bytearray()
-        vad = VadState()
-        last_activity = time.time()
-        try:
-            with sd.RawInputStream(samplerate=SAMPLE_RATE, blocksize=block, dtype="int16", channels=1) as stream:
-                # Mic is open -> genuinely listening. Report active ONLY now (not
-                # before), so a mic-permission failure leaves the UI honestly OFF
-                # instead of a fake "listening".
-                self._set_state("listening")
-                voice_bus.set_voice_active(True)
-                logger.info('voice loop active — say "Hey VANTA"')
-                print("[VANTA voice] LISTENING — say 'Hey VANTA' or double-clap", flush=True)
-                _hb = 0
-                while not self._stop.is_set():
-                    data, _ = stream.read(block)
-                    frame = bytes(data)
-                    rms = rms_from_pcm16(frame)
-                    now = time.time()
-                    # Debug: RMS heartbeat (~2/sec) + every loud chunk, so Bryan
-                    # can watch the mic levels live in the terminal.
-                    _hb += 1
-                    if _hb % 16 == 0 or rms >= WAKE_RMS:
-                        print(f"[VANTA voice] rms={int(rms):5d}  mode={'conv' if in_conversation else 'wake'}", flush=True)
 
-                    if not in_conversation:
-                        # Double-clap wake.
-                        if self.clap.feed(rms, now):
-                            print(f"[VANTA voice] WAKE — double-clap (rms={int(rms)})", flush=True)
-                            self._handle_wake()
-                            in_conversation = True
-                            utter.clear(); vad = VadState(); last_activity = now
+        while not self._stop.is_set():
+            in_conversation = False
+            self._paused = False
+            utter = bytearray()
+            vad = VadState()
+            last_activity = time.time()
+            _hb = 0
+            try:
+                with sd.RawInputStream(samplerate=SAMPLE_RATE, blocksize=block, dtype="int16", channels=1) as stream:
+                    # Mic open -> genuinely listening (report active only now, so a
+                    # denied permission leaves the UI honestly OFF).
+                    self._set_state("listening")
+                    voice_bus.set_voice_active(True)
+                    print("[VANTA voice] LISTENING — say 'Hey VANTA' or double-clap", flush=True)
+                    while not self._stop.is_set():
+                        try:
+                            data, _ = stream.read(block)
+                        except Exception as exc:
+                            print(f"[ERROR] mic read failed: {exc}", flush=True)
+                            break  # reopen the stream
+                        frame = bytes(data)
+                        rms = rms_from_pcm16(frame)
+                        now = time.time()
+                        _hb += 1
+                        if _hb % 16 == 0 or rms >= WAKE_RMS:
+                            mode = "paused" if self._paused else ("conv" if in_conversation else "wake")
+                            print(f"[RMS] {int(rms):5d}  mode={mode}", flush=True)
+
+                        # ── WAKE mode ──
+                        if not in_conversation:
+                            if self.clap.feed(rms, now):
+                                print(f"[STATE] WAKE — double-clap (rms={int(rms)})", flush=True)
+                                self._handle_wake()
+                                in_conversation = True
+                                utter.clear(); vad = VadState(); last_activity = now
+                                continue
+                            ev = vad.feed(rms, now)
+                            if ev in ("start", "recording"):
+                                utter += frame
+                            elif ev == "stop":
+                                text = self._transcribe(bytes(utter)); utter.clear()
+                                if self.process_final_transcript(text):
+                                    in_conversation = True; vad = VadState(); last_activity = now
                             continue
-                        # Voice wake: capture an utterance (RMS>WAKE gate), transcribe, gate.
+
+                        # ── HOLD/PAUSE sub-state (FIX 4) ──
+                        if self._paused:
+                            ev = vad.feed(rms, now)
+                            if ev in ("start", "recording"):
+                                utter += frame
+                            elif ev == "stop":
+                                text = self._transcribe(bytes(utter)); utter.clear()
+                                if text and is_resume(text):
+                                    print("[STATE] resume from hold -> LISTENING", flush=True)
+                                    self._paused = False; self._pause_reminded = False
+                                    self._set_state("listening"); last_activity = time.time()
+                            elif ev == "idle":
+                                if (now - self._pause_started >= HOLD_REMINDER) and not self._pause_reminded:
+                                    self._pause_reminded = True
+                                    self.speak("Still here when you're ready.", summary=False)
+                                    self._set_state("listening")
+                            continue
+
+                        # ── conversation mode (no wake word needed, FIX 3) ──
                         ev = vad.feed(rms, now)
-                        if ev in ("start", "recording"):
+                        if ev == "start":
+                            self._set_state("recording"); utter += frame
+                        elif ev == "recording":
                             utter += frame
                         elif ev == "stop":
                             text = self._transcribe(bytes(utter)); utter.clear()
-                            if self.process_final_transcript(text):
-                                in_conversation = True; vad = VadState(); last_activity = now
-                        continue
-
-                    # ── conversation mode (no wake word needed) ──
-                    ev = vad.feed(rms, now)
-                    if ev == "start":
-                        self._set_state("recording"); utter += frame
-                    elif ev == "recording":
-                        utter += frame
-                    elif ev == "stop":
-                        text = self._transcribe(bytes(utter)); utter.clear()
-                        last_activity = now
-                        if text:
-                            voice_bus.push_transcript("bryan", text, final=True)
-                            if is_end_phrase(text):
+                            last_activity = now
+                            if text:
+                                voice_bus.push_transcript("bryan", text, final=True)
+                                result = self._handle_turn(text)
+                                if result == "end":
+                                    in_conversation = False; vad = VadState()
+                                    self._set_state("listening")
+                                    continue
+                                last_activity = time.time()
+                            self._set_state("listening")
+                        elif ev == "idle":
+                            if now - last_activity >= END_SILENCE:
+                                print("[STATE] 10s silence -> Standing by", flush=True)
                                 self.speak("Standing by.", summary=False)
-                                in_conversation = False; self._set_state("listening")
-                                continue
-                            ctrl = voice_control(text)
-                            if ctrl:
-                                self.apply_control(ctrl)
-                            else:
-                                self.handle_user_text(text)
-                            last_activity = time.time()
-                        self._set_state("listening")
-                    elif ev == "idle":
-                        # End the conversation after END_SILENCE of quiet.
-                        if now - last_activity >= END_SILENCE:
-                            self.speak("Standing by.", summary=False)
-                            in_conversation = False; self._set_state("listening")
-        except Exception as exc:
-            logger.warning("voice mic stream error (mic permission?): %s", exc)
-            voice_bus.set_voice_active(False)  # mic unavailable -> honestly OFF
-            self._set_state("standby")
+                                in_conversation = False; vad = VadState()
+                                self._set_state("listening")
+            except Exception as exc:
+                # ANY failure: log it, drop to WAKE, keep running (reopen mic).
+                print(f"[ERROR] voice loop error -> returning to WAKE: {exc}", flush=True)
+                self._set_state("standby")
+                if self._stop.wait(1.0):
+                    break
 
     def stop(self) -> None:
         self._stop.set()

@@ -68,7 +68,8 @@ def test_deepgram_options_v3_7():
     # deepgram-sdk==3.7.0 PrerecordedOptions fields (live-confirmed working).
     opts = vl.deepgram_options()
     assert opts["model"] == "nova-2"
-    assert opts["language"] == "en"            # en-SG not supported by nova-2
+    assert opts["detect_language"] is True     # auto-detect (Singapore accent)
+    assert "language" not in opts
     assert opts["sample_rate"] == 16000
     assert opts["channels"] == 1
     assert opts["encoding"] == "linear16"
@@ -107,6 +108,47 @@ def test_simple_routes_to_mini(monkeypatch, text, expect_model):
     assert captured["model"] == expect_model
 
 
+# FIX 4/5 — hold/resume + turn routing
+@pytest.mark.parametrize("text", ["okay", "i'm back", "continue", "vanta"])
+def test_is_resume(text):
+    assert vl.is_resume(text) is True
+
+
+def test_is_resume_negative():
+    assert vl.is_resume("tell me a joke") is False
+
+
+def _quiet_loop(monkeypatch):
+    loop = vl.VoiceLoop()
+    monkeypatch.setattr(loop, "speak", lambda *a, **k: None)
+    monkeypatch.setattr(loop, "_stop_playback", lambda *a, **k: None)
+    return loop
+
+
+def test_handle_turn_end_phrase(monkeypatch):
+    loop = _quiet_loop(monkeypatch)
+    assert loop._handle_turn("that's all") == "end"
+
+
+def test_handle_turn_hard_stop(monkeypatch):
+    loop = _quiet_loop(monkeypatch)
+    assert loop._handle_turn("stop") == "continue"   # drops, waits
+
+
+def test_handle_turn_hold(monkeypatch):
+    loop = _quiet_loop(monkeypatch)
+    assert loop._handle_turn("hold on") == "hold"
+    assert loop._paused is True
+
+
+def test_handle_turn_normal_goes_to_brain(monkeypatch):
+    loop = _quiet_loop(monkeypatch)
+    called = {}
+    monkeypatch.setattr(loop, "handle_user_text", lambda t: called.setdefault("t", t))
+    assert loop._handle_turn("what time is it") == "continue"
+    assert called["t"] == "what time is it"
+
+
 # 4 — ElevenLabs client init
 def test_elevenlabs_client_init():
     from openjarvis.speech.elevenlabs_tts import ElevenLabsTTSBackend
@@ -115,14 +157,21 @@ def test_elevenlabs_client_init():
     assert backend.health() is True
 
 
-# 5 — VAD with synthetic audio
-def test_vad_start_and_stop():
-    vad = vl.VadState(gate=600, silence_stop=1.5)
+# 5 — VAD hysteresis (start >600, stop only when <400 for 0.8s, FIX 2)
+def test_vad_hysteresis_start_and_stop():
+    vad = vl.VadState(start_gate=600, stop_gate=400, silence_stop=0.8)
     assert vad.feed(100, 0.0) == "idle"
-    assert vad.feed(900, 0.5) == "start"      # loud → start
-    assert vad.feed(800, 0.7) == "recording"  # still loud
-    assert vad.feed(100, 1.0) == "recording"  # brief silence, under 1.5s
-    assert vad.feed(100, 2.6) == "stop"       # >1.5s silence → stop
+    assert vad.feed(900, 0.5) == "start"      # > start_gate
+    assert vad.feed(450, 0.7) == "recording"  # >= stop_gate -> still talking
+    assert vad.feed(300, 1.0) == "recording"  # < stop_gate but only 0.3s silence
+    assert vad.feed(300, 1.6) == "stop"       # 0.9s of <400 -> stop
+
+
+def test_vad_no_start_between_gates():
+    vad = vl.VadState()  # start 600, stop 400
+    assert vad.feed(500, 0.0) == "idle"       # 500 < start_gate -> no start (hysteresis)
+    assert vad.feed(700, 0.1) == "start"      # > 600
+    assert vad.feed(450, 0.3) == "recording"  # 450 >= stop_gate keeps it alive
 
 
 # 6 — conversation-end phrases
@@ -182,7 +231,9 @@ def test_classify_complexity(text, tier):
 
 @pytest.mark.parametrize("text,kind", [
     ("stop", "hard"), ("hold on", "hold"), ("one sec", "hold"),
-    ("actually wait", "soft"), ("wait", "soft"), ("carry on please", None),
+    ("wait", "hold"), ("brb", "hold"),
+    ("actually", "soft"), ("before you continue", "soft"),
+    ("carry on please", None),
 ])
 def test_detect_interrupt(text, kind):
     assert vl.detect_interrupt(text) == kind
