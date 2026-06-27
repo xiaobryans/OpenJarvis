@@ -81,6 +81,32 @@ def test_make_deepgram_none_without_key(monkeypatch):
     assert vl.make_deepgram() is None
 
 
+# Speed fixes
+def test_vad_silence_threshold_is_0_8():
+    assert vl.SILENCE_STOP == 0.8           # FIX 2
+    assert vl.FRAME_MS <= 500               # FIX 4: small chunks (30ms here)
+
+
+def _capture_model(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(vl, "call_brain", lambda messages, model, **k: captured.setdefault("model", model) or "ok")
+    return captured
+
+
+@pytest.mark.parametrize("text,expect_model", [
+    ("what time is it", "gpt-4o-mini"),   # FIX 1 — simple -> mini
+    ("how are you", "gpt-4o-mini"),
+    ("email mum saying i'll be late", "gpt-4o"),  # complex -> 4o
+])
+def test_simple_routes_to_mini(monkeypatch, text, expect_model):
+    loop = vl.VoiceLoop()
+    captured = _capture_model(monkeypatch)
+    monkeypatch.setattr(loop, "_stream_and_play_ivy", lambda *a, **k: True)  # no audio
+    monkeypatch.setattr(vl, "synthesize_ivy", lambda *a, **k: None)
+    loop.handle_user_text(text)
+    assert captured["model"] == expect_model
+
+
 # 4 — ElevenLabs client init
 def test_elevenlabs_client_init():
     from openjarvis.speech.elevenlabs_tts import ElevenLabsTTSBackend

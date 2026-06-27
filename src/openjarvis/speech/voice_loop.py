@@ -34,7 +34,7 @@ logger = logging.getLogger("openjarvis.voice_loop")
 
 # ── Tunable constants ────────────────────────────────────────────────────────
 RMS_GATE = 600          # VAD: start recording above this RMS (in-conversation)
-SILENCE_STOP = 1.5      # seconds of silence that ends an utterance
+SILENCE_STOP = 0.8      # seconds of silence that ends an utterance (fast turn-around)
 END_SILENCE = 10.0      # silence after a reply that ends the conversation
 HOLD_REMINDER = 300.0   # 5 min: one "still here" reminder while on hold
 
@@ -345,6 +345,7 @@ class VoiceLoop:
         self._speed = 1.0
         self._stop = threading.Event()
         self._playing: Optional[subprocess.Popen] = None
+        self._out_stream = None  # sounddevice RawOutputStream during streaming TTS
 
     def _set_state(self, state: str) -> None:
         voice_bus.set_voice_state(state)
@@ -368,10 +369,74 @@ class VoiceLoop:
         words = spoken.split()
         for i, w in enumerate(words):
             voice_bus.push_transcript("vanta", w, final=(i == len(words) - 1))
-        audio = synthesize_ivy(spoken, speed=self._speed)
-        if audio:
-            self._play(audio)
+        # FIX 3: stream the audio so Ivy starts talking on the first chunk
+        # (instead of waiting for the whole clip). Fall back to mp3+afplay.
+        if not self._stream_and_play_ivy(spoken, self._speed):
+            audio = synthesize_ivy(spoken, speed=self._speed)
+            if audio:
+                self._play(audio)
         voice_bus.save_turn("vanta", spoken, mode="voice")
+
+    def _stream_and_play_ivy(self, text: str, speed: float) -> bool:  # pragma: no cover - audio/network
+        """Stream Ivy TTS as raw PCM and play chunks as they arrive (low latency).
+
+        Uses ElevenLabs' /stream endpoint with output_format=pcm_24000 and writes
+        chunks straight into a sounddevice output stream — playback begins on the
+        first chunk. Returns True if it streamed, False to fall back to mp3.
+        """
+        api_key = os.environ.get("ELEVENLABS_API_KEY", "")
+        if not api_key or not text.strip():
+            return False
+        voice_id = os.environ.get("ELEVENLABS_VOICE_ID", "MClEFoImJXBTgLwdLI5n")
+        model = os.environ.get("ELEVENLABS_MODEL", "eleven_turbo_v2_5")
+        sr = 24000
+        try:
+            import httpx
+            import sounddevice as sd
+            out = sd.RawOutputStream(samplerate=sr, channels=1, dtype="int16")
+            out.start()
+            self._out_stream = out
+            played = False
+            try:
+                with httpx.Client(timeout=60) as c:
+                    with c.stream(
+                        "POST",
+                        f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}/stream?output_format=pcm_{sr}",
+                        headers={"xi-api-key": api_key, "accept": "audio/pcm", "content-type": "application/json"},
+                        json={
+                            "text": text, "model_id": model,
+                            "voice_settings": {"stability": 0.4, "similarity_boost": 0.8,
+                                               "style": 0.6, "use_speaker_boost": True, "speed": speed},
+                        },
+                    ) as r:
+                        r.raise_for_status()
+                        for chunk in r.iter_bytes(4096):
+                            if self._stop.is_set() or not chunk:
+                                break
+                            out.write(self._scaled(chunk))
+                            played = True
+            finally:
+                try:
+                    out.stop(); out.close()
+                except Exception:
+                    pass
+                self._out_stream = None
+            return played
+        except Exception as exc:
+            logger.warning("Ivy streaming TTS failed (%s); falling back to mp3", exc)
+            self._out_stream = None
+            return False
+
+    def _scaled(self, pcm: bytes) -> bytes:
+        """Apply volume to a raw int16 PCM chunk (no-op at volume 1.0)."""
+        if self._volume == 1.0:
+            return pcm
+        try:
+            import numpy as np
+            a = np.frombuffer(pcm, dtype=np.int16).astype(np.float32) * self._volume
+            return np.clip(a, -32768, 32767).astype(np.int16).tobytes()
+        except Exception:
+            return pcm
 
     def _play(self, mp3: bytes) -> None:  # pragma: no cover - audio
         try:
@@ -389,6 +454,11 @@ class VoiceLoop:
         if self._playing and self._playing.poll() is None:
             try:
                 self._playing.terminate()
+            except Exception:
+                pass
+        if self._out_stream is not None:
+            try:
+                self._out_stream.abort()
             except Exception:
                 pass
 
